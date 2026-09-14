@@ -114,6 +114,16 @@ jobs:
             done
           fi
 
+      - name: Rename APKs with version
+        env:
+          FNAME: ${{ steps.version.outputs.fname }}
+        run: |
+          for apk in build/app/outputs/apk/github/release/*.apk; do
+            filename=$(basename "$apk")
+            new_filename=$(echo "$filename" | sed -E "s/^app-github-release/${FNAME}/")
+            mv "$apk" "build/app/outputs/apk/github/release/${new_filename}"
+          done
+
       - name: Upload APK to GitHub draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -124,10 +134,11 @@ jobs:
           UNIVERSAL=(build/app/outputs/apk/github/release/*-universal*.apk)
           ALL_APKS=(build/app/outputs/apk/github/release/*.apk)
           [ "${#UNIVERSAL[@]}" -eq 1 ] || { echo "Universal APK missing"; exit 1; }
-          if gh release view "$VERSION_TAG" &>/dev/null; then
+          if gh release view "$VERSION_TAG" &>/dev/null;
+          then
             gh release upload "$VERSION_TAG" "${UNIVERSAL[0]}" --clobber
           else
-            CREATE_ARGS=(--draft --title "$VERSION_TAG")
+            CREATE_ARGS=(--title "$VERSION_TAG")
             [ "$PRE" = "true" ] && CREATE_ARGS+=(--prerelease)
             gh release create "$VERSION_TAG" "${UNIVERSAL[0]}" "${CREATE_ARGS[@]}"
           fi
