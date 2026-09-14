@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      custom_version:
+        description: "Custom version to use (e.g., 1.2.3+456). If provided, pubspec.yaml will be ignored."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -44,8 +49,13 @@ jobs:
         id: version
         env:
           PRE: ${{ inputs.prerelease }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
         run: |
-          RAW=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+          if [ -n "$CUSTOM_VERSION" ]; then
+            RAW="$CUSTOM_VERSION"
+          else
+            RAW=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+          fi
           VERSION_NAME="${RAW%%+*}"
           BUILD="${RAW##*+}"
           # Unified artifact basename: dash (URL-safe, unlike +) between version
