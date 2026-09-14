@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -2599,8 +2600,7 @@ class AppLocalizationsDe extends AppLocalizations {
       locale: localeName,
       other:
           '$count Downloads liegen in einem alten benutzerdefinierten Ordner, der nicht mehr geöffnet werden kann. Lade die Dateien erneut herunter oder schließe diese Mitteilung.',
-      one:
-          '1 Download liegt in einem alten benutzerdefinierten Ordner, der nicht mehr geöffnet werden kann. Lade ihn erneut herunter oder schließe diese Mitteilung.',
+      one: '1 Download liegt in einem alten benutzerdefinierten Ordner, der nicht mehr geöffnet werden kann. Lade ihn erneut herunter oder schließe diese Mitteilung.',
     );
     return '$_temp0';
   }
@@ -5298,8 +5298,7 @@ class AppLocalizationsDe extends AppLocalizations {
       locale: localeName,
       other:
           'Damit wird der Beendet-Status für alle $count Bücher dieser Serie zurückgesetzt.',
-      one:
-          'Damit wird der Beendet-Status für 1 Buch dieser Serie zurückgesetzt.',
+      one: 'Damit wird der Beendet-Status für 1 Buch dieser Serie zurückgesetzt.',
     );
     return '$_temp0';
   }

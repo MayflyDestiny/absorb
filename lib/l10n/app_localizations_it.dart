@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -2562,8 +2563,7 @@ class AppLocalizationsIt extends AppLocalizations {
       locale: localeName,
       other:
           '$count downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.',
-      one:
-          '1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.',
+      one: '1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.',
     );
     return '$_temp0';
   }
