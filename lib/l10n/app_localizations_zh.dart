@@ -971,7 +971,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get statsNothingHidden => 'Nothing hidden';
 
   @override
-  String get settingsCustomizeStats => 'Customize stats';
+  String get settingsCustomizeStats => '自定义统计数据';
 
   @override
   String get statsGoalTitle => 'Listening goal';
