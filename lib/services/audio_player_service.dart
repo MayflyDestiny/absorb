@@ -310,6 +310,18 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  /// Pick the numbered second badge for a skip control when the configured
+  /// amount is one of the pre-rendered icons (5..60 in 5s steps), falling
+  /// back to the plain arrow shape otherwise.
+  static const _supportedSkipSeconds = {
+    5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60,
+  };
+
+  String _skipIconImage(String base, int seconds) =>
+      _supportedSkipSeconds.contains(seconds)
+          ? '${base}_$seconds'
+          : base;
+
   // The Android Auto speed button shows a pre-baked badge for the current rate.
   // We snap to the nearest 0.05 within the baked range (0.5x..3.0x); every step
   // has a generated ic_speed_*x drawable (rendered from Roboto Bold).
@@ -334,12 +346,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     );
 
     final rewindControl = MediaControl(
-      androidIcon: 'drawable/ic_skip_back',
+      androidIcon: _skipIconImage('drawable/ic_skip_back', _cachedBackSkip),
       label: 'Back ${_cachedBackSkip}s',
       action: MediaAction.rewind,
     );
     final fastForwardControl = MediaControl(
-      androidIcon: 'drawable/ic_skip_forward',
+      androidIcon:
+          _skipIconImage('drawable/ic_skip_forward', _cachedForwardSkip),
       label: 'Forward ${_cachedForwardSkip}s',
       action: MediaAction.fastForward,
     );
@@ -533,7 +546,14 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     // covers the headphone-unplug path independently.
     if (!_inClickResolver) {
       final lastBt = AudioPlayerService._lastPlayedOnBtAt;
-      final btJustWent = lastBt != null && !pauseEntryBt;
+      // _lastPlayedOnBtAt is never cleared, so it can hold a BT session from
+      // days ago. A pause on the phone now must NOT look like a "just went"
+      // transition — that would arm the 5s _noisyPauseAt guard against the
+      // user's next play/click for nothing. Only treat it as a live BT route
+      // if we were on BT within the last minute.
+      final btJustWent = lastBt != null &&
+          DateTime.now().difference(lastBt) < const Duration(minutes: 1) &&
+          !pauseEntryBt;
       if (btJustWent) {
         _noisyPauseAt = DateTime.now();
       }
