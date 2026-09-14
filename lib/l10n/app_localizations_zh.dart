@@ -7900,7 +7900,7 @@ class AppLocalizationsZh extends AppLocalizations {
       'Removing a folder deletes its items from the library. This can\'t be undone.';
 
   @override
-  String get readEbook => 'Read';
+  String get readEbook => '阅读';
 
   @override
   String get ebookDownload => 'Download';
