@@ -523,24 +523,16 @@ public class AudioService extends MediaBrowserServiceCompat {
             return new PlaybackStateCompat.CustomAction.Builder(control.customAction.name, control.label, iconId)
                 .setExtras(mapToBundle(control.customAction.extras))
                 .build();
-        } else if (Build.VERSION.SDK_INT >= 33) {
-            // Android 13 changes MediaControl behavior as documented here:
-            // https://developer.android.com/about/versions/13/behavior-changes-13
-            // The below actions will be added to slots 1-3, if included.
-            // 1 - ACTION_PLAY, ACTION_PLAY
-            // 2 - ACTION_SKIP_TO_PREVIOUS
-            // 3 - ACTION_SKIP_TO_NEXT
-            // Custom actions will use slots 2-5 if included.
-            // - ACTION_STOP
-            // - ACTION_FAST_FORWARD
-            // - ACTION_REWIND
-            if (control.actionCode == PlaybackStateCompat.ACTION_STOP) {
-                return new PlaybackStateCompat.CustomAction.Builder(CUSTOM_ACTION_STOP, control.label, iconId).build();
-            } else if (control.actionCode == PlaybackStateCompat.ACTION_FAST_FORWARD) {
-                return new PlaybackStateCompat.CustomAction.Builder(CUSTOM_ACTION_FAST_FORWARD, control.label, iconId).build();
-            } else if (control.actionCode == PlaybackStateCompat.ACTION_REWIND) {
-                return new PlaybackStateCompat.CustomAction.Builder(CUSTOM_ACTION_REWIND, control.label, iconId).build();
-            }
+        } else if (Build.VERSION.SDK_INT >= 33
+                && control.actionCode == PlaybackStateCompat.ACTION_STOP) {
+            // Absorb patch: Android 13+ derives the media-notification buttons
+            // from the MediaSession. STOP stays a custom action so it does not
+            // crowd rewind/play/forward. Fast-forward and rewind are NOT turned
+            // into custom actions anymore: doing so (as upstream did on 13+)
+            // pulled them out of the notification, leaving only play/pause.
+            // Keeping them native makes the notification show rewind/play/forward
+            // (plus prev/next) on every Android version.
+            return new PlaybackStateCompat.CustomAction.Builder(CUSTOM_ACTION_STOP, control.label, iconId).build();
         }
         return null;
     }
@@ -716,9 +708,11 @@ public class AudioService extends MediaBrowserServiceCompat {
         }
         final MediaStyle style = new MediaStyle()
             .setMediaSession(mediaSession.getSessionToken());
-        if (Build.VERSION.SDK_INT < 33) {
-            style.setShowActionsInCompactView(compactActionIndices);
-        }
+        // Absorb patch: call setShowActionsInCompactView on every version.
+        // Android 13+ may ignore it (the system media notification manages its
+        // own compact actions from the MediaSession), but 12 and below - and
+        // ROMs that still honor it - show the intended three buttons.
+        style.setShowActionsInCompactView(compactActionIndices);
         if (config.androidNotificationOngoing) {
             style.setShowCancelButton(true);
             style.setCancelButtonIntent(buildMediaButtonPendingIntent(PlaybackStateCompat.ACTION_STOP));

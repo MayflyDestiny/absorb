@@ -350,23 +350,21 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     ];
     final compactIndices = const [0, 1, 2];
 
-    // Extra Android Auto controls (custom actions). On Android 12 and below they
-    // show only in AA; on 13+ they also feed the phone's media player. We always
-    // add the chapter buttons - they no-op when the item has no chapters - which
-    // (a) keeps the layout identical for books and podcasts and (b) since the
-    // phone player caps at 5 buttons, makes the two chapter buttons push speed +
-    // bookmark to AA-only for every item type. iOS uses the CarPlay Now Playing
-    // buttons instead, so these are never added on iOS (lock screen stays as-is).
+    // Extra Android notification/Auto controls. Previous/Next are *standard*
+    // skip controls, not custom actions, so Android 13+ renders them as native
+    // media-notification buttons (and older/other renderers see them as native
+    // notification actions too). They route to chapter skip and no-op for items
+    // without chapters. Speed and bookmark stay custom actions (Android Auto /
+    // the phone player's extra slots). iOS uses the CarPlay Now Playing buttons
+    // instead, so these are never added on iOS (lock screen stays as-is).
     if (Platform.isAndroid) {
-      final prevChapter = MediaControl.custom(
+      final prevChapter = MediaControl.skipToPrevious.copyWith(
         androidIcon: 'drawable/ic_widget_prev_chapter',
         label: 'Previous chapter',
-        name: 'previousChapter',
       );
-      final nextChapter = MediaControl.custom(
+      final nextChapter = MediaControl.skipToNext.copyWith(
         androidIcon: 'drawable/ic_widget_next_chapter',
         label: 'Next chapter',
-        name: 'nextChapter',
       );
       final speed = MediaControl.custom(
         androidIcon: _speedBadgeIcon(),
@@ -394,7 +392,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     return PlaybackState(
       controls: controls,
-      // iOS-only: declaring on Android adds prev/next buttons to the notification.
+      // iOS-only in systemActions: on Android the prev/next buttons come from the
+      // controls list above (standard skip actions feed the media notification);
+      // iOS needs skipToNext/skipToPrevious here for the lock screen and CarPlay.
       systemActions: {
         // Dropping seek locks the scrubber: Android omits ACTION_SEEK_TO and iOS
         // omits changePlaybackPositionCommand, so it shows progress but can't be
@@ -639,12 +639,27 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  // iOS BT (AirPods, steering wheel) routes track-skip through these.
+  // Android 13+'s media notification and Android Auto transport route
+  // Previous/Next through these, so on Android they mean chapters (no-op for
+  // items without chapters). iOS keeps them as skip-by-seconds for Bluetooth
+  // track buttons.
   @override
-  Future<void> skipToNext() => fastForward();
+  Future<void> skipToNext() async {
+    if (Platform.isAndroid && _service != null) {
+      await _service!.skipToNextChapter();
+      return;
+    }
+    await fastForward();
+  }
 
   @override
-  Future<void> skipToPrevious() => rewind();
+  Future<void> skipToPrevious() async {
+    if (Platform.isAndroid && _service != null) {
+      await _service!.skipToPreviousChapter();
+      return;
+    }
+    await rewind();
+  }
 
   // Custom click handler with proper multi-press detection
   Timer? _clickTimer;
@@ -755,10 +770,18 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       _hardwareButtonTime = DateTime.now();
       if (button == MediaButton.next) {
         debugPrint('[Handler] Hardware NEXT button');
-        await fastForward();
+        if (Platform.isAndroid && _service != null) {
+          await _service!.skipToNextChapter();
+        } else {
+          await fastForward();
+        }
       } else if (button == MediaButton.previous) {
         debugPrint('[Handler] Hardware PREV button');
-        await rewind();
+        if (Platform.isAndroid && _service != null) {
+          await _service!.skipToPreviousChapter();
+        } else {
+          await rewind();
+        }
       }
       return;
     }
