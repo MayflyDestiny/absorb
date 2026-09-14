@@ -2474,6 +2474,17 @@ class IsolatedAudioHandler extends CompositeAudioHandler {
           request.sendPort.send(null);
           break;
         case 'play':
+          // Absorb patch: Java sends a handset-origin flag (boolean, flattened
+          // to a single-element list). true = phone surface (SystemUI / our own
+          // notification / lock screen); false = car / Android Auto echo. The
+          // handler's noisy-pause guard uses this to exempt genuine user taps.
+          final args = request.arguments;
+          final handset = args == null ||
+              args.isEmpty ||
+              (args[0] as dynamic) != false;
+          if (_inner is BaseAudioHandler) {
+            (_inner as BaseAudioHandler).lastPlayFromHandset = handset;
+          }
           await play();
           request.sendPort.send(null);
           break;
@@ -2716,6 +2727,10 @@ class _ClientIsolatedAudioHandler implements BaseAudioHandler {
 
   @override
   final BehaviorSubject<dynamic> customState = BehaviorSubject<dynamic>();
+
+  // Absorb patch: client proxy needs the concrete field from BaseAudioHandler.
+  @override
+  bool lastPlayFromHandset = true;
 
   _ClientIsolatedAudioHandler({
     this.portName = IsolatedAudioHandler.defaultPortName,
@@ -3059,6 +3074,13 @@ class BaseAudioHandler extends AudioHandler {
 
   /// Constructor. Normally this is called from subclasses via `super`.
   BaseAudioHandler() : super._();
+
+  /// Absorb patch: true when the most recent play request originated from a
+  /// phone surface (SystemUI / notification / lock screen / in-app) rather
+  /// than an Android Auto / BT echo. Set by the platform bridge before
+  /// invoking `play()` so the handler's noisy-pause guard can exempt
+  /// genuine user taps.
+  bool lastPlayFromHandset = true;
 
   @override
   Future<void> prepare() async {}

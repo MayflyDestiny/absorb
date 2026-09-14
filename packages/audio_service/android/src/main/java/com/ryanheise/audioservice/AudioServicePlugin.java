@@ -715,7 +715,9 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
 
         @Override
         public void onPlay() {
-            invokeMethod("play", mapOf());
+            // Absorb patch: pass the handset-origin flag so the Dart-side
+            // noisy-pause guard can exempt genuine user taps on the phone.
+            invokeMethod("play", mapOf("handset", AudioService.lastPlayFromHandset));
         }
 
         @Override

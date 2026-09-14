@@ -111,6 +111,11 @@ public class AudioService extends MediaBrowserServiceCompat {
     private static volatile long lastMediaKeyAt = 0;
     private static volatile long lastPlayAt = 0;
     private static volatile long lastPauseAt = 0;
+    // Absorb patch: true when the most recent onPlay() originated from a phone
+    // surface (our own notification actions, SystemUI taskbar / lock screen, or
+    // the app itself). Car / Android Auto echoes are false. The Dart-side
+    // noisy-pause guard uses this to exempt genuine user taps.
+    static volatile boolean lastPlayFromHandset = true;
     // Stamped whenever a car client (Android Auto / Automotive) touches the
     // browse tree, so the Dart side can tell an AA phantom MEDIA_PAUSE from a
     // headset toggle that arrived while paused.
@@ -123,6 +128,23 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     static void stampCarClient(String pkg) {
         if (isCarPackage(pkg)) lastCarClientAt = SystemClock.elapsedRealtime();
+    }
+
+    // Absorb patch: returns true when the current MediaSession controller
+    // belongs to a phone surface (our app, SystemUI, Android system) rather
+    // than a car / Android Auto / head-unit client. Used to distinguish a
+    // genuine user tap on the notification from a phantom resume echo.
+    private boolean isHandsetController() {
+        try {
+            String pkg = mediaSession.getCurrentControllerInfo().getPackageName();
+            if (pkg == null) return true;
+            if (pkg.equals(getPackageName())) return true;
+            if (pkg.equals("com.android.systemui")) return true;
+            if (pkg.equals("android")) return true;
+            return false;
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     public static Map<String, Object> getDiagnosticSnapshot() {
@@ -1023,6 +1045,7 @@ public class AudioService extends MediaBrowserServiceCompat {
             if (listener == null) return;
             stampCarController();
             lastPlayAt = SystemClock.elapsedRealtime();
+            lastPlayFromHandset = isHandsetController();
             listener.onPlay();
         }
 

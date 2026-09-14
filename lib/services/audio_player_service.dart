@@ -327,7 +327,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   }
 
   PlaybackState _transformEvent(PlaybackEvent event) {
-    final playPause = _player.playing ? MediaControl.pause : MediaControl.play;
+    final playPause = (_player.playing ? MediaControl.pause : MediaControl.play)
+        .copyWith(
+      androidIcon:
+          _player.playing ? 'drawable/ic_widget_pause' : 'drawable/ic_widget_play',
+    );
 
     final rewindControl = MediaControl(
       androidIcon: 'drawable/ic_skip_back',
@@ -340,23 +344,14 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       action: MediaAction.fastForward,
     );
 
-    // Base 3 controls (rewind | play | forward) feed both the phone
-    // notification and Android Auto. compactIndices keeps the glanceable
-    // notification to just these three.
-    final controls = <MediaControl>[
-      rewindControl,
-      playPause,
-      fastForwardControl,
-    ];
-    final compactIndices = const [0, 1, 2];
+    final controls = <MediaControl>[];
+    // On Android, compact view (collapsed notification) shows 3 buttons:
+    // prev | play | next — the solid, prominent middle three. On iOS the
+    // expanded list is [rewind, play, forward], so compact = first three.
+    final compactIndices = Platform.isAndroid
+        ? const [1, 2, 3]
+        : const [0, 1, 2];
 
-    // Extra Android notification/Auto controls. Previous/Next are *standard*
-    // skip controls, not custom actions, so Android 13+ renders them as native
-    // media-notification buttons (and older/other renderers see them as native
-    // notification actions too). They route to chapter skip and no-op for items
-    // without chapters. Speed and bookmark stay custom actions (Android Auto /
-    // the phone player's extra slots). iOS uses the CarPlay Now Playing buttons
-    // instead, so these are never added on iOS (lock screen stays as-is).
     if (Platform.isAndroid) {
       final prevChapter = MediaControl.skipToPrevious.copyWith(
         androidIcon: 'drawable/ic_widget_prev_chapter',
@@ -380,14 +375,21 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         label: _bookmarkSavedFlash ? 'Saved' : 'Bookmark',
         name: 'bookmark',
       );
-      // The phone media player (Android 13+) only shows the first 2 of these
-      // extras (after rewind/forward); the rest stay Android-Auto-only. Order so
-      // the user's chosen pair lands on the phone. Default: chapter skip.
-      if (_cachedNotifSpeedBookmark) {
-        controls.addAll([speed, bookmark, prevChapter, nextChapter]);
-      } else {
-        controls.addAll([prevChapter, nextChapter, speed, bookmark]);
-      }
+      // Expanded order: rewind | prev | play | next | forward.
+      // Prev/next/play use solid filled icons (ic_widget_*) so they read
+      // bolder than the thin rewind/forward ring icons.
+      controls.addAll([
+        rewindControl,
+        prevChapter,
+        playPause,
+        nextChapter,
+        fastForwardControl,
+      ]);
+      // Speed/bookmark trail the five core buttons; on Android 13+ the phone
+      // player shows a couple of trailing extra slots.
+      controls.addAll([speed, bookmark]);
+    } else {
+      controls.addAll([rewindControl, playPause, fastForwardControl]);
     }
 
     return PlaybackState(
@@ -479,11 +481,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     );
     // Mirror the click() guard: a raw play() arriving within 5s of a
     // headphone/AA/BT disconnect is almost always the platform echoing a
-    // resume command, not the user. Drop it so playback doesn't jump to
-    // the phone speaker after the user unplugs or AA tears down.
+    // resume command from Android Auto / BT, not the user. Drop it to
+    // avoid playback jumping to the phone speaker after the user unplugs
+    // or AA tears down. Phone-surface play()s (notification, lock screen,
+    // taskbar, in-app) are flagged via lastPlayFromHandset so they pass.
     if (_noisyPauseAt != null) {
       final elapsed = DateTime.now().difference(_noisyPauseAt!).inMilliseconds;
-      if (elapsed < 5000) {
+      if (elapsed < 5000 && !lastPlayFromHandset) {
         debugPrint(
           '[Handler] Ignoring phantom play (${elapsed}ms after platform pause)',
         );
@@ -837,6 +841,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         return;
       }
     }
+
+    // click() is a genuine hardware-button / media-button press — always
+    // handset-originated. Clears any stale car/AA flag so the play()
+    // call below isn't swallowed by the noisy-guard.
+    lastPlayFromHandset = true;
 
     // Stash the keycode for the resolver if it belongs to this click. Only
     // do this for clicks that actually count - early-return guards above
