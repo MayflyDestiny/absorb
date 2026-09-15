@@ -1045,7 +1045,11 @@ public class AudioService extends MediaBrowserServiceCompat {
             if (listener == null) return;
             stampCarController();
             lastPlayAt = SystemClock.elapsedRealtime();
-            lastPlayFromHandset = isHandsetController();
+            // Only update if not already set by onMediaButtonEvent for
+            // KEYCODE_BYPASS_PLAY (notification button), which is always handset-origin.
+            if (!lastPlayFromHandset) {
+                lastPlayFromHandset = isHandsetController();
+            }
             listener.onPlay();
         }
 
@@ -1079,6 +1083,10 @@ public class AudioService extends MediaBrowserServiceCompat {
                 lastMediaKeyAt = SystemClock.elapsedRealtime();
                 switch (event.getKeyCode()) {
                 case KEYCODE_BYPASS_PLAY:
+                    // Notification play button uses KEYCODE_BYPASS_PLAY exclusively.
+                    // Mark as handset-origin so the Dart-side noisy-pause guard
+                    // doesn't block this legitimate user tap.
+                    lastPlayFromHandset = true;
                     onPlay();
                     break;
                 case KEYCODE_BYPASS_PAUSE:
