@@ -11,6 +11,7 @@ import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
+import '../services/player_settings.dart';
 import '../services/download_service.dart';
 import 'book_detail_sheet.dart';
 import 'library_grid_tiles.dart';

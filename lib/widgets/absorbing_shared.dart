@@ -44,6 +44,52 @@ String timeOfDay(DateTime dt, [AppLocalizations? l]) {
   return '$h:$m $ampm';
 }
 
+/// Localized short month name (e.g. "Sep" / "9月"). Empty for invalid months.
+String monthShortName(AppLocalizations l, int month) {
+  switch (month) {
+    case 1: return l.monthShortJan;
+    case 2: return l.monthShortFeb;
+    case 3: return l.monthShortMar;
+    case 4: return l.monthShortApr;
+    case 5: return l.monthShortMay;
+    case 6: return l.monthShortJun;
+    case 7: return l.monthShortJul;
+    case 8: return l.monthShortAug;
+    case 9: return l.monthShortSep;
+    case 10: return l.monthShortOct;
+    case 11: return l.monthShortNov;
+    case 12: return l.monthShortDec;
+  }
+  return '';
+}
+
+/// Localized full month name (e.g. "September" / "9月"). Empty for invalid months.
+String monthFullName(AppLocalizations l, int month) {
+  switch (month) {
+    case 1: return l.monthFullJan;
+    case 2: return l.monthFullFeb;
+    case 3: return l.monthFullMar;
+    case 4: return l.monthFullApr;
+    case 5: return l.monthFullMay;
+    case 6: return l.monthFullJun;
+    case 7: return l.monthFullJul;
+    case 8: return l.monthFullAug;
+    case 9: return l.monthFullSep;
+    case 10: return l.monthFullOct;
+    case 11: return l.monthFullNov;
+    case 12: return l.monthFullDec;
+  }
+  return '';
+}
+
+/// Localized date like "Sep 16, 2026"; Chinese locales get "2026年9月16日".
+String fmtDateMDY(AppLocalizations l, DateTime d) {
+  if (l.localeName.startsWith('zh')) {
+    return '${d.year}年${d.month}月${d.day}日';
+  }
+  return '${monthShortName(l, d.month)} ${d.day}, ${d.year}';
+}
+
 String fmtTime(double s) {
   if (s < 0) s = 0;
   final h = (s / 3600).floor(); final m = ((s % 3600) / 60).floor(); final sec = (s % 60).floor();

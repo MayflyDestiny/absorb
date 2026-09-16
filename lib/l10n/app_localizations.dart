@@ -3034,6 +3034,60 @@ abstract class AppLocalizations {
   /// **'Long skip forward'**
   String get longSkipForward;
 
+  /// No description provided for @chapterSkipTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip chapter intro/outro'**
+  String get chapterSkipTitle;
+
+  /// No description provided for @chapterSkipOnSubtitleFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'On - skip {intro}s intro, {outro}s outro'**
+  String chapterSkipOnSubtitleFormat(String intro, String outro);
+
+  /// No description provided for @chapterSkipOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - play chapters normally'**
+  String get chapterSkipOffSubtitle;
+
+  /// No description provided for @chapterSkipIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip intro (seconds)'**
+  String get chapterSkipIntro;
+
+  /// No description provided for @chapterSkipOutro.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip outro (seconds)'**
+  String get chapterSkipOutro;
+
+  /// No description provided for @chapterSkipShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip intro/outro'**
+  String get chapterSkipShort;
+
+  /// No description provided for @chapterSkipSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter skip'**
+  String get chapterSkipSheetTitle;
+
+  /// No description provided for @chapterSkipPerBookSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remembered for this book'**
+  String get chapterSkipPerBookSubtitle;
+
+  /// No description provided for @chapterSkipEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip intros and outros'**
+  String get chapterSkipEnabled;
+
   /// No description provided for @coverShapeDefault.
   ///
   /// In en, this message translates to:
@@ -3259,13 +3313,13 @@ abstract class AppLocalizations {
   /// No description provided for @chapterBarrier.
   ///
   /// In en, this message translates to:
-  /// **'Chapter barrier'**
+  /// **'Auto-rewind stays within the chapter'**
   String get chapterBarrier;
 
   /// No description provided for @chapterBarrierSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Don\'t auto-rewind past the start of the current chapter'**
+  /// **'Auto-rewind (resume / new session) stops at the current chapter start instead of entering the previous chapter.'**
   String get chapterBarrierSubtitle;
 
   /// No description provided for @rewindInstant.
@@ -6913,7 +6967,7 @@ abstract class AppLocalizations {
   /// No description provided for @chapterBarrierOnRewind.
   ///
   /// In en, this message translates to:
-  /// **'Chapter barrier on rewind'**
+  /// **'Skip-back stays within the chapter'**
   String get chapterBarrierOnRewind;
 
   /// No description provided for @chapterBarrierInfoTitle.
@@ -6925,19 +6979,19 @@ abstract class AppLocalizations {
   /// No description provided for @chapterBarrierInfoContent.
   ///
   /// In en, this message translates to:
-  /// **'When skipping back, the playback will snap to the start of the current chapter instead of crossing into the previous one.\n\nDouble-tap the skip back button within 2 seconds to break through the barrier.'**
+  /// **'When skipping back, the playback will snap to the start of the current chapter instead of crossing into the previous one.\n\nTo reach a previous chapter, use the previous-chapter button.'**
   String get chapterBarrierInfoContent;
 
   /// No description provided for @chapterBarrierOnRewindOnSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'On - rewind snaps to chapter start'**
+  /// **'On - skip back stops at the current chapter start instead of entering the previous chapter'**
   String get chapterBarrierOnRewindOnSubtitle;
 
   /// No description provided for @chapterBarrierOnRewindOffSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Off - rewind crosses chapter boundaries'**
+  /// **'Off - skip back crosses into previous chapters'**
   String get chapterBarrierOnRewindOffSubtitle;
 
   /// No description provided for @autoRewindOnSubtitleFormat.
@@ -13796,6 +13850,312 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Read'**
   String get readEbook;
+
+  /// No description provided for @homeTapCardToResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap a card to resume. Press and hold to see details.'**
+  String get homeTapCardToResume;
+
+  /// No description provided for @libraryTabLists.
+  ///
+  /// In en, this message translates to:
+  /// **'Lists'**
+  String get libraryTabLists;
+
+  /// No description provided for @statsYearInReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Year in Review'**
+  String get statsYearInReview;
+
+  /// No description provided for @statsYirNothingYet.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing listened in {year} yet'**
+  String statsYirNothingYet(int year);
+
+  /// No description provided for @statsYirBooksFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Books finished'**
+  String get statsYirBooksFinished;
+
+  /// No description provided for @statsYirSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get statsYirSessions;
+
+  /// No description provided for @statsYirBooksListened.
+  ///
+  /// In en, this message translates to:
+  /// **'Books listened'**
+  String get statsYirBooksListened;
+
+  /// No description provided for @statsYirTopMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'Top month'**
+  String get statsYirTopMonth;
+
+  /// No description provided for @statsYirTopNarrator.
+  ///
+  /// In en, this message translates to:
+  /// **'Top narrator'**
+  String get statsYirTopNarrator;
+
+  /// No description provided for @statsYirLongestFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Longest finished'**
+  String get statsYirLongestFinished;
+
+  /// No description provided for @removeFromNowPlaying.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Now Playing'**
+  String get removeFromNowPlaying;
+
+  /// No description provided for @speedPresetsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap + to save the current speed as a preset. Long-press a preset to remove it.'**
+  String get speedPresetsHint;
+
+  /// No description provided for @monthShortJan.
+  ///
+  /// In en, this message translates to:
+  /// **'Jan'**
+  String get monthShortJan;
+
+  /// No description provided for @monthShortFeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Feb'**
+  String get monthShortFeb;
+
+  /// No description provided for @monthShortMar.
+  ///
+  /// In en, this message translates to:
+  /// **'Mar'**
+  String get monthShortMar;
+
+  /// No description provided for @monthShortApr.
+  ///
+  /// In en, this message translates to:
+  /// **'Apr'**
+  String get monthShortApr;
+
+  /// No description provided for @monthShortMay.
+  ///
+  /// In en, this message translates to:
+  /// **'May'**
+  String get monthShortMay;
+
+  /// No description provided for @monthShortJun.
+  ///
+  /// In en, this message translates to:
+  /// **'Jun'**
+  String get monthShortJun;
+
+  /// No description provided for @monthShortJul.
+  ///
+  /// In en, this message translates to:
+  /// **'Jul'**
+  String get monthShortJul;
+
+  /// No description provided for @monthShortAug.
+  ///
+  /// In en, this message translates to:
+  /// **'Aug'**
+  String get monthShortAug;
+
+  /// No description provided for @monthShortSep.
+  ///
+  /// In en, this message translates to:
+  /// **'Sep'**
+  String get monthShortSep;
+
+  /// No description provided for @monthShortOct.
+  ///
+  /// In en, this message translates to:
+  /// **'Oct'**
+  String get monthShortOct;
+
+  /// No description provided for @monthShortNov.
+  ///
+  /// In en, this message translates to:
+  /// **'Nov'**
+  String get monthShortNov;
+
+  /// No description provided for @monthShortDec.
+  ///
+  /// In en, this message translates to:
+  /// **'Dec'**
+  String get monthShortDec;
+
+  /// No description provided for @monthFullJan.
+  ///
+  /// In en, this message translates to:
+  /// **'January'**
+  String get monthFullJan;
+
+  /// No description provided for @monthFullFeb.
+  ///
+  /// In en, this message translates to:
+  /// **'February'**
+  String get monthFullFeb;
+
+  /// No description provided for @monthFullMar.
+  ///
+  /// In en, this message translates to:
+  /// **'March'**
+  String get monthFullMar;
+
+  /// No description provided for @monthFullApr.
+  ///
+  /// In en, this message translates to:
+  /// **'April'**
+  String get monthFullApr;
+
+  /// No description provided for @monthFullMay.
+  ///
+  /// In en, this message translates to:
+  /// **'May'**
+  String get monthFullMay;
+
+  /// No description provided for @monthFullJun.
+  ///
+  /// In en, this message translates to:
+  /// **'June'**
+  String get monthFullJun;
+
+  /// No description provided for @monthFullJul.
+  ///
+  /// In en, this message translates to:
+  /// **'July'**
+  String get monthFullJul;
+
+  /// No description provided for @monthFullAug.
+  ///
+  /// In en, this message translates to:
+  /// **'August'**
+  String get monthFullAug;
+
+  /// No description provided for @monthFullSep.
+  ///
+  /// In en, this message translates to:
+  /// **'September'**
+  String get monthFullSep;
+
+  /// No description provided for @monthFullOct.
+  ///
+  /// In en, this message translates to:
+  /// **'October'**
+  String get monthFullOct;
+
+  /// No description provided for @monthFullNov.
+  ///
+  /// In en, this message translates to:
+  /// **'November'**
+  String get monthFullNov;
+
+  /// No description provided for @monthFullDec.
+  ///
+  /// In en, this message translates to:
+  /// **'December'**
+  String get monthFullDec;
+
+  /// No description provided for @wordingClassicTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Classic wording'**
+  String get wordingClassicTitle;
+
+  /// No description provided for @wordingClassicOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Using \"Play\", \"Now Playing\", \"Finished\"'**
+  String get wordingClassicOnSubtitle;
+
+  /// No description provided for @wordingClassicOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Using \"Absorb\", \"Absorbing\", \"Fully Absorbed\"'**
+  String get wordingClassicOffSubtitle;
+
+  /// No description provided for @rotationLockTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock rotation'**
+  String get rotationLockTitle;
+
+  /// No description provided for @rotationLockOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen stays in portrait'**
+  String get rotationLockOnSubtitle;
+
+  /// No description provided for @rotationLockOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen can rotate with the device'**
+  String get rotationLockOffSubtitle;
+
+  /// No description provided for @duckTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Duck brief interruptions'**
+  String get duckTitle;
+
+  /// No description provided for @duckOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications and prompts lower the volume instead of pausing'**
+  String get duckOnSubtitle;
+
+  /// No description provided for @duckOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications and prompts pause playback'**
+  String get duckOffSubtitle;
+
+  /// No description provided for @autoSeriesDownloadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-download series'**
+  String get autoSeriesDownloadTitle;
+
+  /// No description provided for @autoSeriesDownloadOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting a book in a series keeps the next books downloaded'**
+  String get autoSeriesDownloadOnSubtitle;
+
+  /// No description provided for @autoSeriesDownloadOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on series downloads yourself from the series menu'**
+  String get autoSeriesDownloadOffSubtitle;
+
+  /// No description provided for @serverLogsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No server logs yet'**
+  String get serverLogsEmpty;
+
+  /// No description provided for @serverLogsNoMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No logs match'**
+  String get serverLogsNoMatch;
+
+  /// No description provided for @serverLogsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the server logs'**
+  String get serverLogsLoadFailed;
 
   /// No description provided for @ebookDownload.
   ///

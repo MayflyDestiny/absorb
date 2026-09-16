@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -1612,6 +1611,35 @@ class AppLocalizationsEs extends AppLocalizations {
   String get longSkipForward => 'Long skip forward';
 
   @override
+  String get chapterSkipTitle => 'Skip chapter intro/outro';
+
+  @override
+  String chapterSkipOnSubtitleFormat(String intro, String outro) {
+    return 'On - skip ${intro}s intro, ${outro}s outro';
+  }
+
+  @override
+  String get chapterSkipOffSubtitle => 'Off - play chapters normally';
+
+  @override
+  String get chapterSkipIntro => 'Skip intro (seconds)';
+
+  @override
+  String get chapterSkipOutro => 'Skip outro (seconds)';
+
+  @override
+  String get chapterSkipShort => 'Skip intro/outro';
+
+  @override
+  String get chapterSkipSheetTitle => 'Chapter skip';
+
+  @override
+  String get chapterSkipPerBookSubtitle => 'Remembered for this book';
+
+  @override
+  String get chapterSkipEnabled => 'Skip intros and outros';
+
+  @override
   String get coverShapeDefault => 'Default';
 
   @override
@@ -1742,11 +1770,11 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String get chapterBarrier => 'Chapter barrier';
+  String get chapterBarrier => 'Auto-rewind stays within the chapter';
 
   @override
   String get chapterBarrierSubtitle =>
-      'Don\'t auto-rewind past the start of the current chapter';
+      'Auto-rewind (resume / new session) stops at the current chapter start instead of entering the previous chapter.';
 
   @override
   String get rewindInstant => 'Instant';
@@ -2565,7 +2593,8 @@ class AppLocalizationsEs extends AppLocalizations {
       locale: localeName,
       other:
           '$count downloads are in an old custom folder that can no longer be opened. Re-download them or dismiss this notice.',
-      one: '1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.',
+      one:
+          '1 download is in an old custom folder that can no longer be opened. Re-download it or dismiss this notice.',
     );
     return '$_temp0';
   }
@@ -3788,22 +3817,22 @@ class AppLocalizationsEs extends AppLocalizations {
   String get resetButtonGrid => 'Reset button grid';
 
   @override
-  String get chapterBarrierOnRewind => 'Chapter barrier on rewind';
+  String get chapterBarrierOnRewind => 'Skip-back stays within the chapter';
 
   @override
   String get chapterBarrierInfoTitle => 'Chapter barrier';
 
   @override
   String get chapterBarrierInfoContent =>
-      'When skipping back, the playback will snap to the start of the current chapter instead of crossing into the previous one.\n\nDouble-tap the skip back button within 2 seconds to break through the barrier.';
+      'When skipping back, the playback will snap to the start of the current chapter instead of crossing into the previous one.\n\nTo reach a previous chapter, use the previous-chapter button.';
 
   @override
   String get chapterBarrierOnRewindOnSubtitle =>
-      'On - rewind snaps to chapter start';
+      'On - skip back stops at the current chapter start instead of entering the previous chapter';
 
   @override
   String get chapterBarrierOnRewindOffSubtitle =>
-      'Off - rewind crosses chapter boundaries';
+      'Off - skip back crosses into previous chapters';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {
@@ -7995,6 +8024,168 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get readEbook => 'Read';
+
+  @override
+  String get homeTapCardToResume =>
+      'Tap a card to resume. Press and hold to see details.';
+
+  @override
+  String get libraryTabLists => 'Lists';
+
+  @override
+  String get statsYearInReview => 'Year in Review';
+
+  @override
+  String statsYirNothingYet(int year) {
+    return 'Nothing listened in $year yet';
+  }
+
+  @override
+  String get statsYirBooksFinished => 'Books finished';
+
+  @override
+  String get statsYirSessions => 'Sessions';
+
+  @override
+  String get statsYirBooksListened => 'Books listened';
+
+  @override
+  String get statsYirTopMonth => 'Top month';
+
+  @override
+  String get statsYirTopNarrator => 'Top narrator';
+
+  @override
+  String get statsYirLongestFinished => 'Longest finished';
+
+  @override
+  String get removeFromNowPlaying => 'Remove from Now Playing';
+
+  @override
+  String get speedPresetsHint =>
+      'Tap + to save the current speed as a preset. Long-press a preset to remove it.';
+
+  @override
+  String get monthShortJan => 'Jan';
+
+  @override
+  String get monthShortFeb => 'Feb';
+
+  @override
+  String get monthShortMar => 'Mar';
+
+  @override
+  String get monthShortApr => 'Apr';
+
+  @override
+  String get monthShortMay => 'May';
+
+  @override
+  String get monthShortJun => 'Jun';
+
+  @override
+  String get monthShortJul => 'Jul';
+
+  @override
+  String get monthShortAug => 'Aug';
+
+  @override
+  String get monthShortSep => 'Sep';
+
+  @override
+  String get monthShortOct => 'Oct';
+
+  @override
+  String get monthShortNov => 'Nov';
+
+  @override
+  String get monthShortDec => 'Dec';
+
+  @override
+  String get monthFullJan => 'January';
+
+  @override
+  String get monthFullFeb => 'February';
+
+  @override
+  String get monthFullMar => 'March';
+
+  @override
+  String get monthFullApr => 'April';
+
+  @override
+  String get monthFullMay => 'May';
+
+  @override
+  String get monthFullJun => 'June';
+
+  @override
+  String get monthFullJul => 'July';
+
+  @override
+  String get monthFullAug => 'August';
+
+  @override
+  String get monthFullSep => 'September';
+
+  @override
+  String get monthFullOct => 'October';
+
+  @override
+  String get monthFullNov => 'November';
+
+  @override
+  String get monthFullDec => 'December';
+
+  @override
+  String get wordingClassicTitle => 'Classic wording';
+
+  @override
+  String get wordingClassicOnSubtitle =>
+      'Using \"Play\", \"Now Playing\", \"Finished\"';
+
+  @override
+  String get wordingClassicOffSubtitle =>
+      'Using \"Absorb\", \"Absorbing\", \"Fully Absorbed\"';
+
+  @override
+  String get rotationLockTitle => 'Lock rotation';
+
+  @override
+  String get rotationLockOnSubtitle => 'Screen stays in portrait';
+
+  @override
+  String get rotationLockOffSubtitle => 'Screen can rotate with the device';
+
+  @override
+  String get duckTitle => 'Duck brief interruptions';
+
+  @override
+  String get duckOnSubtitle =>
+      'Notifications and prompts lower the volume instead of pausing';
+
+  @override
+  String get duckOffSubtitle => 'Notifications and prompts pause playback';
+
+  @override
+  String get autoSeriesDownloadTitle => 'Auto-download series';
+
+  @override
+  String get autoSeriesDownloadOnSubtitle =>
+      'Starting a book in a series keeps the next books downloaded';
+
+  @override
+  String get autoSeriesDownloadOffSubtitle =>
+      'Turn on series downloads yourself from the series menu';
+
+  @override
+  String get serverLogsEmpty => 'No server logs yet';
+
+  @override
+  String get serverLogsNoMatch => 'No logs match';
+
+  @override
+  String get serverLogsLoadFailed => 'Couldn\'t load the server logs';
 
   @override
   String get ebookDownload => 'Download';

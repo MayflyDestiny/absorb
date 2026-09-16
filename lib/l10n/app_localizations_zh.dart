@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -1567,6 +1566,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get longSkipForward => '长跳前进';
 
   @override
+  String get chapterSkipTitle => '跳过章节片头/片尾';
+
+  @override
+  String chapterSkipOnSubtitleFormat(String intro, String outro) {
+    return '已开启 - 跳过片头 ${intro}s，跳过片尾 ${outro}s';
+  }
+
+  @override
+  String get chapterSkipOffSubtitle => '已关闭 - 正常播放章节';
+
+  @override
+  String get chapterSkipIntro => '跳过片头（秒）';
+
+  @override
+  String get chapterSkipOutro => '跳过片尾（秒）';
+
+  @override
+  String get chapterSkipShort => '跳过片头/片尾';
+
+  @override
+  String get chapterSkipSheetTitle => '章节跳过';
+
+  @override
+  String get chapterSkipPerBookSubtitle => '每一本都会单独记住设置';
+
+  @override
+  String get chapterSkipEnabled => '跳过片头片尾';
+
+  @override
   String get coverShapeDefault => '默认';
 
   @override
@@ -1685,10 +1713,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get chapterBarrier => '章节边界';
+  String get chapterBarrier => '自动倒回不跨越章节';
 
   @override
-  String get chapterBarrierSubtitle => '不回退到当前章节开头之前';
+  String get chapterBarrierSubtitle => '暂停恢复或新会话倒回时，最多退到当前章节开头，不进入上一章';
 
   @override
   String get rewindInstant => '立即';
@@ -3658,20 +3686,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get resetButtonGrid => '重置按钮布局';
 
   @override
-  String get chapterBarrierOnRewind => '快退时的章节边界';
+  String get chapterBarrierOnRewind => '快退不跨越章节';
 
   @override
   String get chapterBarrierInfoTitle => '章节边界';
 
   @override
   String get chapterBarrierInfoContent =>
-      '快退时，播放将跳到当前章节的开头，而不是跨越到上一章。\n\n在 2 秒内双击快退按钮即可突破边界。';
+      '快退时，播放将跳到当前章节的开头，而不是跨越到上一章。\n\n如需回到上一章，请使用“上一章”按钮。';
 
   @override
-  String get chapterBarrierOnRewindOnSubtitle => '开启 - 快退时跳到章节开头';
+  String get chapterBarrierOnRewindOnSubtitle => '开启 - 快退最多退到当前章节开头，不进入上一章';
 
   @override
-  String get chapterBarrierOnRewindOffSubtitle => '关闭 - 快退可跨越章节边界';
+  String get chapterBarrierOnRewindOffSubtitle => '关闭 - 快退可跨越到上一章';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {
@@ -7777,6 +7805,161 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readEbook => '阅读';
+
+  @override
+  String get homeTapCardToResume => '点按卡片继续收听，长按查看详情。';
+
+  @override
+  String get libraryTabLists => '书单';
+
+  @override
+  String get statsYearInReview => '年度回顾';
+
+  @override
+  String statsYirNothingYet(int year) {
+    return '$year年还没有收听记录';
+  }
+
+  @override
+  String get statsYirBooksFinished => '听完的书';
+
+  @override
+  String get statsYirSessions => '收听次数';
+
+  @override
+  String get statsYirBooksListened => '听过的书';
+
+  @override
+  String get statsYirTopMonth => '收听最多的月份';
+
+  @override
+  String get statsYirTopNarrator => '收听最多的朗读者';
+
+  @override
+  String get statsYirLongestFinished => '听完最长的书';
+
+  @override
+  String get removeFromNowPlaying => '从正在收听中移除';
+
+  @override
+  String get speedPresetsHint => '点按 + 可将当前速度存为预设，长按预设可删除。';
+
+  @override
+  String get monthShortJan => '1月';
+
+  @override
+  String get monthShortFeb => '2月';
+
+  @override
+  String get monthShortMar => '3月';
+
+  @override
+  String get monthShortApr => '4月';
+
+  @override
+  String get monthShortMay => '5月';
+
+  @override
+  String get monthShortJun => '6月';
+
+  @override
+  String get monthShortJul => '7月';
+
+  @override
+  String get monthShortAug => '8月';
+
+  @override
+  String get monthShortSep => '9月';
+
+  @override
+  String get monthShortOct => '10月';
+
+  @override
+  String get monthShortNov => '11月';
+
+  @override
+  String get monthShortDec => '12月';
+
+  @override
+  String get monthFullJan => '1月';
+
+  @override
+  String get monthFullFeb => '2月';
+
+  @override
+  String get monthFullMar => '3月';
+
+  @override
+  String get monthFullApr => '4月';
+
+  @override
+  String get monthFullMay => '5月';
+
+  @override
+  String get monthFullJun => '6月';
+
+  @override
+  String get monthFullJul => '7月';
+
+  @override
+  String get monthFullAug => '8月';
+
+  @override
+  String get monthFullSep => '9月';
+
+  @override
+  String get monthFullOct => '10月';
+
+  @override
+  String get monthFullNov => '11月';
+
+  @override
+  String get monthFullDec => '12月';
+
+  @override
+  String get wordingClassicTitle => '经典用语';
+
+  @override
+  String get wordingClassicOnSubtitle => '使用\"播放\"、\"正在播放\"、\"已完成\"';
+
+  @override
+  String get wordingClassicOffSubtitle => '使用\"收听\"、\"正在收听\"、\"已完全收听\"';
+
+  @override
+  String get rotationLockTitle => '锁定屏幕旋转';
+
+  @override
+  String get rotationLockOnSubtitle => '屏幕保持竖屏';
+
+  @override
+  String get rotationLockOffSubtitle => '屏幕可随设备旋转';
+
+  @override
+  String get duckTitle => '短暂中断时降低音量';
+
+  @override
+  String get duckOnSubtitle => '收到通知或提示时降低音量而非暂停';
+
+  @override
+  String get duckOffSubtitle => '收到通知或提示时暂停播放';
+
+  @override
+  String get autoSeriesDownloadTitle => '自动下载系列书籍';
+
+  @override
+  String get autoSeriesDownloadOnSubtitle => '开始收听系列中的一本书时，自动保持后续书籍已下载';
+
+  @override
+  String get autoSeriesDownloadOffSubtitle => '自行在系列菜单中开启系列下载';
+
+  @override
+  String get serverLogsEmpty => '暂无服务器日志';
+
+  @override
+  String get serverLogsNoMatch => '没有匹配的日志';
+
+  @override
+  String get serverLogsLoadFailed => '无法加载服务器日志';
 
   @override
   String get ebookDownload => '下载';

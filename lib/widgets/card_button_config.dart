@@ -23,6 +23,8 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
       return l.timer;
     case 'bookmarks':
       return l.bookmarks;
+    case 'chapterskip':
+      return l.chapterSkipShort;
     case 'details':
       return l.bookDetailsLabel;
     case 'equalizer':
@@ -34,7 +36,7 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
     case 'history':
       return l.playbackHistory;
     case 'remove':
-      return classicWordingNotifier.value ? 'Remove from Now Playing' : l.removeFromAbsorbing;
+      return classicWordingNotifier.value ? l.removeFromNowPlaying : l.removeFromAbsorbing;
     case 'car':
       return l.carModeTitle;
     case 'notes':
@@ -42,7 +44,7 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
     case 'download':
       return l.download;
     case 'ebook':
-      return 'Read';
+      return l.readEbook;
     case 'findinebook':
       return l.findInEbook;
     case 'lyrics':
@@ -67,6 +69,7 @@ const _allCardButtons = [
   CardButtonDef('speed', 'Speed', Icons.speed_rounded),
   CardButtonDef('sleep', 'Timer', Icons.nightlight_round_outlined),
   CardButtonDef('bookmarks', 'Bookmarks', Icons.bookmark_outline_rounded),
+  CardButtonDef('chapterskip', 'Skip Intro/Outro', Icons.skip_next_rounded),
   CardButtonDef('details', 'Book Details', Icons.info_outline_rounded),
   CardButtonDef('equalizer', 'Equalizer', Icons.equalizer_rounded),
   CardButtonDef('cast', 'Cast to Device', Icons.cast_rounded),

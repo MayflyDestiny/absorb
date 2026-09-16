@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import 'absorbing_shared.dart';
 
 /// One day of listening for the stats charts.
 class ChartDay {
@@ -239,6 +241,7 @@ class StatsHeatmap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     final today = DateTime.now();
     final monday = DateTime(today.year, today.month, today.day)
         .subtract(Duration(days: today.weekday - 1));
@@ -269,7 +272,7 @@ class StatsHeatmap extends StatelessWidget {
       final date = start.add(Duration(days: w * 7));
       if (date.month != lastMonth) {
         lastMonth = date.month;
-        monthLabels[w] = _monthShort(date.month);
+        monthLabels[w] = monthShortName(l, date.month);
       }
     }
 
@@ -362,11 +365,7 @@ class StatsHeatmap extends StatelessWidget {
     ]);
   }
 
-  static String _monthShort(int month) {
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return names[month - 1];
   }
-}
 
 class _HeatmapPainter extends CustomPainter {
   final List<List<double>> levels;

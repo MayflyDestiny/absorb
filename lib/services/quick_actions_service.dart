@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:quick_actions/quick_actions.dart';
 
+import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import '../screens/app_shell.dart';
 import '../screens/bookmarks_screen.dart';
@@ -67,32 +69,61 @@ class QuickActionsService {
     // calling it here would replace our nice system icons with nothing.
     if (!Platform.isAndroid) return;
 
+    await _setShortcutItems();
+  }
+
+  /// Re-pushes the Android app-icon shortcuts after the app language changes
+  /// so the labels translate without requiring an app restart.
+  Future<void> refreshShortcuts() async {
+    if (!_initialised || !Platform.isAndroid) return;
+    await _setShortcutItems();
+  }
+
+  Future<void> _setShortcutItems() async {
+    final l = await _localizations();
     try {
-      await _quickActions.setShortcutItems(const <ShortcutItem>[
+      await _quickActions.setShortcutItems(<ShortcutItem>[
         ShortcutItem(
           type: _typeContinue,
-          localizedTitle: 'Play',
+          localizedTitle: l.cardChaptersPlay,
           icon: 'ic_shortcut_continue',
         ),
         ShortcutItem(
           type: _typeDownloads,
-          localizedTitle: 'Downloads',
+          localizedTitle: l.downloads,
           icon: 'ic_shortcut_downloads',
         ),
         ShortcutItem(
           type: _typeSearch,
-          localizedTitle: 'Search',
+          localizedTitle: l.search,
           icon: 'ic_shortcut_search',
         ),
         ShortcutItem(
           type: _typeBookmarks,
-          localizedTitle: 'Bookmarks',
+          localizedTitle: l.bookmarks,
           icon: 'ic_shortcut_bookmarks',
         ),
       ]);
     } catch (e) {
       debugPrint('[QuickActions] setShortcutItems failed: $e');
     }
+  }
+
+  /// Resolves the app's active language the same way the Material
+  /// localeResolutionCallback does (saved override, otherwise the device
+  /// locale, matched against supported locales) without needing a
+  /// BuildContext, then returns its translation bundle.
+  Future<AppLocalizations> _localizations() async {
+    final saved = await PlayerSettings.getLanguage();
+    final locale = saved.isNotEmpty
+        ? Locale(saved)
+        : ui.PlatformDispatcher.instance.locale;
+    for (final supported in AppLocalizations.supportedLocales) {
+      if (supported.languageCode == locale.languageCode) {
+        return lookupAppLocalizations(supported);
+      }
+    }
+    return lookupAppLocalizations(const Locale('en'));
   }
 
   Future<void> _handleContinue() async {

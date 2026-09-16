@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -1634,6 +1633,35 @@ class AppLocalizationsFr extends AppLocalizations {
   String get longSkipForward => 'Saut vers l\'avant long';
 
   @override
+  String get chapterSkipTitle => 'Skip chapter intro/outro';
+
+  @override
+  String chapterSkipOnSubtitleFormat(String intro, String outro) {
+    return 'On - skip ${intro}s intro, ${outro}s outro';
+  }
+
+  @override
+  String get chapterSkipOffSubtitle => 'Off - play chapters normally';
+
+  @override
+  String get chapterSkipIntro => 'Skip intro (seconds)';
+
+  @override
+  String get chapterSkipOutro => 'Skip outro (seconds)';
+
+  @override
+  String get chapterSkipShort => 'Skip intro/outro';
+
+  @override
+  String get chapterSkipSheetTitle => 'Chapter skip';
+
+  @override
+  String get chapterSkipPerBookSubtitle => 'Remembered for this book';
+
+  @override
+  String get chapterSkipEnabled => 'Skip intros and outros';
+
+  @override
   String get coverShapeDefault => 'Défaut';
 
   @override
@@ -1766,11 +1794,11 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String get chapterBarrier => 'Barrière de chapitre';
+  String get chapterBarrier => 'Ne pas rembobiner au-delà du chapitre';
 
   @override
   String get chapterBarrierSubtitle =>
-      'Ne pas rembobiner automatiquement après le début du chapitre en cours';
+      'Lors de l\'auto-rewind (reprise / nouvelle session), la lecture s\'arrête au début du chapitre actuel au lieu de passer au précédent.';
 
   @override
   String get rewindInstant => 'Instantané';
@@ -2610,7 +2638,8 @@ class AppLocalizationsFr extends AppLocalizations {
       locale: localeName,
       other:
           '$count téléchargements se trouvent dans un ancien dossier personnalisé qui ne peut plus être ouvert. Téléchargez-les à nouveau ou ignorez cette notification.',
-      one: '1 téléchargement se trouve dans un ancien dossier personnalisé qui ne peut plus être ouvert. Téléchargez-le à nouveau ou ignorez cette notification.',
+      one:
+          '1 téléchargement se trouve dans un ancien dossier personnalisé qui ne peut plus être ouvert. Téléchargez-le à nouveau ou ignorez cette notification.',
     );
     return '$_temp0';
   }
@@ -3837,22 +3866,22 @@ class AppLocalizationsFr extends AppLocalizations {
   String get resetButtonGrid => 'Réinitialiser la grille de boutons';
 
   @override
-  String get chapterBarrierOnRewind => 'Chapter barrier on rewind';
+  String get chapterBarrierOnRewind => 'Skip-back stays within the chapter';
 
   @override
   String get chapterBarrierInfoTitle => 'Barrière de chapitre';
 
   @override
   String get chapterBarrierInfoContent =>
-      'Lorsque vous sautez en arrière, la lecture s\'accroche au début du chapitre actuel au lieu de passer au précédent.\n\nAppuyez deux fois sur le bouton retour en arrière en 2 secondes pour franchir la barrière.';
+      'Lorsque vous sautez en arrière, la lecture s\'accroche au début du chapitre actuel au lieu de passer au précédent.\n\nPour atteindre un chapitre précédent, utilisez le bouton de chapitre précédent.';
 
   @override
   String get chapterBarrierOnRewindOnSubtitle =>
-      'On - rewind snaps to chapter start';
+      'On - skip back stops at the current chapter start instead of entering the previous chapter';
 
   @override
   String get chapterBarrierOnRewindOffSubtitle =>
-      'Off - rewind crosses chapter boundaries';
+      'Off - skip back crosses into previous chapters';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {
@@ -8044,6 +8073,170 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get readEbook => 'Lu';
+
+  @override
+  String get homeTapCardToResume =>
+      'Touchez une carte pour reprendre. Appui long pour les détails.';
+
+  @override
+  String get libraryTabLists => 'Listes';
+
+  @override
+  String get statsYearInReview => 'Bilan de l\'année';
+
+  @override
+  String statsYirNothingYet(int year) {
+    return 'Rien d\'écouté en $year';
+  }
+
+  @override
+  String get statsYirBooksFinished => 'Livres terminés';
+
+  @override
+  String get statsYirSessions => 'Sessions';
+
+  @override
+  String get statsYirBooksListened => 'Livres écoutés';
+
+  @override
+  String get statsYirTopMonth => 'Mois préféré';
+
+  @override
+  String get statsYirTopNarrator => 'Narrateur préféré';
+
+  @override
+  String get statsYirLongestFinished => 'Le plus long terminé';
+
+  @override
+  String get removeFromNowPlaying => 'Retirer de « En cours d\'écoute »';
+
+  @override
+  String get speedPresetsHint =>
+      'Appuyez sur + pour enregistrer la vitesse actuelle. Appui long pour supprimer un préréglage.';
+
+  @override
+  String get monthShortJan => 'janv.';
+
+  @override
+  String get monthShortFeb => 'févr.';
+
+  @override
+  String get monthShortMar => 'mars';
+
+  @override
+  String get monthShortApr => 'avr.';
+
+  @override
+  String get monthShortMay => 'mai';
+
+  @override
+  String get monthShortJun => 'juin';
+
+  @override
+  String get monthShortJul => 'juil.';
+
+  @override
+  String get monthShortAug => 'août';
+
+  @override
+  String get monthShortSep => 'sept.';
+
+  @override
+  String get monthShortOct => 'oct.';
+
+  @override
+  String get monthShortNov => 'nov.';
+
+  @override
+  String get monthShortDec => 'déc.';
+
+  @override
+  String get monthFullJan => 'janvier';
+
+  @override
+  String get monthFullFeb => 'février';
+
+  @override
+  String get monthFullMar => 'mars';
+
+  @override
+  String get monthFullApr => 'avril';
+
+  @override
+  String get monthFullMay => 'mai';
+
+  @override
+  String get monthFullJun => 'juin';
+
+  @override
+  String get monthFullJul => 'juillet';
+
+  @override
+  String get monthFullAug => 'août';
+
+  @override
+  String get monthFullSep => 'septembre';
+
+  @override
+  String get monthFullOct => 'octobre';
+
+  @override
+  String get monthFullNov => 'novembre';
+
+  @override
+  String get monthFullDec => 'décembre';
+
+  @override
+  String get wordingClassicTitle => 'Termes classiques';
+
+  @override
+  String get wordingClassicOnSubtitle =>
+      'Utilisation de « Lecture », « En cours de lecture », « Terminé »';
+
+  @override
+  String get wordingClassicOffSubtitle =>
+      'Utilisation de « Écouter », « En cours d\'écoute », « Entièrement écouté »';
+
+  @override
+  String get rotationLockTitle => 'Verrouiller la rotation';
+
+  @override
+  String get rotationLockOnSubtitle => 'L\'écran reste en portrait';
+
+  @override
+  String get rotationLockOffSubtitle =>
+      'L\'écran peut pivoter avec l\'appareil';
+
+  @override
+  String get duckTitle => 'Réduire le volume lors des interruptions';
+
+  @override
+  String get duckOnSubtitle =>
+      'Les notifications réduisent le volume au lieu de mettre en pause';
+
+  @override
+  String get duckOffSubtitle => 'Les notifications mettent la lecture en pause';
+
+  @override
+  String get autoSeriesDownloadTitle => 'Téléchargement auto des séries';
+
+  @override
+  String get autoSeriesDownloadOnSubtitle =>
+      'Démarrer un livre d\'une série maintient les livres suivants téléchargés';
+
+  @override
+  String get autoSeriesDownloadOffSubtitle =>
+      'Activez les téléchargements de série depuis le menu de la série';
+
+  @override
+  String get serverLogsEmpty => 'Pas encore de journaux serveur';
+
+  @override
+  String get serverLogsNoMatch => 'Aucun journal correspondant';
+
+  @override
+  String get serverLogsLoadFailed =>
+      'Impossible de charger les journaux serveur';
 
   @override
   String get ebookDownload => 'Télécharger';

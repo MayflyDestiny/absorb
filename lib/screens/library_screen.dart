@@ -3178,7 +3178,7 @@ class LibraryScreenState extends State<LibraryScreen>
       l.libraryTabSeries,
       l.libraryTabAuthors,
       l.libraryTabNarrators,
-      'Lists',
+      l.libraryTabLists,
     ];
     return Center(
       child: Padding(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/app_localizations.dart';
 
 /// Small, dismissible in-context tip. Used for progressive feature discovery
 /// (e.g. "Tap a card to resume, hold for details"). Each instance is gated on
@@ -73,6 +74,7 @@ class _FeatureHintState extends State<FeatureHint> {
   @override
   Widget build(BuildContext context) {
     if (_dismissed != false) return const SizedBox.shrink();
+    final l = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     return Padding(
@@ -104,7 +106,7 @@ class _FeatureHintState extends State<FeatureHint> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               visualDensity: VisualDensity.compact,
-              tooltip: 'Dismiss',
+              tooltip: l.dismiss,
               onPressed: _dismiss,
             ),
           ],

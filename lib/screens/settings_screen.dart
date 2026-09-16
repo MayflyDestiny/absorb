@@ -15,6 +15,7 @@ import '../services/episode_notification_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
 import '../services/log_service.dart';
+import '../services/quick_actions_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/socket_service.dart';
 import '../screens/login_screen.dart';
@@ -103,6 +104,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _longSkipButtons = false;
   int _longForwardSkip = 60;
   int _longBackSkip = 60;
+
   String _shakeMode = 'addTime';
   int _sleepRewindSeconds = 0;
   static const _maxRewindMinutes = 120;
@@ -744,7 +746,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'heatmap': return l.statsChartHeatmap;
       case 'dayofweek': return l.statsDayOfWeek;
       case 'top': return l.statsMostListened;
-      case 'yearreview': return 'Year in Review';
+      case 'yearreview': return l.statsYearInReview;
     }
     return id;
   }
@@ -1041,6 +1043,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     final duckBriefInterruptions = await PlayerSettings.getDuckBriefInterruptions();
     final autoplayOnCarConnect = await PlayerSettings.getAutoplayOnCarConnect();
+
+    // Chapter skip settings
     if (mounted) setState(() {
       _podcastTabEnabled = podcastTabEnabled;
       _podcastTabLibraryId = podcastTabLibraryId;
@@ -1390,6 +1394,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _language = picked);
     await PlayerSettings.setLanguage(picked);
     localeNotifier.value = picked.isEmpty ? null : Locale(picked);
+    await QuickActionsService().refreshShortcuts();
   }
 
   IconData _autoDownloadSourceIcon(String? kind) {
@@ -2078,11 +2083,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
-                      title: const Text('Classic wording'),
+                      title: Text(l.wordingClassicTitle),
                       subtitle: Text(
                         _classicWording
-                            ? 'Using "Play", "Now Playing", "Finished"'
-                            : 'Using "Absorb", "Absorbing", "Fully Absorbed"',
+                            ? l.wordingClassicOnSubtitle
+                            : l.wordingClassicOffSubtitle,
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _classicWording,
                       onChanged: _loaded ? (v) {
@@ -2096,11 +2101,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (!(Platform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600)) ...[
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
-                        title: const Text('Lock rotation'),
+                        title: Text(l.rotationLockTitle),
                         subtitle: Text(
                           _lockPortrait
-                              ? 'Screen stays in portrait'
-                              : 'Screen can rotate with the device',
+                              ? l.rotationLockOnSubtitle
+                              : l.rotationLockOffSubtitle,
                           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                         value: _lockPortrait,
                         onChanged: _loaded ? (v) {
@@ -3011,11 +3016,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (Platform.isAndroid) ...[
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
-                        title: const Text('Duck brief interruptions'),
+                        title: Text(l.duckTitle),
                         subtitle: Text(
                           _duckBriefInterruptions
-                              ? 'Notifications and prompts lower the volume instead of pausing'
-                              : 'Notifications and prompts pause playback',
+                              ? l.duckOnSubtitle
+                              : l.duckOffSubtitle,
                           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                         value: _duckBriefInterruptions,
                         onChanged: _loaded ? (v) {
@@ -3446,11 +3451,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
-                      title: const Text('Auto-download series'),
+                      title: Text(l.autoSeriesDownloadTitle),
                       subtitle: Text(
                         _autoSeriesDownloadDefault
-                            ? 'Starting a book in a series keeps the next books downloaded'
-                            : 'Turn on series downloads yourself from the series menu',
+                            ? l.autoSeriesDownloadOnSubtitle
+                            : l.autoSeriesDownloadOffSubtitle,
                         style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                       value: _autoSeriesDownloadDefault,
                       onChanged: _loaded ? (v) {

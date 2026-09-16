@@ -443,6 +443,17 @@ public class AudioService extends MediaBrowserServiceCompat {
         return START_NOT_STICKY;
     }
 
+    /** Called by MediaButtonReceiver to bypass the platform dispatch chain. */
+    public void dispatchBypassKey(int keyCode) {
+        if (mediaSessionCallback == null) return;
+        if (keyCode == KEYCODE_BYPASS_PLAY) {
+            AudioService.lastPlayFromHandset = true;
+            mediaSessionCallback.onPlay();
+        } else if (keyCode == KEYCODE_BYPASS_PAUSE) {
+            mediaSessionCallback.onPause();
+        }
+    }
+
     public void stop() {
         deactivateMediaSession();
         stopSelf();

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/cover_accent.dart';
+import '../utils/series_id.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -1180,6 +1181,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
       libraryId: _resolveLibraryId(),
+      seriesId: seriesIdFromItem(_item),
       fromUi: true,
     );
     if (mounted) {

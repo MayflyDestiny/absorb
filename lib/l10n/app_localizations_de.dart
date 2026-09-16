@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -1629,6 +1628,35 @@ class AppLocalizationsDe extends AppLocalizations {
   String get longSkipForward => 'Langes Vorwärtsspringen';
 
   @override
+  String get chapterSkipTitle => 'Skip chapter intro/outro';
+
+  @override
+  String chapterSkipOnSubtitleFormat(String intro, String outro) {
+    return 'On - skip ${intro}s intro, ${outro}s outro';
+  }
+
+  @override
+  String get chapterSkipOffSubtitle => 'Off - play chapters normally';
+
+  @override
+  String get chapterSkipIntro => 'Skip intro (seconds)';
+
+  @override
+  String get chapterSkipOutro => 'Skip outro (seconds)';
+
+  @override
+  String get chapterSkipShort => 'Skip intro/outro';
+
+  @override
+  String get chapterSkipSheetTitle => 'Chapter skip';
+
+  @override
+  String get chapterSkipPerBookSubtitle => 'Remembered for this book';
+
+  @override
+  String get chapterSkipEnabled => 'Skip intros and outros';
+
+  @override
   String get coverShapeDefault => 'Standard';
 
   @override
@@ -1761,11 +1789,11 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get chapterBarrier => 'Kapitelgrenze';
+  String get chapterBarrier => 'Auto-Zurückspulen im Kapitel bleiben';
 
   @override
   String get chapterBarrierSubtitle =>
-      'Nicht über den Anfang des aktuellen Kapitels hinaus zurückspulen';
+      'Beim Auto-Zurückspulen (Fortsetzen / neue Sitzung) wird am Anfang des aktuellen Kapitels gestoppt, statt ins vorherige zu wechseln.';
 
   @override
   String get rewindInstant => 'Sofort';
@@ -2600,7 +2628,8 @@ class AppLocalizationsDe extends AppLocalizations {
       locale: localeName,
       other:
           '$count Downloads liegen in einem alten benutzerdefinierten Ordner, der nicht mehr geöffnet werden kann. Lade die Dateien erneut herunter oder schließe diese Mitteilung.',
-      one: '1 Download liegt in einem alten benutzerdefinierten Ordner, der nicht mehr geöffnet werden kann. Lade ihn erneut herunter oder schließe diese Mitteilung.',
+      one:
+          '1 Download liegt in einem alten benutzerdefinierten Ordner, der nicht mehr geöffnet werden kann. Lade ihn erneut herunter oder schließe diese Mitteilung.',
     );
     return '$_temp0';
   }
@@ -3840,22 +3869,22 @@ class AppLocalizationsDe extends AppLocalizations {
   String get resetButtonGrid => 'Button-Raster zurücksetzen';
 
   @override
-  String get chapterBarrierOnRewind => 'Kapitelgrenze beim Zurückspulen';
+  String get chapterBarrierOnRewind => 'Zurückspulen im Kapitel bleiben';
 
   @override
   String get chapterBarrierInfoTitle => 'Kapitelgrenze';
 
   @override
   String get chapterBarrierInfoContent =>
-      'Beim Zurückspulen springt die Wiedergabe an den Anfang des aktuellen Kapitels, statt ins vorherige zu wechseln.\n\nTippe innerhalb von 2 Sekunden zweimal auf den Zurückspulen-Button, um die Grenze zu durchbrechen.';
+      'Beim Zurückspulen springt die Wiedergabe an den Anfang des aktuellen Kapitels, statt ins vorherige zu wechseln.\n\nUm ein vorheriges Kapitel zu erreichen, verwende die Schaltfläche „Vorheriges Kapitel“.';
 
   @override
   String get chapterBarrierOnRewindOnSubtitle =>
-      'An - Zurückspulen springt zum Kapitelanfang';
+      'An - Zurückspulen stoppt am Anfang des aktuellen Kapitels, statt ins vorherige zu wechseln';
 
   @override
   String get chapterBarrierOnRewindOffSubtitle =>
-      'Aus - Zurückspulen überschreitet Kapitelgrenzen';
+      'Aus - Zurückspulen überschreitet in vorherige Kapitel';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {
@@ -5298,7 +5327,8 @@ class AppLocalizationsDe extends AppLocalizations {
       locale: localeName,
       other:
           'Damit wird der Beendet-Status für alle $count Bücher dieser Serie zurückgesetzt.',
-      one: 'Damit wird der Beendet-Status für 1 Buch dieser Serie zurückgesetzt.',
+      one:
+          'Damit wird der Beendet-Status für 1 Buch dieser Serie zurückgesetzt.',
     );
     return '$_temp0';
   }
@@ -8108,6 +8138,170 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get readEbook => 'Lesen';
+
+  @override
+  String get homeTapCardToResume =>
+      'Tippe auf eine Karte, um fortzusetzen. Lang drücken für Details.';
+
+  @override
+  String get libraryTabLists => 'Listen';
+
+  @override
+  String get statsYearInReview => 'Jahresrückblick';
+
+  @override
+  String statsYirNothingYet(int year) {
+    return 'In $year noch nichts gehört';
+  }
+
+  @override
+  String get statsYirBooksFinished => 'Beendete Bücher';
+
+  @override
+  String get statsYirSessions => 'Sitzungen';
+
+  @override
+  String get statsYirBooksListened => 'Gehörte Bücher';
+
+  @override
+  String get statsYirTopMonth => 'Top-Monat';
+
+  @override
+  String get statsYirTopNarrator => 'Top-Sprecher';
+
+  @override
+  String get statsYirLongestFinished => 'Längstes beendetes Buch';
+
+  @override
+  String get removeFromNowPlaying => 'Aus „Aktuell läuft“ entfernen';
+
+  @override
+  String get speedPresetsHint =>
+      'Tippe auf +, um die aktuelle Geschwindigkeit als Vorgabe zu speichern. Tippe eine Vorgabe lange an, um sie zu entfernen.';
+
+  @override
+  String get monthShortJan => 'Jan';
+
+  @override
+  String get monthShortFeb => 'Feb';
+
+  @override
+  String get monthShortMar => 'Mär';
+
+  @override
+  String get monthShortApr => 'Apr';
+
+  @override
+  String get monthShortMay => 'Mai';
+
+  @override
+  String get monthShortJun => 'Jun';
+
+  @override
+  String get monthShortJul => 'Jul';
+
+  @override
+  String get monthShortAug => 'Aug';
+
+  @override
+  String get monthShortSep => 'Sep';
+
+  @override
+  String get monthShortOct => 'Okt';
+
+  @override
+  String get monthShortNov => 'Nov';
+
+  @override
+  String get monthShortDec => 'Dez';
+
+  @override
+  String get monthFullJan => 'Januar';
+
+  @override
+  String get monthFullFeb => 'Februar';
+
+  @override
+  String get monthFullMar => 'März';
+
+  @override
+  String get monthFullApr => 'April';
+
+  @override
+  String get monthFullMay => 'Mai';
+
+  @override
+  String get monthFullJun => 'Juni';
+
+  @override
+  String get monthFullJul => 'Juli';
+
+  @override
+  String get monthFullAug => 'August';
+
+  @override
+  String get monthFullSep => 'September';
+
+  @override
+  String get monthFullOct => 'Oktober';
+
+  @override
+  String get monthFullNov => 'November';
+
+  @override
+  String get monthFullDec => 'Dezember';
+
+  @override
+  String get wordingClassicTitle => 'Klassische Begriffe';
+
+  @override
+  String get wordingClassicOnSubtitle =>
+      'Verwendung von „Wiedergeben“, „Jetzt läuft“, „Beendet“';
+
+  @override
+  String get wordingClassicOffSubtitle =>
+      'Verwendung von „Hören“, „Wird gehört“, „Vollständig gehört“';
+
+  @override
+  String get rotationLockTitle => 'Rotation sperren';
+
+  @override
+  String get rotationLockOnSubtitle => 'Bildschirm bleibt im Hochformat';
+
+  @override
+  String get rotationLockOffSubtitle =>
+      'Bildschirm kann mit dem Gerät rotieren';
+
+  @override
+  String get duckTitle => 'Bei kurzen Unterbrechungen leiser stellen';
+
+  @override
+  String get duckOnSubtitle =>
+      'Benachrichtigungen und Hinweise senken die Lautstärke statt zu pausieren';
+
+  @override
+  String get duckOffSubtitle =>
+      'Benachrichtigungen und Hinweise pausieren die Wiedergabe';
+
+  @override
+  String get autoSeriesDownloadTitle => 'Serien automatisch herunterladen';
+
+  @override
+  String get autoSeriesDownloadOnSubtitle =>
+      'Beim Starten eines Buchs einer Serie bleiben die nächsten Bücher heruntergeladen';
+
+  @override
+  String get autoSeriesDownloadOffSubtitle =>
+      'Serien-Downloads selbst über das Serienmenü aktivieren';
+
+  @override
+  String get serverLogsEmpty => 'Noch keine Server-Logs';
+
+  @override
+  String get serverLogsNoMatch => 'Keine passenden Logs';
+
+  @override
+  String get serverLogsLoadFailed => 'Server-Logs konnten nicht geladen werden';
 
   @override
   String get ebookDownload => 'Herunterladen';

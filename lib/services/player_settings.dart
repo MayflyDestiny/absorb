@@ -54,6 +54,47 @@ class AutoRewindSettings {
   }
 }
 
+// ─── Chapter skip (intro/outro) settings ───
+
+class ChapterSkipSettings {
+  final bool enabled;
+  final int introSkipSeconds;
+  final int outroSkipSeconds;
+
+  const ChapterSkipSettings({
+    this.enabled = false,
+    this.introSkipSeconds = 0,
+    this.outroSkipSeconds = 0,
+  });
+
+  /// Per-item (book/episode) settings - each item remembers its own
+  /// intro/outro skip config. The storage key is the same compound
+  /// `itemId` / `itemId-episodeId` key used for progress and bookmarks.
+  static Future<ChapterSkipSettings> loadForItem(String key) async {
+    final enabled = await ScopedPrefs.getBool('chapterSkip_enabled_$key');
+    if (enabled == null) return const ChapterSkipSettings();
+    return ChapterSkipSettings(
+      enabled: enabled,
+      introSkipSeconds: await ScopedPrefs.getInt('chapterSkip_intro_$key') ?? 0,
+      outroSkipSeconds: await ScopedPrefs.getInt('chapterSkip_outro_$key') ?? 0,
+    );
+  }
+
+  static Future<void> saveForItem(String key, ChapterSkipSettings settings) async {
+    await ScopedPrefs.setBool('chapterSkip_enabled_$key', settings.enabled);
+    await ScopedPrefs.setInt('chapterSkip_intro_$key', settings.introSkipSeconds);
+    await ScopedPrefs.setInt('chapterSkip_outro_$key', settings.outroSkipSeconds);
+    PlayerSettings.notifySettingsChanged();
+  }
+
+  static Future<void> clearForItem(String key) async {
+    await ScopedPrefs.remove('chapterSkip_enabled_$key');
+    await ScopedPrefs.remove('chapterSkip_intro_$key');
+    await ScopedPrefs.remove('chapterSkip_outro_$key');
+    PlayerSettings.notifySettingsChanged();
+  }
+}
+
 enum CardScrubberMode { both, chapter, locked }
 
 extension CardScrubberModeBehavior on CardScrubberMode {
@@ -1192,7 +1233,7 @@ class PlayerSettings {
 
   // ── Card button order ──
 
-  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'details', 'ebook', 'findinebook', 'lyrics', 'equalizer', 'cast', 'airplay', 'history', 'remove', 'car', 'notes', 'download'];
+  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'chapterskip', 'details', 'ebook', 'findinebook', 'lyrics', 'equalizer', 'cast', 'airplay', 'history', 'remove', 'car', 'notes', 'download'];
 
   static Future<List<String>> getCardButtonOrder() async {
     final stored = await ScopedPrefs.getStringList('card_button_order');

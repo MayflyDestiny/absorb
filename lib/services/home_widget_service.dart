@@ -15,6 +15,7 @@ import 'download_service.dart';
 import 'scoped_prefs.dart';
 import 'user_account_service.dart';
 import 'wear_player_service.dart';
+import '../utils/series_id.dart';
 
 const String _androidWidgetName = 'NowPlayingWidget';
 const String _androidWidgetCompactName = 'NowPlayingWidgetCompact';
@@ -407,6 +408,7 @@ class HomeWidgetService {
           episodeId: episodeId,
           episodeTitle: epTitle,
           libraryId: fullItem['libraryId'] as String?,
+          seriesId: seriesIdFromItem(fullItem),
         );
       } else {
         await player.playItem(
@@ -418,6 +420,7 @@ class HomeWidgetService {
           totalDuration: duration,
           chapters: chapters,
           libraryId: fullItem['libraryId'] as String?,
+          seriesId: seriesIdFromItem(fullItem),
         );
       }
     } catch (e) {
@@ -510,6 +513,7 @@ class HomeWidgetService {
           episodeId: episodeId,
           episodeTitle: epTitle,
           libraryId: fullItem['libraryId'] as String?,
+          seriesId: seriesIdFromItem(fullItem),
         );
       } else {
         await player.playItem(
@@ -521,6 +525,7 @@ class HomeWidgetService {
           totalDuration: duration,
           chapters: chapters,
           libraryId: fullItem['libraryId'] as String?,
+          seriesId: seriesIdFromItem(fullItem),
         );
       }
     } catch (e) {

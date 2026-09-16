@@ -12,5 +12,14 @@
       }
     }
   },
-  "loginSessionExpired": "Impostazioni ripristinate. Sessione scaduta - accedi per continuare."
+  "loginSessionExpired": "Impostazioni ripristinate. Sessione scaduta - accedi per continuare.",
+  "chapterSkipTitle": "Skip chapter intro/outro",
+  "chapterSkipOnSubtitleFormat": "On - skip {intro}s intro, {outro}s outro",
+  "chapterSkipOffSubtitle": "Off - play chapters normally",
+  "chapterSkipIntro": "Skip intro (seconds)",
+  "chapterSkipOutro": "Skip outro (seconds)",
+  "chapterSkipShort": "Skip intro/outro",
+  "chapterSkipSheetTitle": "Chapter skip",
+  "chapterSkipPerBookSubtitle": "Remembered for this book",
+  "chapterSkipEnabled": "Skip intros and outros"
 }

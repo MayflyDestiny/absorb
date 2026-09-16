@@ -6,6 +6,7 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
+import '../utils/series_id.dart';
 import 'absorbing_shared.dart';
 
 void showChaptersSheet({
@@ -127,6 +128,7 @@ void showChaptersSheet({
                       totalDuration: dur, chapters: chs,
                       startTime: start, forceStartTime: true,
                       libraryId: fullItem['libraryId'] as String?,
+                      seriesId: seriesIdFromItem(fullItem),
                     );
                     AppShell.goToAbsorbingGlobal();
                   }

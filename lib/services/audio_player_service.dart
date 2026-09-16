@@ -326,6 +326,17 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     return 'drawable/ic_speed_${s.replaceAll('.', '_')}x';
   }
 
+  // The notification's rewind/forward buttons show a baked-in number for the
+  // skip amount (out of the existing 5..60s set in 5s steps). Snap to the
+  // nearest step so the resource always exists, mirroring _speedBadgeIcon.
+  String _skipIconName(int seconds, {required bool forward}) {
+    var step = ((seconds + 2) ~/ 5) * 5; // nearest 5 under rounding
+    if (step < 5) step = 5;
+    if (step > 60) step = 60;
+    final dir = forward ? 'forward' : 'back';
+    return 'drawable/ic_skip_${dir}_$step';
+  }
+
   PlaybackState _transformEvent(PlaybackEvent event) {
     final playPause = (_player.playing ? MediaControl.pause : MediaControl.play)
         .copyWith(
@@ -334,12 +345,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     );
 
     final rewindControl = MediaControl(
-      androidIcon: 'drawable/ic_skip_back',
+      androidIcon: _skipIconName(_cachedBackSkip, forward: false),
       label: 'Back ${_cachedBackSkip}s',
       action: MediaAction.rewind,
     );
     final fastForwardControl = MediaControl(
-      androidIcon: 'drawable/ic_skip_forward',
+      androidIcon: _skipIconName(_cachedForwardSkip, forward: true),
       label: 'Forward ${_cachedForwardSkip}s',
       action: MediaAction.fastForward,
     );
@@ -1335,6 +1346,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       episodeId: entry.episodeId,
       episodeTitle: entry.episodeId != null ? entry.title : null,
       libraryId: entry.libraryId,
+      seriesId: null,
     );
   }
 }
@@ -1444,6 +1456,7 @@ class AudioPlayerService extends ChangeNotifier {
   AudioPlayer? get _player => _handler?.player;
 
   String? _currentItemId;
+  String? _currentSeriesId;
   String? _currentTitle;
   String? _currentAuthor;
   String? _currentCoverUrl;
@@ -1755,6 +1768,44 @@ class AudioPlayerService extends ChangeNotifier {
   /// UI can use this to immediately snap to the target before stream catches up.
   double? _lastSeekTargetSeconds;
   DateTime? _lastSeekTime;
+
+  /// Timestamp of the most recent user-initiated seek (skipForward,
+  /// skipBackward, seekTo).
+  /// Used to suppress chapter intro/outro auto-skip so it doesn't immediately
+  /// override a deliberate user navigation (e.g. rewinding to chapter start).
+  DateTime _lastUserSeekTime = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// The chapter index of the current skip "entry". When playback crosses into
+  /// a different chapter (prev/next nav, or re-entering an already-played
+  /// chapter) this changes, which resets the two skip flags below so the
+  /// intro/outro skip re-applies once for that new entry. Within the SAME
+  /// chapter the flags stay set, so rewinding inside a chapter never re-fires.
+  int? _skipEntryChapterIdx;
+  bool _introSkippedThisEntry = false;
+  bool _outroSkippedThisEntry = false;
+
+  /// Deliberate same-chapter rewind (prev button). [._skipEntryChapterIdx] and
+  /// the skip flags live per-ITEM and get wiped by
+  /// [_resetChapterSkipHandledIfNewItem] when the track swap re-keys the
+  /// current episode (multi-track books), which would otherwise re-arm the
+  /// intro skip and drag the landing forward again. This marker survives that
+  /// reset so the arrival tick can re-assert the disarm.
+  int? _disarmRewindChapterIdx;
+  DateTime? _disarmRewindUntil;
+
+  /// Snapshot of the per-book skip settings captured when the CURRENT skip
+  /// entry was established. A mid-entry settings change (opening the sheet and
+  /// adjusting the sliders) therefore does NOT retroactively re-evaluate the
+  /// chapter already playing - otherwise someone 1:38 into a chapter who sets
+  /// intro/outro skip to 10s would get their progress yanked back/forward. The
+  /// new values apply from the NEXT chapter entry on.
+  double _entryIntroSkip = 0;
+  double _entryOutroSkip = 0;
+  bool _entrySkipEnabled = false;
+
+  /// Key (`itemId` or `itemId-episodeId`) the skip markers belong to, so they
+  /// are cleared when a different item starts playing.
+  String? _chapterSkipTrackedItemKey;
 
   /// If a seek happened recently, returns the seek target.
   /// Otherwise returns null (use the stream position).
@@ -2124,6 +2175,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Promote next book's metadata to current state
     _currentItemId = next['itemId'] as String?;
+    _currentSeriesId = next['seriesId'] as String?;
     _currentEpisodeId = next['episodeId'] as String?;
     _currentLibraryId = next['libraryId'] as String?;
     _resolveMissingLibraryId(_currentItemId ?? '', _currentEpisodeId);
@@ -2294,6 +2346,7 @@ class AudioPlayerService extends ChangeNotifier {
         forceStartTime: true,
         episodeId: _currentEpisodeId,
         libraryId: _currentLibraryId,
+        seriesId: _currentSeriesId,
       );
     } catch (e) {
       debugPrint('[QueueAdvance] resync playItem failed: $e');
@@ -3468,6 +3521,7 @@ class AudioPlayerService extends ChangeNotifier {
     String? episodeId,
     String? episodeTitle,
     String? libraryId,
+    String? seriesId,
     // Started from the app's own screen. Only those wait (briefly, capped)
     // for the server's saved position before audio; plays from Android
     // Auto, the widget, headphones or a cold-start restore begin at the
@@ -3531,10 +3585,11 @@ class AudioPlayerService extends ChangeNotifier {
     _isLoadingNewItem = true;
     _api = api;
     _currentItemId = itemId;
+    _currentSeriesId = seriesId;
     _currentEpisodeId = episodeId;
     _currentLibraryId = libraryId;
     debugPrint(
-      '[SkipDebug] playItem libraryId=$libraryId (item=$itemId ep=$episodeId)',
+      '[SkipDebug] playItem libraryId=$libraryId seriesId=$seriesId (item=$itemId ep=$episodeId)',
     );
     _resolveMissingLibraryId(itemId, episodeId);
     _syncNotifSkipCache();
@@ -5468,6 +5523,7 @@ class AudioPlayerService extends ChangeNotifier {
       episodeId: episodeId,
       episodeTitle: episodeTitle,
       libraryId: libraryId,
+      seriesId: null,
     );
 
     _retryInProgress = false;
@@ -5760,6 +5816,16 @@ class AudioPlayerService extends ChangeNotifier {
             // to 0 immediately instead of waiting for the next stream event.
             if (_notifChapterMode) _handler?.refreshPlaybackState();
           }
+        }
+
+        // ─── Chapter skip (intro/outro) ───────────────────────────
+        // Check if we should skip chapter intro or outro based on settings.
+        // Runs on every position tick when playing with chapters.
+        if (_player?.playing == true &&
+            _chapters.isNotEmpty &&
+            _currentItemId != null &&
+            posSec > 0) {
+          await _maybeSkipChapterIntroOutro(posSec);
         }
 
         // ─── Completion detection (fallback) ───────────────────
@@ -6734,6 +6800,7 @@ class AudioPlayerService extends ChangeNotifier {
         episodeId: _currentEpisodeId,
         episodeTitle: _currentEpisodeTitle,
         libraryId: _currentLibraryId,
+        seriesId: _currentSeriesId,
         fromUi: fromUi,
       );
       return;
@@ -7100,6 +7167,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     _resetStuckDetection();
     if (_player != null && !_player!.playing) _seekedWhilePaused = true;
+    _lastUserSeekTime = DateTime.now();
     final from = position;
     await _seekAbsolute(pos.inMilliseconds / 1000.0);
     _logEvent(
@@ -7131,6 +7199,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (!_player!.playing) _seekedWhilePaused = true;
     // Multiply by speed so the skip feels like the configured amount of real time
     final adjusted = (seconds * speed).round();
+    _lastUserSeekTime = DateTime.now();
     debugPrint(
       '[Service] skipForward(${seconds}s × ${speed}x = ${adjusted}s) — playing=${_player!.playing}',
     );
@@ -7143,14 +7212,13 @@ class AudioPlayerService extends ChangeNotifier {
     debugPrint('[Service] skipForward done — playing=${_player!.playing}');
   }
 
-  DateTime? _lastRewindChapterSnap;
-
   Future<void> skipBackward([int seconds = 10]) async {
     if (_player == null) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
     // Multiply by speed so the skip feels like the configured amount of real time
     final adjusted = (seconds * speed).round();
+    _lastUserSeekTime = DateTime.now();
     final posS = position.inMilliseconds / 1000.0;
     final targetS = posS - adjusted;
 
@@ -7166,25 +7234,20 @@ class AudioPlayerService extends ChangeNotifier {
         }
       }
 
-      final intoChapter = posS - chapterStart;
-      // If the rewind would cross the chapter boundary
-      if (targetS < chapterStart && intoChapter > 0.5) {
-        final now = DateTime.now();
-        final recentSnap =
-            _lastRewindChapterSnap != null &&
-            now.difference(_lastRewindChapterSnap!).inMilliseconds < 2000;
-        if (!recentSnap) {
-          // Snap to chapter start instead of crossing
-          _lastRewindChapterSnap = now;
-          await _seekAbsolute(chapterStart);
-          _logEvent(
-            PlaybackEventType.skipBackward,
-            detail: 'snap to chapter start',
-          );
-          return;
-        }
-        // Double-tap within 2s - break through the barrier
-        _lastRewindChapterSnap = null;
+      // Rewind would cross the chapter boundary - always snap to the current
+      // chapter's start. The old "double-tap within 2s breaks through" escape
+      // was removed: rapid rewind presses (tap-tap-tap to go back 20-30s)
+      // routinely land within 2s, so the barrier was being crossed by accident
+      // and the toggle could not be relied on. Crossing into the previous
+      // chapter remains available via the dedicated previous-chapter button.
+      if (targetS < chapterStart) {
+        _disarmIntroForSameChapterRewind(posS, chapterStart);
+        await _seekAbsolute(chapterStart);
+        _logEvent(
+          PlaybackEventType.skipBackward,
+          detail: 'snap to chapter start',
+        );
+        return;
       }
     }
 
@@ -7215,8 +7278,24 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
     debugPrint('[Service] skipToNextChapter → ${target.seconds}s');
-    await _seekAbsolute(target.seconds);
-    _logEvent(PlaybackEventType.seek, detail: 'next chapter');
+    // Crossing into a genuinely DIFFERENT chapter keeps the intro skip armed -
+    // pre-jump straight to the intro-skip point so the chapter's opening words
+    // aren't briefly played while the skip waits for the first post-landing
+    // position tick. Mirrors the prev-chapter handler.
+    double? preJumpTarget;
+    final chapterIdx =
+        ChapterLookup.indexAtWithGrace(_chapters, target.seconds, _totalDuration);
+    if (chapterIdx != null) {
+      preJumpTarget =
+          await _crossChapterIntroSkipTarget(chapterIdx, target.seconds);
+    }
+    await _seekAbsolute(preJumpTarget ?? target.seconds);
+    _logEvent(
+      PlaybackEventType.seek,
+      detail: preJumpTarget != null
+          ? 'next chapter to ${preJumpTarget.toStringAsFixed(1)}s (intro skip)'
+          : 'next chapter',
+    );
     notifyListeners();
   }
 
@@ -7231,15 +7310,240 @@ class AudioPlayerService extends ChangeNotifier {
       final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
       if (start < posS - 3.0) {
         debugPrint('[Service] skipToPreviousChapter → chapter $i at ${start}s');
-        await _seekAbsolute(start);
-        _logEvent(PlaybackEventType.seek, detail: 'prev chapter');
+        // Landing on our OWN chapter start is a deliberate rewind to re-hear
+        // the opening - the intro skip must not fire there (it would drag the
+        // position forward again and lock prev-navigation in a bounce loop).
+        // Crossing into a genuinely DIFFERENT chapter keeps the skip armed so
+        // it fires once, as requested.
+        final disarmedSameChapter = _disarmIntroForSameChapterRewind(posS, start);
+        // Crossing into a genuinely DIFFERENT chapter the intro skip stays
+        // armed - pre-jump straight to the intro-skip point so the chapter's
+        // opening words aren't briefly played while the skip waits for the
+        // first post-landing position tick before jumping.
+        double? preJumpTarget;
+        if (!disarmedSameChapter) {
+          preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
+        }
+        await _seekAbsolute(preJumpTarget ?? start);
+        _logEvent(
+          PlaybackEventType.seek,
+          detail: preJumpTarget != null
+              ? 'prev chapter to ${preJumpTarget.toStringAsFixed(1)}s (intro skip)'
+              : 'prev chapter',
+        );
         notifyListeners();
         return;
       }
     }
     // If at the very start, seek to 0
+    _disarmIntroForSameChapterRewind(posS, 0);
     await _seekAbsolute(0);
     notifyListeners();
+  }
+
+  /// Returns true when the previous-chapter press (or chapter-start snap in
+  /// skipBackward) lands back on the start of the SAME chapter the user is
+  /// already in: the intro skip is disarmed and must not fire. Returns false
+  /// when the landing is a genuinely DIFFERENT chapter - the skip re-arms via
+  /// the normal entry-change in [_maybeSkipChapterIntroOutro].
+  bool _disarmIntroForSameChapterRewind(double fromPosSec, double arrivalSec) {
+    if (_chapters.isEmpty) return false;
+    final fromIdx =
+        ChapterLookup.indexAtWithGrace(_chapters, fromPosSec, _totalDuration);
+    final toIdx =
+        ChapterLookup.indexAtWithGrace(_chapters, arrivalSec, _totalDuration);
+    if (fromIdx == null || fromIdx != toIdx) {
+      _disarmRewindChapterIdx = null;
+      _disarmRewindUntil = null;
+      return false;
+    }
+    _skipEntryChapterIdx = toIdx;
+    _introSkippedThisEntry = true;
+    _outroSkippedThisEntry = false;
+    // Keep the disarm intent for a short window even if the upcoming track
+    // swap re-keys the item/episode and wipes the per-item flags above.
+    _disarmRewindChapterIdx = toIdx;
+    _disarmRewindUntil = DateTime.now().add(const Duration(seconds: 5));
+    // Same suppression the manual scrub relies on (see _maybeSkipChapterIntroOutro):
+    // no auto-skip may override a deliberate rewind to the chapter's own start.
+    _lastUserSeekTime = DateTime.now();
+    debugPrint(
+      '[Service] ChapterSkip Same-chapter rewind to ${arrivalSec.toStringAsFixed(1)}s (idx $toIdx) — intro stays played, skip disarmed for this entry',
+    );
+    return true;
+  }
+
+  /// For a genuinely different-chapter arrival, pre-computes the chapter's
+  /// intro-skip target so the previous-chapter press lands directly at
+  /// chapterStart + introSkip instead of playing the opening words and then
+  /// jumping once the first post-landing position tick arrives. Mirrors the
+  /// entry-change snapshot in [_maybeSkipChapterIntroOutro]: the same per-item
+  /// settings are used and the same in-chapter clamp applies (at least 1s of
+  /// content must remain after the target). Returns null when the normal skip
+  /// wouldn't fire anyway (disabled, intro=0, or the chapter is too short).
+  Future<double?> _crossChapterIntroSkipTarget(
+    int chapterIdx,
+    double chapterStart,
+  ) async {
+    if (chapterIdx < 0 || chapterIdx >= _chapters.length) return null;
+    final settings = await ChapterSkipSettings.loadForItem(_mediaItemKey);
+    if (!settings.enabled || settings.introSkipSeconds <= 0) return null;
+    final target = chapterStart + settings.introSkipSeconds.toDouble();
+    final ch = _chapters[chapterIdx] as Map<String, dynamic>;
+    double? chapterEndFromData = (ch['end'] as num?)?.toDouble();
+    if (chapterEndFromData == null && chapterIdx + 1 < _chapters.length) {
+      chapterEndFromData =
+          ((_chapters[chapterIdx + 1] as Map)['start'] as num?)?.toDouble();
+    }
+    final chapterEnd = chapterEndFromData ?? _totalDuration;
+    if (chapterEnd - target < 1.0) return null;
+    debugPrint(
+      '[Service] ChapterSkip Prev-chapter pre-jump → chapter $chapterIdx at ${chapterStart.toStringAsFixed(1)}s → ${target.toStringAsFixed(1)}s (intro ${settings.introSkipSeconds}s)',
+    );
+    return target;
+  }
+
+  /// Check and perform chapter intro/outro skip based on settings.
+  /// Called on each position update when playing and chapters exist.
+  ///
+  /// One-shot per chapter: the intro/outro skip takes effect at most once for
+  /// a given chapter index per item session. After it has been handled, re-
+  /// entering that window (e.g. when the user rewinds back into a chapter) does
+  /// NOT re-fire the skip, so navigating to a chapter start isn't dragged
+  /// forward again. A skip is only performed when the jump is meaningful
+  /// (>= 1s), otherwise the window is just marked handled - never an empty seek.
+  Future<void> _maybeSkipChapterIntroOutro(double posSec) async {
+    _resetChapterSkipHandledIfNewItem();
+    final now = DateTime.now();
+
+    // After a manual seek (rewind/fast-forward/chapter jump) the player may
+    // still be settling on the target position while stale position events
+    // arrive - suppress auto-skip briefly so it doesn't immediately override
+    // a deliberate user navigation (e.g. rewinding to a chapter start).
+    if (now.difference(_lastUserSeekTime).inMilliseconds < 3000) return;
+
+    final chapterIdx = ChapterLookup.indexAtWithGrace(_chapters, posSec, _totalDuration);
+    if (chapterIdx == null) return;
+    final ch = _chapters[chapterIdx] as Map<String, dynamic>;
+    final chapterStart = (ch['start'] as num?)?.toDouble() ?? 0;
+    // Chapter end: use the explicit end if present, otherwise derive it from
+    // the next chapter's start. Falling back to _totalDuration makes the
+    // "target must stay inside the chapter" guard useless for books whose
+    // chapters lack an end field - the intro skip would then race the position
+    // forward past the chapter, bouncing "previous chapter" back to where the
+    // user started (short ~5-10s chapters + a 10s intro skip).
+    double? chapterEndFromData = (ch['end'] as num?)?.toDouble();
+    if (chapterEndFromData == null && chapterIdx + 1 < _chapters.length) {
+      chapterEndFromData =
+          ((_chapters[chapterIdx + 1] as Map)['start'] as num?)?.toDouble();
+    }
+    final chapterEnd = chapterEndFromData ?? _totalDuration;
+
+    // A new "entry" begins whenever playback crosses into a different chapter
+    // (prev/next nav, or switching back to an already-played chapter). Reset
+    // the per-entry flags so the intro/outro skip re-applies once, and snapshot
+    // the per-book skip settings for THIS entry. A settings change made while
+    // an entry is already playing must NOT retroactively re-evaluate it -
+    // otherwise being 1:38 into a chapter and then setting intro/outro skip to
+    // 10s would yank the progress straight back to the 10s mark. The new values
+    // apply from the NEXT chapter entry on.
+    if (_skipEntryChapterIdx != chapterIdx) {
+      _skipEntryChapterIdx = chapterIdx;
+      _introSkippedThisEntry = false;
+      _outroSkippedThisEntry = false;
+      final settings = await ChapterSkipSettings.loadForItem(_mediaItemKey);
+      _entrySkipEnabled = settings.enabled;
+      _entryIntroSkip = settings.introSkipSeconds.toDouble();
+      _entryOutroSkip = settings.outroSkipSeconds.toDouble();
+    }
+    // A deliberate same-chapter rewind (prev button / snap) may have had its
+    // per-item flags wiped above by the track-swap re-key; re-assert the disarm
+    // for a short window so the landing isn't dragged forward by the intro skip.
+    if (_disarmRewindChapterIdx == chapterIdx &&
+        _disarmRewindUntil != null &&
+        DateTime.now().isBefore(_disarmRewindUntil!)) {
+      _introSkippedThisEntry = true;
+      _outroSkippedThisEntry = false;
+    }
+    if (!_entrySkipEnabled) return;
+
+    final introSkip = _entryIntroSkip;
+    final outroSkip = _entryOutroSkip;
+
+    // Skip intro (once per entry): within the intro window and not yet handled
+    // for the current entry of this chapter. Fires once, then stays marked for
+    // the whole entry so it doesn't drag the position on every tick.
+    if (introSkip > 0 &&
+        !_introSkippedThisEntry &&
+        posSec > chapterStart &&
+        posSec - chapterStart < introSkip) {
+      final target = chapterStart + introSkip;
+      // Mark handled regardless of whether we can jump, so the window is only
+      // evaluated once per entry.
+      _introSkippedThisEntry = true;
+      // Only perform a real jump when the target is meaningfully INSIDE the
+      // chapter (>= 1s of content must remain after it) and actually advances
+      // the position. Without the in-chapter clamps, a book whose chapters are
+      // shorter than introSkip would overshoot straight into the next chapter,
+      // making "previous chapter" navigation appear to bounce right back.
+      if (chapterEnd - target >= 1.0 && target - posSec >= 1.0) {
+        debugPrint(
+          '[ChapterSkip] Skipping intro: pos=${posSec.toStringAsFixed(1)}s chapterStart=${chapterStart.toStringAsFixed(1)}s target=${target.toStringAsFixed(1)}s',
+        );
+        await _seekAbsolute(target);
+        _logEvent(PlaybackEventType.seek, detail: 'skip chapter intro');
+        return;
+      } else {
+        debugPrint(
+          '[ChapterSkip] Intro window too short to skip: chapter=${chapterStart.toStringAsFixed(1)}-${chapterEnd.toStringAsFixed(1)}s target=${target.toStringAsFixed(1)}s — suppressed for this entry',
+        );
+      }
+    }
+
+    // Skip outro (once per entry): within the outro window and not yet handled
+    // for the current entry of this chapter.
+    if (outroSkip > 0 &&
+        !_outroSkippedThisEntry &&
+        posSec < chapterEnd &&
+        chapterEnd - posSec < outroSkip) {
+      _outroSkippedThisEntry = true;
+      // If there's a next chapter, skip to it when the jump is meaningful.
+      if (chapterIdx + 1 < _chapters.length) {
+        final nextChapter = _chapters[chapterIdx + 1] as Map<String, dynamic>;
+        final nextStart = (nextChapter['start'] as num?)?.toDouble() ?? 0;
+        if (nextStart - posSec >= 1.0) {
+          debugPrint(
+            '[ChapterSkip] Skipping outro: pos=${posSec.toStringAsFixed(1)}s chapterEnd=${chapterEnd.toStringAsFixed(1)}s nextChapterStart=${nextStart.toStringAsFixed(1)}s',
+          );
+          await _seekAbsolute(nextStart);
+          _logEvent(PlaybackEventType.seek, detail: 'skip chapter outro');
+          return;
+        }
+      } else {
+        // Last chapter - skip to end of book when the jump is meaningful
+        // (completion handler takes over from there).
+        if (_totalDuration > 0 && _totalDuration - posSec >= 1.0) {
+          debugPrint(
+            '[ChapterSkip] Skipping to end: pos=${posSec.toStringAsFixed(1)}s totalDuration=${_totalDuration.toStringAsFixed(1)}s',
+          );
+          await _seekAbsolute(_totalDuration);
+          _logEvent(PlaybackEventType.seek, detail: 'skip to end');
+          return;
+        }
+      }
+    }
+  }
+
+  /// Clears the per-entry chapter skip markers whenever a different item (or
+  /// episode) starts playing, so each book gets fresh skip handling.
+  void _resetChapterSkipHandledIfNewItem() {
+    final key = _mediaItemKey;
+    if (_chapterSkipTrackedItemKey != key) {
+      _chapterSkipTrackedItemKey = key;
+      _skipEntryChapterIdx = null;
+      _introSkippedThisEntry = false;
+      _outroSkippedThisEntry = false;
+    }
   }
 
   Future<void> setSpeed(double s) async {

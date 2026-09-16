@@ -412,7 +412,7 @@ class _AdminScreenState extends State<AdminScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 10),
                         _navButton(cs, tt,
                           icon: Icons.description_outlined,
-                          label: 'Server logs',
+                          label: l.navHoldAdminLogs,
                           subtitle: l.sendLogsSubtitle,
                           onTap: () {
                             Navigator.push(context, MaterialPageRoute(
@@ -485,7 +485,7 @@ class _AdminScreenState extends State<AdminScreen> with WidgetsBindingObserver {
       AdminSectionDestination('api-keys', Icons.vpn_key_rounded, l.adminApiKeys),
       AdminSectionDestination('libraries', Icons.library_books_rounded, l.adminLibrariesManage),
       AdminSectionDestination('server-settings', Icons.tune_rounded, l.adminServerSettings),
-      const AdminSectionDestination('logs', Icons.description_outlined, 'Server logs'),
+      AdminSectionDestination('logs', Icons.description_outlined, l.navHoldAdminLogs),
       AdminSectionDestination('stats', Icons.bar_chart_rounded, l.adminStats),
       AdminSectionDestination('sessions', Icons.history_rounded, l.adminAllSessions),
     ];

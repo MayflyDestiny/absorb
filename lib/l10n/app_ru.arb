@@ -490,5 +490,14 @@
   "sleepTimerSheetEpisodeSleepStart": "Сон в конце серии",
   "bookmarkListen": "Прослушать",
   "bookmarkPause": "Пауза",
-  "bookmarkPreviewFailed": "Не удалось воспроизвести это место."
+  "bookmarkPreviewFailed": "Не удалось воспроизвести это место.",
+  "chapterSkipTitle": "Skip chapter intro/outro",
+  "chapterSkipOnSubtitleFormat": "On - skip {intro}s intro, {outro}s outro",
+  "chapterSkipOffSubtitle": "Off - play chapters normally",
+  "chapterSkipIntro": "Skip intro (seconds)",
+  "chapterSkipOutro": "Skip outro (seconds)",
+  "chapterSkipShort": "Skip intro/outro",
+  "chapterSkipSheetTitle": "Chapter skip",
+  "chapterSkipPerBookSubtitle": "Remembered for this book",
+  "chapterSkipEnabled": "Skip intros and outros"
 }

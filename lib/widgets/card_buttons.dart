@@ -20,6 +20,7 @@ import '../services/playback_history_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/sleep_timer_service.dart';
 import '../utils/episode_key.dart';
+import '../utils/series_id.dart';
 import 'absorb_slider.dart';
 import 'absorbing_shared.dart';
 import 'book_detail_sheet.dart';
@@ -723,10 +724,10 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
         const SizedBox(height: 4),
         Text('${_speed.toStringAsFixed(2)}x', style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: widget.accent)),
         const SizedBox(height: 12),
-        const FeatureHint(
+        FeatureHint(
           prefKey: 'hint_speed_presets',
-          message: 'Tap + to save the current speed as a preset. Long-press a chip to remove it.',
-          padding: EdgeInsets.fromLTRB(0, 0, 0, 12),
+          message: l.speedPresetsHint,
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
         ),
         Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
           ..._presets.map((s) {
@@ -1082,6 +1083,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
       episodeId: epId, episodeTitle: episodeTitle,
       startTime: positionSeconds, forceStartTime: true,
       libraryId: fullItem['libraryId'] as String?,
+      seriesId: seriesIdFromItem(fullItem),
     );
     AppShell.goToAbsorbingGlobal();
   }
@@ -1623,6 +1625,7 @@ class CardActionDelegate {
         totalDuration: duration,
         chapters: chapters,
         libraryId: item['libraryId'] as String?,
+        seriesId: seriesIdFromItem(item),
         loadOnly: true,
       );
       if (error != null) {
@@ -1774,6 +1777,24 @@ class CardActionDelegate {
             large: large, compact: compact, short: short, iconsOnly: iconsOnly,
           ),
         );
+      case 'chapterskip':
+        return ListenableBuilder(
+          listenable: PlayerSettings.settingsChanged,
+          builder: (_, __) => FutureBuilder<ChapterSkipSettings>(
+            future: ChapterSkipSettings.loadForItem(episodeKeyFor(itemId, _bookmarkEpisodeId)),
+            builder: (_, snap) => CardWideButton(
+              icon: Icons.skip_next_rounded,
+              label: compact ? l.chapterSkipShort : l.chapterSkipTitle,
+              accent: accent, isActive: true, alwaysEnabled: true,
+              large: large, compact: compact, iconsOnly: iconsOnly,
+              highlighted: snap.data?.enabled == true,
+              onTap: () => showModalBottomSheet(
+                context: context, backgroundColor: Colors.transparent, useSafeArea: true,
+                builder: (_) => CardChapterSkipSheet(player: player, accent: accent, storageKey: episodeKeyFor(itemId, _bookmarkEpisodeId)),
+              ),
+            ),
+          ),
+        );
       case 'details':
         return CardWideButton(
           icon: (episodeId != null || isPodcastEpisode) ? Icons.podcasts_rounded : Icons.info_outline_rounded,
@@ -1866,7 +1887,7 @@ class CardActionDelegate {
       case 'ebook':
         return CardWideButton(
           icon: isEbookPdf ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded,
-          label: 'Read',
+          label: l.readEbook,
           accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           // The card handles the no-ebook case itself (it retries the item
           // fetch before toasting).
@@ -1946,6 +1967,16 @@ class CardActionDelegate {
                 builder: (_, sc) => SimpleBookmarkSheet(itemId: itemId, episodeId: _bookmarkEpisodeId, player: player, accent: accent, scrollController: sc, onChanged: () {}),
               ),
             );
+          },
+        );
+      case 'chapterskip':
+        return MoreMenuItem(
+          icon: Icons.skip_next_rounded, label: l.chapterSkipTitle, accent: accent,
+          enabled: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, useSafeArea: true,
+              builder: (_) => CardChapterSkipSheet(player: player, accent: accent, storageKey: episodeKeyFor(itemId, _bookmarkEpisodeId)));
           },
         );
       case 'details':
@@ -2065,7 +2096,7 @@ class CardActionDelegate {
       case 'ebook':
         return MoreMenuItem(
           icon: isEbookPdf ? Icons.picture_as_pdf_rounded : Icons.menu_book_rounded,
-          label: 'Read', accent: accent,
+          label: l.readEbook, accent: accent,
           onTap: () {
             Navigator.pop(ctx);
             onEbookTap?.call();
@@ -2530,7 +2561,7 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
         else
           const Spacer(),
         Text(
-          'Show more',
+          l.showMore,
           style: widget.tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
         const SizedBox(width: 8),
@@ -2756,4 +2787,157 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
     );
   }
 
+}
+
+// ─── CHAPTER SKIP SHEET ───────────────────────────────────────
+
+/// Per-book chapter intro/outro skip configuration shown from the now-playing
+/// card's "Skip intro/outro" button. Each item remembers its own settings.
+class CardChapterSkipSheet extends StatefulWidget {
+  final AudioPlayerService player;
+  final Color accent;
+
+  /// Compound storage key (`itemId` or `itemId-episodeId`).
+  final String storageKey;
+  const CardChapterSkipSheet({
+    super.key,
+    required this.player,
+    required this.accent,
+    required this.storageKey,
+  });
+
+  @override
+  State<CardChapterSkipSheet> createState() => _CardChapterSkipSheetState();
+}
+
+class _CardChapterSkipSheetState extends State<CardChapterSkipSheet> {
+  late bool _enabled;
+  late int _intro;
+  late int _outro;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = false;
+    _intro = 0;
+    _outro = 0;
+    _load();
+  }
+
+  Future<void> _load() async {
+    final s = await ChapterSkipSettings.loadForItem(widget.storageKey);
+    if (!mounted) return;
+    setState(() {
+      _enabled = s.enabled;
+      _intro = s.introSkipSeconds;
+      _outro = s.outroSkipSeconds;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _save() async {
+    await ChapterSkipSettings.saveForItem(
+      widget.storageKey,
+      ChapterSkipSettings(
+        enabled: _enabled,
+        introSkipSeconds: _intro,
+        outroSkipSeconds: _outro,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context)!;
+    final navBarPad = MediaQuery.of(context).viewPadding.bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + navBarPad),
+      decoration: BoxDecoration(
+        color: Theme.of(context).bottomSheetTheme.backgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: widget.accent.withValues(alpha: 0.2), width: 1)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 16),
+        Text(l.chapterSkipSheetTitle, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Text(l.chapterSkipPerBookSubtitle, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(l.chapterSkipEnabled),
+          subtitle: Text(
+            _enabled
+                ? l.chapterSkipOnSubtitleFormat(_intro.toString(), _outro.toString())
+                : l.chapterSkipOffSubtitle,
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+          value: _enabled,
+          onChanged: _loaded ? (v) async {
+            setState(() => _enabled = v);
+            await _save();
+          } : null,
+        ),
+        if (_enabled) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(l.chapterSkipIntro, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                Text(l.secondsValue(_intro.toString()), style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: widget.accent)),
+              ],
+            ),
+          ),
+          AbsorbSlider(
+            value: _intro.toDouble(),
+            min: 0, max: 120, divisions: 120,
+            onChanged: _loaded ? (v) async {
+              setState(() => _intro = v.round());
+              await _save();
+            } : null,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(l.chapterSkipOutro, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                Text(l.secondsValue(_outro.toString()), style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: widget.accent)),
+              ],
+            ),
+          ),
+          AbsorbSlider(
+            value: _outro.toDouble(),
+            min: 0, max: 120, divisions: 120,
+            onChanged: _loaded ? (v) async {
+              setState(() => _outro = v.round());
+              await _save();
+            } : null,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () async {
+                setState(() {
+                  _enabled = false;
+                  _intro = 0;
+                  _outro = 0;
+                });
+                await ChapterSkipSettings.clearForItem(widget.storageKey);
+              },
+              icon: const Icon(Icons.settings_backup_restore_rounded, size: 18),
+              label: Text(l.resetToDefault),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
 }

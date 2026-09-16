@@ -27,6 +27,7 @@ import '../services/screen_wake.dart';
 import '../services/transcript_line_store.dart';
 import '../services/transcription_service.dart';
 import '../services/volume_key_service.dart';
+import '../utils/series_id.dart';
 import 'overlay_toast.dart';
 import 'transcription_download_prompt.dart';
 import 'progress_dialog.dart';
@@ -3381,6 +3382,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         startTime: seconds,
         forceStartTime: true,
         libraryId: fullItem['libraryId'] as String?,
+        seriesId: seriesIdFromItem(fullItem),
       );
       if (error != null) {
         debugPrint('[FindAudio] playItem failed: $error');
@@ -3438,6 +3440,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           (media['duration'] is num) ? (media['duration'] as num).toDouble() : 0.0,
       chapters: (media['chapters'] as List<dynamic>?) ?? [],
       libraryId: fullItem['libraryId'] as String?,
+      seriesId: seriesIdFromItem(fullItem),
     );
     return error == null;
   }

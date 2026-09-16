@@ -677,11 +677,10 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                             ),
                           ),
                         ),
-                        const SliverToBoxAdapter(
+                        SliverToBoxAdapter(
                           child: FeatureHint(
                             prefKey: 'hint_continue_listening_gestures',
-                            message:
-                                'Tap a card to resume. Press and hold to see details.',
+                            message: l.homeTapCardToResume,
                           ),
                         ),
                         SliverToBoxAdapter(
