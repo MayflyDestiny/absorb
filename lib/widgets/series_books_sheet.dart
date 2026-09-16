@@ -21,6 +21,7 @@ import '../services/upcoming_releases_service.dart';
 import 'audible_series_sheet.dart';
 import 'action_pill.dart';
 import 'books_sheet_shared.dart';
+import 'download_confirm.dart';
 import '../services/api_service.dart';
 import '../utils/duration_format.dart';
 
@@ -912,6 +913,9 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
+
+    final ok = await confirmDownload(context, widget.seriesName);
+    if (!ok || !mounted) return;
 
     // Offer to enable auto-download if not already on
     final seriesId = widget.seriesId;

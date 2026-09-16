@@ -21,6 +21,7 @@ import 'html_description.dart';
 import 'stackable_sheet.dart';
 import 'episode_row.dart';
 import 'action_pill.dart';
+import 'download_confirm.dart';
 export 'episode_detail_sheet.dart';
 
 /// Bottom sheet that shows a podcast's episode list.
@@ -544,6 +545,9 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     final episodeTitle = episode['title'] as String? ?? l.episodeListEpisodeFallback;
     final coverUrl = api.getCoverUrl(_itemId);
 
+    final ok = await confirmDownload(context, episodeTitle);
+    if (!ok || !mounted) return;
+
     final error = await DownloadService().downloadItem(
       api: api,
       itemId: '$_itemId-$episodeId',
@@ -564,6 +568,9 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
+
+    final ok = await confirmDownload(context, _title);
+    if (!ok || !mounted) return;
 
     // Offer to enable auto-download if not already on
     if (_itemId.isNotEmpty && !_autoDownloadEnabled) {

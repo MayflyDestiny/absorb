@@ -12,6 +12,7 @@ import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
 import 'card_buttons.dart' show showErrorToast;
+import 'download_confirm.dart';
 import 'episode_list_sheet.dart';
 import 'episode_row.dart';
 import 'overlay_toast.dart';
@@ -510,6 +511,9 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
     if (api == null) return;
     final showId = _showIdOf(ep);
     final episodeId = ep['id'] as String? ?? '';
+    final title = ep['title'] as String? ?? '';
+    final ok = await confirmDownload(context, title);
+    if (!ok || !mounted) return;
     final error = await DownloadService().downloadItem(
       api: api,
       itemId: '$showId-$episodeId',

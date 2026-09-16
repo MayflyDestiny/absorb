@@ -3407,6 +3407,14 @@ class AppLocalizationsFr extends AppLocalizations {
   String get download => 'Télécharger';
 
   @override
+  String get downloadConfirmTitle => 'Confirm download';
+
+  @override
+  String downloadConfirmContent(String title) {
+    return 'Download “$title” to this device?';
+  }
+
+  @override
   String get deleteDownload => 'Supprimer le téléchargement';
 
   @override
@@ -6273,6 +6281,35 @@ class AppLocalizationsFr extends AppLocalizations {
   String sleepTimerSheetMinShort(int minutes) {
     return '${minutes}m';
   }
+
+  @override
+  String sleepTimerHoursOnly(int hours) {
+    return '$hours hr';
+  }
+
+  @override
+  String sleepTimerHoursMinutes(int hours, int minutes) {
+    return '$hours hr $minutes min';
+  }
+
+  @override
+  String sleepTimerStartDuration(String duration) {
+    return 'Start $duration timer';
+  }
+
+  @override
+  String sleepTimerLastUsed(String duration) {
+    return 'Last used: $duration';
+  }
+
+  @override
+  String get sleepTimerCustom => 'Custom';
+
+  @override
+  String get sleepTimerWheelHourUnit => 'hr';
+
+  @override
+  String get sleepTimerWheelMinuteUnit => 'min';
 
   @override
   String sleepTimerSheetSecondsShort(int seconds) {

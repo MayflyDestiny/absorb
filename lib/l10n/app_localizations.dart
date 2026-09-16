@@ -6106,6 +6106,18 @@ abstract class AppLocalizations {
   /// **'Download'**
   String get download;
 
+  /// No description provided for @downloadConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm download'**
+  String get downloadConfirmTitle;
+
+  /// No description provided for @downloadConfirmContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Download “{title}” to this device?'**
+  String downloadConfirmContent(String title);
+
   /// No description provided for @deleteDownload.
   ///
   /// In en, this message translates to:
@@ -10802,6 +10814,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{minutes}m'**
   String sleepTimerSheetMinShort(int minutes);
+
+  /// No description provided for @sleepTimerHoursOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours} hr'**
+  String sleepTimerHoursOnly(int hours);
+
+  /// No description provided for @sleepTimerHoursMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours} hr {minutes} min'**
+  String sleepTimerHoursMinutes(int hours, int minutes);
+
+  /// No description provided for @sleepTimerStartDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Start {duration} timer'**
+  String sleepTimerStartDuration(String duration);
+
+  /// No description provided for @sleepTimerLastUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Last used: {duration}'**
+  String sleepTimerLastUsed(String duration);
+
+  /// No description provided for @sleepTimerCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get sleepTimerCustom;
+
+  /// No description provided for @sleepTimerWheelHourUnit.
+  ///
+  /// In en, this message translates to:
+  /// **'hr'**
+  String get sleepTimerWheelHourUnit;
+
+  /// No description provided for @sleepTimerWheelMinuteUnit.
+  ///
+  /// In en, this message translates to:
+  /// **'min'**
+  String get sleepTimerWheelMinuteUnit;
 
   /// No description provided for @sleepTimerSheetSecondsShort.
   ///

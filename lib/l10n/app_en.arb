@@ -1674,6 +1674,15 @@
   "autoDownloadThisPodcast": "Auto-Download This Podcast?",
   "autoDownloadPodcastContent": "Automatically download the next episodes as you listen.",
   "download": "Download",
+  "downloadConfirmTitle": "Confirm download",
+  "downloadConfirmContent": "Download \u201C{title}\u201D to this device?",
+  "@downloadConfirmContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "deleteDownload": "Delete Download",
   "casting": "Casting",
   "castingTo": "Casting to",
@@ -3660,6 +3669,44 @@
       }
     }
   },
+  "sleepTimerHoursOnly": "{hours} hr",
+  "@sleepTimerHoursOnly": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerHoursMinutes": "{hours} hr {minutes} min",
+  "@sleepTimerHoursMinutes": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerStartDuration": "Start {duration} timer",
+  "@sleepTimerStartDuration": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "sleepTimerLastUsed": "Last used: {duration}",
+  "@sleepTimerLastUsed": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "sleepTimerCustom": "Custom",
+  "sleepTimerWheelHourUnit": "hr",
+  "sleepTimerWheelMinuteUnit": "min",
   "sleepTimerSheetSecondsShort": "{seconds}s",
   "@sleepTimerSheetSecondsShort": {
     "placeholders": {

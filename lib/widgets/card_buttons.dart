@@ -28,6 +28,7 @@ import 'bookmark_detail_dialog.dart';
 import 'card_button_config.dart';
 import 'card_chapters_sheet.dart';
 import 'chromecast_button.dart';
+import 'download_confirm.dart';
 import 'episode_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 import 'equalizer_sheet.dart';
@@ -418,6 +419,8 @@ class CardDownloadButtonInline extends StatelessWidget {
     } else if (dl.isDownloading(_key)) {
       dl.cancelDownload(_key);
     } else {
+      final ok = await confirmDownload(context, title);
+      if (!ok || !context.mounted) return;
       final auth = context.read<AuthProvider>();
       final api = auth.apiService;
       if (api == null) return;
@@ -2061,7 +2064,7 @@ class CardActionDelegate {
             }
             return MoreMenuItem(
               icon: dlIcon, label: dlLabel, accent: dlAccent,
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(ctx);
                 final dl = DownloadService();
                 if (dl.isDownloaded(dlKey)) {
@@ -2080,6 +2083,8 @@ class CardActionDelegate {
                 } else if (dl.isDownloading(dlKey)) {
                   dl.cancelDownload(dlKey);
                 } else {
+                  final ok = await confirmDownload(context, title);
+                  if (!ok || !context.mounted) return;
                   final auth = context.read<AuthProvider>();
                   final api = auth.apiService;
                   if (api == null) return;

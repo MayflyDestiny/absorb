@@ -800,7 +800,7 @@ class PlayerSettings {
   static Future<bool> getSpeedAdjustedTime() => _get('speedAdjustedTime', true);
   static Future<void> setSpeedAdjustedTime(bool value) => _set('speedAdjustedTime', value, notify: true);
 
-  static Future<int> getForwardSkip() => _get('forwardSkip', 30);
+  static Future<int> getForwardSkip() => _get('forwardSkip', 15);
   static Future<void> setForwardSkip(int seconds) => _set('forwardSkip', seconds, notify: true);
 
   static Future<int> getBackSkip() => _get('backSkip', 10);
@@ -870,7 +870,7 @@ class PlayerSettings {
     await _set('mp3IndexSeeking', value);
   }
 
-  static Future<bool> getNotificationChapterProgress() => _get('notificationChapterProgress', false);
+  static Future<bool> getNotificationChapterProgress() => _get('notificationChapterProgress', true);
   static Future<void> setNotificationChapterProgress(bool value) => _set('notificationChapterProgress', value, notify: true);
 
   // Android only: when true, the phone media controls show speed + bookmark in
@@ -904,7 +904,7 @@ class PlayerSettings {
   // ── Sleep timer settings ──
 
   // 'off', 'addTime', 'resetTimer'
-  static Future<String> getShakeMode() => _get('shakeMode', 'addTime');
+  static Future<String> getShakeMode() => _get('shakeMode', 'off');
   static Future<void> setShakeMode(String value) => _set('shakeMode', value);
 
   static Future<int> getShakeAddMinutes() => _get('shakeAddMinutes', 5);

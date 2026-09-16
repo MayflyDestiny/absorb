@@ -1111,6 +1111,15 @@
   "autoDownloadThisPodcast": "自动下载此播客？",
   "autoDownloadPodcastContent": "边听边自动下载后续剧集。",
   "download": "下载",
+  "downloadConfirmTitle": "确认下载",
+  "downloadConfirmContent": "将\u201c{title}\u201d下载到本机？",
+  "@downloadConfirmContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "deleteDownload": "删除下载",
   "casting": "投屏",
   "castingTo": "正在投屏到",
@@ -2508,6 +2517,13 @@
   "sleepTimerSheetAddMinutesChip": "+{minutes} 分",
   "sleepTimerSheetAddChaptersChip": "+{count} 章",
   "sleepTimerSheetMinShort": "{minutes} 分",
+  "sleepTimerHoursOnly": "{hours} 时",
+  "sleepTimerHoursMinutes": "{hours} 时 {minutes} 分",
+  "sleepTimerStartDuration": "启动 {duration} 定时器",
+  "sleepTimerLastUsed": "上次定时 {duration}",
+  "sleepTimerCustom": "自定义",
+  "sleepTimerWheelHourUnit": "时",
+  "sleepTimerWheelMinuteUnit": "分",
   "sleepTimerSheetSecondsShort": "{seconds} 秒",
   "sleepTimerSheetMinSecShort": "{minutes} 分 {seconds} 秒",
   "sleepTimerSheetChaptersValue": "{count, plural, =1{1 章} other{{count} 章}}",

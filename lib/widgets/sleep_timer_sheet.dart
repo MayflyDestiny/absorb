@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../services/sleep_timer_service.dart';
 
-// ─── SHARED SLEEP TIMER SHEET ─────────────────────────────────
+// 鈹€鈹€鈹€ SHARED SLEEP TIMER SHEET 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 void showSleepTimerSheet(BuildContext context, Color accent) {
   showModalBottomSheet(
     context: context,
@@ -23,7 +23,14 @@ class SleepTimerSheet extends StatefulWidget {
 
 class _SleepTimerSheetState extends State<SleepTimerSheet> {
   int _tabIndex = 0; // 0 = Timer, 1 = End of Chapter
-  double _customMinutes = 30;
+  int _hours = 0;
+  int _minutes = 30;
+  bool _customOpen = false;
+  bool _programmaticWheel = false;
+  final FixedExtentScrollController _hourController =
+      FixedExtentScrollController();
+  final FixedExtentScrollController _minuteController =
+      FixedExtentScrollController();
   int _customChapters = 1;
   String _shakeMode = 'addTime'; // 'off', 'addTime', 'resetTimer'
   int _shakeAddMinutes = 5;
@@ -32,6 +39,8 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
   bool _useChapterEnd = true;
 
   static const _maxRewindMinutes = 120;
+  static const _virtualHourCount = 24 * 100;
+  static const _virtualMinuteCount = 60 * 100;
 
   @override
   void initState() {
@@ -48,22 +57,32 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       PlayerSettings.getEffectiveSleepRewindSeconds(AudioPlayerService().currentItemId),
       PlayerSettings.getSleepTimerTab(),
     ]);
-    if (mounted)
-      setState(() {
-        _shakeMode = results[0] as String;
-        _shakeAddMinutes = results[1] as int;
-        _customMinutes = (results[2] as int).toDouble();
-        _customChapters = results[3] as int;
-        _sleepRewindSeconds = results[4] as int;
-        _tabIndex = results[5] as int;
-        // Podcast episodes only have Timer + End-of-Episode tabs; clamp a saved
-        // "specific chapter" tab index (2) so it doesn't fall off the end.
-        if (AudioPlayerService().currentEpisodeId != null && _tabIndex > 1) {
-          _tabIndex = 1;
-        }
-        final currentIdx = _getCurrentChapterIndexFromPlayer();
-        if (currentIdx >= 0) _selectedChapterIndex = currentIdx;
-      });
+    if (!mounted) return;
+    final savedMinutes = results[2] as int;
+    _hours = (savedMinutes ~/ 60).clamp(0, 23);
+    _minutes = (savedMinutes % 60).clamp(0, 59);
+    setState(() {
+      _shakeMode = results[0] as String;
+      _shakeAddMinutes = results[1] as int;
+      _customChapters = results[3] as int;
+      _sleepRewindSeconds = results[4] as int;
+      _tabIndex = results[5] as int;
+      // Podcast episodes only have Timer + End-of-Episode tabs; clamp a saved
+      // "specific chapter" tab index (2) so it doesn't fall off the end.
+      if (AudioPlayerService().currentEpisodeId != null && _tabIndex > 1) {
+        _tabIndex = 1;
+      }
+      final currentIdx = _getCurrentChapterIndexFromPlayer();
+      if (currentIdx >= 0) _selectedChapterIndex = currentIdx;
+    });
+    _syncWheelsToValue();
+  }
+
+  @override
+  void dispose() {
+    _hourController.dispose();
+    _minuteController.dispose();
+    super.dispose();
   }
 
   int _getCurrentChapterIndexFromPlayer() {
@@ -495,56 +514,46 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
 
   Widget _buildTimerTab(Color accent, TextTheme tt, AppLocalizations l) {
     final cs = Theme.of(context).colorScheme;
+    final valid = _hours * 60 + _minutes > 0;
     return Column(children: [
-      // Custom slider
-      Text(l.minutesValue(_customMinutes.round()),
+      Text(_durationLabel(l),
           style: TextStyle(
               color: accent,
               fontSize: 28,
               fontWeight: FontWeight.w700,
               fontFeatures: const [FontFeature.tabularFigures()])),
-      const SizedBox(height: 8),
-      SliderTheme(
-        data: SliderThemeData(
-          activeTrackColor: accent,
-          inactiveTrackColor: cs.onSurface.withValues(alpha: 0.1),
-          thumbColor: accent,
-          overlayColor: accent.withValues(alpha: 0.1),
-          trackHeight: 4,
-        ),
-        child: Slider(
-          value: _customMinutes,
-          min: 1,
-          max: 120,
-          divisions: 119,
-          onChanged: (v) => setState(() => _customMinutes = v),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child:
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(l.sleepTimerSheetMinShort(1),
-              style: TextStyle(
-                  color: cs.onSurface.withValues(alpha: 0.3), fontSize: 11)),
-          Text(l.sleepTimerSheetMinShort(120),
-              style: TextStyle(
-                  color: cs.onSurface.withValues(alpha: 0.3), fontSize: 11)),
-        ]),
-      ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 16),
       // Presets
       Wrap(
           spacing: 8,
           runSpacing: 8,
           alignment: WrapAlignment.center,
           children: [
-            for (final mins in [5, 10, 15, 30, 45, 60])
+            for (final mins in [15, 30, 60, 90])
               _presetChip(accent, l.sleepTimerSheetMinShort(mins),
-                  _customMinutes.round() == mins, () {
-                setState(() => _customMinutes = mins.toDouble());
+                  !_customOpen && _hours * 60 + _minutes == mins, () {
+                setState(() {
+                  _hours = mins ~/ 60;
+                  _minutes = mins % 60;
+                  _customOpen = false;
+                });
+                _syncWheelsToValue();
               }),
           ]),
+      const SizedBox(height: 8),
+      // Custom button 鈥?visually distinct, full-width below the presets
+      _buildCustomButton(accent, cs, l),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        alignment: Alignment.topCenter,
+        child: _customOpen
+            ? Column(children: [
+                const SizedBox(height: 12),
+                _buildWheelCard(accent, cs, l),
+              ])
+            : const SizedBox(width: double.infinity),
+      ),
       const SizedBox(height: 16),
       // Start button
       SizedBox(
@@ -556,17 +565,264 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
                 foregroundColor: cs.surface,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
-            onPressed: () {
-              PlayerSettings.setSleepTimerMinutes(_customMinutes.round());
-              SleepTimerService()
-                  .setTimeSleep(Duration(minutes: _customMinutes.round()));
-              Navigator.pop(context);
-            },
-            child: Text(l.startMinTimer(_customMinutes.round()),
+            onPressed: valid
+                ? () {
+                    final total = _hours * 60 + _minutes;
+                    PlayerSettings.setSleepTimerMinutes(total);
+                    SleepTimerService()
+                        .setTimeSleep(Duration(minutes: total));
+                    Navigator.pop(context);
+                  }
+                : null,
+            child: Text(l.sleepTimerStartDuration(_durationLabel(l)),
                 style:
                     const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
           )),
     ]);
+  }
+
+  Widget _buildCustomButton(Color accent, ColorScheme cs, AppLocalizations l) {
+    return GestureDetector(
+      onTap: () {
+        setState(() => _customOpen = !_customOpen);
+        _syncWheelsToValue();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: _customOpen
+              ? accent.withValues(alpha: 0.2)
+              : cs.onSurface.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: _customOpen
+                  ? accent.withValues(alpha: 0.4)
+                  : cs.onSurface.withValues(alpha: 0.1)),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.tune_rounded,
+              size: 18,
+              color: _customOpen ? accent : cs.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(l.sleepTimerCustom,
+              style: TextStyle(
+                  color: _customOpen ? accent : cs.onSurfaceVariant,
+                  fontSize: 13,
+                  fontWeight:
+                      _customOpen ? FontWeight.w600 : FontWeight.w400)),
+          const SizedBox(width: 2),
+          AnimatedRotation(
+            turns: _customOpen ? 0.5 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: Icon(Icons.expand_more_rounded,
+                size: 18,
+                color: _customOpen ? accent : cs.onSurfaceVariant),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildWheelCard(Color accent, ColorScheme cs, AppLocalizations l) {
+    const itemExtent = 32.0;
+    final wheelHeight = itemExtent * 5;
+    final cardBg = cs.onSurface.withValues(alpha: 0.06);
+    final maskColor =
+        Theme.of(context).bottomSheetTheme.backgroundColor ?? cs.surface;
+    final cardColor = Color.alphaBlend(cardBg, maskColor);
+
+    final card = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+      ),
+      child: SizedBox(
+        height: wheelHeight,
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            // Wheels + fixed units
+            Row(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [
+              _infiniteWheel(
+                  itemCount: 24,
+                  virtualCount: _virtualHourCount,
+                  controller: _hourController,
+                  onChanged: _onHourWheelChanged,
+                  cs: cs,
+                  itemExtent: itemExtent),
+              Text(l.sleepTimerWheelHourUnit,
+                  style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(width: 16),
+              _infiniteWheel(
+                  itemCount: 60,
+                  virtualCount: _virtualMinuteCount,
+                  controller: _minuteController,
+                  onChanged: _onMinuteWheelChanged,
+                  cs: cs,
+                  itemExtent: itemExtent),
+              Text(l.sleepTimerWheelMinuteUnit,
+                  style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600)),
+            ]),
+            // Selection highlight band
+            IgnorePointer(
+              child: Align(
+                alignment: Alignment.center,
+                child: Container(
+                  height: itemExtent,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: accent.withValues(alpha: 0.3), width: 1),
+                  ),
+                ),
+              ),
+            ),
+            // Top edge fade-out
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: itemExtent * 2,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [cardColor, cardColor.withValues(alpha: 0.0)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Bottom edge fade-out
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: itemExtent * 2,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [cardColor, cardColor.withValues(alpha: 0.0)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: card,
+      ),
+    );
+  }
+
+  Widget _infiniteWheel({
+    required int itemCount,
+    required int virtualCount,
+    required FixedExtentScrollController controller,
+    required void Function(int) onChanged,
+    required ColorScheme cs,
+    required double itemExtent,
+  }) {
+    return SizedBox(
+      height: itemExtent * 5,
+      width: 56,
+      child: ListWheelScrollView(
+        controller: controller,
+        itemExtent: itemExtent,
+        physics: const FixedExtentScrollPhysics(),
+        diameterRatio: 100,
+        overAndUnderCenterOpacity: 0.25,
+        onSelectedItemChanged: onChanged,
+        children: [
+          for (var i = 0; i < virtualCount; i++)
+            Center(
+              child: Text('${i % itemCount}',
+                  style: TextStyle(
+                      color: cs.onSurface,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  int _hourVirtualIndex(int h) {
+    final mid = _virtualHourCount ~/ 2;
+    return (mid - (mid % 24)) + h;
+  }
+
+  int _minuteVirtualIndex(int m) {
+    final mid = _virtualMinuteCount ~/ 2;
+    return (mid - (mid % 60)) + m;
+  }
+
+  void _syncWheelsToValue() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _programmaticWheel = true;
+      _hourController.jumpToItem(_hourVirtualIndex(_hours));
+      _minuteController.jumpToItem(_minuteVirtualIndex(_minutes));
+      _programmaticWheel = false;
+    });
+  }
+
+  void _onHourWheelChanged(int virtualIndex) {
+    if (_programmaticWheel) return;
+    _recenterWheel(virtualIndex, _hourController, _virtualHourCount, 24);
+    setState(() => _hours = virtualIndex % 24);
+  }
+
+  void _onMinuteWheelChanged(int virtualIndex) {
+    if (_programmaticWheel) return;
+    _recenterWheel(virtualIndex, _minuteController, _virtualMinuteCount, 60);
+    setState(() => _minutes = virtualIndex % 60);
+  }
+
+  void _recenterWheel(
+      int index, FixedExtentScrollController ctrl, int total, int cycle) {
+    final mid = total ~/ 2;
+    if (index < cycle * 2) {
+      _programmaticWheel = true;
+      ctrl.jumpToItem(index + mid);
+      _programmaticWheel = false;
+    } else if (index >= total - cycle * 2) {
+      _programmaticWheel = true;
+      ctrl.jumpToItem(index - mid);
+      _programmaticWheel = false;
+    }
+  }
+
+  String _durationLabel(AppLocalizations l) {
+    if (_hours == 0) return l.sleepTimerSheetMinShort(_minutes);
+    if (_minutes == 0) return l.sleepTimerHoursOnly(_hours);
+    return l.sleepTimerHoursMinutes(_hours, _minutes);
   }
 
   Widget _buildChapterTab(Color accent, TextTheme tt, AppLocalizations l) {
@@ -638,7 +894,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       Icon(Icons.podcasts_outlined,
           size: 40, color: accent.withValues(alpha: 0.5)),
       const SizedBox(height: 16),
-      // Stops at the end of the current episode (no counter — episodes only roll
+      // Stops at the end of the current episode (no counter 鈥?episodes only roll
       // forward when a queue mode is feeding the next one).
       SizedBox(
           width: double.infinity,
@@ -899,3 +1155,4 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
         ));
   }
 }
+

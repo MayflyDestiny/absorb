@@ -2476,10 +2476,45 @@
   "notesDeleteNoteQuestion": "Supprimer la note ?",
   "notesNewNote": "Nouvelle note",
   "sleepTimerSheetMinShort": "{minutes}m",
-  "@sleepTimerSheetMinShort": {
+    "@sleepTimerSheetMinShort": {
     "placeholders": {
       "minutes": {
         "type": "int"
+      }
+    }
+  },
+  "sleepTimerHoursOnly": "{hours} hr",
+  "@sleepTimerHoursOnly": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerHoursMinutes": "{hours} hr {minutes} min",
+  "@sleepTimerHoursMinutes": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerStartDuration": "Start {duration} timer",
+  "@sleepTimerStartDuration": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "sleepTimerLastUsed": "Last used: {duration}",
+  "@sleepTimerLastUsed": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
       }
     }
   },

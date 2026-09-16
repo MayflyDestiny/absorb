@@ -7,7 +7,6 @@ import 'package:vibration/vibration.dart';
 import 'scoped_prefs.dart';
 import 'audio_player_service.dart';
 import 'chromecast_service.dart';
-import 'sleep_timer_tick_policy.dart';
 
 enum SleepTimerMode { off, time, chapters, episodes }
 
@@ -219,24 +218,9 @@ class SleepTimerService extends ChangeNotifier {
     _tickInProgress = true;
     try {
       if (_mode != SleepTimerMode.time) return;
-      final isPlaying = _isPlaybackActive;
-      final pauseRequested = !_cast.isCastEngaged && _player.isPauseRequested;
-      var action = sleepTimerTickAction(
-        timeRemaining: _timeRemaining,
-        isPlaybackActive: isPlaying,
-        isPauseRequested: pauseRequested,
-      );
-      if (action == SleepTimerTickAction.wait) {
-        if (_wasPlaying) {
-          debugPrint('[SleepTimer] Playback went inactive - holding at ${_timeRemaining.inSeconds}s '
-              '(cast=${_cast.isCasting}, reconnecting=${_cast.isReconnecting})');
-        }
-        _wasPlaying = false;
-        return;
-      }
 
-      // Detect pause->play transition and reset if setting is on
-      if (!_wasPlaying) {
+      // Reset to full when playback resumes after a pause, if that setting is on.
+      if (_isPlaybackActive && !_wasPlaying) {
         final resetOnPause = await PlayerSettings.getResetSleepOnPause();
         if (resetOnPause) {
           _resetToFull();
@@ -244,22 +228,10 @@ class SleepTimerService extends ChangeNotifier {
           onToast?.call('Sleep timer reset: ${_initialDuration.inMinutes}m');
         }
       }
-      _wasPlaying = true;
+      _wasPlaying = _isPlaybackActive;
 
-      action = sleepTimerTickAction(
-        timeRemaining: _timeRemaining,
-        isPlaybackActive: _isPlaybackActive,
-        isPauseRequested: !_cast.isCastEngaged && _player.isPauseRequested,
-      );
-      if (action == SleepTimerTickAction.wait) {
-        if (_wasPlaying) {
-          debugPrint('[SleepTimer] Playback went inactive - holding at ${_timeRemaining.inSeconds}s '
-              '(cast=${_cast.isCasting}, reconnecting=${_cast.isReconnecting})');
-        }
-        _wasPlaying = false;
-        return;
-      }
-      if (action == SleepTimerTickAction.trigger) {
+      // The countdown runs regardless of playback state.
+      if (_timeRemaining <= Duration.zero) {
         await _triggerSleep();
         return;
       }
@@ -276,7 +248,9 @@ class SleepTimerService extends ChangeNotifier {
         _warningSent = true;
         onToast?.call('Sleep timer ending soon...');
         final fadeEnabled = await PlayerSettings.getSleepFadeOut();
-        if (fadeEnabled && !_cast.isCastEngaged) {
+        // Only fade when something is actually playing — otherwise there's no
+        // volume to ramp and touching it would just alter the next playback.
+        if (fadeEnabled && !_cast.isCastEngaged && _isPlaybackActive) {
           _isFadingOut = true;
           _fadeStartVolume = _player.volume;
           debugPrint('[SleepTimer] Warning: ${_timeRemaining.inSeconds}s remaining - starting fade (${_fadeThreshold.inSeconds}s)');
@@ -529,7 +503,12 @@ class SleepTimerService extends ChangeNotifier {
     if (_isTriggeringSleep) return;
     final pauseRequested = !_cast.isCastEngaged && _player.isPauseRequested;
     if (!_isPlaybackActive || pauseRequested) {
+      // The timer only pauses playback; when nothing is playing when it
+      // expires there's nothing to pause — simply end the timer.
       _wasPlaying = false;
+      _isFadingOut = false;
+      _player.setVolume(_fadeStartVolume);
+      cancel();
       return;
     }
     _isTriggeringSleep = true;

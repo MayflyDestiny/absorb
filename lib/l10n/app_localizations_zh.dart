@@ -3241,6 +3241,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get download => '下载';
 
   @override
+  String get downloadConfirmTitle => '确认下载';
+
+  @override
+  String downloadConfirmContent(String title) {
+    return '将“$title”下载到本机？';
+  }
+
+  @override
   String get deleteDownload => '删除下载';
 
   @override
@@ -6056,6 +6064,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String sleepTimerSheetMinShort(int minutes) {
     return '$minutes 分';
   }
+
+  @override
+  String sleepTimerHoursOnly(int hours) {
+    return '$hours 时';
+  }
+
+  @override
+  String sleepTimerHoursMinutes(int hours, int minutes) {
+    return '$hours 时 $minutes 分';
+  }
+
+  @override
+  String sleepTimerStartDuration(String duration) {
+    return '启动 $duration 定时器';
+  }
+
+  @override
+  String sleepTimerLastUsed(String duration) {
+    return '上次定时 $duration';
+  }
+
+  @override
+  String get sleepTimerCustom => '自定义';
+
+  @override
+  String get sleepTimerWheelHourUnit => '时';
+
+  @override
+  String get sleepTimerWheelMinuteUnit => '分';
 
   @override
   String sleepTimerSheetSecondsShort(int seconds) {

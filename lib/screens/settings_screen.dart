@@ -91,14 +91,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _rollingDownloadCount = 3;
   bool _rollingDownloadDeleteFinished = false;
   CardScrubberMode _cardScrubberMode = CardScrubberMode.chapter;
-  bool _notifChapterProgress = false;
+  bool _notifChapterProgress = true;
   bool _notifSpeedBookmark = false;
   bool _duckBriefInterruptions = false;
   bool _autoplayOnCarConnect = false;
   bool _lockSeekBar = false;
   bool _mp3IndexSeeking = false;
   bool _speedAdjustedTime = true;
-  int _forwardSkip = 30;
+  int _forwardSkip = 15;
   int _backSkip = 10;
   bool _skipChapterBarrier = true;
   bool _longSkipButtons = false;

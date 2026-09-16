@@ -8,6 +8,7 @@ import '../providers/library_provider.dart';
 import '../services/download_service.dart';
 import '../services/playback_history_service.dart';
 import '../services/player_settings.dart';
+import 'download_confirm.dart';
 import 'overlay_toast.dart';
 
 String dateLabel(DateTime dt, [AppLocalizations? l]) {
@@ -356,6 +357,8 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
     } else if (_dl.isDownloading(widget.itemId)) {
       _dl.cancelDownload(widget.itemId);
     } else {
+      final ok = await confirmDownload(context, widget.title);
+      if (!ok || !context.mounted) return;
       final error = await _dl.downloadItem(api: api, itemId: widget.itemId, title: widget.title, author: widget.author, coverUrl: widget.coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
       if (error != null && context.mounted) {
         showOverlayToast(context, error, icon: Icons.error_outline_rounded);

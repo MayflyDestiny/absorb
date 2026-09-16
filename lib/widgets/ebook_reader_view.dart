@@ -242,7 +242,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   Animation<double>? _routeAnim;
 
   // In-reader media controls (immersion reading) drive the shared player.
-  int _forwardSkip = 30;
+  int _forwardSkip = 15;
   int _backSkip = 10;
   // This item's audiobook metadata, so the controls can show (and start
   // playback) even before a session is running.

@@ -16,6 +16,7 @@ import 'html_description.dart';
 import 'overlay_toast.dart';
 import 'playlist_picker_sheet.dart';
 import 'action_pill.dart';
+import 'download_confirm.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'stackable_sheet.dart';
 import 'episode_list_sheet.dart';
@@ -200,6 +201,9 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
+
+    final ok = await confirmDownload(context, _episodeTitle);
+    if (!ok || !mounted) return;
 
     final error = await DownloadService().downloadItem(
       api: api,

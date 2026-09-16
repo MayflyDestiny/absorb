@@ -26,6 +26,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import 'card_buttons.dart';
+import 'download_confirm.dart';
 import '../services/api_service.dart';
 import '../services/bookmark_preview_player.dart';
 import '../services/bookmark_service.dart';
@@ -1861,6 +1862,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final l = AppLocalizations.of(context)!;
     final api = auth.apiService;
     if (api == null) return;
+    final ok = await confirmDownload(context, title);
+    if (!ok || !mounted) return;
     setState(() => _ebookOfflineDownloading = true);
     try {
       await fetchEbookToCache(api, widget.itemId, ebookFile, title);
