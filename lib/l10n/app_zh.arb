@@ -3235,5 +3235,173 @@
   "findInAudiobookAfterLabel": "找到位置后",
   "findInAudiobookStay": "继续阅读",
   "findInAudiobookGoPlayer": "打开播放器",
-  "findInAudiobookPlaying": "正在有声书中播放此段落"
+  "findInAudiobookPlaying": "正在有声书中播放此段落",
+  "recentSeries": "最近系列",
+  "newestAuthors": "最新作者",
+  "timeRemainingLessThanMinute": "剩余不足1分钟",
+  "timeRemaining": "剩余 {duration}",
+  "@timeRemaining": {
+    "placeholders": {
+      "duration": {"type": "String"}
+    }
+  },
+  "historyEventResumed": "继续播放",
+  "historyEventResumedDetail": "继续播放（{detail}）",
+  "@historyEventResumedDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventPaused": "暂停",
+  "historyEventPausedDetail": "暂停（{detail}）",
+  "@historyEventPausedDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventSeeked": "跳转",
+  "historyEventSeekedDetail": "跳转到 {detail}",
+  "@historyEventSeekedDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventSyncLocal": "保存到本地",
+  "historyEventSyncServer": "同步到服务器",
+  "historyEventAutoRewound": "自动回退",
+  "historyEventAutoRewoundDetail": "自动回退 {detail}",
+  "@historyEventAutoRewoundDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventSkipForward": "快进",
+  "historyEventSkipForwardDetail": "快进 {detail}",
+  "@historyEventSkipForwardDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventSkipBack": "快退",
+  "historyEventSkipBackDetail": "快退 {detail}",
+  "@historyEventSkipBackDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventSpeedChanged": "语速已调整",
+  "historyEventSpeedSetTo": "语速 {detail}",
+  "@historyEventSpeedSetTo": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventBookFinished": "整本听完",
+  "historyEventSessionStarted": "播放会话开始",
+  "historyEventSessionStartedDetail": "播放会话开始（{detail}）",
+  "@historyEventSessionStartedDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventSessionEnded": "播放会话结束",
+  "historyEventSessionEndedDetail": "播放会话结束（{detail}）",
+  "@historyEventSessionEndedDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historyEventMediaButton": "媒体按钮",
+  "historyEventMediaButtonDetail": "媒体按钮: {detail}",
+  "@historyEventMediaButtonDetail": {
+    "placeholders": {
+      "detail": {"type": "String"}
+    }
+  },
+  "historySeconds": "{value}秒",
+  "@historySeconds": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "historyMinutes": "{value}分钟",
+  "@historyMinutes": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "historySpeed": "{value}倍速",
+  "@historySpeed": {
+    "placeholders": {
+      "value": {"type": "String"}
+    }
+  },
+  "historyDetailStream": "流式播放",
+  "historyDetailStreamHotSwap": "流式切为本地播放",
+  "historyDetailSwitchedToLocal": "已切换到本地播放",
+  "historyDetailNextChapter": "跳到下一章",
+  "historyDetailPrevChapter": "跳到上一章",
+  "historyDetailNextChapterToEnd": "跳到书尾",
+  "historyDetailNextChapterToIntroSkip": "跳到下一章 {position}（跳过片头）",
+  "@historyDetailNextChapterToIntroSkip": {
+    "placeholders": {
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailPrevChapterToIntroSkip": "跳到上一章 {position}（跳过片头）",
+  "@historyDetailPrevChapterToIntroSkip": {
+    "placeholders": {
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailSkipChapterIntro": "跳过章节片头",
+  "historyDetailSkipChapterOutro": "跳过章节片尾",
+  "historyDetailSkipToEnd": "跳到结尾",
+  "historyDetailSnapToChapterStart": "回到本章开头",
+  "historyDetailSessionStart": "会话开始",
+  "historyDetailSleepTimer": "睡眠定时器",
+  "historyDetailRewindAtSpeed": "{base}（{speed}，对应 {adjusted}）",
+  "@historyDetailRewindAtSpeed": {
+    "placeholders": {
+      "base": {"type": "String"},
+      "adjusted": {"type": "String"},
+      "speed": {"type": "String"}
+    }
+  },
+  "historyDetailRewindSessionStart": "{base}（会话开始）",
+  "@historyDetailRewindSessionStart": {
+    "placeholders": {
+      "base": {"type": "String"}
+    }
+  },
+  "historyDetailRewindSessionStartAtSpeed": "{base}（{speed}，对应 {adjusted}，会话开始）",
+  "@historyDetailRewindSessionStartAtSpeed": {
+    "placeholders": {
+      "base": {"type": "String"},
+      "adjusted": {"type": "String"},
+      "speed": {"type": "String"}
+    }
+  },
+  "historyDetailRewindSleepTimer": "{base}（睡眠定时器）",
+  "@historyDetailRewindSleepTimer": {
+    "placeholders": {
+      "base": {"type": "String"}
+    }
+  },
+  "historyDetailSkipForwardAtSpeed": "{seconds}（{speed}，对应 {adjusted}）",
+  "@historyDetailSkipForwardAtSpeed": {
+    "placeholders": {
+      "seconds": {"type": "String"},
+      "adjusted": {"type": "String"},
+      "speed": {"type": "String"}
+    }
+  },
+  "historyDetailSkipBackwardAtSpeed": "{seconds}（{speed}，对应 {adjusted}）",
+  "@historyDetailSkipBackwardAtSpeed": {
+    "placeholders": {
+      "seconds": {"type": "String"},
+      "adjusted": {"type": "String"},
+      "speed": {"type": "String"}
+    }
+  }
 }

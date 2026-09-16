@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../l10n/app_localizations.dart';
 import 'scoped_prefs.dart';
 
 /// Types of playback events we track.
@@ -100,6 +101,160 @@ class PlaybackEvent {
         if (detail != null && detail!.isNotEmpty) return 'Media button: $detail';
         return 'Media button';
     }
+  }
+
+  String localizedLabel(AppLocalizations l) {
+    switch (type) {
+      case PlaybackEventType.play:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventResumedDetail(_localizePlayDetail(l, detail!));
+        }
+        return l.historyEventResumed;
+      case PlaybackEventType.pause:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventPausedDetail(detail!);
+        }
+        return l.historyEventPaused;
+      case PlaybackEventType.seek:
+        if (detail != null && detail!.isNotEmpty) {
+          return _localizeSeekDetail(l, detail!);
+        }
+        return l.historyEventSeeked;
+      case PlaybackEventType.syncLocal:
+        return l.historyEventSyncLocal;
+      case PlaybackEventType.syncServer:
+        return l.historyEventSyncServer;
+      case PlaybackEventType.autoRewind:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventAutoRewoundDetail(
+              _localizeRewindDetail(l, detail!));
+        }
+        return l.historyEventAutoRewound;
+      case PlaybackEventType.skipForward:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventSkipForwardDetail(
+              _localizeSkipDetail(l, detail!, forward: true));
+        }
+        return l.historyEventSkipForward;
+      case PlaybackEventType.skipBackward:
+        if (detail != null && detail!.isNotEmpty) {
+          if (detail == 'snap to chapter start') {
+            return l.historyDetailSnapToChapterStart;
+          }
+          return l.historyEventSkipBackDetail(
+              _localizeSkipDetail(l, detail!, forward: false));
+        }
+        return l.historyEventSkipBack;
+      case PlaybackEventType.speedChange:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventSpeedSetTo(_localizedSpeed(l, detail!));
+        }
+        return l.historyEventSpeedChanged;
+      case PlaybackEventType.bookFinished:
+        return l.historyEventBookFinished;
+      case PlaybackEventType.sessionStart:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventSessionStartedDetail(
+              _localizeSessionDetail(l, detail!));
+        }
+        return l.historyEventSessionStarted;
+      case PlaybackEventType.sessionEnd:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventSessionEndedDetail(
+              _localizeSessionDetail(l, detail!));
+        }
+        return l.historyEventSessionEnded;
+      case PlaybackEventType.clickDebounce:
+        if (detail != null && detail!.isNotEmpty) {
+          return l.historyEventMediaButtonDetail(detail!);
+        }
+        return l.historyEventMediaButton;
+    }
+  }
+
+  static String _localizedDuration(AppLocalizations l, String raw) {
+    if (raw.endsWith('m')) {
+      return l.historyMinutes(raw.substring(0, raw.length - 1));
+    }
+    if (raw.endsWith('s')) {
+      return l.historySeconds(raw.substring(0, raw.length - 1));
+    }
+    return raw;
+  }
+
+  static String _localizedSpeed(AppLocalizations l, String raw) {
+    if (raw.endsWith('x')) {
+      return l.historySpeed(raw.substring(0, raw.length - 1));
+    }
+    return raw;
+  }
+
+  static String _localizePlayDetail(AppLocalizations l, String d) {
+    if (d == 'Switched to local playback') return l.historyDetailSwitchedToLocal;
+    return d;
+  }
+
+  static String _localizeSessionDetail(AppLocalizations l, String d) {
+    if (d == 'stream') return l.historyDetailStream;
+    if (d == 'stream hot-swap') return l.historyDetailStreamHotSwap;
+    return d;
+  }
+
+  static String _localizeSeekDetail(AppLocalizations l, String detail) {
+    if (detail == 'next chapter') return l.historyDetailNextChapter;
+    if (detail == 'prev chapter') return l.historyDetailPrevChapter;
+    if (detail == 'next chapter to end') return l.historyDetailNextChapterToEnd;
+    if (detail == 'skip chapter intro') return l.historyDetailSkipChapterIntro;
+    if (detail == 'skip chapter outro') return l.historyDetailSkipChapterOutro;
+    if (detail == 'skip to end') return l.historyDetailSkipToEnd;
+    final m = RegExp(r'^(next|prev) chapter to ([\d.]+)s \(intro skip\)$')
+        .firstMatch(detail);
+    if (m != null) {
+      final position = _localizedDuration(l, '${m.group(2)}s');
+      return m.group(1) == 'next'
+          ? l.historyDetailNextChapterToIntroSkip(position)
+          : l.historyDetailPrevChapterToIntroSkip(position);
+    }
+    return l.historyEventSeekedDetail(detail);
+  }
+
+  static String _localizeRewindDetail(AppLocalizations l, String detail) {
+    final m = RegExp(r'^([\d.]+[sm])\s*(?:\((.+)\))?$').firstMatch(detail);
+    if (m == null) return detail;
+    final base = _localizedDuration(l, m.group(1)!);
+    final paren = m.group(2);
+    if (paren == null) return base;
+    if (paren.contains('sleep timer')) {
+      return l.historyDetailRewindSleepTimer(base);
+    }
+    final speedM = RegExp(r'^([\d.]+)s at ([\d.]+)x').firstMatch(paren);
+    final session = paren.contains('session start');
+    if (speedM != null) {
+      final adjusted = _localizedDuration(l, '${speedM.group(1)}s');
+      final speed = _localizedSpeed(l, speedM.group(2)!);
+      if (session) {
+        return l.historyDetailRewindSessionStartAtSpeed(base, adjusted, speed);
+      }
+      return l.historyDetailRewindAtSpeed(base, adjusted, speed);
+    }
+    if (session) return l.historyDetailRewindSessionStart(base);
+    return detail;
+  }
+
+  static String _localizeSkipDetail(
+    AppLocalizations l,
+    String detail, {
+    required bool forward,
+  }) {
+    final m =
+        RegExp(r'^[+-](\d+)s \(([\d.]+)s @ ([\d.]+)x\)$').firstMatch(detail);
+    if (m == null) return detail;
+    final seconds = _localizedDuration(l, '${m.group(1)}s');
+    final adjusted = _localizedDuration(l, '${m.group(2)}s');
+    final speed = _localizedSpeed(l, m.group(3)!);
+    return forward
+        ? l.historyDetailSkipForwardAtSpeed(seconds, adjusted, speed)
+        : l.historyDetailSkipBackwardAtSpeed(seconds, adjusted, speed);
   }
 
   String get icon {

@@ -2626,7 +2626,7 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
               ),
             ),
             title: Text(
-              event.label,
+              event.localizedLabel(l),
               style: widget.tt.bodySmall?.copyWith(
                 color: cs.onSurface.withValues(
                   alpha: isAdvancedEvent ? 0.55 : 0.7,

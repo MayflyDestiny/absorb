@@ -832,10 +832,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
   Color? _accent;
   String? _derivedCoverKey;
 
-  static String _fmtRemaining(double s) {
+  static String _fmtRemaining(AppLocalizations l, double s) {
     if (s <= 0) return '';
-    if (s < 60) return '<1m left';
-    return '${formatHm(s)} left';
+    if (s < 60) return l.timeRemainingLessThanMinute;
+    return l.timeRemaining(formatHm(s));
   }
 
   Widget _buildCoverImage(String? coverUrl, ColorScheme cs, Map<String, String> headers) {
@@ -1154,7 +1154,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                         if (remaining > 0) ...[
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(_fmtRemaining(remaining),
+                            child: Text(_fmtRemaining(l, remaining),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: tt.labelSmall?.copyWith(

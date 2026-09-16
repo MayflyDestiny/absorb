@@ -9026,4 +9026,214 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get findInAudiobookPlaying => 'Playing this passage in the audiobook';
+
+  @override
+  String get recentSeries => 'Recent Series';
+
+  @override
+  String get newestAuthors => 'Newest Authors';
+
+  @override
+  String get timeRemainingLessThanMinute => '<1m left';
+
+  @override
+  String timeRemaining(String duration) {
+    return '$duration left';
+  }
+
+  @override
+  String get historyEventResumed => 'Resumed playback';
+
+  @override
+  String historyEventResumedDetail(String detail) {
+    return 'Resumed playback ($detail)';
+  }
+
+  @override
+  String get historyEventPaused => 'Paused';
+
+  @override
+  String historyEventPausedDetail(String detail) {
+    return 'Paused ($detail)';
+  }
+
+  @override
+  String get historyEventSeeked => 'Seeked';
+
+  @override
+  String historyEventSeekedDetail(String detail) {
+    return 'Seeked $detail';
+  }
+
+  @override
+  String get historyEventSyncLocal => 'Saved locally';
+
+  @override
+  String get historyEventSyncServer => 'Synced to server';
+
+  @override
+  String get historyEventAutoRewound => 'Auto-rewound';
+
+  @override
+  String historyEventAutoRewoundDetail(String detail) {
+    return 'Auto-rewound $detail';
+  }
+
+  @override
+  String get historyEventSkipForward => 'Skipped forward';
+
+  @override
+  String historyEventSkipForwardDetail(String detail) {
+    return 'Skipped forward ($detail)';
+  }
+
+  @override
+  String get historyEventSkipBack => 'Skipped back';
+
+  @override
+  String historyEventSkipBackDetail(String detail) {
+    return 'Skipped back ($detail)';
+  }
+
+  @override
+  String get historyEventSpeedChanged => 'Speed changed';
+
+  @override
+  String historyEventSpeedSetTo(String detail) {
+    return 'Speed set to $detail';
+  }
+
+  @override
+  String get historyEventBookFinished => 'Book finished';
+
+  @override
+  String get historyEventSessionStarted => 'Session started';
+
+  @override
+  String historyEventSessionStartedDetail(String detail) {
+    return 'Session started ($detail)';
+  }
+
+  @override
+  String get historyEventSessionEnded => 'Session ended';
+
+  @override
+  String historyEventSessionEndedDetail(String detail) {
+    return 'Session ended ($detail)';
+  }
+
+  @override
+  String get historyEventMediaButton => 'Media button';
+
+  @override
+  String historyEventMediaButtonDetail(String detail) {
+    return 'Media button: $detail';
+  }
+
+  @override
+  String historySeconds(String value) {
+    return '${value}s';
+  }
+
+  @override
+  String historyMinutes(String value) {
+    return '${value}m';
+  }
+
+  @override
+  String historySpeed(String value) {
+    return '${value}x';
+  }
+
+  @override
+  String get historyDetailStream => 'stream';
+
+  @override
+  String get historyDetailStreamHotSwap => 'stream hot-swap';
+
+  @override
+  String get historyDetailSwitchedToLocal => 'Switched to local playback';
+
+  @override
+  String get historyDetailNextChapter => 'next chapter';
+
+  @override
+  String get historyDetailPrevChapter => 'prev chapter';
+
+  @override
+  String get historyDetailNextChapterToEnd => 'next chapter to end';
+
+  @override
+  String historyDetailNextChapterToIntroSkip(String position) {
+    return 'next chapter to $position (intro skip)';
+  }
+
+  @override
+  String historyDetailPrevChapterToIntroSkip(String position) {
+    return 'prev chapter to $position (intro skip)';
+  }
+
+  @override
+  String get historyDetailSkipChapterIntro => 'skip chapter intro';
+
+  @override
+  String get historyDetailSkipChapterOutro => 'skip chapter outro';
+
+  @override
+  String get historyDetailSkipToEnd => 'skip to end';
+
+  @override
+  String get historyDetailSnapToChapterStart => 'snap to chapter start';
+
+  @override
+  String get historyDetailSessionStart => 'session start';
+
+  @override
+  String get historyDetailSleepTimer => 'sleep timer';
+
+  @override
+  String historyDetailRewindAtSpeed(
+    String base,
+    String adjusted,
+    String speed,
+  ) {
+    return '$base ($adjusted at $speed)';
+  }
+
+  @override
+  String historyDetailRewindSessionStart(String base) {
+    return '$base (session start)';
+  }
+
+  @override
+  String historyDetailRewindSessionStartAtSpeed(
+    String base,
+    String adjusted,
+    String speed,
+  ) {
+    return '$base ($adjusted at $speed, session start)';
+  }
+
+  @override
+  String historyDetailRewindSleepTimer(String base) {
+    return '$base (sleep timer)';
+  }
+
+  @override
+  String historyDetailSkipForwardAtSpeed(
+    String seconds,
+    String adjusted,
+    String speed,
+  ) {
+    return '+$seconds ($adjusted @ $speed)';
+  }
+
+  @override
+  String historyDetailSkipBackwardAtSpeed(
+    String seconds,
+    String adjusted,
+    String speed,
+  ) {
+    return '-$seconds ($adjusted @ $speed)';
+  }
 }

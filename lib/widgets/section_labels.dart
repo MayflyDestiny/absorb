@@ -20,6 +20,10 @@ String sectionLabel(String id, String? fallback, AppLocalizations l) {
       return l.newEpisodes;
     case 'downloaded-books':
       return l.downloads;
+    case 'recent-series':
+      return l.recentSeries;
+    case 'newest-authors':
+      return l.newestAuthors;
   }
   if (fallback != null && fallback.isNotEmpty) return fallback;
   return id

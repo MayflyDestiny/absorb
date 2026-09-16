@@ -15542,6 +15542,318 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Playing this passage in the audiobook'**
   String get findInAudiobookPlaying;
+
+  /// No description provided for @recentSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Series'**
+  String get recentSeries;
+
+  /// No description provided for @newestAuthors.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest Authors'**
+  String get newestAuthors;
+
+  /// No description provided for @timeRemainingLessThanMinute.
+  ///
+  /// In en, this message translates to:
+  /// **'<1m left'**
+  String get timeRemainingLessThanMinute;
+
+  /// No description provided for @timeRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{duration} left'**
+  String timeRemaining(String duration);
+
+  /// No description provided for @historyEventResumed.
+  ///
+  /// In en, this message translates to:
+  /// **'Resumed playback'**
+  String get historyEventResumed;
+
+  /// No description provided for @historyEventResumedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Resumed playback ({detail})'**
+  String historyEventResumedDetail(String detail);
+
+  /// No description provided for @historyEventPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get historyEventPaused;
+
+  /// No description provided for @historyEventPausedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused ({detail})'**
+  String historyEventPausedDetail(String detail);
+
+  /// No description provided for @historyEventSeeked.
+  ///
+  /// In en, this message translates to:
+  /// **'Seeked'**
+  String get historyEventSeeked;
+
+  /// No description provided for @historyEventSeekedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Seeked {detail}'**
+  String historyEventSeekedDetail(String detail);
+
+  /// No description provided for @historyEventSyncLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved locally'**
+  String get historyEventSyncLocal;
+
+  /// No description provided for @historyEventSyncServer.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced to server'**
+  String get historyEventSyncServer;
+
+  /// No description provided for @historyEventAutoRewound.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-rewound'**
+  String get historyEventAutoRewound;
+
+  /// No description provided for @historyEventAutoRewoundDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-rewound {detail}'**
+  String historyEventAutoRewoundDetail(String detail);
+
+  /// No description provided for @historyEventSkipForward.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped forward'**
+  String get historyEventSkipForward;
+
+  /// No description provided for @historyEventSkipForwardDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped forward ({detail})'**
+  String historyEventSkipForwardDetail(String detail);
+
+  /// No description provided for @historyEventSkipBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped back'**
+  String get historyEventSkipBack;
+
+  /// No description provided for @historyEventSkipBackDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped back ({detail})'**
+  String historyEventSkipBackDetail(String detail);
+
+  /// No description provided for @historyEventSpeedChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed changed'**
+  String get historyEventSpeedChanged;
+
+  /// No description provided for @historyEventSpeedSetTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Speed set to {detail}'**
+  String historyEventSpeedSetTo(String detail);
+
+  /// No description provided for @historyEventBookFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Book finished'**
+  String get historyEventBookFinished;
+
+  /// No description provided for @historyEventSessionStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Session started'**
+  String get historyEventSessionStarted;
+
+  /// No description provided for @historyEventSessionStartedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Session started ({detail})'**
+  String historyEventSessionStartedDetail(String detail);
+
+  /// No description provided for @historyEventSessionEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Session ended'**
+  String get historyEventSessionEnded;
+
+  /// No description provided for @historyEventSessionEndedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Session ended ({detail})'**
+  String historyEventSessionEndedDetail(String detail);
+
+  /// No description provided for @historyEventMediaButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Media button'**
+  String get historyEventMediaButton;
+
+  /// No description provided for @historyEventMediaButtonDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Media button: {detail}'**
+  String historyEventMediaButtonDetail(String detail);
+
+  /// No description provided for @historySeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'{value}s'**
+  String historySeconds(String value);
+
+  /// No description provided for @historyMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{value}m'**
+  String historyMinutes(String value);
+
+  /// No description provided for @historySpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'{value}x'**
+  String historySpeed(String value);
+
+  /// No description provided for @historyDetailStream.
+  ///
+  /// In en, this message translates to:
+  /// **'stream'**
+  String get historyDetailStream;
+
+  /// No description provided for @historyDetailStreamHotSwap.
+  ///
+  /// In en, this message translates to:
+  /// **'stream hot-swap'**
+  String get historyDetailStreamHotSwap;
+
+  /// No description provided for @historyDetailSwitchedToLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Switched to local playback'**
+  String get historyDetailSwitchedToLocal;
+
+  /// No description provided for @historyDetailNextChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'next chapter'**
+  String get historyDetailNextChapter;
+
+  /// No description provided for @historyDetailPrevChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'prev chapter'**
+  String get historyDetailPrevChapter;
+
+  /// No description provided for @historyDetailNextChapterToEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'next chapter to end'**
+  String get historyDetailNextChapterToEnd;
+
+  /// No description provided for @historyDetailNextChapterToIntroSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'next chapter to {position} (intro skip)'**
+  String historyDetailNextChapterToIntroSkip(String position);
+
+  /// No description provided for @historyDetailPrevChapterToIntroSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'prev chapter to {position} (intro skip)'**
+  String historyDetailPrevChapterToIntroSkip(String position);
+
+  /// No description provided for @historyDetailSkipChapterIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'skip chapter intro'**
+  String get historyDetailSkipChapterIntro;
+
+  /// No description provided for @historyDetailSkipChapterOutro.
+  ///
+  /// In en, this message translates to:
+  /// **'skip chapter outro'**
+  String get historyDetailSkipChapterOutro;
+
+  /// No description provided for @historyDetailSkipToEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'skip to end'**
+  String get historyDetailSkipToEnd;
+
+  /// No description provided for @historyDetailSnapToChapterStart.
+  ///
+  /// In en, this message translates to:
+  /// **'snap to chapter start'**
+  String get historyDetailSnapToChapterStart;
+
+  /// No description provided for @historyDetailSessionStart.
+  ///
+  /// In en, this message translates to:
+  /// **'session start'**
+  String get historyDetailSessionStart;
+
+  /// No description provided for @historyDetailSleepTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'sleep timer'**
+  String get historyDetailSleepTimer;
+
+  /// No description provided for @historyDetailRewindAtSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'{base} ({adjusted} at {speed})'**
+  String historyDetailRewindAtSpeed(String base, String adjusted, String speed);
+
+  /// No description provided for @historyDetailRewindSessionStart.
+  ///
+  /// In en, this message translates to:
+  /// **'{base} (session start)'**
+  String historyDetailRewindSessionStart(String base);
+
+  /// No description provided for @historyDetailRewindSessionStartAtSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'{base} ({adjusted} at {speed}, session start)'**
+  String historyDetailRewindSessionStartAtSpeed(
+    String base,
+    String adjusted,
+    String speed,
+  );
+
+  /// No description provided for @historyDetailRewindSleepTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'{base} (sleep timer)'**
+  String historyDetailRewindSleepTimer(String base);
+
+  /// No description provided for @historyDetailSkipForwardAtSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'+{seconds} ({adjusted} @ {speed})'**
+  String historyDetailSkipForwardAtSpeed(
+    String seconds,
+    String adjusted,
+    String speed,
+  );
+
+  /// No description provided for @historyDetailSkipBackwardAtSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'-{seconds} ({adjusted} @ {speed})'**
+  String historyDetailSkipBackwardAtSpeed(
+    String seconds,
+    String adjusted,
+    String speed,
+  );
 }
 
 class _AppLocalizationsDelegate

@@ -8711,4 +8711,214 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get findInAudiobookPlaying => '正在有声书中播放此段落';
+
+  @override
+  String get recentSeries => '最近系列';
+
+  @override
+  String get newestAuthors => '最新作者';
+
+  @override
+  String get timeRemainingLessThanMinute => '剩余不足1分钟';
+
+  @override
+  String timeRemaining(String duration) {
+    return '剩余 $duration';
+  }
+
+  @override
+  String get historyEventResumed => '继续播放';
+
+  @override
+  String historyEventResumedDetail(String detail) {
+    return '继续播放（$detail）';
+  }
+
+  @override
+  String get historyEventPaused => '暂停';
+
+  @override
+  String historyEventPausedDetail(String detail) {
+    return '暂停（$detail）';
+  }
+
+  @override
+  String get historyEventSeeked => '跳转';
+
+  @override
+  String historyEventSeekedDetail(String detail) {
+    return '跳转到 $detail';
+  }
+
+  @override
+  String get historyEventSyncLocal => '保存到本地';
+
+  @override
+  String get historyEventSyncServer => '同步到服务器';
+
+  @override
+  String get historyEventAutoRewound => '自动回退';
+
+  @override
+  String historyEventAutoRewoundDetail(String detail) {
+    return '自动回退 $detail';
+  }
+
+  @override
+  String get historyEventSkipForward => '快进';
+
+  @override
+  String historyEventSkipForwardDetail(String detail) {
+    return '快进 $detail';
+  }
+
+  @override
+  String get historyEventSkipBack => '快退';
+
+  @override
+  String historyEventSkipBackDetail(String detail) {
+    return '快退 $detail';
+  }
+
+  @override
+  String get historyEventSpeedChanged => '语速已调整';
+
+  @override
+  String historyEventSpeedSetTo(String detail) {
+    return '语速 $detail';
+  }
+
+  @override
+  String get historyEventBookFinished => '整本听完';
+
+  @override
+  String get historyEventSessionStarted => '播放会话开始';
+
+  @override
+  String historyEventSessionStartedDetail(String detail) {
+    return '播放会话开始（$detail）';
+  }
+
+  @override
+  String get historyEventSessionEnded => '播放会话结束';
+
+  @override
+  String historyEventSessionEndedDetail(String detail) {
+    return '播放会话结束（$detail）';
+  }
+
+  @override
+  String get historyEventMediaButton => '媒体按钮';
+
+  @override
+  String historyEventMediaButtonDetail(String detail) {
+    return '媒体按钮: $detail';
+  }
+
+  @override
+  String historySeconds(String value) {
+    return '$value秒';
+  }
+
+  @override
+  String historyMinutes(String value) {
+    return '$value分钟';
+  }
+
+  @override
+  String historySpeed(String value) {
+    return '$value倍速';
+  }
+
+  @override
+  String get historyDetailStream => '流式播放';
+
+  @override
+  String get historyDetailStreamHotSwap => '流式切为本地播放';
+
+  @override
+  String get historyDetailSwitchedToLocal => '已切换到本地播放';
+
+  @override
+  String get historyDetailNextChapter => '跳到下一章';
+
+  @override
+  String get historyDetailPrevChapter => '跳到上一章';
+
+  @override
+  String get historyDetailNextChapterToEnd => '跳到书尾';
+
+  @override
+  String historyDetailNextChapterToIntroSkip(String position) {
+    return '跳到下一章 $position（跳过片头）';
+  }
+
+  @override
+  String historyDetailPrevChapterToIntroSkip(String position) {
+    return '跳到上一章 $position（跳过片头）';
+  }
+
+  @override
+  String get historyDetailSkipChapterIntro => '跳过章节片头';
+
+  @override
+  String get historyDetailSkipChapterOutro => '跳过章节片尾';
+
+  @override
+  String get historyDetailSkipToEnd => '跳到结尾';
+
+  @override
+  String get historyDetailSnapToChapterStart => '回到本章开头';
+
+  @override
+  String get historyDetailSessionStart => '会话开始';
+
+  @override
+  String get historyDetailSleepTimer => '睡眠定时器';
+
+  @override
+  String historyDetailRewindAtSpeed(
+    String base,
+    String adjusted,
+    String speed,
+  ) {
+    return '$base（$speed，对应 $adjusted）';
+  }
+
+  @override
+  String historyDetailRewindSessionStart(String base) {
+    return '$base（会话开始）';
+  }
+
+  @override
+  String historyDetailRewindSessionStartAtSpeed(
+    String base,
+    String adjusted,
+    String speed,
+  ) {
+    return '$base（$speed，对应 $adjusted，会话开始）';
+  }
+
+  @override
+  String historyDetailRewindSleepTimer(String base) {
+    return '$base（睡眠定时器）';
+  }
+
+  @override
+  String historyDetailSkipForwardAtSpeed(
+    String seconds,
+    String adjusted,
+    String speed,
+  ) {
+    return '$seconds（$speed，对应 $adjusted）';
+  }
+
+  @override
+  String historyDetailSkipBackwardAtSpeed(
+    String seconds,
+    String adjusted,
+    String speed,
+  ) {
+    return '$seconds（$speed，对应 $adjusted）';
+  }
 }
