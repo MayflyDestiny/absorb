@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -226,14 +227,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
       if (expanded) {
-        Future.delayed(const Duration(milliseconds: 350), () {
-          final ctx = _keyFor(section).currentContext;
-          if (ctx != null && mounted) {
-            Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), curve: Curves.easeOut, alignment: 0.3);
-          }
+        // Wait out the ExpansionTile animation (200ms) so we measure the fully
+        // opened height before deciding whether the page needs to move.
+        Future.delayed(const Duration(milliseconds: 210), () {
+          if (mounted) _revealExpandedSection(section);
         });
       }
     });
+  }
+
+  /// Keeps the freshly opened [section] on screen. Unlike the old fixed
+  /// `ensureVisible(alignment: 0.3)`, this leaves the scroll untouched when the
+  /// section already fits, so tapping a settings row no longer nudges the whole
+  /// page; only when it doesn't fit is its top aligned to the viewport top.
+  void _revealExpandedSection(String section) {
+    final ctx = _keyFor(section).currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    final scrollable = Scrollable.maybeOf(ctx);
+    if (viewport == null || scrollable == null) return;
+    final position = scrollable.position;
+    if (!position.hasViewportDimension) return;
+
+    final revealTop = viewport.getOffsetToReveal(box, 0.0).offset;
+    final revealBottom = viewport.getOffsetToReveal(box, 1.0).offset;
+    final current = position.pixels;
+    final topVisible = revealTop >= current;
+    final bottomVisible = revealBottom <= current;
+    if (topVisible && bottomVisible) return;
+
+    final target = revealTop
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if ((target - current).abs() < 0.5) return;
+    position.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
