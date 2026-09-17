@@ -59,6 +59,9 @@ class AppLocalizationsNo extends AppLocalizations {
   String get search => 'Search';
 
   @override
+  String get chapterIndex => 'Index';
+
+  @override
   String get apply => 'Apply';
 
   @override
@@ -2012,6 +2015,90 @@ class AppLocalizationsNo extends AppLocalizations {
   String get manageDownloads => 'Manage downloads';
 
   @override
+  String get manageDownloadsSubtitle =>
+      'View, pause, resume and delete your library downloads';
+
+  @override
+  String get downloadsPaused => 'Paused';
+
+  @override
+  String get downloadsPause => 'Pause';
+
+  @override
+  String get downloadsResume => 'Resume';
+
+  @override
+  String get downloadsManageTracks => 'Manage episodes';
+
+  @override
+  String get downloadsStoredExternally => 'Stored in external storage';
+
+  @override
+  String get downloadsNoPerTrackSaf =>
+      'Episodes saved to external storage can\'t be deleted individually.';
+
+  @override
+  String get downloadsTrackDeleteTitle => 'Delete this episode?';
+
+  @override
+  String downloadsTrackDeleteContent(String title) {
+    return 'Remove \"$title\" from this device? Playback of this episode will stop.';
+  }
+
+  @override
+  String downloadsSummary(int count, String size) {
+    return '$count downloads · $size';
+  }
+
+  @override
+  String get downloadsSort => 'Sort';
+
+  @override
+  String get downloadsSortTitle => 'Title';
+
+  @override
+  String get downloadsSortSize => 'Size';
+
+  @override
+  String get downloadsSortRecent => 'Recently downloaded';
+
+  @override
+  String get downloadsSearchHint => 'Search downloads';
+
+  @override
+  String get downloadsNoResults => 'No matching downloads';
+
+  @override
+  String get downloadsResumeAll => 'Resume all';
+
+  @override
+  String get downloadsDeleteAll => 'Delete all';
+
+  @override
+  String get downloadsDeleteAllContent =>
+      'Delete every paused download from this device?';
+
+  @override
+  String get downloadsManageFiles => 'Manage audio files';
+
+  @override
+  String get downloadsPlayFromHere => 'Play from this episode';
+
+  @override
+  String get downloadsGapSkipped =>
+      'Removed episodes are skipped during playback';
+
+  @override
+  String downloadsDeleteTracksCount(int count) {
+    return 'Delete $count episode(s)?';
+  }
+
+  @override
+  String selectRange(int start, int end) {
+    return 'Select ($start-$end)';
+  }
+
+  @override
   String get streamingCache => 'Streaming cache';
 
   @override
@@ -3337,6 +3424,14 @@ class AppLocalizationsNo extends AppLocalizations {
   @override
   String selectedCount(int count) {
     return '$count selected';
+  }
+
+  @override
+  String get selectChaptersToDownload => 'Select chapters to download';
+
+  @override
+  String startDownloadSelected(int n) {
+    return 'Start download ($n selected)';
   }
 
   @override
@@ -8232,6 +8327,45 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get serverLogsLoadFailed => 'Couldn\'t load the server logs';
+
+  @override
+  String get serverLogsDisplay => 'Display';
+
+  @override
+  String get serverLogsLevel => 'Server log level';
+
+  @override
+  String get serverLogsSavingLevel => 'Saving log level…';
+
+  @override
+  String get serverLogsLevelTrace => 'Trace';
+
+  @override
+  String get serverLogsLevelDebug => 'Debug';
+
+  @override
+  String get serverLogsLevelInfo => 'Info';
+
+  @override
+  String get serverLogsLevelWarning => 'Warning';
+
+  @override
+  String get serverLogsFilterAll => 'All levels';
+
+  @override
+  String get serverLogsFilterTracePlus => 'Trace and higher';
+
+  @override
+  String get serverLogsFilterDebugPlus => 'Debug and higher';
+
+  @override
+  String get serverLogsFilterInfoPlus => 'Info and higher';
+
+  @override
+  String get serverLogsFilterWarningPlus => 'Warning and higher';
+
+  @override
+  String get serverLogsFilterErrorPlus => 'Error and higher';
 
   @override
   String get ebookDownload => 'Download';

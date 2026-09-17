@@ -1577,8 +1577,12 @@ class AudioPlayerService extends ChangeNotifier {
   // ── Multi-file track offset tracking ──
   // For ConcatenatingAudioSource, _player.position is track-relative.
   // We store cumulative start offsets so we can compute absolute book position.
-  List<double> _trackStartOffsets = []; // [0, dur0, dur0+dur1, ...]
+  List<double> _trackStartOffsets = []; // absolute start of each track
   List<double> get trackStartOffsets => _trackStartOffsets;
+  // Duration of each tracked track, kept alongside the starts so a partial
+  // download (missing files => gaps in the timeline) can still tell where a
+  // track ends rather than assuming track i ends where track i+1 begins.
+  List<double> _trackDurations = [];
   int _currentTrackIndex = 0;
 
   // When a downloaded file decodes shorter than the book's metadata duration
@@ -2188,6 +2192,7 @@ class AudioPlayerService extends ChangeNotifier {
     _chapters = (next['chapters'] as List<dynamic>?) ?? [];
     _handler?.updateChaptersQueue(_chapters);
     _trackStartOffsets = [0.0, _totalDuration];
+    _trackDurations = [_totalDuration];
     _currentTrackIndex = 0;
     _playbackSessionId = null;
     final startS = (next['startS'] as num?)?.toDouble() ?? 0;
@@ -2263,6 +2268,7 @@ class AudioPlayerService extends ChangeNotifier {
         );
       }
       _trackStartOffsets = [0.0];
+      _trackDurations = [];
       _currentTrackIndex = 0;
       if (startS > 0) {
         await _seekAbsolute(startS);
@@ -2699,16 +2705,54 @@ class AudioPlayerService extends ChangeNotifier {
   double get speed => _player?.speed ?? 1.0;
 
   /// Build track start offsets from audioTracks list.
-  void _buildTrackOffsets(List<dynamic> audioTracks) {
-    _trackStartOffsets = [0.0];
-    double acc = 0;
-    for (final t in audioTracks) {
-      final track = t as Map<String, dynamic>;
-      final dur = (track['duration'] as num?)?.toDouble() ?? 0;
-      acc += dur;
-      _trackStartOffsets.add(acc);
+  ///
+  /// [absoluteStarts], when supplied and length-matched, gives each track's
+  /// offset in the full book timeline (used for partial downloads, where the
+  /// present files are not contiguous). Otherwise offsets are cumulative from 0.
+  void _buildTrackOffsets(List<dynamic> audioTracks, {List<double>? absoluteStarts}) {
+    _trackDurations = [
+      for (final t in audioTracks)
+        ((t as Map<String, dynamic>)['duration'] as num?)?.toDouble() ?? 0,
+    ];
+    if (absoluteStarts != null && absoluteStarts.length == audioTracks.length) {
+      _trackStartOffsets = [...absoluteStarts];
+    } else {
+      _trackStartOffsets = [];
+      double acc = 0;
+      for (final d in _trackDurations) {
+        _trackStartOffsets.add(acc);
+        acc += d;
+      }
     }
+    // Sentinel = end of the last track, so `.last` still means "timeline end"
+    // for the contiguous case and callers reading the final element.
+    _trackStartOffsets.add(
+      _trackStartOffsets.isEmpty ? 0.0 : _trackStartOffsets.last + _trackDurations.last,
+    );
     debugPrint('[Player] Track offsets: $_trackStartOffsets');
+  }
+
+  /// Duration of track [i], falling back to the start-offset delta for the
+  /// legacy sites that set [_trackStartOffsets] directly (single-file case).
+  double _trackDurationAt(int i) {
+    if (i >= 0 && i < _trackDurations.length) return _trackDurations[i];
+    if (i >= 0 && i + 1 < _trackStartOffsets.length) {
+      return _trackStartOffsets[i + 1] - _trackStartOffsets[i];
+    }
+    return 0;
+  }
+
+  /// Track index whose file contains [absoluteSeconds]. A position inside a gap
+  /// (an un-downloaded region) snaps to the start of the next available track;
+  /// positions past the last track clamp to it.
+  int _trackIndexForAbsolute(double absoluteSeconds) {
+    final n = _trackStartOffsets.length - 1;
+    if (n <= 0) return 0;
+    for (int i = 0; i < n; i++) {
+      if (absoluteSeconds < _trackStartOffsets[i] + _trackDurationAt(i)) return i;
+      if (i + 1 < n && absoluteSeconds < _trackStartOffsets[i + 1]) return i + 1;
+    }
+    return n - 1;
   }
 
   /// Phase 1.7: snapshot the URLs and HTTP headers used to build the
@@ -2819,27 +2863,25 @@ class AudioPlayerService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    // Multi-file — find the right track and local offset
-    for (int i = 0; i < _trackStartOffsets.length - 1; i++) {
-      final trackStart = _trackStartOffsets[i];
-      final trackEnd = _trackStartOffsets[i + 1];
-      if (absoluteSeconds < trackEnd || i == _trackStartOffsets.length - 2) {
-        final localOffset = absoluteSeconds - trackStart;
-        debugPrint(
-          '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s -> track $i '
-          'at ${localOffset.toStringAsFixed(1)}s '
-          '(${_trackStartOffsets.length - 1} tracks)',
-        );
-        // Update index BEFORE seeking so positionStream events use the right offset
-        _currentTrackIndex = i;
-        await _player!.seek(
-          Duration(milliseconds: (localOffset * 1000).round()),
-          index: i,
-        );
-        notifyListeners();
-        return;
-      }
-    }
+    // Multi-file — find the right track and local offset. Gap-aware: a target
+    // inside an un-downloaded region snaps to the next available track.
+    final target = _trackIndexForAbsolute(absoluteSeconds);
+    final trackStart = _trackStartOffsets[target];
+    final localOffset =
+        (absoluteSeconds - trackStart).clamp(0.0, _trackDurationAt(target));
+    debugPrint(
+      '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s -> track $target '
+      'at ${localOffset.toStringAsFixed(1)}s '
+      '(${_trackStartOffsets.length - 1} tracks)',
+    );
+    // Update index BEFORE seeking so positionStream events use the right offset
+    _currentTrackIndex = target;
+    await _player!.seek(
+      Duration(milliseconds: (localOffset * 1000).round()),
+      index: target,
+    );
+    notifyListeners();
+    return;
   }
 
   /// MUST be called after Activity is ready.
@@ -3913,18 +3955,23 @@ class AudioPlayerService extends ChangeNotifier {
     // Get cached session data for track durations (multi-file seeking)
     final cachedJson = _downloadService.getCachedSessionData(itemId);
     List<dynamic>? audioTracks;
+    List<double>? absoluteStarts;
     if (cachedJson != null) {
       try {
         final session = jsonDecode(cachedJson) as Map<String, dynamic>;
         audioTracks = session['audioTracks'] as List<dynamic>?;
+        absoluteStarts = (session['trackStartOffsets'] as List<dynamic>?)
+            ?.map((e) => (e as num).toDouble())
+            .toList();
       } catch (_) {}
     }
 
     // Rebuild track offsets for local files
     if (audioTracks != null) {
-      _buildTrackOffsets(audioTracks);
+      _buildTrackOffsets(audioTracks, absoluteStarts: absoluteStarts);
     } else {
       _trackStartOffsets = [0.0];
+      _trackDurations = [];
     }
     _currentTrackIndex = 0;
 
@@ -4174,10 +4221,14 @@ class AudioPlayerService extends ChangeNotifier {
     // Get cached session data for track durations (and chapters if needed)
     final cachedJson = _downloadService.getCachedSessionData(itemId);
     List<dynamic>? audioTracks;
+    List<double>? absoluteStarts;
     if (cachedJson != null) {
       try {
         final session = jsonDecode(cachedJson) as Map<String, dynamic>;
         audioTracks = session['audioTracks'] as List<dynamic>?;
+        absoluteStarts = (session['trackStartOffsets'] as List<dynamic>?)
+            ?.map((e) => (e as num).toDouble())
+            .toList();
         // Fall back to the cached session duration when the caller didn't have
         // one (e.g. podcast cold-start from Android Auto pushes dur=0). Replaces
         // the old /play-response duration fallback now that local plays skip it.
@@ -4208,9 +4259,10 @@ class AudioPlayerService extends ChangeNotifier {
 
       // Build multi-file track offsets for absolute position tracking
       if (audioTracks != null) {
-        _buildTrackOffsets(audioTracks);
+        _buildTrackOffsets(audioTracks, absoluteStarts: absoluteStarts);
       } else {
         _trackStartOffsets = [0.0]; // single file fallback
+        _trackDurations = [];
       }
 
       final trackSources = localPaths.map((p) => localAudioSource(p)).toList();
@@ -4244,7 +4296,20 @@ class AudioPlayerService extends ChangeNotifier {
       // playback to the first track, breaking seek and resume. The single-point
       // _shortLocalDurationSec clamp only models one truncated file anyway.
       final decodedSec = (decoded?.inMilliseconds ?? 0) / 1000.0;
-      if (trackSources.length == 1 &&
+      // A partial download is missing files, so it legitimately decodes shorter
+      // than the full book; the truncation heuristic must not fire there — it
+      // would clamp every seek to the first present track. Treat the layout as
+      // complete only when the persisted starts begin at 0 and reach the end.
+      final startsCoverBook = absoluteStarts != null &&
+          absoluteStarts.isNotEmpty &&
+          absoluteStarts.first <= 0.001 &&
+          _trackDurations.length == absoluteStarts.length &&
+          (totalDuration <= 0 ||
+              absoluteStarts.last + _trackDurations.last >=
+                  totalDuration - _kLocalTruncationMarginSec);
+      final isPartialDownload = absoluteStarts != null && !startsCoverBook;
+      if (!isPartialDownload &&
+          trackSources.length == 1 &&
           totalDuration > 0 &&
           decodedSec > 0 &&
           decodedSec < totalDuration - _kLocalTruncationMarginSec) {
@@ -5294,6 +5359,7 @@ class AudioPlayerService extends ChangeNotifier {
     _isOfflineMode = false;
     _localSessionMode = false;
     _trackStartOffsets = [];
+    _trackDurations = [];
     _currentTrackIndex = 0;
     _lastNotifiedChapterIndex = -1;
     _lastSeekTargetSeconds = null;
@@ -5416,14 +5482,7 @@ class AudioPlayerService extends ChangeNotifier {
       }
       // Map the absolute target onto (track, local position) for the new source.
       _buildTrackOffsets(tracks);
-      var idx = 0;
-      for (int i = 0; i < _trackStartOffsets.length - 1; i++) {
-        if (target < _trackStartOffsets[i + 1] ||
-            i == _trackStartOffsets.length - 2) {
-          idx = i;
-          break;
-        }
-      }
+      final idx = _trackIndexForAbsolute(target);
       final localPos = Duration(
         milliseconds: ((target - _trackStartOffsets[idx]) * 1000).round(),
       );
@@ -6131,7 +6190,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (!userRequested && Platform.isIOS && _trackStartOffsets.length > 2) {
       final lastIdx = _trackStartOffsets.length - 2;
       final lastTrackStart = _trackStartOffsets[lastIdx];
-      final lastTrackDur = _trackStartOffsets[lastIdx + 1] - lastTrackStart;
+      final lastTrackDur = _trackDurationAt(lastIdx);
       final advanceTime = _lastIndexAdvanceTime;
       final msSinceAdvance = advanceTime == null
           ? -1

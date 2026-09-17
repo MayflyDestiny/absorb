@@ -16,6 +16,7 @@
   "done": "Done",
   "edit": "Edit",
   "search": "Search",
+  "chapterIndex": "Index",
   "apply": "Apply",
   "enable": "Enable",
   "clear": "Clear",
@@ -973,6 +974,64 @@
     }
   },
   "manageDownloads": "Manage downloads",
+  "manageDownloadsSubtitle": "View, pause, resume and delete your library downloads",
+  "downloadsPaused": "Paused",
+  "downloadsPause": "Pause",
+  "downloadsResume": "Resume",
+  "downloadsManageTracks": "Manage episodes",
+  "downloadsStoredExternally": "Stored in external storage",
+  "downloadsNoPerTrackSaf": "Episodes saved to external storage can't be deleted individually.",
+  "downloadsTrackDeleteTitle": "Delete this episode?",
+  "downloadsTrackDeleteContent": "Remove \"{title}\" from this device? Playback of this episode will stop.",
+  "@downloadsTrackDeleteContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsSummary": "{count} downloads · {size}",
+  "@downloadsSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsSort": "Sort",
+  "downloadsSortTitle": "Title",
+  "downloadsSortSize": "Size",
+  "downloadsSortRecent": "Recently downloaded",
+  "downloadsSearchHint": "Search downloads",
+  "downloadsNoResults": "No matching downloads",
+  "downloadsResumeAll": "Resume all",
+  "downloadsDeleteAll": "Delete all",
+  "downloadsDeleteAllContent": "Delete every paused download from this device?",
+  "downloadsManageFiles": "Manage audio files",
+  "downloadsPlayFromHere": "Play from this episode",
+  "downloadsGapSkipped": "Removed episodes are skipped during playback",
+  "downloadsDeleteTracksCount": "Delete {count} episode(s)?",
+  "@downloadsDeleteTracksCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectRange": "Select ({start}-{end})",
+  "@selectRange": {
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      }
+    }
+  },
   "streamingCache": "Streaming cache",
   "streamingCacheInfoTitle": "Streaming Cache",
   "streamingCacheInfoContent": "Caches streamed audio to disk so it doesn't need to be re-downloaded if you seek back or re-listen to sections. The cache is automatically managed - oldest files are removed when the size limit is reached. This is separate from fully downloaded books.",
@@ -1665,6 +1724,15 @@
   "@selectedCount": {
     "placeholders": {
       "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectChaptersToDownload": "Select chapters to download",
+  "startDownloadSelected": "Start download ({n} selected)",
+  "@startDownloadSelected": {
+    "placeholders": {
+      "n": {
         "type": "int"
       }
     }
@@ -4741,6 +4809,19 @@
   "serverLogsEmpty": "No server logs yet",
   "serverLogsNoMatch": "No logs match",
   "serverLogsLoadFailed": "Couldn't load the server logs",
+  "serverLogsDisplay": "Display",
+  "serverLogsLevel": "Server log level",
+  "serverLogsSavingLevel": "Saving log level…",
+  "serverLogsLevelTrace": "Trace",
+  "serverLogsLevelDebug": "Debug",
+  "serverLogsLevelInfo": "Info",
+  "serverLogsLevelWarning": "Warning",
+  "serverLogsFilterAll": "All levels",
+  "serverLogsFilterTracePlus": "Trace and higher",
+  "serverLogsFilterDebugPlus": "Debug and higher",
+  "serverLogsFilterInfoPlus": "Info and higher",
+  "serverLogsFilterWarningPlus": "Warning and higher",
+  "serverLogsFilterErrorPlus": "Error and higher",
   "ebookDownload": "Download",
   "ebookDownloaded": "Downloaded",
   "ebookSavedOffline": "Saved for offline reading",

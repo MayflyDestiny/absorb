@@ -106,7 +106,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, w.deleteAbsorbedDownloads, [l.deleteAbsorbedOnSubtitle, l.deleteAbsorbedOffSubtitle]),
     if (!Platform.isIOS)
       SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.downloadLocation, const []),
-    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.manageDownloads, const []),
+    SettingSearchEntry('Manage Downloads', l.manageDownloads, l.manageDownloads, [l.manageDownloadsSubtitle]),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.streamingCache, [l.streamingCacheOffSubtitle, l.streamingCacheOff, l.clearCache]),
 
     // ── Library ──

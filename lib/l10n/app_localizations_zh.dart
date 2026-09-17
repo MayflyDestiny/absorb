@@ -57,6 +57,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get search => '搜索';
 
   @override
+  String get chapterIndex => '选集';
+
+  @override
   String get apply => '应用';
 
   @override
@@ -1947,6 +1950,86 @@ class AppLocalizationsZh extends AppLocalizations {
   String get manageDownloads => '管理下载';
 
   @override
+  String get manageDownloadsSubtitle => '查看、暂停、继续或删除本机下载';
+
+  @override
+  String get downloadsPaused => '已暂停';
+
+  @override
+  String get downloadsPause => '暂停';
+
+  @override
+  String get downloadsResume => '继续';
+
+  @override
+  String get downloadsManageTracks => '分集管理';
+
+  @override
+  String get downloadsStoredExternally => '存储于外部存储';
+
+  @override
+  String get downloadsNoPerTrackSaf => '保存到外部存储的下载不支持单集删除。';
+
+  @override
+  String get downloadsTrackDeleteTitle => '删除这一集？';
+
+  @override
+  String downloadsTrackDeleteContent(String title) {
+    return '要将\"$title\"从本机移除吗？该集的播放将停止。';
+  }
+
+  @override
+  String downloadsSummary(int count, String size) {
+    return '$count 个下载 · $size';
+  }
+
+  @override
+  String get downloadsSort => '排序';
+
+  @override
+  String get downloadsSortTitle => '标题';
+
+  @override
+  String get downloadsSortSize => '大小';
+
+  @override
+  String get downloadsSortRecent => '最近下载';
+
+  @override
+  String get downloadsSearchHint => '搜索下载';
+
+  @override
+  String get downloadsNoResults => '没有匹配的下载';
+
+  @override
+  String get downloadsResumeAll => '全部继续';
+
+  @override
+  String get downloadsDeleteAll => '全部删除';
+
+  @override
+  String get downloadsDeleteAllContent => '要将所有已暂停的下载从本机移除吗？';
+
+  @override
+  String get downloadsManageFiles => '音频文件管理';
+
+  @override
+  String get downloadsPlayFromHere => '从这一集开始播放';
+
+  @override
+  String get downloadsGapSkipped => '已删除的集在播放时会跳过';
+
+  @override
+  String downloadsDeleteTracksCount(int count) {
+    return '删除 $count 集？';
+  }
+
+  @override
+  String selectRange(int start, int end) {
+    return '选集（$start-$end）';
+  }
+
+  @override
   String get streamingCache => '流式缓存';
 
   @override
@@ -3223,6 +3306,14 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String selectedCount(int count) {
     return '已选择 $count 项';
+  }
+
+  @override
+  String get selectChaptersToDownload => '选择要下载的章节';
+
+  @override
+  String startDownloadSelected(int n) {
+    return '开始下载（已选 $n）';
   }
 
   @override
@@ -8006,6 +8097,45 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get serverLogsLoadFailed => '无法加载服务器日志';
+
+  @override
+  String get serverLogsDisplay => '最低显示级别';
+
+  @override
+  String get serverLogsLevel => '服务器日志级别';
+
+  @override
+  String get serverLogsSavingLevel => '正在保存日志级别…';
+
+  @override
+  String get serverLogsLevelTrace => '追踪';
+
+  @override
+  String get serverLogsLevelDebug => '调试';
+
+  @override
+  String get serverLogsLevelInfo => '信息';
+
+  @override
+  String get serverLogsLevelWarning => '警告';
+
+  @override
+  String get serverLogsFilterAll => '所有级别';
+
+  @override
+  String get serverLogsFilterTracePlus => '追踪';
+
+  @override
+  String get serverLogsFilterDebugPlus => '调试';
+
+  @override
+  String get serverLogsFilterInfoPlus => '信息';
+
+  @override
+  String get serverLogsFilterWarningPlus => '警告';
+
+  @override
+  String get serverLogsFilterErrorPlus => '错误';
 
   @override
   String get ebookDownload => '下载';

@@ -311,6 +311,22 @@ class _AdminServerLogsScreenState extends State<AdminServerLogsScreen> {
     );
   }
 
+  Map<int, String> _localizedServerLevels(AppLocalizations l) => {
+        0: l.serverLogsLevelTrace,
+        1: l.serverLogsLevelDebug,
+        2: l.serverLogsLevelInfo,
+        3: l.serverLogsLevelWarning,
+      };
+
+  Map<int, String> _localizedFilterLevels(AppLocalizations l) => {
+        -1: l.serverLogsFilterAll,
+        0: l.serverLogsFilterTracePlus,
+        1: l.serverLogsFilterDebugPlus,
+        2: l.serverLogsFilterInfoPlus,
+        3: l.serverLogsFilterWarningPlus,
+        4: l.serverLogsFilterErrorPlus,
+      };
+
   Widget _buildControls(ColorScheme cs, TextTheme tt, AppLocalizations l) {
     final search = TextField(
       controller: _searchController,
@@ -332,17 +348,17 @@ class _AdminServerLogsScreenState extends State<AdminServerLogsScreen> {
     final displayFilter = _dropdown(
       cs,
       tt,
-      label: 'Display',
+      label: l.serverLogsDisplay,
       value: _visibleMinimumLevel,
-      options: _filterLevels,
+      options: _localizedFilterLevels(l),
       onChanged: (value) => setState(() => _visibleMinimumLevel = value),
     );
     final serverLevel = _dropdown(
       cs,
       tt,
-      label: _savingLogLevel ? 'Saving log level…' : 'Server log level',
+      label: _savingLogLevel ? l.serverLogsSavingLevel : l.serverLogsLevel,
       value: _serverLogLevel,
-      options: _serverLevels,
+      options: _localizedServerLevels(l),
       onChanged: _savingLogLevel ? null : _changeServerLogLevel,
     );
 

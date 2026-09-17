@@ -17,7 +17,7 @@ import 'audio_player_service.dart';
 import 'ebook_cache.dart';
 import 'offline_source.dart';
 
-enum DownloadStatus { none, downloading, downloaded, error }
+enum DownloadStatus { none, downloading, downloaded, error, paused }
 
 class DownloadInfo {
   final String itemId;
@@ -115,6 +115,8 @@ class _QueuedDownload {
   final String? coverUrl;
   final String? episodeId;
   final String? libraryId;
+  /// Chapter indices the user picked, or null for the whole item.
+  final List<int>? selectedChapters;
 
   _QueuedDownload({
     required this.api,
@@ -124,6 +126,7 @@ class _QueuedDownload {
     this.coverUrl,
     this.episodeId,
     this.libraryId,
+    this.selectedChapters,
   });
 }
 
@@ -150,9 +153,19 @@ class _PendingBook {
   final String? safTreeUri;
   final String? safSubfolder;
 
+  /// Chapter indices the user picked when this download started, or null for
+  /// the whole item. Kept so a resume that has to restart from scratch keeps
+  /// the original (partial) selection.
+  final List<int>? selectedChapters;
+
   /// True once the user cancels, so terminal handling cleans up instead of
   /// surfacing an error.
   bool cancelled = false;
+
+  /// True when the user pauses this download. Track tasks get cancelled but
+  /// their partial files are kept, the slot is released, and the item is
+  /// surfaced in the Downloads screen's paused section until resumed.
+  bool paused = false;
 
   /// Set synchronously the moment a terminal handler (success/fail/cancel) is
   /// chosen, so a burst of terminal updates can't finalize the book twice.
@@ -192,6 +205,7 @@ class _PendingBook {
     this.slimSessionJson,
     this.safTreeUri,
     this.safSubfolder,
+    this.selectedChapters,
   }) {
     // Start the no-progress watchdog clock at creation (fresh or restored).
     lastUpdate = DateTime.now();
@@ -221,6 +235,8 @@ class _PendingBook {
         'slimSessionJson': slimSessionJson,
         if (safTreeUri != null) 'safTreeUri': safTreeUri,
         if (safSubfolder != null) 'safSubfolder': safSubfolder,
+        if (selectedChapters != null) 'selectedChapters': selectedChapters,
+        'paused': paused,
       };
 
   factory _PendingBook.fromJson(Map<String, dynamic> j) => _PendingBook(
@@ -241,7 +257,49 @@ class _PendingBook {
         slimSessionJson: j['slimSessionJson'] as String?,
         safTreeUri: j['safTreeUri'] as String?,
         safSubfolder: j['safSubfolder'] as String?,
-      );
+        selectedChapters: (j['selectedChapters'] as List<dynamic>?)
+            ?.map((e) => (e as num).toInt())
+            .toList(),
+      )
+        ..paused = j['paused'] as bool? ?? false;
+}
+
+/// One audio file belonging to a downloaded item, surfaced by
+/// [DownloadService.getLocalTracks] for per-track management (view size,
+/// delete individual episodes).
+class LocalTrackInfo {
+  const LocalTrackInfo({
+    required this.index,
+    required this.path,
+    required this.title,
+    required this.sizeBytes,
+    required this.exists,
+    this.durationSeconds = 0,
+    this.absoluteStart = 0,
+    this.downloadedAt,
+  });
+
+  /// Aligned with [DownloadInfo.localPaths], `audioTracks`, and the encoded
+  /// track order used for offline playback.
+  final int index;
+  final String path;
+  final String title;
+  final int sizeBytes;
+  final bool exists;
+
+  /// Length of this file, or 0 when the metadata isn't available.
+  final double durationSeconds;
+
+  /// Where this file starts on the full-book timeline. Equals the cumulative
+  /// length of the preceding files for contiguous downloads, and the stored
+  /// `trackStartOffsets` value for partial ones (so gaps are preserved).
+  final double absoluteStart;
+
+  /// File's last-modified time, used as a stand-in for when it was downloaded.
+  /// Null for SAF (content URI) files, whose timestamp isn't readable.
+  final DateTime? downloadedAt;
+
+  bool get isSaf => isContentUri(path);
 }
 
 /// Trim the bulky parts of the persisted `libraryItem` while keeping the bits
@@ -584,6 +642,9 @@ class DownloadService extends ChangeNotifier {
 
   bool isDownloading(String itemId) =>
       _downloads[itemId]?.status == DownloadStatus.downloading;
+
+  bool isPaused(String itemId) =>
+      _downloads[itemId]?.status == DownloadStatus.paused;
 
   double downloadProgress(String itemId) =>
       _downloads[itemId]?.progress ?? 0;
@@ -1301,6 +1362,13 @@ class DownloadService extends ChangeNotifier {
   /// Returns null on success, error message string on failure.
   /// For podcast episodes, pass [episodeId] so the correct API endpoint is used.
   /// [shouldStart] lets a caller invalidate the request while setup is waiting.
+  ///
+  /// With [replaceExisting] a completed download of [itemId] is re-downloaded
+  /// instead of being blocked by the "already downloaded" guard. Files land at
+  /// the same deterministic per-track names, so already-present files are kept
+  /// and the final record replaces the old one - exactly right for adding more
+  /// chapters to a partially downloaded book. Callers should pass the union of
+  /// what is already downloaded and the newly selected chapters.
   Future<String?> downloadItem({
     required ApiService api,
     required String itemId,
@@ -1309,11 +1377,18 @@ class DownloadService extends ChangeNotifier {
     String? coverUrl,
     String? episodeId,
     String? libraryId,
+    // Chapter indices to download, or null/empty for the whole item.
+    List<int>? selectedChapters,
     bool Function()? shouldStart,
     // Set by the auto-download planners. An item the user deleted by hand is
     // skipped when automatic; a manual (or download-on-stream) call clears
     // that block, since the user asked for it back.
     bool automatic = false,
+    // Bypass the "already downloaded" guard so a completed download can be
+    // re-downloaded in place. Files land at the same deterministic per-track
+    // names, so already-present files are kept and only the newly selected
+    // chapters are fetched; the final record is the union of the two.
+    bool replaceExisting = false,
   }) async {
     if (shouldStart?.call() == false) return null;
     try {
@@ -1337,9 +1412,12 @@ class DownloadService extends ChangeNotifier {
     }
 
     if (_activeDownloadIds.contains(itemId)) return null;
-    if (isDownloaded(itemId)) return null;
+    if (isDownloaded(itemId) && !replaceExisting) return null;
     // Already queued — don't duplicate
     if (_queue.any((q) => q.itemId == itemId)) return null;
+    // Already in flight or paused — a paused book must be resumed, not restarted
+    // (restarting would enqueue tasks that collide with the paused ones).
+    if (_pending.containsKey(itemId)) return null;
 
     // Check wifi-only setting
     final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
@@ -1358,8 +1436,9 @@ class DownloadService extends ChangeNotifier {
     // The checks above ran before settings were loaded, so another tap may
     // have started or queued this item in the meantime.
     if (_activeDownloadIds.contains(itemId) ||
-        isDownloaded(itemId) ||
-        _queue.any((q) => q.itemId == itemId)) {
+        (isDownloaded(itemId) && !replaceExisting) ||
+        _queue.any((q) => q.itemId == itemId) ||
+        _pending.containsKey(itemId)) {
       return null;
     }
 
@@ -1375,6 +1454,7 @@ class DownloadService extends ChangeNotifier {
         coverUrl: coverUrl,
         episodeId: episodeId,
         libraryId: libraryId,
+        selectedChapters: selectedChapters,
       ));
       _downloads[itemId] = DownloadInfo(
         itemId: itemId,
@@ -1399,6 +1479,7 @@ class DownloadService extends ChangeNotifier {
       coverUrl: coverUrl,
       episodeId: episodeId,
       libraryId: libraryId,
+      selectedChapters: selectedChapters,
     ));
     return null;
   }
@@ -1452,7 +1533,7 @@ class DownloadService extends ChangeNotifier {
       unawaited(_executeDownload(
         api: next.api, itemId: next.itemId, title: next.title,
         author: next.author, coverUrl: next.coverUrl, episodeId: next.episodeId,
-        libraryId: next.libraryId,
+        libraryId: next.libraryId, selectedChapters: next.selectedChapters,
       ));
     }
   }
@@ -1512,6 +1593,7 @@ class DownloadService extends ChangeNotifier {
     String? coverUrl,
     String? episodeId,
     String? libraryId,
+    List<int>? selectedChapters,
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
@@ -1549,10 +1631,18 @@ class DownloadService extends ChangeNotifier {
           : await api.startPlaybackSession(apiItemId);
       if (sessionData == null) throw Exception('Failed to start session');
 
-      final audioTracks = sessionData['audioTracks'] as List<dynamic>?;
-      if (audioTracks == null || audioTracks.isEmpty) {
+      final allTracks = sessionData['audioTracks'] as List<dynamic>?;
+      if (allTracks == null || allTracks.isEmpty) {
         throw Exception('No audio tracks');
       }
+
+      // Narrow to the files covering the user's chapter selection (whole item
+      // when nothing was selected). `trackStarts` are absolute offsets in the
+      // full book so offline playback can keep the true timeline.
+      final resolved =
+          _resolveSelectedTracks(allTracks, sessionData, selectedChapters);
+      final audioTracks = resolved.tracks;
+      final trackStarts = resolved.starts;
 
       final files = _resolveDurableFiles(api, apiItemId, audioTracks);
 
@@ -1595,6 +1685,11 @@ class DownloadService extends ChangeNotifier {
       // audiobooks-only libraries where every ebook is supplementary and
       // media.ebookFile is never set.
       final slimSession = Map<String, dynamic>.from(sessionData);
+      // Persist only the downloaded files plus each one's absolute start in the
+      // full-book timeline, so offline playback keeps the real chapter
+      // positions even when some files were skipped.
+      slimSession['audioTracks'] = audioTracks;
+      slimSession['trackStartOffsets'] = trackStarts;
       final fullItem = sessionData['libraryItem'] as Map<String, dynamic>?;
       if (fullItem == null) {
         slimSession.remove('libraryItem');
@@ -1640,9 +1735,18 @@ class DownloadService extends ChangeNotifier {
         slimSessionJson: jsonEncode(slimSession),
         safTreeUri: useSaf ? _customDownloadUri : null,
         safSubfolder: useSaf ? nestedName : null,
+        selectedChapters: selectedChapters,
       );
       _pending[itemId] = pending;
       await _persistPending();
+
+      if (pending.paused) {
+        // Paused while we were resolving / between enqueues: don't launch a
+        // fresh batch of tasks, just leave the item paused.
+        _activeDownloadIds.remove(itemId);
+        notifyListeners();
+        return;
+      }
 
       // One notification per book instead of one per file task. Multi-file
       // books group their tasks under a per-book group notification (the
@@ -1767,6 +1871,77 @@ class DownloadService extends ChangeNotifier {
       out.add((url: api.buildFileUrl(apiItemId, ino), filename: _trackFileName(track, i)));
     }
     return out;
+  }
+
+  /// Picks which audio files to download for [chapterSelection].
+  ///
+  /// Chapters are timed markers, not files, so a selection maps to the set of
+  /// audio files whose time range the chapters overlap (a file may hold several
+  /// embedded chapters). Returns every track when the selection is null/empty
+  /// or can't be resolved. `starts` are each chosen file's absolute offset in
+  /// the full book, letting offline playback keep the true timeline.
+  ({List<dynamic> tracks, List<double> starts}) _resolveSelectedTracks(
+    List<dynamic> allTracks,
+    Map<String, dynamic> sessionData,
+    List<int>? chapterSelection,
+  ) {
+    final durations = <double>[
+      for (final t in allTracks)
+        ((t as Map<String, dynamic>)['duration'] as num?)?.toDouble() ?? 0,
+    ];
+    final starts = <double>[];
+    double acc = 0;
+    for (final d in durations) {
+      starts.add(acc);
+      acc += d;
+    }
+
+    if (chapterSelection == null || chapterSelection.isEmpty) {
+      return (tracks: allTracks, starts: starts);
+    }
+
+    // The picker is built from the *playing item's* chapter list: for a podcast
+    // episode that is the episode's chapters, not the show's. The play session
+    // exposes exactly that as `chapters` (the player uses it for the now-playing
+    // chapter UI), so prefer it and only fall back to the library item's list.
+    final sessionChapters = sessionData['chapters'] as List<dynamic>?;
+    final chapters = (sessionChapters != null && sessionChapters.isNotEmpty)
+        ? sessionChapters
+        : (((sessionData['libraryItem'] as Map<String, dynamic>?)?['media']
+                as Map<String, dynamic>?)?['chapters'] as List<dynamic>?);
+    if (chapters == null || chapters.isEmpty) {
+      return (tracks: allTracks, starts: starts);
+    }
+
+    final picked = <int>{};
+    for (final ci in chapterSelection) {
+      if (ci < 0 || ci >= chapters.length) continue;
+      final ch = chapters[ci] as Map<String, dynamic>;
+      final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
+      // Some servers omit `end`; fall back to the next chapter's start (and, for
+      // the last chapter, to open-ended) so it is never treated as empty.
+      var chEnd = (ch['end'] as num?)?.toDouble() ?? 0;
+      if (chEnd <= chStart) {
+        chEnd = ci + 1 < chapters.length
+            ? (((chapters[ci + 1] as Map<String, dynamic>)['start'] as num?)
+                    ?.toDouble() ??
+                double.infinity)
+            : double.infinity;
+      }
+      for (int i = 0; i < allTracks.length; i++) {
+        if (durations[i] <= 0) continue;
+        final fileStart = starts[i];
+        final fileEnd = fileStart + durations[i];
+        if (chStart < fileEnd && chEnd > fileStart) picked.add(i);
+      }
+    }
+    if (picked.isEmpty) return (tracks: allTracks, starts: starts);
+
+    final ordered = picked.toList()..sort();
+    return (
+      tracks: [for (final i in ordered) allTracks[i]],
+      starts: [for (final i in ordered) starts[i]],
+    );
   }
 
   /// Derive the on-disk filename for a track, preferring its original name so
@@ -1902,16 +2077,21 @@ class DownloadService extends ChangeNotifier {
 
     // A hard failure aborts the whole book so it does not wait forever for
     // sibling tracks that will never finish on their own.
-    if ((status == TaskStatus.failed || status == TaskStatus.notFound) && !p.cancelled && !p.failing) {
+    if ((status == TaskStatus.failed || status == TaskStatus.notFound) &&
+        !p.cancelled &&
+        !p.failing) {
       p.failing = true;
       p.failException = exception;
       p.failCode = responseCode;
-      unawaited(_cancelSiblings(itemId, p));
+      // While paused we only remember the failure; routing waits for the
+      // resume so an intentional pause can't tear the book down.
+      if (!p.paused) unawaited(_cancelSiblings(itemId, p));
     }
     await _checkBookTerminal(itemId, p);
   }
 
   void _emitBookProgress(String itemId, _PendingBook p) {
+    if (p.paused) return; // a late progress update must not un-pause the UI
     final now = DateTime.now();
     if (now.difference(p.lastUi).inMilliseconds < 250) return;
     p.lastUi = now;
@@ -1931,6 +2111,7 @@ class DownloadService extends ChangeNotifier {
   /// Once every track of a book is terminal, route to success / fail / cancel.
   Future<void> _checkBookTerminal(String itemId, _PendingBook p) async {
     if (p.finalizing) return;
+    if (p.paused) return; // pause cancelled sibling tasks; keep the book alive
     for (int i = 0; i < p.trackCount; i++) {
       final s = p.trackStatus[i];
       if (s == null || !_terminal.contains(s)) return;
@@ -2339,6 +2520,11 @@ class DownloadService extends ChangeNotifier {
       for (final e in map.entries) {
         final p = _PendingBook.fromJson(e.value as Map<String, dynamic>);
         _pending[e.key] = p;
+        if (p.paused) {
+          // Stay paused across relaunches: don't hold the download slot.
+          _markPaused(e.key, p);
+          continue;
+        }
         _activeDownloadIds.add(e.key);
         _downloads[e.key] = DownloadInfo(
           itemId: e.key,
@@ -2401,6 +2587,36 @@ class DownloadService extends ChangeNotifier {
 
     for (final itemId in _pending.keys.toList()) {
       final p = _pending[itemId]!;
+      if (p.paused) {
+        // Paused items normally have no live tasks, but a pause that raced an
+        // app kill can leave them running: pause any that are still live so
+        // nothing keeps downloading in the background.
+        final live = await _itemTasks(itemId, {
+          TaskStatus.running,
+          TaskStatus.enqueued,
+          TaskStatus.waitingToRetry,
+        });
+        if (live.isNotEmpty) {
+          try {
+            await FileDownloader().pauseAll(tasks: live);
+          } catch (_) {}
+        }
+        _markPaused(itemId, p);
+        continue;
+      }
+
+      // Desync guard: a resume that was persisted moments before the app was
+      // killed can leave `paused=false` while the package tasks are still
+      // paused. Keep the item paused instead of showing a frozen "downloading".
+      final trackedIdx = tracked[itemId];
+      if (trackedIdx != null &&
+          trackedIdx.any((i) => p.trackStatus[i] == TaskStatus.paused)) {
+        p.paused = true;
+        await _persistPending();
+        _markPaused(itemId, p);
+        continue;
+      }
+
       bool allComplete = p.trackCount > 0;
       bool allTerminal = true;
       for (int i = 0; i < p.trackCount; i++) {
@@ -2554,4 +2770,282 @@ class DownloadService extends ChangeNotifier {
     _downloads.remove(itemId);
     notifyListeners();
   }
+
+  // ── Pause / resume ──
+
+  /// Surfaces [itemId] as paused: frees its download slot and updates the
+  /// Downloads screen entry.
+  void _markPaused(String itemId, _PendingBook p) {
+    _activeDownloadIds.remove(itemId);
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.paused,
+      progress: p.overallProgress,
+      title: p.title,
+      author: p.author,
+      coverUrl: p.coverUrl,
+      libraryId: p.libraryId,
+    );
+  }
+
+  /// Returns the package's task objects for [itemId], filtered to [statuses].
+  /// Used to pause/resume exactly the tracks of one book instead of the whole
+  /// downloader.
+  Future<List<DownloadTask>> _itemTasks(
+    String itemId,
+    Set<TaskStatus> statuses,
+  ) async {
+    final result = <DownloadTask>[];
+    try {
+      final records = await FileDownloader().database.allRecords();
+      for (final r in records) {
+        final meta = _decodeMeta(r.task.metaData);
+        if (meta == null || meta.$1 != itemId) continue;
+        if (!statuses.contains(r.status)) continue;
+        final task = r.task;
+        if (task is DownloadTask) result.add(task);
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  /// Pauses a running download natively: the package keeps every partial file
+  /// and the task record, so [resumeDownload] continues from the same byte
+  /// range without re-downloading tracks that already finished. Releases the
+  /// download slot and surfaces the item in [pausedDownloads].
+  Future<void> pauseDownload(String itemId) async {
+    final p = _pending[itemId];
+    if (p == null || p.finalizing || p.paused) return;
+    p.paused = true;
+    await _persistPending();
+
+    final tasks = await _itemTasks(itemId, {
+      TaskStatus.running,
+      TaskStatus.enqueued,
+      TaskStatus.waitingToRetry,
+    });
+    if (tasks.isNotEmpty) {
+      try {
+        await FileDownloader().pauseAll(tasks: tasks);
+      } catch (_) {}
+    } else {
+      // Nothing live to pause (e.g. paused between enqueues): cancel any
+      // leftovers so the slot frees; resume falls back to a normal download.
+      unawaited(_cancelSiblings(itemId, p));
+    }
+
+    _markPaused(itemId, p);
+    notifyListeners();
+    unawaited(_processQueue());
+  }
+
+  /// Resumes a paused download, continuing the paused package tasks where they
+  /// left off. Falls back to a fresh [downloadItem] run if the package has no
+  /// paused records left (e.g. they were cleared between sessions).
+  Future<void> resumeDownload(String itemId, {required ApiService api}) async {
+    final p = _pending[itemId];
+    if (p == null || !p.paused) return;
+    p.paused = false;
+    await _persistPending();
+
+    final tasks = await _itemTasks(itemId, {TaskStatus.paused});
+    if (tasks.isEmpty) {
+      // Package has no paused records to continue from: try a clean restart.
+      // Drop the stale paused marker first so downloadItem isn't blocked by it.
+      _pending.remove(itemId);
+      await _persistPending();
+      final err = await downloadItem(
+        api: api,
+        itemId: p.itemId,
+        title: p.title,
+        author: p.author,
+        coverUrl: p.coverUrl,
+        episodeId: p.episodeId,
+        libraryId: p.libraryId,
+        selectedChapters: p.selectedChapters,
+      );
+      if (err != null) {
+        // Couldn't restart (e.g. Wi-Fi-only while offline): put it back, paused.
+        _pending[itemId] = p..paused = true;
+        await _persistPending();
+        _markPaused(itemId, p);
+        notifyListeners();
+      }
+      return;
+    }
+
+    _activeDownloadIds.add(itemId);
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.downloading,
+      progress: p.overallProgress,
+      title: p.title,
+      author: p.author,
+      coverUrl: p.coverUrl,
+      libraryId: p.libraryId,
+    );
+    notifyListeners();
+    unawaited(FileDownloader().resumeAll(tasks: tasks));
+  }
+
+  // ── Per-track management for completed downloads ──
+
+  /// Lists every audio file of a completed download, index-aligned with
+  /// [DownloadInfo.localPaths] / `sessionData['audioTracks']`.
+  List<LocalTrackInfo> getLocalTracks(String itemId) {
+    final info = _downloads[itemId];
+    if (info == null || info.status != DownloadStatus.downloaded) {
+      return const [];
+    }
+    final tracks = <Map<String, dynamic>>[];
+    List<double>? starts;
+    if (info.sessionData != null) {
+      try {
+        final s = jsonDecode(info.sessionData!) as Map<String, dynamic>;
+        tracks.addAll(
+            (s['audioTracks'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
+                const []);
+        starts = (s['trackStartOffsets'] as List<dynamic>?)
+            ?.map((e) => (e as num).toDouble())
+            .toList();
+      } catch (_) {}
+    }
+    final result = <LocalTrackInfo>[];
+    double cumulative = 0;
+    for (int i = 0; i < info.localPaths.length; i++) {
+      final path = info.localPaths[i];
+      final meta = i < tracks.length ? tracks[i] : null;
+      final metaFile = meta?['metadata'];
+      var title = metaFile is Map<String, dynamic>
+          ? (metaFile['filename'] as String? ?? '')
+          : '';
+      if (title.isEmpty && !isContentUri(path)) {
+        title = path.split(RegExp(r'[\\/]')).last;
+      }
+      final duration = (meta?['duration'] as num?)?.toDouble() ?? 0;
+      final absStart =
+          (starts != null && i < starts.length) ? starts[i] : cumulative;
+      int size = 0;
+      bool exists = false;
+      bool saf = isContentUri(path);
+      DateTime? downloadedAt;
+      if (!saf) {
+        try {
+          final file = File(path);
+          exists = file.existsSync();
+          if (exists) {
+            size = file.lengthSync();
+            downloadedAt = file.lastModifiedSync();
+          }
+        } catch (_) {}
+      } else {
+        exists = true;
+      }
+      result.add(LocalTrackInfo(
+        index: i,
+        path: path,
+        title: title.isEmpty ? 'Track ${i + 1}' : title,
+        sizeBytes: size,
+        exists: exists,
+        durationSeconds: duration,
+        absoluteStart: absStart,
+        downloadedAt: downloadedAt,
+      ));
+      cumulative += duration;
+    }
+    return result;
+  }
+
+  /// Indices of [chapters] already covered by a completed download of
+  /// [itemId]. The picker grey them out and keeps them when re-downloading.
+  /// Mirrors the overlap rule in [_resolveSelectedTracks].
+  Set<int> downloadedChapterIndices(String itemId, List<dynamic> chapters) {
+    final result = <int>{};
+    if (chapters.isEmpty || !isDownloaded(itemId)) return result;
+    final tracks = getLocalTracks(itemId);
+    if (tracks.isEmpty) return result;
+    for (int ci = 0; ci < chapters.length; ci++) {
+      final ch = chapters[ci] as Map<String, dynamic>;
+      final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
+      // Same end fallback as [_resolveSelectedTracks].
+      var chEnd = (ch['end'] as num?)?.toDouble() ?? 0;
+      if (chEnd <= chStart) {
+        chEnd = ci + 1 < chapters.length
+            ? (((chapters[ci + 1] as Map<String, dynamic>)['start'] as num?)
+                    ?.toDouble() ??
+                double.infinity)
+            : double.infinity;
+      }
+      for (final t in tracks) {
+        if (t.durationSeconds <= 0) continue;
+        final fileStart = t.absoluteStart;
+        final fileEnd = fileStart + t.durationSeconds;
+        if (chStart < fileEnd && chEnd > fileStart) {
+          result.add(ci);
+          break;
+        }
+      }
+    }
+    return result;
+  }
+
+  /// Deletes one audio file of a completed download and keeps the item's
+  /// metadata consistent (trims `localPaths` + `sessionData.audioTracks` so
+  /// offline playback maps 1:1). Deleting the last remaining track removes the
+  /// whole download. SAF (content URI) tracks are skipped.
+  Future<void> deleteLocalTrack(String itemId, int index) async {
+    final info = _downloads[itemId];
+    if (info == null || info.status != DownloadStatus.downloaded) return;
+    if (index < 0 || index >= info.localPaths.length) return;
+    if (isContentUri(info.localPaths[index])) return;
+
+    if (info.localPaths.length <= 1) {
+      await deleteDownload(itemId, skipStopCheck: true, byUser: true);
+      return;
+    }
+
+    try {
+      final file = File(info.localPaths[index]);
+      if (file.existsSync()) await file.delete();
+    } catch (_) {}
+
+    final newPaths = List<String>.from(info.localPaths)..removeAt(index);
+    var newSession = info.sessionData;
+    if (newSession != null) {
+      try {
+        final s = jsonDecode(newSession) as Map<String, dynamic>;
+        final tracks = s['audioTracks'] as List<dynamic>?;
+        if (tracks != null && index < tracks.length) {
+          tracks.removeAt(index);
+          s['audioTracks'] = tracks;
+        }
+        final starts = s['trackStartOffsets'] as List<dynamic>?;
+        if (starts != null && index < starts.length) {
+          starts.removeAt(index);
+          s['trackStartOffsets'] = starts;
+        }
+        newSession = jsonEncode(s);
+      } catch (_) {}
+    }
+
+    _downloads[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.downloaded,
+      localPaths: newPaths,
+      sessionData: newSession,
+      title: info.title,
+      author: info.author,
+      coverUrl: info.coverUrl,
+      localCoverPath: info.localCoverPath,
+      localDirPath: info.localDirPath,
+      libraryId: info.libraryId,
+    );
+    await _save();
+    notifyListeners();
+  }
+
+  /// Items the user paused mid-download.
+  List<DownloadInfo> get pausedDownloads => _downloads.values
+      .where((d) => d.status == DownloadStatus.paused)
+      .toList();
 }

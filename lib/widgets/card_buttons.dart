@@ -27,6 +27,7 @@ import 'book_detail_sheet.dart';
 import 'bookmark_detail_dialog.dart';
 import 'card_button_config.dart';
 import 'card_chapters_sheet.dart';
+import 'chapter_download_sheet.dart';
 import 'chromecast_button.dart';
 import 'download_confirm.dart';
 import 'episode_detail_sheet.dart';
@@ -2066,34 +2067,7 @@ class CardActionDelegate {
               icon: dlIcon, label: dlLabel, accent: dlAccent,
               onTap: () async {
                 Navigator.pop(ctx);
-                final dl = DownloadService();
-                if (dl.isDownloaded(dlKey)) {
-                  showDialog(context: context, builder: (dCtx) => AlertDialog(
-                    title: Text(l.removeDownloadQuestion),
-                    content: Text(l.removeDownloadContent),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(dCtx), child: Text(l.cancel)),
-                      TextButton(onPressed: () {
-                        dl.deleteDownload(dlKey, byUser: true);
-                        Navigator.pop(dCtx);
-                        showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
-                      }, child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
-                    ],
-                  ));
-                } else if (dl.isDownloading(dlKey)) {
-                  dl.cancelDownload(dlKey);
-                } else {
-                  final ok = await confirmDownload(context, title);
-                  if (!ok || !context.mounted) return;
-                  final auth = context.read<AuthProvider>();
-                  final api = auth.apiService;
-                  if (api == null) return;
-                  dl.downloadItem(api: api, itemId: dlKey, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId).then((error) {
-                    if (error != null && context.mounted) {
-                      showOverlayToast(context, error, icon: Icons.error_outline_rounded);
-                    }
-                  });
-                }
+                _handleDownloadTap(context, accent);
               },
             );
           },
@@ -2252,6 +2226,94 @@ class CardActionDelegate {
       icon: Icons.list_rounded,
     );
   }
+
+  /// Single entry point for the More menu's Download action. Unlike the old
+  /// flow, a fully downloaded book with chapters reopens the chapter picker so
+  /// more chapters can be added on top (already downloaded rows are greyed out
+  /// and kept via a replace-with-union re-download).
+  Future<void> _handleDownloadTap(BuildContext ctx, Color accent) async {
+    final l = AppLocalizations.of(ctx)!;
+    final dl = DownloadService();
+    final dlKey = episodeId != null ? '$itemId-$episodeId' : itemId;
+
+    if (dl.isDownloaded(dlKey)) {
+      if (chapters.isEmpty) {
+        showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
+        return;
+      }
+      final already = dl.downloadedChapterIndices(dlKey, chapters);
+      if (already.length >= chapters.length) {
+        showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
+        return;
+      }
+      final result = await showChapterDownloadSheet(ctx,
+          accent: accent,
+          title: title,
+          chapters: chapters,
+          downloadedChapters: already);
+      if (!ctx.mounted) return;
+      if (result == null || result.selectedIndices.isEmpty) return;
+      await _startDownload(dlKey, result.selectedIndices);
+    } else if (dl.isDownloading(dlKey)) {
+      dl.cancelDownload(dlKey);
+    } else if (dl.isPaused(dlKey)) {
+      // Resume from where it paused rather than starting over.
+      final api = ctx.read<AuthProvider>().apiService;
+      if (api != null) dl.resumeDownload(dlKey, api: api);
+    } else {
+      List<int>? selectedChapters;
+      if (chapters.isEmpty) {
+        final ok = await confirmDownload(ctx, title);
+        if (!ok) return;
+      } else {
+        final result = await showChapterDownloadSheet(ctx,
+            accent: accent,
+            title: title,
+            chapters: chapters);
+        if (!ctx.mounted) return;
+        if (result == null || result.selectedIndices.isEmpty) return;
+        // A dismissed chapter sheet returns null; treat that as a cancel
+        // instead of starting a whole-book download.
+        selectedChapters = result.selectedIndices;
+      }
+      if (!ctx.mounted) return;
+      await _startDownload(dlKey, selectedChapters);
+    }
+  }
+
+  /// Builds the union of already-downloaded and newly selected chapters so a
+  /// re-download isn't blocked by the "already downloaded" guard: existing
+  /// files are kept (same per-track names) and only new chapters are fetched,
+  /// with the download record replaced on completion.
+  Future<void> _startDownload(String dlKey, List<int>? selectedChapters) async {
+    if (!context.mounted) return;
+    final dl = DownloadService();
+    final already = dl.downloadedChapterIndices(dlKey, chapters);
+    List<int>? merged = selectedChapters;
+    if (already.isNotEmpty) {
+      merged = <int>{...already, ...?selectedChapters}.toList()..sort();
+    }
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    final error = await dl.downloadItem(
+      api: api,
+      itemId: dlKey,
+      episodeId: episodeId,
+      title: title,
+      author: author,
+      coverUrl: coverUrl,
+      libraryId: context.read<LibraryProvider>().selectedLibraryId,
+      selectedChapters: merged,
+      // Guard-bypass only matters when a download already exists. Keying off
+      // the item state (not just the detected set) keeps legacy downloads whose
+      // track metadata lacks durations re-downloadable too.
+      replaceExisting: dl.isDownloaded(dlKey),
+    );
+    if (error != null && context.mounted) {
+      showOverlayToast(context, error, icon: Icons.error_outline_rounded);
+    }
+  }
+
 
   void showHistory(BuildContext ctx, Color accent, TextTheme tt) {
     final historyEpisodeId = episodeId ??

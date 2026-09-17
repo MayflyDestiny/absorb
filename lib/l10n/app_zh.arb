@@ -12,6 +12,7 @@
   "done": "完成",
   "edit": "编辑",
   "search": "搜索",
+  "chapterIndex": "选集",
   "apply": "应用",
   "enable": "启用",
   "clear": "清除",
@@ -668,6 +669,64 @@
     }
   },
   "manageDownloads": "管理下载",
+  "manageDownloadsSubtitle": "查看、暂停、继续或删除本机下载",
+  "downloadsPaused": "已暂停",
+  "downloadsPause": "暂停",
+  "downloadsResume": "继续",
+  "downloadsManageTracks": "分集管理",
+  "downloadsStoredExternally": "存储于外部存储",
+  "downloadsNoPerTrackSaf": "保存到外部存储的下载不支持单集删除。",
+  "downloadsTrackDeleteTitle": "删除这一集？",
+  "downloadsTrackDeleteContent": "要将\"{title}\"从本机移除吗？该集的播放将停止。",
+  "@downloadsTrackDeleteContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsSummary": "{count} 个下载 · {size}",
+  "@downloadsSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsSort": "排序",
+  "downloadsSortTitle": "标题",
+  "downloadsSortSize": "大小",
+  "downloadsSortRecent": "最近下载",
+  "downloadsSearchHint": "搜索下载",
+  "downloadsNoResults": "没有匹配的下载",
+  "downloadsResumeAll": "全部继续",
+  "downloadsDeleteAll": "全部删除",
+  "downloadsDeleteAllContent": "要将所有已暂停的下载从本机移除吗？",
+  "downloadsManageFiles": "音频文件管理",
+  "downloadsPlayFromHere": "从这一集开始播放",
+  "downloadsGapSkipped": "已删除的集在播放时会跳过",
+  "downloadsDeleteTracksCount": "删除 {count} 集？",
+  "@downloadsDeleteTracksCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectRange": "选集（{start}-{end}）",
+  "@selectRange": {
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      }
+    }
+  },
   "streamingCache": "流式缓存",
   "streamingCacheInfoTitle": "流式缓存",
   "streamingCacheInfoContent": "将流式播放的音频缓存到磁盘，以便在快退或重复收听时无需重新下载。缓存会自动管理 - 达到大小限制时，最旧的文件会被移除。这与完全下载的书籍是分开的",
@@ -1103,6 +1162,15 @@
   "@selectedCount": {
     "placeholders": {
       "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectChaptersToDownload": "选择要下载的章节",
+  "startDownloadSelected": "开始下载（已选 {n}）",
+  "@startDownloadSelected": {
+    "placeholders": {
+      "n": {
         "type": "int"
       }
     }
@@ -3024,6 +3092,19 @@
   "serverLogsEmpty": "暂无服务器日志",
   "serverLogsNoMatch": "没有匹配的日志",
   "serverLogsLoadFailed": "无法加载服务器日志",
+  "serverLogsDisplay": "最低显示级别",
+  "serverLogsLevel": "服务器日志级别",
+  "serverLogsSavingLevel": "正在保存日志级别…",
+  "serverLogsLevelTrace": "追踪",
+  "serverLogsLevelDebug": "调试",
+  "serverLogsLevelInfo": "信息",
+  "serverLogsLevelWarning": "警告",
+  "serverLogsFilterAll": "所有级别",
+  "serverLogsFilterTracePlus": "追踪",
+  "serverLogsFilterDebugPlus": "调试",
+  "serverLogsFilterInfoPlus": "信息",
+  "serverLogsFilterWarningPlus": "警告",
+  "serverLogsFilterErrorPlus": "错误",
   "ebookDownload": "下载",
   "ebookDownloaded": "已下载",
   "ebookSavedOffline": "已保存供离线阅读",

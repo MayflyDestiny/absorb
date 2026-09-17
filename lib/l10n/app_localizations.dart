@@ -214,6 +214,12 @@ abstract class AppLocalizations {
   /// **'Search'**
   String get search;
 
+  /// No description provided for @chapterIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'Index'**
+  String get chapterIndex;
+
   /// No description provided for @apply.
   ///
   /// In en, this message translates to:
@@ -3736,6 +3742,150 @@ abstract class AppLocalizations {
   /// **'Manage downloads'**
   String get manageDownloads;
 
+  /// No description provided for @manageDownloadsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'View, pause, resume and delete your library downloads'**
+  String get manageDownloadsSubtitle;
+
+  /// No description provided for @downloadsPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get downloadsPaused;
+
+  /// No description provided for @downloadsPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get downloadsPause;
+
+  /// No description provided for @downloadsResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get downloadsResume;
+
+  /// No description provided for @downloadsManageTracks.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage episodes'**
+  String get downloadsManageTracks;
+
+  /// No description provided for @downloadsStoredExternally.
+  ///
+  /// In en, this message translates to:
+  /// **'Stored in external storage'**
+  String get downloadsStoredExternally;
+
+  /// No description provided for @downloadsNoPerTrackSaf.
+  ///
+  /// In en, this message translates to:
+  /// **'Episodes saved to external storage can\'t be deleted individually.'**
+  String get downloadsNoPerTrackSaf;
+
+  /// No description provided for @downloadsTrackDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this episode?'**
+  String get downloadsTrackDeleteTitle;
+
+  /// No description provided for @downloadsTrackDeleteContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove \"{title}\" from this device? Playback of this episode will stop.'**
+  String downloadsTrackDeleteContent(String title);
+
+  /// No description provided for @downloadsSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} downloads · {size}'**
+  String downloadsSummary(int count, String size);
+
+  /// No description provided for @downloadsSort.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort'**
+  String get downloadsSort;
+
+  /// No description provided for @downloadsSortTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get downloadsSortTitle;
+
+  /// No description provided for @downloadsSortSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get downloadsSortSize;
+
+  /// No description provided for @downloadsSortRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently downloaded'**
+  String get downloadsSortRecent;
+
+  /// No description provided for @downloadsSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search downloads'**
+  String get downloadsSearchHint;
+
+  /// No description provided for @downloadsNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching downloads'**
+  String get downloadsNoResults;
+
+  /// No description provided for @downloadsResumeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume all'**
+  String get downloadsResumeAll;
+
+  /// No description provided for @downloadsDeleteAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete all'**
+  String get downloadsDeleteAll;
+
+  /// No description provided for @downloadsDeleteAllContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete every paused download from this device?'**
+  String get downloadsDeleteAllContent;
+
+  /// No description provided for @downloadsManageFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage audio files'**
+  String get downloadsManageFiles;
+
+  /// No description provided for @downloadsPlayFromHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Play from this episode'**
+  String get downloadsPlayFromHere;
+
+  /// No description provided for @downloadsGapSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed episodes are skipped during playback'**
+  String get downloadsGapSkipped;
+
+  /// No description provided for @downloadsDeleteTracksCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} episode(s)?'**
+  String downloadsDeleteTracksCount(int count);
+
+  /// No description provided for @selectRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Select ({start}-{end})'**
+  String selectRange(int start, int end);
+
   /// No description provided for @streamingCache.
   ///
   /// In en, this message translates to:
@@ -6075,6 +6225,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} selected'**
   String selectedCount(int count);
+
+  /// No description provided for @selectChaptersToDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Select chapters to download'**
+  String get selectChaptersToDownload;
+
+  /// No description provided for @startDownloadSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Start download ({n} selected)'**
+  String startDownloadSelected(int n);
 
   /// No description provided for @selectAll.
   ///
@@ -14228,6 +14390,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t load the server logs'**
   String get serverLogsLoadFailed;
+
+  /// No description provided for @serverLogsDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Display'**
+  String get serverLogsDisplay;
+
+  /// No description provided for @serverLogsLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'Server log level'**
+  String get serverLogsLevel;
+
+  /// No description provided for @serverLogsSavingLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving log level…'**
+  String get serverLogsSavingLevel;
+
+  /// No description provided for @serverLogsLevelTrace.
+  ///
+  /// In en, this message translates to:
+  /// **'Trace'**
+  String get serverLogsLevelTrace;
+
+  /// No description provided for @serverLogsLevelDebug.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug'**
+  String get serverLogsLevelDebug;
+
+  /// No description provided for @serverLogsLevelInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Info'**
+  String get serverLogsLevelInfo;
+
+  /// No description provided for @serverLogsLevelWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning'**
+  String get serverLogsLevelWarning;
+
+  /// No description provided for @serverLogsFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All levels'**
+  String get serverLogsFilterAll;
+
+  /// No description provided for @serverLogsFilterTracePlus.
+  ///
+  /// In en, this message translates to:
+  /// **'Trace and higher'**
+  String get serverLogsFilterTracePlus;
+
+  /// No description provided for @serverLogsFilterDebugPlus.
+  ///
+  /// In en, this message translates to:
+  /// **'Debug and higher'**
+  String get serverLogsFilterDebugPlus;
+
+  /// No description provided for @serverLogsFilterInfoPlus.
+  ///
+  /// In en, this message translates to:
+  /// **'Info and higher'**
+  String get serverLogsFilterInfoPlus;
+
+  /// No description provided for @serverLogsFilterWarningPlus.
+  ///
+  /// In en, this message translates to:
+  /// **'Warning and higher'**
+  String get serverLogsFilterWarningPlus;
+
+  /// No description provided for @serverLogsFilterErrorPlus.
+  ///
+  /// In en, this message translates to:
+  /// **'Error and higher'**
+  String get serverLogsFilterErrorPlus;
 
   /// No description provided for @ebookDownload.
   ///
