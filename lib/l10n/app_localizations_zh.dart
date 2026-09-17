@@ -3423,7 +3423,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get monoAudio => '单声道音频';
 
   @override
-  String get skipSilence => 'Skip Silence';
+  String get skipSilence => '跳过静音';
 
   @override
   String get resetAll => '全部重置';
@@ -3708,6 +3708,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chapterBarrierOnRewindOffSubtitle => '关闭 - 快退可跨越到上一章';
+
+  @override
+  String get prevChapterJumpBehavior => '上一章跳章方式';
+
+  @override
+  String get prevChapterJumpRestartSubtitle => '关闭 - 仅回到当前章节开头';
+
+  @override
+  String get prevChapterJumpDirectSubtitle => '开启 - 直接跳到上一章';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {

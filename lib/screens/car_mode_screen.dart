@@ -44,7 +44,7 @@ class CarModeScreen extends StatefulWidget {
 
 class _CarModeScreenState extends State<CarModeScreen>
     with SingleTickerProviderStateMixin {
-  int _backSkip = 10;
+  int _backSkip = 15;
   int _forwardSkip = 15;
   bool _preferChapterBar = false;
   bool _speedAdjustedTime = true;

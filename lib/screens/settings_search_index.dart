@@ -57,6 +57,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Playback', l.sectionPlayback, l.skipBack, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.skipForward, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.chapterBarrierOnRewind, [l.chapterBarrierOnRewindOnSubtitle, l.chapterBarrierOnRewindOffSubtitle]),
+    SettingSearchEntry('Playback', l.sectionPlayback, l.prevChapterJumpBehavior, [l.prevChapterJumpRestartSubtitle, l.prevChapterJumpDirectSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipButtons, [l.longSkipButtonsOnSubtitle, l.longSkipButtonsOffSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipBack, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipForward, const []),

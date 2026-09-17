@@ -74,6 +74,7 @@ class BackupService {
       'bookmarkSort': await PlayerSettings.getBookmarkSort(),
       'autoDownloadOnStream': await PlayerSettings.getAutoDownloadOnStream(),
       'notificationChapterProgress': await PlayerSettings.getNotificationChapterProgress(),
+      'prevChapterDirectJump': await PlayerSettings.getPrevChapterDirectJump(),
       'sleepTimerMinutes': await PlayerSettings.getSleepTimerMinutes(),
       'sleepTimerChapters': await PlayerSettings.getSleepTimerChapters(),
       'streamingCacheSizeMb': await PlayerSettings.getStreamingCacheSizeMb(),
@@ -593,6 +594,7 @@ class BackupService {
     if (s['bookmarkSort'] != null) PlayerSettings.setBookmarkSort(s['bookmarkSort'] as String);
     if (s['autoDownloadOnStream'] != null) PlayerSettings.setAutoDownloadOnStream(s['autoDownloadOnStream'] as bool);
     if (s['notificationChapterProgress'] != null) PlayerSettings.setNotificationChapterProgress(s['notificationChapterProgress'] as bool);
+    if (s['prevChapterDirectJump'] != null) PlayerSettings.setPrevChapterDirectJump(s['prevChapterDirectJump'] as bool);
     if (s['sleepTimerMinutes'] != null) PlayerSettings.setSleepTimerMinutes(s['sleepTimerMinutes'] as int);
     if (s['sleepTimerChapters'] != null) PlayerSettings.setSleepTimerChapters(s['sleepTimerChapters'] as int);
     if (s['streamingCacheSizeMb'] != null) PlayerSettings.setStreamingCacheSizeMb(s['streamingCacheSizeMb'] as int);

@@ -7006,6 +7006,24 @@ abstract class AppLocalizations {
   /// **'Off - skip back crosses into previous chapters'**
   String get chapterBarrierOnRewindOffSubtitle;
 
+  /// No description provided for @prevChapterJumpBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous-chapter button'**
+  String get prevChapterJumpBehavior;
+
+  /// No description provided for @prevChapterJumpRestartSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - only returns to the start of the current chapter'**
+  String get prevChapterJumpRestartSubtitle;
+
+  /// No description provided for @prevChapterJumpDirectSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - directly jumps to the previous chapter'**
+  String get prevChapterJumpDirectSubtitle;
+
   /// No description provided for @autoRewindOnSubtitleFormat.
   ///
   /// In en, this message translates to:

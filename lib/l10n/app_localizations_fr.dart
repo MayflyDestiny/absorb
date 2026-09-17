@@ -3892,6 +3892,17 @@ class AppLocalizationsFr extends AppLocalizations {
       'Off - skip back crosses into previous chapters';
 
   @override
+  String get prevChapterJumpBehavior => 'Previous-chapter button';
+
+  @override
+  String get prevChapterJumpRestartSubtitle =>
+      'Off - only returns to the start of the current chapter';
+
+  @override
+  String get prevChapterJumpDirectSubtitle =>
+      'On - directly jumps to the previous chapter';
+
+  @override
   String autoRewindOnSubtitleFormat(String min, String max) {
     return 'On -${min}s to ${max}s based on pause length';
   }

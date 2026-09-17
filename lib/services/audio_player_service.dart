@@ -7304,6 +7304,36 @@ class AudioPlayerService extends ChangeNotifier {
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
     final posS = position.inMilliseconds / 1000.0;
+    final directJump = await PlayerSettings.getPrevChapterDirectJump();
+    if (directJump) {
+      // Direct mode: always jump straight to the previous chapter. At the first
+      // chapter (or when the position isn't inside any chapter), restart.
+      final currentIdx =
+          ChapterLookup.indexAtWithGrace(_chapters, posS, _totalDuration);
+      if (currentIdx != null && currentIdx > 0) {
+        final i = currentIdx - 1;
+        final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+        debugPrint('[Service] skipToPreviousChapter (direct) → chapter $i at ${start}s');
+        // Crossing into a genuinely DIFFERENT chapter keeps the intro skip
+        // armed - pre-jump straight to the intro-skip point so the chapter's
+        // opening words aren't briefly played while the skip waits for the
+        // first post-landing position tick before jumping.
+        final preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
+        await _seekAbsolute(preJumpTarget ?? start);
+        _logEvent(
+          PlaybackEventType.seek,
+          detail: preJumpTarget != null
+              ? 'prev chapter (direct) to ${preJumpTarget.toStringAsFixed(1)}s (intro skip)'
+              : 'prev chapter (direct)',
+        );
+        notifyListeners();
+        return;
+      }
+      _disarmIntroForSameChapterRewind(posS, 0);
+      await _seekAbsolute(0);
+      notifyListeners();
+      return;
+    }
     // If more than 3s into current chapter, go to start of current chapter
     // Otherwise go to previous chapter
     for (int i = _chapters.length - 1; i >= 0; i--) {

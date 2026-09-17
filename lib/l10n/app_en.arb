@@ -1880,6 +1880,9 @@
   "chapterBarrierInfoContent": "When skipping back, the playback will snap to the start of the current chapter instead of crossing into the previous one.\n\nTo reach a previous chapter, use the previous-chapter button.",
   "chapterBarrierOnRewindOnSubtitle": "On - skip back stops at the current chapter start instead of entering the previous chapter",
   "chapterBarrierOnRewindOffSubtitle": "Off - skip back crosses into previous chapters",
+  "prevChapterJumpBehavior": "Previous-chapter button",
+  "prevChapterJumpRestartSubtitle": "Off - only returns to the start of the current chapter",
+  "prevChapterJumpDirectSubtitle": "On - directly jumps to the previous chapter",
   "autoRewindOnSubtitleFormat": "On -{min}s to {max}s based on pause length",
   "@autoRewindOnSubtitleFormat": {
     "placeholders": {

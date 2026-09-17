@@ -20,7 +20,7 @@ class CardPlaybackControls extends StatefulWidget {
 }
 
 class _CardPlaybackControlsState extends State<CardPlaybackControls> {
-  int _backSkip = 10;
+  int _backSkip = 15;
   int _forwardSkip = 15;
   bool _longSkip = false;
   int _longBackSkip = 60;

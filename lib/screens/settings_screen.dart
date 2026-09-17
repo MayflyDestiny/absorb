@@ -99,8 +99,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _mp3IndexSeeking = false;
   bool _speedAdjustedTime = true;
   int _forwardSkip = 15;
-  int _backSkip = 10;
+  int _backSkip = 15;
   bool _skipChapterBarrier = true;
+  bool _prevChapterDirectJump = true;
   bool _longSkipButtons = false;
   int _longForwardSkip = 60;
   int _longBackSkip = 60;
@@ -960,6 +961,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final s = results[0] as AutoRewindSettings;
     final progressScale = results.last as double;
     final mp3IndexSeek = await PlayerSettings.getMp3IndexSeeking();
+    final prevChapterDirectJump = await PlayerSettings.getPrevChapterDirectJump();
     final coverSize = await PlayerSettings.getCoverSize();
     final flatBackground = await PlayerSettings.getFlatBackground();
     final showSubtitles = await PlayerSettings.getShowSubtitles();
@@ -1114,6 +1116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _cardBackground = cardBg;
       _progressTextScale = progressScale;
       _skipChapterBarrier = skipBarrier;
+      _prevChapterDirectJump = prevChapterDirectJump;
       _longSkipButtons = longSkipButtons;
       _longForwardSkip = longFwd;
       _longBackSkip = longBack;
@@ -2681,25 +2684,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(l.skipBack, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                          Text(l.secondsValue(_backSkip.toString()), style: tt.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600, color: cs.primary)),
-                        ],
-                      ),
-                    ),
-                    AbsorbSlider(
-                      value: _backSkip.toDouble(),
-                      min: 5, max: 60, divisions: 11,
-                      onChanged: _loaded ? (v) {
-                        setState(() => _backSkip = v.round());
-                        PlayerSettings.setBackSkip(v.round());
-                      } : null,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
                           Text(l.skipForward, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                           Text(l.secondsValue(_forwardSkip.toString()), style: tt.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w600, color: cs.primary)),
@@ -2712,6 +2696,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _forwardSkip = v.round());
                         PlayerSettings.setForwardSkip(v.round());
+                      } : null,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(l.skipBack, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                          Text(l.secondsValue(_backSkip.toString()), style: tt.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600, color: cs.primary)),
+                        ],
+                      ),
+                    ),
+                    AbsorbSlider(
+                      value: _backSkip.toDouble(),
+                      min: 5, max: 60, divisions: 11,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _backSkip = v.round());
+                        PlayerSettings.setBackSkip(v.round());
                       } : null,
                     ),
                     if (Platform.isIOS)
@@ -2749,6 +2752,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _skipChapterBarrier = v);
                         PlayerSettings.setSkipChapterBarrier(v);
+                      } : null,
+                    ),
+                    SwitchListTile(
+                      title: Text(l.prevChapterJumpBehavior),
+                      subtitle: Text(
+                        _prevChapterDirectJump
+                            ? l.prevChapterJumpRestartSubtitle
+                            : l.prevChapterJumpDirectSubtitle,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                      value: _prevChapterDirectJump,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _prevChapterDirectJump = v);
+                        PlayerSettings.setPrevChapterDirectJump(v);
                       } : null,
                     ),
                     // Long skip pair (GH #242)

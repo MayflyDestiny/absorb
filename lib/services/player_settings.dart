@@ -803,10 +803,15 @@ class PlayerSettings {
   static Future<int> getForwardSkip() => _get('forwardSkip', 15);
   static Future<void> setForwardSkip(int seconds) => _set('forwardSkip', seconds, notify: true);
 
-  static Future<int> getBackSkip() => _get('backSkip', 10);
+  static Future<int> getBackSkip() => _get('backSkip', 15);
   static Future<void> setBackSkip(int seconds) => _set('backSkip', seconds, notify: true);
   static Future<bool> getSkipChapterBarrier() => _get('skipChapterBarrier', true);
   static Future<void> setSkipChapterBarrier(bool value) => _set('skipChapterBarrier', value);
+
+  /// Whether the previous-chapter button jumps straight to the previous
+  /// chapter (true) or only restarts the current chapter (false).
+  static Future<bool> getPrevChapterDirectJump() => _get('prevChapterDirectJump', true);
+  static Future<void> setPrevChapterDirectJump(bool value) => _set('prevChapterDirectJump', value);
 
   /// Per-library skip override: a library (podcast or book) can use its own
   /// forward/back amounts instead of the global ones. Both are set together;
