@@ -99,3 +99,98 @@ class CoverStateBadges extends StatelessWidget {
     );
   }
 }
+
+/// Compact status chips for covers. When [surfaceTone] is true (default
+/// false), the chips use theme surface colors instead of the dark/white
+/// overlay palette, so they can sit *outside* the cover artwork (e.g. centered
+/// below a grid cover).
+class CoverStatusChips extends StatelessWidget {
+  final bool isDownloaded;
+  final bool isFinished;
+
+  /// Downloaded chapters and the book's full chapter count. When [savedChapters]
+  /// is 0 or below [totalChapters] is 0/unknown, the plain label is shown.
+  final int savedChapters;
+  final int totalChapters;
+
+  /// Use muted surface-based tones instead of the dark/white overlay palette.
+  final bool surfaceTone;
+
+  const CoverStatusChips({
+    super.key,
+    required this.isDownloaded,
+    required this.isFinished,
+    this.savedChapters = 0,
+    this.totalChapters = 0,
+    this.surfaceTone = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isDownloaded && !isFinished) return const SizedBox.shrink();
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final partial =
+        isDownloaded && totalChapters > 0 && savedChapters < totalChapters;
+    final savedLabel = partial
+        ? l.coverSavedCount(savedChapters, totalChapters)
+        : l.saved;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (isFinished)
+          _chip(
+            icon: Icons.check_circle_rounded,
+            label: l.finished,
+            background: surfaceTone
+                ? Colors.green.withValues(alpha: dark ? 0.18 : 0.12)
+                : Colors.green.shade700.withValues(alpha: 0.92),
+            foreground: surfaceTone
+                ? (dark ? Colors.greenAccent.shade100 : Colors.green.shade800)
+                : Colors.white,
+          ),
+        if (isFinished && isDownloaded) const SizedBox(height: 3),
+        if (isDownloaded)
+          _chip(
+            icon: Icons.download_rounded,
+            label: savedLabel,
+            background:
+                surfaceTone ? cs.surfaceContainerHighest : Colors.black.withValues(alpha: 0.62),
+            foreground: surfaceTone ? cs.onSurfaceVariant : Colors.white,
+          ),
+      ],
+    );
+  }
+
+  Widget _chip({
+    required IconData icon,
+    required String label,
+    required Color background,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: foreground),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: foreground,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

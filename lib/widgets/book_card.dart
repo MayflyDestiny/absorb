@@ -62,6 +62,13 @@ class BookCard extends StatelessWidget {
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = DownloadService().isDownloaded(itemId ?? '');
+    // Partial downloads read as "已保存 2/1097"; full ones stay a bare
+    // "已保存". Chapter counts are cached so this is cheap after the first one.
+    final dlCounts = isDownloaded
+        ? DownloadService().chapterDownloadCounts(itemId ?? '')
+        : null;
+    final savedChapters = dlCounts?.saved ?? -1;
+    final totalChapters = dlCounts?.total ?? 0;
     // Only compute for podcast shows that aren't being rendered as an episode
     // (an episode card shows the recentEpisode payload, not show-level info).
     final unfinishedCount = (lib.isPodcastLibrary && item['recentEpisode'] == null)
@@ -71,8 +78,17 @@ class BookCard extends StatelessWidget {
     final headers = lib.mediaHeaders;
 
     final card = isWide
-        ? _buildWideCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers, isExplicit: isExplicit)
-        : _buildCompactCard(context, cs, tt, l, title, subtitle, authorName, coverUrl, progress, headers, isFinished: isFinished, isDownloaded: isDownloaded, isExplicit: isExplicit, unfinishedCount: unfinishedCount);
+        ? _buildWideCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers,
+            isExplicit: isExplicit,
+            savedChapters: savedChapters,
+            totalChapters: totalChapters)
+        : _buildCompactCard(context, cs, tt, l, title, subtitle, authorName, coverUrl, progress, headers,
+            isFinished: isFinished,
+            isDownloaded: isDownloaded,
+            savedChapters: savedChapters,
+            totalChapters: totalChapters,
+            isExplicit: isExplicit,
+            unfinishedCount: unfinishedCount);
     if (!selectionMode) return card;
     // Selection sits on top of the finished card rather than inside both
     // layouts: the overlay swallows the tap, so nothing below it can open a
@@ -200,6 +216,8 @@ class BookCard extends StatelessWidget {
     double progress,
     Map<String, String> headers, {
     bool isExplicit = false,
+    int savedChapters = -1,
+    int totalChapters = 0,
   }) {
     return Card(
       elevation: 0,
@@ -232,9 +250,16 @@ class BookCard extends StatelessWidget {
                       ),
                     ),
                   if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
-                    const Positioned(
-                      left: 0, right: 0, bottom: 0,
-                      child: CoverStateBadges(isDownloaded: true, isFinished: false),
+                    Positioned(
+                      left: 0, right: 0, bottom: 5,
+                      child: Center(
+                        child: CoverStatusChips(
+                          isDownloaded: true,
+                          isFinished: false,
+                          savedChapters: savedChapters,
+                          totalChapters: totalChapters,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -319,6 +344,8 @@ class BookCard extends StatelessWidget {
     bool isDownloaded = false,
     bool isExplicit = false,
     int unfinishedCount = 0,
+    int savedChapters = -1,
+    int totalChapters = 0,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -396,11 +423,14 @@ class BookCard extends StatelessWidget {
                     ),
                   if (isFinished || isDownloaded)
                     Positioned(
-                      left: 0, right: 0, bottom: 0,
-                      child: CoverStateBadges(
-                        isDownloaded: isDownloaded,
-                        isFinished: isFinished,
-                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                      left: 0, right: 0, bottom: 5,
+                      child: Center(
+                        child: CoverStatusChips(
+                          isDownloaded: isDownloaded,
+                          isFinished: isFinished,
+                          savedChapters: savedChapters,
+                          totalChapters: totalChapters,
+                        ),
                       ),
                     ),
                 ],

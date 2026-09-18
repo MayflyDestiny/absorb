@@ -469,9 +469,10 @@ class LibraryScreenState extends State<LibraryScreen>
   bool _narratorSortAsc = true;
   final _narratorsScrollController = ScrollController();
 
-  // ── Cover aspect ratio ──
+  // ── Cover layout ──
   bool _rectangleCovers = false;
   bool _showSubtitles = false;
+  bool _listView = false;
   double get _coverAspectRatio => _rectangleCovers ? 2 / 3 : 1.0;
 
   // ── Scroll-to-hide bars ──
@@ -609,6 +610,9 @@ class LibraryScreenState extends State<LibraryScreen>
       PlayerSettings.getShowSubtitlesFor(lib.selectedLibraryId).then((v) {
         if (mounted && v != _showSubtitles) setState(() => _showSubtitles = v);
       });
+      PlayerSettings.getLibraryListViewFor(lib.selectedLibraryId).then((v) {
+        if (mounted && v != _listView) setState(() => _listView = v);
+      });
 
       // Rebuild tab controller if library type changed
       final needsTabs = !lib.isPodcastLibrary;
@@ -687,6 +691,9 @@ class LibraryScreenState extends State<LibraryScreen>
     });
     PlayerSettings.getShowSubtitlesFor(lib.selectedLibraryId).then((v) {
       if (mounted) setState(() => _showSubtitles = v);
+    });
+    PlayerSettings.getLibraryListViewFor(lib.selectedLibraryId).then((v) {
+      if (mounted) setState(() => _listView = v);
     });
     _restoreSortFilter().then((_) {
       if (!mounted) return;
@@ -905,11 +912,15 @@ class LibraryScreenState extends State<LibraryScreen>
       PlayerSettings.getShowSubtitlesFor(
         context.read<LibraryProvider>().selectedLibraryId,
       ),
+      PlayerSettings.getLibraryListViewFor(
+        context.read<LibraryProvider>().selectedLibraryId,
+      ),
     ]).then((values) {
       final newHideEbook = values[0];
       final newCollapse = values[1];
       final newRectCovers = values[2];
       final newShowSubtitles = values[3];
+      final newListView = values[4];
       if (!mounted) return;
       final coversChanged = newRectCovers != _rectangleCovers;
       if (coversChanged) {
@@ -917,6 +928,9 @@ class LibraryScreenState extends State<LibraryScreen>
       }
       if (newShowSubtitles != _showSubtitles) {
         setState(() => _showSubtitles = newShowSubtitles);
+      }
+      if (newListView != _listView) {
+        setState(() => _listView = newListView);
       }
       if (newHideEbook != _hideEbookOnly || newCollapse != _collapseSeries) {
         _loadGeneration++;
@@ -2933,8 +2947,8 @@ class LibraryScreenState extends State<LibraryScreen>
           ? 156
           : ((_filter != LibraryFilter.none ||
                     _seriesFilter != SeriesFilter.none)
-                ? 204
-                : 192),
+                ? 212
+                : 200),
       backgroundColor: scaffoldBg,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
@@ -3326,10 +3340,7 @@ class LibraryScreenState extends State<LibraryScreen>
         countText = l.libraryNarratorsCount(_narrators.length);
         break;
       case 4:
-        final cCount = _collections.length, pCount = _playlists.length;
-        countText = cCount > 0 && pCount > 0
-            ? '$cCount collections, $pCount playlists'
-            : (pCount > 0 ? '$pCount playlists' : '$cCount collections');
+        countText = l.libraryListsCount(_collections.length, _playlists.length);
         break;
       default:
         final lib = context.read<LibraryProvider>();
@@ -3430,6 +3441,24 @@ class LibraryScreenState extends State<LibraryScreen>
               style: tt.labelSmall?.copyWith(color: cs.primary),
             ),
           const Spacer(),
+          if (_currentTab == 0) ...[
+            Tooltip(
+              message: _listView ? l.authorBooksGrid : l.authorBooksList,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: _toggleListView,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Icon(
+                    _listView ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                    size: 18,
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
           Text(
             countText,
             style: tt.labelSmall?.copyWith(
@@ -3439,6 +3468,17 @@ class LibraryScreenState extends State<LibraryScreen>
         ],
       ),
     );
+  }
+
+  /// Switch the books tab between the cover grid and the list layout (cover
+  /// on the left, title/details on the right), persisting the choice for the
+  /// current library.
+  void _toggleListView() {
+    final libId = context.read<LibraryProvider>().selectedLibraryId;
+    if (libId == null) return;
+    final next = !_listView;
+    setState(() => _listView = next);
+    PlayerSettings.setLibraryListViewOverride(libId, next);
   }
 
   Widget _buildTabbedContent(ColorScheme cs, TextTheme tt) {
@@ -3451,6 +3491,10 @@ class LibraryScreenState extends State<LibraryScreen>
     final effectiveTab = _currentTab;
     Widget headerFor(int i) =>
         _buildHeaderSliver(context, useSharedFocus: i == effectiveTab);
+    // IndexedStack switches tabs instantly — no content fade or slide. Any
+    // fade first dims the incoming tab (reads as a blink) and a slide shifts
+    // content that isn't laid out to match (reads as a jump). The TabBar's own
+    // indicator animation already communicates the switch.
     return IndexedStack(
       index: effectiveTab,
       children: [
@@ -3534,6 +3578,7 @@ class LibraryScreenState extends State<LibraryScreen>
       isPodcastLibrary: context.read<LibraryProvider>().isPodcastLibrary,
       rectangleCovers: _rectangleCovers,
       showSubtitles: _showSubtitles,
+      listView: _listView,
       coverAspectRatio: _coverAspectRatio,
       onRefresh: _refreshAll,
       onClearFilter: () => _changeFilter(LibraryFilter.none),

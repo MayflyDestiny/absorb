@@ -872,8 +872,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
                         coverW = s;
                         coverH = s;
                       }
-                      final dlKey = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
-                      final isDownloaded = DownloadService().isDownloaded(dlKey);
+                      final downloads = DownloadService();
+                      final isDownloaded = downloads.isCurrentChapterSaved(
+                          episodeId: _episodeId,
+                          itemId: _itemId,
+                          chapters: _chapters,
+                          chapterIndex: chapterIdx);
                       final castService = ChromecastService();
                       final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
                       final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);

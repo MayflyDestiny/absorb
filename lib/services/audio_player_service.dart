@@ -1594,7 +1594,20 @@ class AudioPlayerService extends ChangeNotifier {
   double? _shortLocalDurationSec;
   // Ignore small encoder/container rounding when comparing decoded vs metadata.
   static const double _kLocalTruncationMarginSec = 60.0;
+  // When seeking a multi-file book, chapter boundaries and file boundaries are
+  // separate metadata timelines that drift by an arbitrary amount after many
+  // files (ms rounding, trailing silence, per-file duration estimates). A jump
+  // to the NEXT chapter's start can then be judged to sit back in THIS file's
+  // tail — the bar pins at ~max and a few words play before the concatenating
+  // source rolls over. For genuine chapter-start targets we snap to the
+  // nearest FILE boundary: whichever of the containing track's start and the
+  // following track's start is closer decides the track (see _seekAbsolute).
+  // Ordinary in-chapter seeks never qualify because they aren't chapter starts.
   int _lastNotifiedChapterIndex = -1;
+  // While set, a chapter jump has pinned the reported chapter; the position
+  // watchers must not demote it until the engine position passes the chapter's
+  // end (see _latchChapterJumpTarget). Cleared on any non-jump seek / load.
+  int _chapterJumpLatchIndex = -1;
   int _lastChapterCheckSec = -1;
   StreamSubscription? _indexSub;
 
@@ -2755,6 +2768,35 @@ class AudioPlayerService extends ChangeNotifier {
     return n - 1;
   }
 
+  /// Whether [absoluteSeconds] sits on a chapter boundary (within 1s tolerance).
+  /// Chapter starts come from the book metadata and jump targets are passed as
+  /// rounded whole seconds, so exact equality isn't expected — the point is to
+  /// tell a genuine "jump to chapter N" target from an ordinary in-chapter
+  /// seek that happens to land near a file boundary.
+  bool _isChapterStartWithin(double absoluteSeconds) {
+    if (_chapters.isEmpty) return false;
+    for (final ch in _chapters) {
+      final s = (ch['start'] as num?)?.toDouble() ?? 0;
+      if ((absoluteSeconds - s).abs() <= 1.0) return true;
+    }
+    return false;
+  }
+
+  /// Whether [absoluteSeconds] falls inside a downloaded track's playback
+  /// range. Positions in gaps between downloaded tracks, and anywhere past the
+  /// last downloaded track, are not locally playable.
+  bool _positionCoveredLocally(double absoluteSeconds) {
+    final n = _trackStartOffsets.length - 1;
+    for (int i = 0; i < n; i++) {
+      final start = _trackStartOffsets[i];
+      final end = start + _trackDurationAt(i);
+      if (absoluteSeconds >= start - 0.5 && absoluteSeconds < end - 0.5) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Phase 1.7: snapshot the URLs and HTTP headers used to build the
   /// streaming AudioSource so the iOS native widget core can hit the same
   /// endpoints if Flutter dies. Auth is in the URL (session id or token);
@@ -2827,8 +2869,18 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Seek to an absolute book position, handling multi-file offset conversion.
-  Future<void> _seekAbsolute(double absoluteSeconds) async {
+  Future<void> _seekAbsolute(
+    double absoluteSeconds, {
+    // Only explicit "jump to a chapter" actions snap to the nearest file
+    // boundary. Precise-position seeks (scrubber drag, bookmarks, history,
+    // relative skips, auto/sleep rewind, position adoption) must land exactly
+    // where asked — a drag to a chapter's final second is NOT a chapter jump.
+    bool chapterJump = false,
+  }) async {
     if (_player == null) return;
+    // Any non-chapter-jump seek clears a stale latch; the position logic goes
+    // back to plain metadata lookup.
+    if (!chapterJump) _chapterJumpLatchIndex = -1;
 
     // A seek already interrupts audio, so if a fresh session is waiting this
     // is the free moment to swap the source onto its tokenless URLs - the
@@ -2865,10 +2917,46 @@ class AudioPlayerService extends ChangeNotifier {
     }
     // Multi-file — find the right track and local offset. Gap-aware: a target
     // inside an un-downloaded region snaps to the next available track.
-    final target = _trackIndexForAbsolute(absoluteSeconds);
+    final nTracks = _trackStartOffsets.length - 1;
+    var target = _trackIndexForAbsolute(absoluteSeconds);
     final trackStart = _trackStartOffsets[target];
-    final localOffset =
+    var localOffset =
         (absoluteSeconds - trackStart).clamp(0.0, _trackDurationAt(target));
+    // Chapter-start snap (only for explicit chapter jumps — the [chapterJump]
+    // flag). The chapter metadata timeline and the per-file duration timeline
+    // drift apart by a fraction of a second to a few seconds growing with the
+    // chapter count, which can drop a "jump to chapter N" target into the tail
+    // of file N-1 — that's why landing on the metadata start alone still
+    // "plays the previous chapter" or pins the bar near full. Compare the
+    // containing track vs. the next track by which FILE boundary is closer:
+    // the closer the next boundary is, the more surely the arithmetic file
+    // pick is the drifted one, so hop to that file's start. No fixed
+    // tolerance — drift is book-dependent. Precise seeks (scrub, bookmarks,
+    // …) never pass [chapterJump] and land exactly where asked. The snap is
+    // DISABLED for multi-file books (many more tracks than chapters; e.g. one
+    // long hour-long audio file split into ~100 per-file tracks but a small
+    // chapter list): file boundaries then don't correspond to chapter
+    // boundaries and snapping can land in the wrong chapter's file. A
+    // one-file-per-chapter book (track count ≈ chapter count, ~1.5x allowance
+    // for intro/credits files) snaps freely.
+    if (chapterJump &&
+        target + 1 < nTracks &&
+        _isChapterStartWithin(absoluteSeconds) &&
+        _chapters.isNotEmpty &&
+        nTracks * 2 <= _chapters.length * 3) {
+      final distNext = _trackStartOffsets[target + 1] - absoluteSeconds;
+      final distCurrent = absoluteSeconds - _trackStartOffsets[target];
+      if (distNext > 0 && distNext < distCurrent) {
+        debugPrint(
+          '[Player] Chapter-start snap ${absoluteSeconds.toStringAsFixed(1)}s '
+          '(next boundary ${distNext.toStringAsFixed(2)}s away, containing '
+          'start ${distCurrent.toStringAsFixed(2)}s ago) -> track '
+          '${target + 1} at 0',
+        );
+        target = target + 1;
+        localOffset = 0.0;
+      }
+    }
     debugPrint(
       '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s -> track $target '
       'at ${localOffset.toStringAsFixed(1)}s '
@@ -2880,8 +2968,70 @@ class AudioPlayerService extends ChangeNotifier {
       Duration(milliseconds: (localOffset * 1000).round()),
       index: target,
     );
+    // Bind the reported chapter to the INTENDED chapter (not the metadata
+    // mapping of the landed position, which near a drifted boundary reads the
+    // previous file's chapter) so the notification/UI shows "chapter N" the
+    // moment the jump lands instead of flashing "N-1" first.
+    if (chapterJump) _latchChapterJumpTarget(absoluteSeconds);
     notifyListeners();
     return;
+  }
+
+  /// Pin the reported chapter to the one a jump meant.
+  ///
+  /// After a chapter jump the engine can land a hair BEFORE the intended
+  /// chapter's metadata start (metadata vs per-file timeline drift), so a
+  /// position-based lookup would demote the title to the PREVIOUS chapter for
+  /// a moment. A jump target is by definition a metadata chapter start
+  /// (rounded to a second), so the chapter whose start is nearest is the
+  /// intended one. Pin it and push it so the notification/lock screen and
+  /// chapter progress bar show the right chapter immediately; the position
+  /// watchers keep it until the position truly passes the chapter's end.
+  /// Containment lookup is deliberately NOT used: near a drifted boundary the
+  /// target can still read as the previous chapter's range.
+  void _latchChapterJumpTarget(double absoluteSeconds) {
+    if (_chapters.isEmpty) {
+      _chapterJumpLatchIndex = -1;
+      return;
+    }
+    int nearest = -1;
+    double bestDist = double.infinity;
+    for (int i = 0; i < _chapters.length; i++) {
+      final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+      final d = (s - absoluteSeconds).abs();
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = i;
+      }
+    }
+    if (nearest < 0 || bestDist > 1.0) {
+      // Not a chapter start (miss → just leave detection to the position
+      // watchers).
+      _chapterJumpLatchIndex = -1;
+      return;
+    }
+    final ch = _chapters[nearest] as Map<String, dynamic>;
+    final s = (ch['start'] as num?)?.toDouble() ?? 0;
+    final e = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
+    _lastNotifiedChapterIndex = nearest;
+    _currentChapterStart = s;
+    _currentChapterEnd = e;
+    _chapterJumpLatchIndex = nearest;
+    final title = ch['title'] as String?;
+    debugPrint(
+      '[Player] Chapter jump latch: idx=$nearest "$title" '
+      'start=${s.toStringAsFixed(1)}s end=${e.toStringAsFixed(1)}s',
+    );
+    if (_currentItemId != null) {
+      _pushMediaItem(
+        _mediaItemKey,
+        _currentTitle ?? '',
+        _currentAuthor ?? '',
+        _currentCoverUrl,
+        _totalDuration,
+        chapter: title,
+      );
+    }
   }
 
   /// MUST be called after Activity is ready.
@@ -4265,6 +4415,52 @@ class AudioPlayerService extends ChangeNotifier {
         _trackDurations = [];
       }
 
+      // A partial download is missing files, so it legitimately decodes shorter
+      // than the full book. Treat the layout as complete only when the persisted
+      // starts begin at 0 and reach the end; otherwise local coverage stops
+      // wherever the downloaded tracks do.
+      final startsCoverBook = absoluteStarts != null &&
+          absoluteStarts.isNotEmpty &&
+          absoluteStarts.first <= 0.001 &&
+          _trackDurations.length == absoluteStarts.length &&
+          (totalDuration <= 0 ||
+              absoluteStarts.last + _trackDurations.last >=
+                  totalDuration - _kLocalTruncationMarginSec);
+      final isPartialDownload = absoluteStarts != null && !startsCoverBook;
+      final localCoverageEnd = _trackStartOffsets.length > 1
+          ? _trackStartOffsets.last
+          : totalDuration;
+
+      // The requested position can sit past the last downloaded track or in a
+      // gap between downloaded tracks. There is no local audio to seek to -
+      // playing locally would clamp to the end of the last file, instantly
+      // "complete", and save that end position over the user's real progress
+      // (GH #278 in reverse). Stream instead while the server is reachable;
+      // offline, fall back to the nearest downloaded track so audio still plays.
+      if (isPartialDownload && !_positionCoveredLocally(startTime)) {
+        final canStream = _api != null && !manualOffline && !_knownOffline;
+        debugPrint(
+          '[Player] Local position ${startTime.toStringAsFixed(1)}s is outside '
+          'the downloaded range (covers 0-${localCoverageEnd.toStringAsFixed(1)}s) '
+          '- ${canStream ? 'streaming instead' : 'clamping to nearest downloaded track'}',
+        );
+        if (canStream) {
+          return await _playFromServer(
+            _api!,
+            _currentItemId!,
+            title,
+            author,
+            coverUrl,
+            totalDuration,
+            chapters,
+            startTime,
+            forceStartTime: forceStartTime,
+          );
+        }
+        final idx = _trackIndexForAbsolute(startTime);
+        startTime = _trackStartOffsets[idx];
+      }
+
       final trackSources = localPaths.map((p) => localAudioSource(p)).toList();
       final source = ConcatenatingAudioSource(children: trackSources);
 
@@ -4296,18 +4492,9 @@ class AudioPlayerService extends ChangeNotifier {
       // playback to the first track, breaking seek and resume. The single-point
       // _shortLocalDurationSec clamp only models one truncated file anyway.
       final decodedSec = (decoded?.inMilliseconds ?? 0) / 1000.0;
-      // A partial download is missing files, so it legitimately decodes shorter
-      // than the full book; the truncation heuristic must not fire there — it
-      // would clamp every seek to the first present track. Treat the layout as
-      // complete only when the persisted starts begin at 0 and reach the end.
-      final startsCoverBook = absoluteStarts != null &&
-          absoluteStarts.isNotEmpty &&
-          absoluteStarts.first <= 0.001 &&
-          _trackDurations.length == absoluteStarts.length &&
-          (totalDuration <= 0 ||
-              absoluteStarts.last + _trackDurations.last >=
-                  totalDuration - _kLocalTruncationMarginSec);
-      final isPartialDownload = absoluteStarts != null && !startsCoverBook;
+      // A partial download is missing files, so the truncation heuristic must
+      // not fire there — it would clamp every seek to the first present track
+      // (see the coverage fallback above).
       if (!isPartialDownload &&
           trackSources.length == 1 &&
           totalDuration > 0 &&
@@ -4321,8 +4508,12 @@ class AudioPlayerService extends ChangeNotifier {
         );
       }
 
-      // If the saved position is at (or past) the end, restart from the beginning
-      if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
+      // If the saved position is at (or past) the end, restart from the
+      // beginning. For a partial download the local coverage end is the boundary
+      // that matters — resuming exactly there would instantly re-complete and
+      // pin the user at the end (GH #278), so restart instead.
+      final endBoundary = isPartialDownload ? localCoverageEnd : totalDuration;
+      if (endBoundary > 0 && startTime >= endBoundary - 1.0) startTime = 0;
       final speedKey = _currentItemId ?? itemId;
       final bookSpeed = await PlayerSettings.getBookSpeed(speedKey);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
@@ -4332,7 +4523,14 @@ class AudioPlayerService extends ChangeNotifier {
         speed: speed,
       );
       if (startTime > 0) {
-        await _seekAbsolute(startTime);
+        // Starting a session at a chapter boundary (chapter tap in the sheet's
+        // inactive branch, bookmark at a chapter start): snap to the matching
+        // file boundary to avoid drift-induced tail landing. Mid-chapter picks
+        // stay exact (a plain resume position is never a chapter start).
+        await _seekAbsolute(
+          startTime,
+          chapterJump: _isChapterStartWithin(startTime),
+        );
       }
       clearSeekTarget(); // Seek done; let position events flow immediately
 
@@ -4540,7 +4738,14 @@ class AudioPlayerService extends ChangeNotifier {
         speed: speed,
       );
       if (startTime > 0) {
-        await _seekAbsolute(startTime);
+        // Starting a session at a chapter boundary (chapter tap in the sheet's
+        // inactive branch, bookmark at a chapter start): snap to the matching
+        // file boundary to avoid drift-induced tail landing. Mid-chapter picks
+        // stay exact (a plain resume position is never a chapter start).
+        await _seekAbsolute(
+          startTime,
+          chapterJump: _isChapterStartWithin(startTime),
+        );
       }
       clearSeekTarget();
 
@@ -4961,7 +5166,14 @@ class AudioPlayerService extends ChangeNotifier {
         speed: speed,
       );
       if (startTime > 0) {
-        await _seekAbsolute(startTime);
+        // Starting a session at a chapter boundary (chapter tap in the sheet's
+        // inactive branch, bookmark at a chapter start): snap to the matching
+        // file boundary to avoid drift-induced tail landing. Mid-chapter picks
+        // stay exact (a plain resume position is never a chapter start).
+        await _seekAbsolute(
+          startTime,
+          chapterJump: _isChapterStartWithin(startTime),
+        );
       }
       clearSeekTarget(); // Seek done; let position events flow immediately
 
@@ -5133,7 +5345,12 @@ class AudioPlayerService extends ChangeNotifier {
         retrySource = ConcatenatingAudioSource(children: sources);
       }
       await _player!.setAudioSource(retrySource, itemId: _currentItemId);
-      if (startTime > 0) await _seekAbsolute(startTime);
+      if (startTime > 0) {
+        await _seekAbsolute(
+          startTime,
+          chapterJump: _isChapterStartWithin(startTime),
+        );
+      }
       clearSeekTarget();
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
@@ -5362,6 +5579,7 @@ class AudioPlayerService extends ChangeNotifier {
     _trackDurations = [];
     _currentTrackIndex = 0;
     _lastNotifiedChapterIndex = -1;
+    _chapterJumpLatchIndex = -1;
     _lastSeekTargetSeconds = null;
     _lastSeekTime = null;
     _lastIndexAdvanceTime = null;
@@ -5794,6 +6012,25 @@ class AudioPlayerService extends ChangeNotifier {
           String? chapterTitle;
           double chapterStart = 0;
           double chapterEnd = _totalDuration;
+
+          // Chapter-jump latch: after a jump the engine can sit a hair before
+          // the intended chapter's metadata start (metadata vs per-file
+          // timeline drift); position lookup could otherwise demote the title
+          // back to the PREVIOUS chapter. Merely reserving [chapterIdx] as the
+          // latched index blocks the slow path — the latched chapter was
+          // already pushed and [_lastNotifiedChapterIndex] set, so the change
+          // guard below stays silent. Release once the position truly passes
+          // the latched chapter's end.
+          if (_chapterJumpLatchIndex >= 0) {
+            final lEnd =
+                (_chapters[_chapterJumpLatchIndex]['end'] as num?)?.toDouble() ??
+                    _totalDuration;
+            if (posSec < lEnd) {
+              chapterIdx = _chapterJumpLatchIndex;
+            } else {
+              _chapterJumpLatchIndex = -1;
+            }
+          }
 
           // Fast path: check if still in the cached chapter
           if (_lastNotifiedChapterIndex >= 0 &&
@@ -6771,8 +7008,12 @@ class AudioPlayerService extends ChangeNotifier {
         _seekedWhilePaused = false;
       }
     }
-    // Auto-rewind on resume if enabled
-    if (_lastPauseTime != null && _player != null) {
+    // Auto-rewind on resume if enabled. Skip it after a seek made while paused
+    // (chapter jump, bookmark, device adoption): the user has just explicitly
+    // placed the position, so pulling it back re-presents the tail of the
+    // PREVIOUS chapter (a jump to chapter N's start rewinds into N-1) and
+    // contradicts the position they expect to hear next.
+    if (!seekedWhilePaused && _lastPauseTime != null && _player != null) {
       final settings = await AutoRewindSettings.load();
       if (settings.enabled) {
         final pauseDuration = DateTime.now().difference(_lastPauseTime!);
@@ -7213,6 +7454,11 @@ class AudioPlayerService extends ChangeNotifier {
     Duration pos, {
     PlaybackEventType logAs = PlaybackEventType.seek,
     String? logDetail,
+    // True when the caller is jumping to a specific chapter (chapter sheet,
+    // next/prev chapter): the seek may then snap to the nearest file boundary
+    // to compensate for metadata-vs-file timeline drift. All other seeks keep
+    // the exact position.
+    bool chapterJump = false,
   }) async {
     // While this item is casting, the Chromecast is the real player - route
     // the seek there too or bookmark/chapter jumps only move the stopped
@@ -7228,7 +7474,10 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player != null && !_player!.playing) _seekedWhilePaused = true;
     _lastUserSeekTime = DateTime.now();
     final from = position;
-    await _seekAbsolute(pos.inMilliseconds / 1000.0);
+    await _seekAbsolute(
+      pos.inMilliseconds / 1000.0,
+      chapterJump: chapterJump,
+    );
     _logEvent(
       logAs,
       detail: logDetail ?? '${_formatPos(from)} → ${_formatPos(pos)}',
@@ -7348,7 +7597,12 @@ class AudioPlayerService extends ChangeNotifier {
       preJumpTarget =
           await _crossChapterIntroSkipTarget(chapterIdx, target.seconds);
     }
-    await _seekAbsolute(preJumpTarget ?? target.seconds);
+    await _seekAbsolute(
+      preJumpTarget ?? target.seconds,
+      // Snap to the file boundary when landing exactly on the chapter start;
+      // an intro-skip pre-jump is offset into the chapter and stays precise.
+      chapterJump: preJumpTarget == null,
+    );
     _logEvent(
       PlaybackEventType.seek,
       detail: preJumpTarget != null
@@ -7378,7 +7632,10 @@ class AudioPlayerService extends ChangeNotifier {
         // opening words aren't briefly played while the skip waits for the
         // first post-landing position tick before jumping.
         final preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
-        await _seekAbsolute(preJumpTarget ?? start);
+        await _seekAbsolute(
+          preJumpTarget ?? start,
+          chapterJump: preJumpTarget == null,
+        );
         _logEvent(
           PlaybackEventType.seek,
           detail: preJumpTarget != null
@@ -7413,7 +7670,10 @@ class AudioPlayerService extends ChangeNotifier {
         if (!disarmedSameChapter) {
           preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
         }
-        await _seekAbsolute(preJumpTarget ?? start);
+        await _seekAbsolute(
+          preJumpTarget ?? start,
+          chapterJump: preJumpTarget == null,
+        );
         _logEvent(
           PlaybackEventType.seek,
           detail: preJumpTarget != null

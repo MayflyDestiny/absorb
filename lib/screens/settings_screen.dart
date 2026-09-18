@@ -103,6 +103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _backSkip = 15;
   bool _skipChapterBarrier = true;
   bool _prevChapterDirectJump = true;
+  bool _confirmEveryChapterJump = false;
   bool _longSkipButtons = false;
   int _longForwardSkip = 60;
   int _longBackSkip = 60;
@@ -995,6 +996,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final progressScale = results.last as double;
     final mp3IndexSeek = await PlayerSettings.getMp3IndexSeeking();
     final prevChapterDirectJump = await PlayerSettings.getPrevChapterDirectJump();
+    final confirmEveryChapterJump = await PlayerSettings.getConfirmEveryChapterJump();
     final coverSize = await PlayerSettings.getCoverSize();
     final flatBackground = await PlayerSettings.getFlatBackground();
     final showSubtitles = await PlayerSettings.getShowSubtitles();
@@ -1150,6 +1152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _progressTextScale = progressScale;
         _skipChapterBarrier = skipBarrier;
         _prevChapterDirectJump = prevChapterDirectJump;
+        _confirmEveryChapterJump = confirmEveryChapterJump;
         _longSkipButtons = longSkipButtons;
         _longForwardSkip = longFwd;
         _longBackSkip = longBack;
@@ -1806,7 +1809,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
 
                       // ── Manage Downloads ──
                       Card(
@@ -2196,6 +2199,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ? (v) {
                                     setState(() => _prevChapterDirectJump = v);
                                     PlayerSettings.setPrevChapterDirectJump(v);
+                                  }
+                                : null,
+                          ),
+                          SwitchListTile(
+                            title: Text(l.chaptersConfirmJump),
+                            subtitle: Text(
+                              _confirmEveryChapterJump
+                                  ? l.chaptersConfirmJumpOnSubtitle
+                                  : l.chaptersConfirmJumpOffSubtitle,
+                              style: tt.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                            value: _confirmEveryChapterJump,
+                            onChanged: _loaded
+                                ? (v) {
+                                    setState(() =>
+                                        _confirmEveryChapterJump = v);
+                                    PlayerSettings.setConfirmEveryChapterJump(v);
                                   }
                                 : null,
                           ),

@@ -80,6 +80,7 @@ class _GridBookTileState extends State<GridBookTile> {
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = _dl.isDownloaded(itemId);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
+    final dlCounts = isDownloaded ? _dl.chapterDownloadCounts(itemId) : null;
     final isSubscribed = lib.isPodcastLibrary && lib.isPodcastSubscribed(itemId);
     final unfinishedCount =
         lib.isPodcastLibrary ? lib.getUnfinishedEpisodeCount(widget.item) : 0;
@@ -209,13 +210,19 @@ class _GridBookTileState extends State<GridBookTile> {
                       ),
                     ),
 
-                  // ── State badges (downloaded / finished) ──
+                  // ── State chips (downloaded / finished), bottom-center ──
                   if (isFinished || isDownloaded)
                     Positioned(
-                      left: 0, right: 0, bottom: 0,
-                      child: CoverStateBadges(
-                        isDownloaded: isDownloaded,
-                        isFinished: isFinished,
+                      left: 0,
+                      right: 0,
+                      bottom: 5,
+                      child: Center(
+                        child: CoverStatusChips(
+                          isDownloaded: isDownloaded,
+                          isFinished: isFinished,
+                          savedChapters: dlCounts?.saved ?? 0,
+                          totalChapters: dlCounts?.total ?? 0,
+                        ),
                       ),
                     ),
 
@@ -998,6 +1005,373 @@ class GridAuthorTile extends StatelessWidget {
     return Center(
       child: Icon(Icons.person_rounded,
           size: 32, color: cs.onSecondaryContainer.withValues(alpha: 0.4)),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// List tile (cover left, text right) for the books tab list layout
+// ═══════════════════════════════════════════════════════════════
+class LibraryBookListTile extends StatefulWidget {
+  final Map<String, dynamic> item;
+  final bool isSeries;
+  final double coverAspectRatio;
+  final bool selectionMode;
+  final bool selected;
+  final VoidCallback? onSelectionToggle;
+
+  const LibraryBookListTile({
+    super.key,
+    required this.item,
+    this.isSeries = false,
+    this.coverAspectRatio = 1.0,
+    this.selectionMode = false,
+    this.selected = false,
+    this.onSelectionToggle,
+  });
+
+  @override
+  State<LibraryBookListTile> createState() => _LibraryBookListTileState();
+}
+
+class _LibraryBookListTileState extends State<LibraryBookListTile> {
+  final _dl = DownloadService();
+
+  @override
+  void initState() {
+    super.initState();
+    _dl.addListener(_rebuild);
+  }
+
+  @override
+  void dispose() {
+    _dl.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+    final lib = context.watch<LibraryProvider>();
+
+    if (widget.isSeries) return _buildSeries(cs, tt, l, lib);
+    return _buildBook(cs, tt, l, lib);
+  }
+
+  Widget _buildBook(ColorScheme cs, TextTheme tt, AppLocalizations l,
+      LibraryProvider lib) {
+    final item = widget.item;
+    final itemId = item['id'] as String? ?? '';
+    final media = item['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    final title = metadata['title'] as String? ?? l.unknown;
+    final subtitle = metadata['subtitle'] as String? ?? '';
+    final author = metadata['authorName'] as String? ?? '';
+    final coverUrl = lib.getCoverUrl(itemId);
+    final progress = lib.getProgress(itemId);
+    final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
+    final isDownloaded = _dl.isDownloaded(itemId);
+    final dlCounts = isDownloaded ? _dl.chapterDownloadCounts(itemId) : null;
+    final seriesName = item['seriesName'] as String? ?? '';
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (widget.selectionMode && widget.onSelectionToggle != null) {
+          widget.onSelectionToggle!();
+          return;
+        }
+        if (itemId.isNotEmpty) {
+          if (lib.isPodcastLibrary) {
+            EpisodeListSheet.show(context, item);
+          } else {
+            showBookDetailSheet(context, itemId);
+          }
+        }
+      },
+      child: Card(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        color: cs.surfaceContainerLow,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: SizedBox(
+          height: 112,
+          child: Stack(children: [
+            Row(children: [
+              // Cover
+              AspectRatio(
+                aspectRatio: widget.coverAspectRatio,
+                child: Stack(fit: StackFit.expand, children: [
+                  if (coverUrl != null)
+                    _listCover(cs, l, tt, coverUrl, lib.mediaHeaders, title,
+                        author)
+                  else
+                    CoverPlaceholder(title: title, author: author),
+                  if (progress > 0 && !isFinished)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0),
+                        minHeight: 3,
+                        backgroundColor: Colors.black38,
+                        valueColor: AlwaysStoppedAnimation(cs.primary),
+                      ),
+                    ),
+                  if (isFinished || isDownloaded)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 4,
+                      child: CoverStatusChips(
+                        isDownloaded: isDownloaded,
+                        isFinished: isFinished,
+                        savedChapters: dlCounts?.saved ?? 0,
+                        totalChapters: dlCounts?.total ?? 0,
+                      ),
+                    ),
+                ]),
+              ),
+              // Text
+              Expanded(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: cs.onSurface)),
+                      if (subtitle.isNotEmpty && subtitle != title) ...[
+                        const SizedBox(height: 3),
+                        Text(subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.labelSmall
+                                ?.copyWith(color: cs.onSurfaceVariant)),
+                      ],
+                      if (author.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tt.labelSmall
+                                ?.copyWith(color: cs.onSurfaceVariant)),
+                      ],
+                      if (seriesName.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Row(children: [
+                          Icon(Icons.auto_stories_rounded,
+                              size: 12, color: cs.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(seriesName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tt.labelSmall?.copyWith(
+                                    color: cs.primary.withValues(alpha: 0.8),
+                                    fontSize: 11)),
+                          ),
+                        ]),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ]),
+            // Selection overlay
+            if (widget.selectionMode)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.selected
+                        ? cs.primary
+                        : Colors.black.withValues(alpha: 0.55),
+                    border: Border.all(
+                        color: widget.selected ? cs.primary : Colors.white70),
+                  ),
+                  child: Icon(
+                    widget.selected ? Icons.check_rounded : Icons.circle_outlined,
+                    size: 17,
+                    color: widget.selected ? cs.onPrimary : Colors.white70,
+                  ),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _listCover(ColorScheme cs, AppLocalizations l, TextTheme tt,
+      String coverUrl, Map<String, String> headers, String title,
+      String author) {
+    final placeholder = CoverPlaceholder(title: title, author: author);
+    final isSquare = (widget.coverAspectRatio - 1.0).abs() < 0.01;
+    final decodeWidth = coverGridDecodeWidth(context);
+    Widget laid;
+    if (!isSquare) {
+      laid = coverUrl.startsWith('/')
+          ? Image.file(File(coverUrl),
+              fit: BoxFit.cover,
+              cacheWidth: decodeWidth,
+              errorBuilder: (_, __, ___) => placeholder)
+          : CachedNetworkImage(
+              imageUrl: coverUrl,
+              fit: BoxFit.cover,
+              httpHeaders: headers,
+              memCacheWidth: decodeWidth,
+              placeholder: (_, __) => placeholder,
+              errorWidget: (_, __, ___) => placeholder);
+      return laid;
+    }
+    // Square covers get a blurred backdrop so wide art doesn't letterbox.
+    Widget blur() => coverUrl.startsWith('/')
+        ? Image.file(File(coverUrl),
+            fit: BoxFit.cover,
+            cacheWidth: 32,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink())
+        : CachedNetworkImage(
+            imageUrl: coverUrl,
+            fit: BoxFit.cover,
+            httpHeaders: headers,
+            memCacheWidth: 32,
+            errorWidget: (_, __, ___) => const SizedBox.shrink());
+    Widget front() => coverUrl.startsWith('/')
+        ? Image.file(File(coverUrl),
+            fit: BoxFit.contain,
+            cacheWidth: decodeWidth,
+            errorBuilder: (_, __, ___) => placeholder)
+        : CachedNetworkImage(
+            imageUrl: coverUrl,
+            fit: BoxFit.contain,
+            httpHeaders: headers,
+            memCacheWidth: decodeWidth,
+            placeholder: (_, __) => placeholder,
+            errorWidget: (_, __, ___) => placeholder);
+    return Stack(fit: StackFit.expand, children: [
+      blur(),
+      Container(color: Colors.black.withValues(alpha: 0.15)),
+      front(),
+    ]);
+  }
+
+  Widget _buildSeries(ColorScheme cs, TextTheme tt, AppLocalizations l,
+      LibraryProvider lib) {
+    final item = widget.item;
+    final auth = context.read<AuthProvider>();
+    final collapsedSeries =
+        item['collapsedSeries'] as Map<String, dynamic>? ?? {};
+    final seriesName =
+        collapsedSeries['name'] as String? ?? l.libraryGridTilesUnknownSeries;
+    final seriesId = collapsedSeries['id'] as String? ?? '';
+    final media = item['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    final author = metadata['authorName'] as String? ?? '';
+
+    final itemIds = (collapsedSeries['libraryItemIds'] as List<dynamic>?)
+            ?.map((e) => e as String)
+            .toList() ??
+        [item['id'] as String? ?? ''];
+    final rawNumBooks = collapsedSeries['numBooks'] as int? ?? 0;
+    final numBooks = rawNumBooks > 0 ? rawNumBooks : itemIds.length;
+    final coverUrls =
+        itemIds.take(4).map((id) => lib.getCoverUrl(id)).toList();
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (widget.selectionMode && widget.onSelectionToggle != null) {
+          widget.onSelectionToggle!();
+          return;
+        }
+        if (seriesId.isNotEmpty) {
+          showSeriesBooksSheet(
+            context,
+            seriesName: seriesName,
+            seriesId: seriesId,
+            books: const [],
+            itemIds: itemIds,
+            serverUrl: auth.serverUrl,
+            token: auth.token,
+          );
+        }
+      },
+      child: Card(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        color: cs.surfaceContainerLow,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: SizedBox(
+          height: 112,
+          child: Row(children: [
+            // Stacked covers
+            SizedBox(
+              width: 88,
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: widget.coverAspectRatio,
+                  child: _StackedCovers(
+                    coverUrls: coverUrls.isEmpty ? const [null] : coverUrls,
+                    numBooks: numBooks,
+                    mediaHeaders: lib.mediaHeaders,
+                    cs: cs,
+                    coverAspectRatio: widget.coverAspectRatio,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(seriesName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600, color: cs.onSurface)),
+                    const SizedBox(height: 4),
+                    Text(
+                        l.seriesCardBookCount(numBooks),
+                        maxLines: 1,
+                        style: tt.labelSmall
+                            ?.copyWith(color: cs.onSurfaceVariant)),
+                    if (author.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(author,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tt.labelSmall
+                              ?.copyWith(color: cs.onSurfaceVariant)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }

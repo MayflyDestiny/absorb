@@ -99,10 +99,13 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   @override
   void initState() {
     super.initState();
+    _recomputeVisibleIndices();
     // Open the list at the currently-playing chapter so the selection badge
-    // and the visible rows agree on what's "now".
+    // and the visible rows agree on what's "now". A single first-frame jumpTo
+    // (uniform rows -> exact pixel math) lands straight on the right chapter;
+    // waiting for the entrance to finish only showed chapter 1 then flashed
+    // over to the current one.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _measureRowHeight();
       if (widget.initialIndex > 0) {
         _anchorAtTop(widget.initialIndex);
       }
@@ -114,10 +117,18 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   /// Original indices into [widget.chapters] matching the current query (all of
   /// them when empty). Keeping the original index means a row's number and its
   /// "finished" tick stay tied to the real chapter, not the filtered position.
-  List<int> get _visibleIndices {
+  /// Recomputed only when the query changes — rebuilding the whole list on
+  /// every build (including every frame of the sheet's entrance animation)
+  /// was pure allocation churn for thousand-chapter books.
+  List<int> _visibleIndices = const [];
+
+  void _recomputeVisibleIndices() {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return [for (int i = 0; i < widget.chapters.length; i++) i];
-    return [
+    if (q.isEmpty) {
+      _visibleIndices = [for (int i = 0; i < widget.chapters.length; i++) i];
+      return;
+    }
+    _visibleIndices = [
       for (int i = 0; i < widget.chapters.length; i++)
         if (((widget.chapters[i] as Map<String, dynamic>)['title'] as String? ??
                 '')
@@ -133,13 +144,17 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
     super.dispose();
   }
 
-  void _setQuery(String v) => setState(() => _query = v);
+  void _setQuery(String v) => setState(() {
+          _query = v;
+          _recomputeVisibleIndices();
+        });
 
   void _closeSearch() {
     setState(() {
       _query = '';
       _searchCtrl.clear();
       _searchOpen = false;
+      _recomputeVisibleIndices();
     });
   }
 
@@ -150,28 +165,11 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
     });
   }
 
-  /// True uniform height of a chapter row, measured from a built tile on the
-  /// first frame. Rows are single-line ListTiles, so one number is exact.
-  double _rowHeight = 56;
-
-  void _measureRowHeight() {
-    if (!mounted) return;
-    final viewport = _listKey.currentContext?.findRenderObject();
-    if (viewport is! RenderBox || !viewport.attached) return;
-    double? h;
-    for (var i = 0; i < widget.chapters.length; i++) {
-      final ctx = _rowKeys[i]?.currentContext;
-      if (ctx == null) continue;
-      final box = ctx.findRenderObject();
-      if (box is! RenderBox || !box.attached) continue;
-      h = box.size.height;
-      break;
-    }
-    final measured = h;
-    if (measured != null && measured != _rowHeight) {
-      setState(() => _rowHeight = measured);
-    }
-  }
+  /// True uniform height of a chapter row. Rows are single-line [ListTile]s
+  /// drawn at 56 via the list's [ListView.itemExtent], so the pixel-math scroll
+  /// below is exact without measuring (a first-frame measure+setState just
+  /// added a second layout to the entrance frame it was trying to smooth).
+  final double _rowHeight = 56;
 
   /// Visible (filtered-list) position of an original chapter index. With an
   /// empty query the filtered list is the identity, so this is just [index].
@@ -188,12 +186,10 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
     if (!widget.sc.hasClients) return;
     final pos = widget.sc.position;
     final vpos = _visiblePositionOf(index);
+    // Rows are uniform ([itemExtent] == [_rowHeight], measured in the same
+    // frame), so pixel math places the row exactly — the extra post-frame
+    // [Scrollable.ensureVisible] snap was a redundant second layout.
     pos.jumpTo((vpos * _rowHeight).clamp(0.0, pos.maxScrollExtent).toDouble());
-    // One post-frame snap realigns the target if the measured height drifted;
-    // with uniform rows this is nearly always a no-op.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _anchorNow(index);
-    });
   }
 
   bool _anchorNow(int index) {
@@ -367,16 +363,13 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
                 ),
               )
             : Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '${idx + 1}',
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    style: widget.tt.labelMedium?.copyWith(
-                      fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400,
-                      color: isCurrent ? widget.accent : cs.onSurfaceVariant,
-                    ),
+                child: Text(
+                  '${idx + 1}',
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: widget.tt.labelMedium?.copyWith(
+                    fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400,
+                    color: isCurrent ? widget.accent : cs.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -415,57 +408,73 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         ],
       ),
       onTap: () async {
+        // "章节跳转确认" gate: OFF (default) asks before EVERY chapter jump;
+        // ON only asks when the book isn't already loaded in the player — an
+        // active book jumps straight, skipping the dialog.
+        final alwaysConfirm =
+            !await PlayerSettings.getConfirmEveryChapterJump();
+        if (widget.isPlaybackActive && !alwaysConfirm) {
+          final seekDur = Duration(seconds: start.round());
+          if (widget.isCastingThis) {
+            cast.seekTo(seekDur);
+          } else {
+            widget.player.seekTo(seekDur, chapterJump: true);
+          }
+          Navigator.pop(context);
+          return;
+        }
+        final canAct = widget.isPlaybackActive || widget.itemId != null;
+        if (!canAct) return;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dlg) => AlertDialog(
+            title: Text(l.cardChaptersPlayFromChapterTitle),
+            content: Text(l.cardChaptersPlayFromChapterContent(chTitle)),
+            actions: [
+                      TextButton(onPressed: () => Navigator.pop(dlg, false), child: Text(l.cancel)),
+                      FilledButton(onPressed: () => Navigator.pop(dlg, true), child: Text(l.cardChaptersPlay)),
+            ],
+          ),
+        );
+        if (confirmed != true || !context.mounted) return;
+        Navigator.pop(context); // Close chapter sheet first
         if (widget.isPlaybackActive) {
           final seekDur = Duration(seconds: start.round());
           if (widget.isCastingThis) {
             cast.seekTo(seekDur);
           } else {
-            widget.player.seekTo(seekDur);
+            widget.player.seekTo(seekDur, chapterJump: true);
           }
-          Navigator.pop(context);
-        } else if (widget.itemId != null) {
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (dlg) => AlertDialog(
-              title: Text(l.cardChaptersPlayFromChapterTitle),
-              content: Text(l.cardChaptersPlayFromChapterContent(chTitle)),
-              actions: [
-                        TextButton(onPressed: () => Navigator.pop(dlg, false), child: Text(l.cancel)),
-                        FilledButton(onPressed: () => Navigator.pop(dlg, true), child: Text(l.cardChaptersPlay)),
-              ],
-            ),
-          );
-          if (confirmed != true || !context.mounted) return;
-          Navigator.pop(context); // Close chapter sheet first
-          final api = context.read<AuthProvider>().apiService;
-          if (api == null) return;
-          final lib = context.read<LibraryProvider>();
-          final fullItem = await api.getLibraryItem(widget.itemId!);
-          if (fullItem == null) return;
-          final media = fullItem['media'] as Map<String, dynamic>? ?? {};
-          final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-          final title = metadata['title'] as String? ?? '';
-          final author = metadata['authorName'] as String? ?? '';
-          final coverUrl = lib.getCoverUrl(widget.itemId!);
-          final dur = (media['duration'] is num)
-              ? (media['duration'] as num).toDouble()
-              : 0.0;
-          final chs = (media['chapters'] as List<dynamic>?) ?? [];
-          await widget.player.playItem(
-            api: api,
-            itemId: widget.itemId!,
-            title: title,
-            author: author,
-            coverUrl: coverUrl,
-            totalDuration: dur,
-            chapters: chs,
-            startTime: start,
-            forceStartTime: true,
-            libraryId: fullItem['libraryId'] as String?,
-            seriesId: seriesIdFromItem(fullItem),
-          );
-          AppShell.goToAbsorbingGlobal();
+          return;
         }
+        final api = context.read<AuthProvider>().apiService;
+        if (api == null) return;
+        final lib = context.read<LibraryProvider>();
+        final fullItem = await api.getLibraryItem(widget.itemId!);
+        if (fullItem == null) return;
+        final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+        final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+        final title = metadata['title'] as String? ?? '';
+        final author = metadata['authorName'] as String? ?? '';
+        final coverUrl = lib.getCoverUrl(widget.itemId!);
+        final dur = (media['duration'] is num)
+            ? (media['duration'] as num).toDouble()
+            : 0.0;
+        final chs = (media['chapters'] as List<dynamic>?) ?? [];
+        await widget.player.playItem(
+          api: api,
+          itemId: widget.itemId!,
+          title: title,
+          author: author,
+          coverUrl: coverUrl,
+          totalDuration: dur,
+          chapters: chs,
+          startTime: start,
+          forceStartTime: true,
+          libraryId: fullItem['libraryId'] as String?,
+          seriesId: seriesIdFromItem(fullItem),
+        );
+        AppShell.goToAbsorbingGlobal();
       },
     );
   }
@@ -582,7 +591,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 itemExtent: _rowHeight,
-                cacheExtent: 500,
+                cacheExtent: 250,
                 itemCount: visible.length,
                 itemBuilder: (_, i) => _chapterTile(visible[i], l, cs),
               ),

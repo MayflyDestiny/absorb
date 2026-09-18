@@ -370,6 +370,17 @@ class DownloadService extends ChangeNotifier {
 
   final Map<String, DownloadInfo> _downloads = {};
 
+  // Cached saved/total chapter counts per downloaded item, keyed by the source
+  // session string so a re-download (new session) recomputes. Avoids JSON
+  // parsing + file I/O on every library grid build.
+  final Map<String, ({String? src, int saved, int total})> _chapterCountCache = {};
+
+  // Cached downloaded-chapter index sets per item, keyed the same way (source
+  // session string). The overlap scan is O(chapters × tracks) over a full
+  // session JSON decode — far too heavy to re-run on every hot card/menu build
+  // while a multi-hundred-chapter book is loaded, so memoize it.
+  final Map<String, ({String? src, Set<int> indices})> _chapterIndicesCache = {};
+
   // Items whose stored cover was already checked (and upgraded if it was an
   // old 400px thumbnail) this session - see enrichMetadata.
   final Set<String> _coverUpgradeChecked = {};
@@ -2989,6 +3000,169 @@ class DownloadService extends ChangeNotifier {
     return result;
   }
 
+  /// Number of chapters already saved by a completed download vs the book's
+  /// full chapter count, derived from the persisted playback session (no
+  /// filesystem I/O). Returns null when the item isn't downloaded or the
+  /// session has no chapter list.
+  ///
+  /// Uses the same chapter/track overlap rule as [downloadedChapterIndices]
+  /// (and therefore [_resolveSelectedTracks]) so the count matches the picker.
+  ({int saved, int total})? chapterDownloadCounts(String itemId) {
+    final info = _downloads[itemId];
+    if (info == null || info.status != DownloadStatus.downloaded) {
+      _chapterCountCache.remove(itemId);
+      return null;
+    }
+    final src = info.sessionData;
+    final cached = _chapterCountCache[itemId];
+    if (cached != null && cached.src == src) {
+      return (saved: cached.saved, total: cached.total);
+    }
+    if (src == null) return null;
+    try {
+      final session = jsonDecode(src) as Map<String, dynamic>;
+      final chapters = session['chapters'] as List<dynamic>? ?? const [];
+      if (chapters.isEmpty) return null;
+      // The persisted session carries the downloaded track subset with their
+      // true full-book starts, so no file probing is needed for the overlap.
+      final tracks = session['audioTracks'] as List<dynamic>? ?? const [];
+      final starts = (session['trackStartOffsets'] as List<dynamic>?)
+              ?.map((e) => (e as num).toDouble())
+              .toList() ??
+          const <double>[];
+      final ranges = <({double start, double end})>[];
+      for (var i = 0; i < tracks.length; i++) {
+        if (i >= starts.length) break;
+        final duration =
+            ((tracks[i] as Map<String, dynamic>)['duration'] as num?)
+                    ?.toDouble() ??
+                0;
+        if (duration <= 0) continue;
+        ranges.add((start: starts[i], end: starts[i] + duration));
+      }
+      var saved = 0;
+      for (var ci = 0; ci < chapters.length; ci++) {
+        final ch = chapters[ci] as Map<String, dynamic>;
+        final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
+        // Same end fallback as [_resolveSelectedTracks].
+        var chEnd = (ch['end'] as num?)?.toDouble() ?? 0;
+        if (chEnd <= chStart) {
+          chEnd = ci + 1 < chapters.length
+              ? (((chapters[ci + 1] as Map<String, dynamic>)['start'] as num?)
+                      ?.toDouble() ??
+                  double.infinity)
+              : double.infinity;
+        }
+        for (final r in ranges) {
+          if (chStart < r.end && chEnd > r.start) {
+            saved++;
+            break;
+          }
+        }
+      }
+      _chapterCountCache[itemId] =
+          (src: src, saved: saved, total: chapters.length);
+      return (saved: saved, total: chapters.length);
+    } catch (e) {
+      debugPrint('[Download] chapterDownloadCounts failed for $itemId: $e');
+      return null;
+    }
+  }
+
+  /// Chapters of [chapters] covered by a completed download of [itemId],
+  /// computed from the persisted session's track ranges only — no filesystem
+  /// I/O. Mirrors the overlap rule in [_resolveSelectedTracks] (and therefore
+  /// [downloadedChapterIndices]); safe to call from hot card build paths where
+  /// [downloadedChapterIndices]' file probing would be too heavy. Falls back
+  /// to the file-aware variant when no session data is available.
+  Set<int> downloadedChapterIndicesCached(
+      String itemId, List<dynamic> chapters) {
+    if (itemId.isEmpty || chapters.isEmpty || !isDownloaded(itemId)) {
+      _chapterIndicesCache.remove(itemId);
+      return const {};
+    }
+    final info = _downloads[itemId];
+    final src = info?.sessionData;
+    final cached = _chapterIndicesCache[itemId];
+    if (cached != null && cached.src == src) return cached.indices;
+    Set<int> result;
+    if (src == null) {
+      result = downloadedChapterIndices(itemId, chapters);
+    } else {
+      try {
+        final session = jsonDecode(src) as Map<String, dynamic>;
+        final tracks = session['audioTracks'] as List<dynamic>? ?? const [];
+        final starts = (session['trackStartOffsets'] as List<dynamic>?)
+                ?.map((e) => (e as num).toDouble())
+                .toList() ??
+            const <double>[];
+        final ranges = <({double start, double end})>[];
+        for (var i = 0; i < tracks.length; i++) {
+          if (i >= starts.length) break;
+          final duration = ((tracks[i] as Map<String, dynamic>)['duration']
+                      as num?)
+                  ?.toDouble() ??
+              0;
+          if (duration <= 0) continue;
+          ranges.add((start: starts[i], end: starts[i] + duration));
+        }
+        if (ranges.isEmpty) {
+          result = downloadedChapterIndices(itemId, chapters);
+        } else {
+          final computed = <int>{};
+          for (var ci = 0; ci < chapters.length; ci++) {
+            final ch = chapters[ci] as Map<String, dynamic>;
+            final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
+            // Same end fallback as [_resolveSelectedTracks].
+            var chEnd = (ch['end'] as num?)?.toDouble() ?? 0;
+            if (chEnd <= chStart) {
+              chEnd = ci + 1 < chapters.length
+                  ? (((chapters[ci + 1] as Map<String, dynamic>)['start']
+                              as num?)
+                          ?.toDouble() ??
+                      double.infinity)
+                  : double.infinity;
+            }
+            for (final r in ranges) {
+              if (chStart < r.end && chEnd > r.start) {
+                computed.add(ci);
+                break;
+              }
+            }
+          }
+          result = computed;
+        }
+      } catch (e) {
+        debugPrint(
+            '[Download] downloadedChapterIndicesCached failed for $itemId: $e');
+        result = downloadedChapterIndices(itemId, chapters);
+      }
+    }
+    _chapterIndicesCache[itemId] = (src: src, indices: result);
+    return result;
+  }
+
+  /// Whether the currently-relevant unit should read as "saved":
+  ///
+  /// - Podcast episode ([episodeId] set): the episode key owns its download,
+  ///   so the whole-item state is per-episode already.
+  /// - Book with no chapter list (single-file): the plain item key.
+  /// - Multi-chapter book ([chapters] + [chapterIndex]): only when the chapter
+  ///   at [chapterIndex] is actually covered by the download — a partial album
+  ///   download must not badge every chapter as saved.
+  bool isCurrentChapterSaved({
+    String? episodeId,
+    required String itemId,
+    List<dynamic> chapters = const [],
+    int chapterIndex = -1,
+  }) {
+    if (itemId.isEmpty) return false;
+    if (episodeId != null) return isDownloaded('$itemId-$episodeId');
+    if (chapters.isEmpty || chapterIndex < 0) return isDownloaded(itemId);
+    return downloadedChapterIndicesCached(itemId, chapters)
+        .contains(chapterIndex);
+  }
+
   /// Deletes one audio file of a completed download and keeps the item's
   /// metadata consistent (trims `localPaths` + `sessionData.audioTracks` so
   /// offline playback maps 1:1). Deleting the last remaining track removes the
@@ -3042,6 +3216,77 @@ class DownloadService extends ChangeNotifier {
     );
     await _save();
     notifyListeners();
+  }
+
+  /// Deletes the audio tracks covered by [chapterIndices] (indices into
+  /// [chapters]) of a downloaded [itemId]. Mirrors the chapter↔track overlap
+  /// rule used at download time so removing one chapter only drops the files
+  /// that actually belong to it; removing the last remaining track removes the
+  /// whole download (same as [deleteLocalTrack]). Returns how many tracks were
+  /// deleted (0 when nothing matched).
+  Future<int> deleteDownloadChapters(
+      String itemId, List<dynamic> chapters, List<int> chapterIndices) async {
+    final info = _downloads[itemId];
+    if (info == null ||
+        info.status != DownloadStatus.downloaded ||
+        chapters.isEmpty ||
+        chapterIndices.isEmpty) {
+      return 0;
+    }
+    final src = info.sessionData;
+    if (src == null) {
+      // Legacy single-file download: no session tracks to trim, so a
+      // chapter-level removal clears the whole download.
+      await deleteDownload(itemId, skipStopCheck: true, byUser: true);
+      return info.localPaths.length;
+    }
+    var tracks = <int>{};
+    try {
+      final session = jsonDecode(src) as Map<String, dynamic>;
+      final tks = session['audioTracks'] as List<dynamic>? ?? const [];
+      if (tks.isEmpty) {
+        await deleteDownload(itemId, skipStopCheck: true, byUser: true);
+        return info.localPaths.length;
+      }
+      final starts = (session['trackStartOffsets'] as List<dynamic>?)
+              ?.map((e) => (e as num).toDouble())
+              .toList() ??
+          const <double>[];
+      final durations = <double>[
+        for (final t in tks)
+          ((t as Map<String, dynamic>)['duration'] as num?)?.toDouble() ?? 0,
+      ];
+      for (final ci in chapterIndices) {
+        if (ci < 0 || ci >= chapters.length) continue;
+        final ch = chapters[ci] as Map<String, dynamic>;
+        final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
+        // Same end fallback as [_resolveSelectedTracks].
+        var chEnd = (ch['end'] as num?)?.toDouble() ?? 0;
+        if (chEnd <= chStart) {
+          chEnd = ci + 1 < chapters.length
+              ? (((chapters[ci + 1] as Map<String, dynamic>)['start'] as num?)
+                      ?.toDouble() ??
+                  double.infinity)
+              : double.infinity;
+        }
+        for (var i = 0; i < tks.length; i++) {
+          if (durations[i] <= 0) continue;
+          final fileStart = i < starts.length ? starts[i] : 0.0;
+          final fileEnd = fileStart + durations[i];
+          if (chStart < fileEnd && chEnd > fileStart) tracks.add(i);
+        }
+      }
+    } catch (_) {
+      // Fall back to clearing the download when the session can't be parsed.
+      await deleteDownload(itemId, skipStopCheck: true, byUser: true);
+      return info.localPaths.length;
+    }
+    if (tracks.isEmpty) return 0;
+    final ordered = tracks.toList()..sort((a, b) => b.compareTo(a));
+    for (final t in ordered) {
+      await deleteLocalTrack(itemId, t);
+    }
+    return ordered.length;
   }
 
   /// Items the user paused mid-download.

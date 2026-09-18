@@ -763,7 +763,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       const SizedBox(height: 12),
       Row(children: [
         if (!isEbookOnly) ...[
-          Expanded(child: DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: accent)),
+          Expanded(child: DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: accent, chapters: chapters)),
           const SizedBox(width: 8),
         ],
         Expanded(child: GestureDetector(
@@ -1090,7 +1090,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           Row(children: [
             Expanded(child: _quickAbsorbButton(context, cs, tt, auth, accent, onAccent, title, authorName, duration, chapters, isFinished)),
             const SizedBox(width: 10),
-            Expanded(child: DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: accent)),
+            Expanded(child: DownloadWideButton(itemId: widget.itemId, coverUrl: _coverUrl, title: title, author: authorName, accent: accent, chapters: chapters)),
           ])
         else
           SizedBox(height: 44, child: Center(child: Text(l.ebookOnlyNoAudio,

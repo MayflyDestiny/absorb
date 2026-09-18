@@ -306,7 +306,7 @@ class CardSleepButtonInline extends StatelessWidget {
 }
 
 /// Download button as wide card
-class CardDownloadButtonInline extends StatelessWidget {
+class CardDownloadButtonInline extends StatefulWidget {
   final String itemId;
   final String? episodeId;
   final String title;
@@ -316,11 +316,25 @@ class CardDownloadButtonInline extends StatelessWidget {
   final bool large;
   final bool compact;
   final bool iconsOnly;
-  const CardDownloadButtonInline({super.key, required this.itemId, this.episodeId, required this.title, this.author, this.coverUrl, required this.accent, this.large = false, this.compact = false, this.iconsOnly = false});
+
+  /// Chapter list of a book download, for per-chapter "saved" state and the
+  /// downloaded-chapters viewer. Empty (single-track or podcast) falls back to
+  /// the plain item state and the original tap behavior.
+  final List<dynamic> chapters;
+
+  /// Chapter the card is currently on, to only read the download as "saved"
+  /// when that chapter is actually saved (see [DownloadService.isCurrentChapterSaved]).
+  final int chapterIndex;
+
+  const CardDownloadButtonInline({super.key, required this.itemId, this.episodeId, required this.title, this.author, this.coverUrl, required this.accent, this.large = false, this.compact = false, this.iconsOnly = false, this.chapters = const [], this.chapterIndex = -1});
 
   // Podcast downloads are keyed 'parentId-episodeId'; books use the plain itemId.
   String get _key => episodeId != null ? '$itemId-$episodeId' : itemId;
 
+  @override State<CardDownloadButtonInline> createState() => _CardDownloadButtonInlineState();
+}
+
+class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
   @override Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: DownloadService(),
@@ -328,9 +342,13 @@ class CardDownloadButtonInline extends StatelessWidget {
         final cs = Theme.of(context).colorScheme;
         final l = AppLocalizations.of(context)!;
         final dl = DownloadService();
-        final downloading = dl.isDownloading(_key);
-        final downloaded = dl.isDownloaded(_key);
-        final progress = dl.downloadProgress(_key);
+        final downloading = dl.isDownloading(widget._key);
+        final downloaded = dl.isCurrentChapterSaved(
+            episodeId: widget.episodeId,
+            itemId: widget.itemId,
+            chapters: widget.chapters,
+            chapterIndex: widget.chapterIndex);
+        final progress = dl.downloadProgress(widget._key);
 
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final dlGreen = isDark ? Colors.greenAccent.withValues(alpha: 0.7) : Colors.green.shade700;
@@ -345,17 +363,17 @@ class CardDownloadButtonInline extends StatelessWidget {
         } else if (downloading) {
           icon = Icons.downloading_rounded;
           label = '${(progress * 100).toStringAsFixed(0)}%';
-          color = accent;
+          color = widget.accent;
         } else {
           icon = Icons.download_outlined;
           label = l.download;
           color = cs.onSurfaceVariant;
         }
 
-        final h = compact ? 30.0 : (large ? 48.0 : 36.0);
-        final iconSz = compact ? 13.0 : (large ? 20.0 : 16.0);
-        final fontSize = compact ? 10.0 : (large ? 14.0 : 12.0);
-        final radius = compact ? 10.0 : (large ? 16.0 : 14.0);
+        final h = widget.compact ? 30.0 : (widget.large ? 48.0 : 36.0);
+        final iconSz = widget.compact ? 13.0 : (widget.large ? 20.0 : 16.0);
+        final fontSize = widget.compact ? 10.0 : (widget.large ? 14.0 : 12.0);
+        final radius = widget.compact ? 10.0 : (widget.large ? 16.0 : 14.0);
 
         return Pressable(
           onTap: () => _handleTap(context, dl),
@@ -377,18 +395,18 @@ class CardDownloadButtonInline extends StatelessWidget {
                   widthFactor: progress.clamp(0.0, 1.0),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.15),
+                      color: widget.accent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(radius - 1),
                     ),
                   ),
                 ),
-              Center(child: iconsOnly || (compact && !downloaded && !downloading)
+              Center(child: widget.iconsOnly || (widget.compact && !downloaded && !downloading)
                 ? Icon(icon, size: iconSz, color: color)
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(icon, size: iconSz, color: color),
-                      SizedBox(width: compact ? 4 : 8),
+                      SizedBox(width: widget.compact ? 4 : 8),
                       Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(
                         color: color, fontSize: fontSize,
                         fontWeight: downloaded || downloading ? FontWeight.w700 : FontWeight.w500,
@@ -404,28 +422,68 @@ class CardDownloadButtonInline extends StatelessWidget {
 
   void _handleTap(BuildContext context, DownloadService dl) async {
     final l = AppLocalizations.of(context)!;
-    if (dl.isDownloaded(_key)) {
-      showDialog(context: context, builder: (ctx) => AlertDialog(
-        title: Text(l.removeDownloadQuestion),
-        content: Text(l.removeDownloadContent),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
-          TextButton(onPressed: () {
-            dl.deleteDownload(_key, byUser: true);
-            Navigator.pop(ctx);
-            showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
-          }, child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
-        ],
-      ));
-    } else if (dl.isDownloading(_key)) {
-      dl.cancelDownload(_key);
+    if (dl.isDownloaded(widget._key)) {
+      if (widget.chapters.isEmpty) {
+        showDialog(context: context, builder: (ctx) => AlertDialog(
+          title: Text(l.removeDownloadQuestion),
+          content: Text(l.removeDownloadContent),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+            TextButton(onPressed: () {
+              dl.deleteDownload(widget._key, byUser: true);
+              Navigator.pop(ctx);
+              showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+            }, child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
+          ],
+        ));
+      } else {
+        final already = dl.downloadedChapterIndicesCached(widget._key, widget.chapters);
+        if (already.isEmpty) return;
+        final result = await showDownloadedChaptersSheet(
+          context,
+          itemId: widget.itemId,
+          accent: widget.accent,
+          title: widget.title,
+          chapters: widget.chapters,
+          downloadedChapters: already.toList()..sort(),
+          onRemoveChapters: (indices) =>
+              dl.deleteDownloadChapters(widget._key, widget.chapters, indices),
+          displaySpeed: 1.0,
+        );
+        if (!context.mounted || result == null) return;
+        if (result.removeDownload) {
+          showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+          return;
+        }
+        if (result.selectedIndices.isEmpty) return;
+        final merged = <int>{...already, ...result.selectedIndices}.toList()..sort();
+        final auth = context.read<AuthProvider>();
+        final api = auth.apiService;
+        if (api == null) return;
+        final error = await dl.downloadItem(
+          api: api,
+          itemId: widget._key,
+          episodeId: widget.episodeId,
+          title: widget.title,
+          author: widget.author,
+          coverUrl: widget.coverUrl,
+          libraryId: context.read<LibraryProvider>().selectedLibraryId,
+          selectedChapters: merged,
+          replaceExisting: true,
+        );
+        if (error != null && context.mounted) {
+          showOverlayToast(context, error, icon: Icons.error_outline_rounded);
+        }
+      }
+    } else if (dl.isDownloading(widget._key)) {
+      dl.cancelDownload(widget._key);
     } else {
-      final ok = await confirmDownload(context, title);
+      final ok = await confirmDownload(context, widget.title);
       if (!ok || !context.mounted) return;
       final auth = context.read<AuthProvider>();
       final api = auth.apiService;
       if (api == null) return;
-      final error = await dl.downloadItem(api: api, itemId: _key, episodeId: episodeId, title: title, author: author, coverUrl: coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
+      final error = await dl.downloadItem(api: api, itemId: widget._key, episodeId: widget.episodeId, title: widget.title, author: widget.author, coverUrl: widget.coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
       if (error != null && context.mounted) {
         showOverlayToast(context, error, icon: Icons.error_outline_rounded);
       }
@@ -553,7 +611,7 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
   }
 }
 
-/// Speed button as wide card — opens the full speed sheet with slider
+/// Speed button as wide card �?opens the full speed sheet with slider
 class CardSpeedButtonInline extends StatefulWidget {
   final AudioPlayerService player;
   final Color accent;
@@ -1476,10 +1534,10 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════�?
 // Shared action delegate for absorbing card & expanded card
 // Eliminates duplicated button/sheet logic between the two.
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════�?
 
 class CardActionDelegate {
   final BuildContext context;
@@ -1557,6 +1615,35 @@ class CardActionDelegate {
   /// episode wins; an active podcast card falls back to what is playing.
   String? get _bookmarkEpisodeId =>
       episodeId ?? (isPodcastEpisode ? player.currentEpisodeId : null);
+
+  /// Chapter the card is currently on, for per-chapter download state.
+  /// Casting/active cards read the live position; idle cards use stored
+  /// progress against the effective duration.
+  int get _currentChapterIndex {
+    if (chapters.isEmpty) return -1;
+    double pos;
+    if (isCastingThis) {
+      final cast = ChromecastService();
+      pos = cast.castPosition.inMilliseconds / 1000.0;
+    } else if (isActive) {
+      final seekTarget = player.activeSeekTarget;
+      pos = seekTarget ?? player.position.inMilliseconds / 1000.0;
+    } else {
+      final lib = context.read<LibraryProvider>();
+      final progress = episodeId != null
+          ? lib.getEpisodeProgress(itemId, episodeId!)
+          : lib.getProgress(itemId);
+      pos = progress * effectiveDuration;
+    }
+    for (int i = 0; i < chapters.length; i++) {
+      final ch = chapters[i] as Map<String, dynamic>;
+      final start = (ch['start'] as num?)?.toDouble() ?? 0;
+      final end = (ch['end'] as num?)?.toDouble() ?? 0;
+      if (pos >= start && pos < end) return i;
+    }
+    if (pos > 0 && chapters.isNotEmpty) return chapters.length - 1;
+    return 0;
+  }
 
   int get visibleButtonCount => visibleCount;
 
@@ -1886,6 +1973,7 @@ class CardActionDelegate {
             itemId: itemId, episodeId: episodeId,
             title: title, author: author, coverUrl: coverUrl,
             accent: accent, large: large, compact: compact, iconsOnly: iconsOnly,
+            chapters: chapters, chapterIndex: _currentChapterIndex,
           ),
         );
       case 'ebook':
@@ -2048,7 +2136,11 @@ class CardActionDelegate {
           builder: (_, __) {
             final dl = DownloadService();
             final dlKey = episodeId != null ? '$itemId-$episodeId' : itemId;
-            final downloaded = dl.isDownloaded(dlKey);
+            final downloaded = dl.isCurrentChapterSaved(
+                episodeId: episodeId,
+                itemId: itemId,
+                chapters: chapters,
+                chapterIndex: _currentChapterIndex);
             final downloading = dl.isDownloading(dlKey);
             final progress = dl.downloadProgress(dlKey);
             final isDark = Theme.of(context).brightness == Brightness.dark;

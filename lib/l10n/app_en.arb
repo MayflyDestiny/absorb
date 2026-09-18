@@ -240,6 +240,17 @@
       }
     }
   },
+  "libraryListsCount": "{collections} collections, {playlists} playlists",
+  "@libraryListsCount": {
+    "placeholders": {
+      "collections": {
+        "type": "int"
+      },
+      "playlists": {
+        "type": "int"
+      }
+    }
+  },
   "sort": "Sort",
   "filter": "Filter",
   "filterActive": "Filter ●",
@@ -1881,6 +1892,31 @@
   "downloadRemoved": "Download removed",
   "finished": "Finished",
   "saved": "Downloaded",
+  "coverSavedCount": "Downloaded {saved}/{total}",
+  "@coverSavedCount": {
+    "placeholders": {
+      "saved": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "downloadedChaptersTitle": "Downloaded {saved}/{total} chapters",
+  "@downloadedChaptersTitle": {
+    "placeholders": {
+      "saved": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "downloadedAddMore": "Download chapters",
+  "downloadedSelect": "Multi-select",
+  "downloadedDone": "Done",
+  "downloadedTapHint": "Tap a chapter to play it, or use Multi-select to remove chapters",
+  "removeSelectedChapters": "Remove Selected ({count})",
+  "@removeSelectedChapters": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "downloadedRemove": "Remove download",
   "selectLibrary": "Select Library",
   "switchLibraryTooltip": "Switch library",
   "refreshTooltip": "Refresh",
@@ -1951,6 +1987,9 @@
   "prevChapterJumpBehavior": "Previous-chapter button",
   "prevChapterJumpRestartSubtitle": "Off - only returns to the start of the current chapter",
   "prevChapterJumpDirectSubtitle": "On - directly jumps to the previous chapter",
+  "chaptersConfirmJump": "Confirm chapter jumps",
+  "chaptersConfirmJumpOnSubtitle": "On - only ask when the book isn't playing",
+  "chaptersConfirmJumpOffSubtitle": "Off - ask before every chapter jump",
   "autoRewindOnSubtitleFormat": "On -{min}s to {max}s based on pause length",
   "@autoRewindOnSubtitleFormat": {
     "placeholders": {

@@ -808,6 +808,12 @@ class PlayerSettings {
   static Future<bool> getSkipChapterBarrier() => _get('skipChapterBarrier', true);
   static Future<void> setSkipChapterBarrier(bool value) => _set('skipChapterBarrier', value);
 
+  /// Chapter-jump confirmation gate. OFF (false, default) asks the user with
+  /// "from this chapter?" before every chapter jump; ON only asks when the
+  /// book isn't already loaded, and an active book jumps straight.
+  static Future<bool> getConfirmEveryChapterJump() => _get('confirmEveryChapterJump', false);
+  static Future<void> setConfirmEveryChapterJump(bool value) => _set('confirmEveryChapterJump', value);
+
   /// Whether the previous-chapter button jumps straight to the previous
   /// chapter (true) or only restarts the current chapter (false).
   static Future<bool> getPrevChapterDirectJump() => _get('prevChapterDirectJump', true);
@@ -1187,6 +1193,31 @@ class PlayerSettings {
       if (v != null) return v == 'show';
     }
     return getShowSubtitles();
+  }
+
+  // ── Library book-list layout ──
+
+  /// Per-library grid/list override: true = list (cover left, text right),
+  /// false = cover grid, null = follow the default (grid).
+  static Future<bool?> getLibraryListViewOverride(String libraryId) async =>
+      ScopedPrefs.getBool('libraryListView_$libraryId');
+
+  static Future<void> setLibraryListViewOverride(
+      String libraryId, bool? value) async {
+    if (value == null) {
+      await ScopedPrefs.remove('libraryListView_$libraryId');
+    } else {
+      await ScopedPrefs.setBool('libraryListView_$libraryId', value);
+    }
+    _notify();
+  }
+
+  static Future<bool> getLibraryListViewFor(String? libraryId) async {
+    if (libraryId != null) {
+      final v = await getLibraryListViewOverride(libraryId);
+      if (v != null) return v;
+    }
+    return false;
   }
 
   static Future<bool> getSectionGridView() => _get('sectionGridView', false);

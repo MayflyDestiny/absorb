@@ -849,18 +849,31 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     for (final dl in DownloadService().downloadedItems) {
       itemIds.add(dl.itemId);
     }
+    final wanted = <String>[];
+    final tasks = <Future<Map<String, dynamic>?>>[];
     for (final itemId in itemIds) {
       if (_locallyFinishedItems.contains(itemId)) continue;
       if (_resetItems.contains(itemId)) continue;
-      final serverFinished = _progressMap[itemId]?['isFinished'] == true;
-      final data = await sync.getLocal(itemId);
+      if (_progressMap[itemId]?['isFinished'] == true) continue;
+      wanted.add(itemId);
+      tasks.add(sync.getLocal(itemId));
+    }
+    // Fire all keyed reads in parallel instead of awaiting each in a serial
+    // loop — a library of hundreds of books used to block the first Home
+    // build on a long await chain.
+    final results = await Future.wait<Map<String, dynamic>?>(tasks);
+    for (var i = 0; i < wanted.length; i++) {
+      final itemId = wanted[i];
+      final data = results[i];
       if (data != null) {
         final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
         final duration = (data['duration'] as num?)?.toDouble() ?? 0;
         if (duration > 0) {
           final progress = (currentTime / duration).clamp(0.0, 1.0);
-          if (progress >= 0.99 && !serverFinished) continue;
-          if (serverFinished) continue;
+          // Same skips as the original sequential loop: locally-complete
+          // readings and server-finished items never override stored progress.
+          if (progress >= 0.99) continue;
+          if (_progressMap[itemId]?['isFinished'] == true) continue;
           _localProgressOverrides[itemId] = progress;
           if (currentTime > 0) _resetItems.remove(itemId);
         }

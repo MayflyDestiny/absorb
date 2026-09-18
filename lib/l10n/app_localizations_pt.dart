@@ -493,6 +493,11 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String libraryListsCount(int collections, int playlists) {
+    return '$collections collections, $playlists playlists';
+  }
+
+  @override
   String get sort => 'Sort';
 
   @override
@@ -3804,6 +3809,37 @@ class AppLocalizationsPt extends AppLocalizations {
   String get saved => 'Downloaded';
 
   @override
+  String coverSavedCount(int saved, int total) {
+    return 'Downloaded $saved/$total';
+  }
+
+  @override
+  String downloadedChaptersTitle(int saved, int total) {
+    return 'Downloaded $saved/$total chapters';
+  }
+
+  @override
+  String get downloadedAddMore => 'Download chapters';
+
+  @override
+  String get downloadedSelect => 'Multi-select';
+
+  @override
+  String get downloadedDone => 'Done';
+
+  @override
+  String get downloadedTapHint =>
+      'Tap a chapter to play it, or use Multi-select to remove chapters';
+
+  @override
+  String removeSelectedChapters(int count) {
+    return 'Remove Selected ($count)';
+  }
+
+  @override
+  String get downloadedRemove => 'Remove download';
+
+  @override
   String get selectLibrary => 'Select Library';
 
   @override
@@ -3945,6 +3981,17 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get prevChapterJumpDirectSubtitle =>
       'On - directly jumps to the previous chapter';
+
+  @override
+  String get chaptersConfirmJump => 'Confirm chapter jumps';
+
+  @override
+  String get chaptersConfirmJumpOnSubtitle =>
+      'On - only ask when the book isn\'t playing';
+
+  @override
+  String get chaptersConfirmJumpOffSubtitle =>
+      'Off - ask before every chapter jump';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {

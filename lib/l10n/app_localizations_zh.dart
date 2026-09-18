@@ -480,6 +480,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String libraryListsCount(int collections, int playlists) {
+    return '$collections 个书单，$playlists 个播放列表';
+  }
+
+  @override
   String get sort => '排序';
 
   @override
@@ -1569,7 +1574,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get longSkipForward => '长跳前进';
 
   @override
-  String get chapterSkipTitle => '跳过章节片头/片尾';
+  String get chapterSkipTitle => '跳过片头/片尾';
 
   @override
   String chapterSkipOnSubtitleFormat(String intro, String outro) {
@@ -3675,6 +3680,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get saved => '已保存';
 
   @override
+  String coverSavedCount(int saved, int total) {
+    return '已保存 $saved/$total';
+  }
+
+  @override
+  String downloadedChaptersTitle(int saved, int total) {
+    return '已下载 $saved/$total 章';
+  }
+
+  @override
+  String get downloadedAddMore => '下载章节';
+
+  @override
+  String get downloadedSelect => '多选';
+
+  @override
+  String get downloadedDone => '完成';
+
+  @override
+  String get downloadedTapHint => '点击章节可播放；多选后可批量移除';
+
+  @override
+  String removeSelectedChapters(int count) {
+    return '移除所选 ($count)';
+  }
+
+  @override
+  String get downloadedRemove => '移除下载';
+
+  @override
   String get selectLibrary => '选择媒体库';
 
   @override
@@ -3808,6 +3843,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get prevChapterJumpDirectSubtitle => '开启 - 直接跳到上一章';
+
+  @override
+  String get chaptersConfirmJump => '章节跳转确认';
+
+  @override
+  String get chaptersConfirmJumpOnSubtitle => '开启 - 仅在未播放本书时询问';
+
+  @override
+  String get chaptersConfirmJumpOffSubtitle => '关闭 - 每次跳转前都询问';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {
@@ -6308,7 +6352,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get cardChaptersPlayFromChapterTitle => '从章节开始播放？';
+  String get cardChaptersPlayFromChapterTitle => '从该章节开始播放？';
 
   @override
   String cardChaptersPlayFromChapterContent(String title) {

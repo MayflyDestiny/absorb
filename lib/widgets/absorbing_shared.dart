@@ -9,6 +9,7 @@ import '../services/download_service.dart';
 import '../services/playback_history_service.dart';
 import '../services/player_settings.dart';
 import 'download_confirm.dart';
+import 'chapter_download_sheet.dart';
 import 'overlay_toast.dart';
 
 String dateLabel(DateTime dt, [AppLocalizations? l]) {
@@ -265,7 +266,12 @@ class DownloadWideButton extends StatefulWidget {
   final String title;
   final String? author;
   final Color accent;
-  const DownloadWideButton({super.key, required this.itemId, this.coverUrl, required this.title, this.author, required this.accent});
+
+  /// Chapter list of a book download, for per-chapter "saved" state and the
+  /// downloaded-chapters viewer. When empty (single-track) the tap falls back
+  /// to the plain remove-confirmation.
+  final List<dynamic> chapters;
+  const DownloadWideButton({super.key, required this.itemId, this.coverUrl, required this.title, this.author, required this.accent, this.chapters = const []});
   @override State<DownloadWideButton> createState() => _DownloadWideButtonState();
 }
 
@@ -278,7 +284,12 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
 
   @override Widget build(BuildContext context) {
     final downloading = _dl.isDownloading(widget.itemId);
-    final downloaded = _dl.isDownloaded(widget.itemId);
+    final savedChapters = widget.chapters.isEmpty
+        ? const <int>[]
+        : _dl.downloadedChapterIndicesCached(widget.itemId, widget.chapters);
+    final downloaded = widget.chapters.isEmpty
+        ? _dl.isDownloaded(widget.itemId)
+        : savedChapters.isNotEmpty;
     final progress = _dl.downloadProgress(widget.itemId);
     final l = AppLocalizations.of(context)!;
 
@@ -341,19 +352,58 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
     if (api == null) return;
     final l = AppLocalizations.of(context)!;
     if (_dl.isDownloaded(widget.itemId)) {
-      showDialog(context: context, builder: (ctx) => AlertDialog(
-        title: Text(l.removeDownloadQuestion),
-        content: Text(l.removeDownloadContent),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
-          TextButton(onPressed: () {
-            _dl.deleteDownload(widget.itemId, byUser: true);
-            Navigator.pop(ctx);
-            showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
-          },
-            child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
-        ],
-      ));
+      if (widget.chapters.isEmpty) {
+        showDialog(context: context, builder: (ctx) => AlertDialog(
+          title: Text(l.removeDownloadQuestion),
+          content: Text(l.removeDownloadContent),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+            TextButton(onPressed: () {
+              _dl.deleteDownload(widget.itemId, byUser: true);
+              Navigator.pop(ctx);
+              showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+            },
+              child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
+          ],
+        ));
+        return;
+      }
+      final already = _dl
+          .downloadedChapterIndicesCached(widget.itemId, widget.chapters)
+          .toList()
+        ..sort();
+      if (already.isEmpty) return;
+      final result = await showDownloadedChaptersSheet(
+        context,
+        itemId: widget.itemId,
+        accent: widget.accent,
+        title: widget.title,
+        chapters: widget.chapters,
+        downloadedChapters: already,
+        onRemoveChapters: (indices) =>
+            _dl.deleteDownloadChapters(widget.itemId, widget.chapters, indices),
+        displaySpeed: 1.0,
+      );
+      if (!context.mounted || result == null) return;
+      if (result.removeDownload) {
+        showOverlayToast(context, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+        return;
+      }
+      if (result.selectedIndices.isEmpty) return;
+      final merged = <int>{...already, ...result.selectedIndices}.toList()..sort();
+      final error = await _dl.downloadItem(
+        api: api,
+        itemId: widget.itemId,
+        title: widget.title,
+        author: widget.author,
+        coverUrl: widget.coverUrl,
+        libraryId: context.read<LibraryProvider>().selectedLibraryId,
+        selectedChapters: merged,
+        replaceExisting: true,
+      );
+      if (error != null && context.mounted) {
+        showOverlayToast(context, error, icon: Icons.error_outline_rounded);
+      }
     } else if (_dl.isDownloading(widget.itemId)) {
       _dl.cancelDownload(widget.itemId);
     } else {

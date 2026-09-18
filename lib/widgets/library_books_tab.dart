@@ -18,6 +18,11 @@ class LibraryBooksTab extends StatelessWidget {
   final bool isPodcastLibrary;
   final bool rectangleCovers;
   final bool showSubtitles;
+
+  /// When true the books tab renders rows of cover-left/text-right list tiles
+  /// instead of the cover grid.
+  final bool listView;
+
   final double coverAspectRatio;
   final Future<void> Function() onRefresh;
   final VoidCallback onClearFilter;
@@ -58,6 +63,7 @@ class LibraryBooksTab extends StatelessWidget {
     this.isPodcastLibrary = false,
     required this.rectangleCovers,
     required this.showSubtitles,
+    this.listView = false,
     required this.coverAspectRatio,
     required this.onRefresh,
     required this.onClearFilter,
@@ -204,73 +210,127 @@ class LibraryBooksTab extends StatelessWidget {
         });
       }
 
+      Widget? content;
+      if (listView) {
+        content = SliverPadding(
+          padding:
+              const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              maybeLoadAhead(index);
+              if (index >= items.length) {
+                if (loadFailed) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(l.failedToLoad,
+                            textAlign: TextAlign.center,
+                            style: tt.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant)),
+                        TextButton(
+                            onPressed: onLoadMore, child: Text(l.retry)),
+                      ],
+                    ),
+                  );
+                }
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+              final item = items[index];
+              final itemId = item['id'] as String?;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: LibraryBookListTile(
+                  item: item,
+                  isSeries: item.containsKey('collapsedSeries'),
+                  coverAspectRatio: coverAspectRatio,
+                  selectionMode: selectionMode,
+                  selected: itemId != null && selectedItemIds.contains(itemId),
+                  onSelectionToggle: itemId == null || onSelectionToggle == null
+                      ? null
+                      : () => onSelectionToggle!(item, index),
+                ),
+              );
+            }, childCount: items.length + (hasMore ? 1 : 0)),
+          ),
+        );
+      } else {
+        content = SliverPadding(
+          padding:
+              const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              childAspectRatio: rectangleCovers ? 0.48 : 0.68,
+              // Subtitles add a line under every title, and how much room
+              // that needs depends on the cover size, so size the cell from
+              // the tile itself rather than from a second fixed ratio.
+              mainAxisExtent: showSubtitles
+                  ? coverGridTileWidth(context) / (rectangleCovers ? 0.48 : 0.68)
+                      + coverGridSubtitleHeight(context)
+                  : null,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                maybeLoadAhead(index);
+                if (index >= items.length) {
+                  if (loadFailed) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(l.failedToLoad,
+                              textAlign: TextAlign.center,
+                              style: tt.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant)),
+                          TextButton(
+                              onPressed: onLoadMore, child: Text(l.retry)),
+                        ],
+                      ),
+                    );
+                  }
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+                final item = items[index];
+                if (item.containsKey('collapsedSeries')) {
+                  return GridSeriesTile(item: item, coverAspectRatio: coverAspectRatio);
+                }
+                final itemId = item['id'] as String?;
+                return GridBookTile(
+                  item: item,
+                  coverAspectRatio: coverAspectRatio,
+                  showSubtitle: showSubtitles,
+                  selectionMode: selectionMode,
+                  selected: itemId != null && selectedItemIds.contains(itemId),
+                  onSelectionToggle: itemId == null || onSelectionToggle == null
+                      ? null
+                      : () => onSelectionToggle!(item, index),
+                );
+              },
+              childCount: items.length + (hasMore ? 1 : 0),
+            ),
+          ),
+        );
+      }
+
       body = CustomScrollView(
         controller: scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           ...headers,
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
-            sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                childAspectRatio: rectangleCovers ? 0.48 : 0.68,
-                // Subtitles add a line under every title, and how much room
-                // that needs depends on the cover size, so size the cell from
-                // the tile itself rather than from a second fixed ratio.
-                mainAxisExtent: showSubtitles
-                    ? coverGridTileWidth(context) / (rectangleCovers ? 0.48 : 0.68)
-                        + coverGridSubtitleHeight(context)
-                    : null,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  maybeLoadAhead(index);
-                  if (index >= items.length) {
-                    if (loadFailed) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(l.failedToLoad,
-                                textAlign: TextAlign.center,
-                                style: tt.bodySmall
-                                    ?.copyWith(color: cs.onSurfaceVariant)),
-                            TextButton(
-                                onPressed: onLoadMore, child: Text(l.retry)),
-                          ],
-                        ),
-                      );
-                    }
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  }
-                  final item = items[index];
-                  if (item.containsKey('collapsedSeries')) {
-                    return GridSeriesTile(item: item, coverAspectRatio: coverAspectRatio);
-                  }
-                  final itemId = item['id'] as String?;
-                  return GridBookTile(
-                    item: item,
-                    coverAspectRatio: coverAspectRatio,
-                    showSubtitle: showSubtitles,
-                    selectionMode: selectionMode,
-                    selected: itemId != null && selectedItemIds.contains(itemId),
-                    onSelectionToggle: itemId == null || onSelectionToggle == null
-                        ? null
-                        : () => onSelectionToggle!(item, index),
-                  );
-                },
-                childCount: items.length + (hasMore ? 1 : 0),
-              ),
-            ),
-          ),
+          content,
         ],
       );
     }

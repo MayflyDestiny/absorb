@@ -982,6 +982,12 @@ abstract class AppLocalizations {
   /// **'{loaded}/{total} books'**
   String libraryBooksCount(int loaded, int total);
 
+  /// No description provided for @libraryListsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{collections} collections, {playlists} playlists'**
+  String libraryListsCount(int collections, int playlists);
+
   /// No description provided for @sort.
   ///
   /// In en, this message translates to:
@@ -6934,6 +6940,54 @@ abstract class AppLocalizations {
   /// **'Downloaded'**
   String get saved;
 
+  /// No description provided for @coverSavedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded {saved}/{total}'**
+  String coverSavedCount(int saved, int total);
+
+  /// No description provided for @downloadedChaptersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded {saved}/{total} chapters'**
+  String downloadedChaptersTitle(int saved, int total);
+
+  /// No description provided for @downloadedAddMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Download chapters'**
+  String get downloadedAddMore;
+
+  /// No description provided for @downloadedSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Multi-select'**
+  String get downloadedSelect;
+
+  /// No description provided for @downloadedDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get downloadedDone;
+
+  /// No description provided for @downloadedTapHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap a chapter to play it, or use Multi-select to remove chapters'**
+  String get downloadedTapHint;
+
+  /// No description provided for @removeSelectedChapters.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove Selected ({count})'**
+  String removeSelectedChapters(int count);
+
+  /// No description provided for @downloadedRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove download'**
+  String get downloadedRemove;
+
   /// No description provided for @selectLibrary.
   ///
   /// In en, this message translates to:
@@ -7185,6 +7239,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On - directly jumps to the previous chapter'**
   String get prevChapterJumpDirectSubtitle;
+
+  /// No description provided for @chaptersConfirmJump.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm chapter jumps'**
+  String get chaptersConfirmJump;
+
+  /// No description provided for @chaptersConfirmJumpOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - only ask when the book isn\'t playing'**
+  String get chaptersConfirmJumpOnSubtitle;
+
+  /// No description provided for @chaptersConfirmJumpOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - ask before every chapter jump'**
+  String get chaptersConfirmJumpOffSubtitle;
 
   /// No description provided for @autoRewindOnSubtitleFormat.
   ///
