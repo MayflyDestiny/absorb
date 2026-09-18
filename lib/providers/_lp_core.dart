@@ -969,6 +969,18 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   Future<void> _refreshProgress() async {
     if (_api == null) return;
+    // Cold start: paint progress from the on-disk snapshot before the first
+    // network pull lands, so progress bars and shelf membership don't sit
+    // empty while getAllProgress round-trips.
+    if (!_progressCacheRestored && _progressMap.isEmpty) {
+      _progressCacheRestored = true;
+      final cached = await JsonFileCache.readMap(_progressCacheKey());
+      if (cached != null && cached.isNotEmpty) {
+        _progressMap =
+            cached.map((k, v) => MapEntry(k, Map<String, dynamic>.from(v as Map)));
+        notifyListeners();
+      }
+    }
     try {
       final pendingSyncs =
           (await ScopedPrefs.getStringList('pending_syncs')).toSet();
@@ -1062,8 +1074,30 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           }
           (this as _AbsorbingMixin)
               ._pruneRemotelyFinishedBooks(_progressMap.keys);
+      final now = DateTime.now();
+      final lastWrite = _lastProgressCacheWriteAt;
+      if (lastWrite == null ||
+          now.difference(lastWrite) >= _StateMixin._progressCacheWriteCooldown) {
+        _lastProgressCacheWriteAt = now;
+        unawaited(JsonFileCache.write(_progressCacheKey(), _progressMap));
+      }
       }
     } catch (_) {}
+  }
+
+  /// Cache key for the account-wide progress snapshot.
+  String _progressCacheKey() => 'progress:all';
+
+  /// Evict on-disk payload caches that a remote mutation makes stale. These
+  /// handlers update in-memory state live; the files only feed the NEXT cold
+  /// start, so evicting now just stops the next launch from painting data the
+  /// newest event already contradicted.
+  void _invalidatePayloadCaches() {
+    unawaited(JsonFileCache.invalidate(_progressCacheKey()));
+    final selected = _selectedLibraryId;
+    if (selected != null) {
+      unawaited(JsonFileCache.invalidate(_sectionsCacheKey(selected)));
+    }
   }
 
   // ── Connectivity ──
@@ -1642,6 +1676,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _progressRefreshDebounce = Timer(const Duration(seconds: 2), () {
       refreshProgressShelves(reason: 'remote-progress');
     });
+    _invalidatePayloadCaches();
   }
 
   void _onRemoteItemUpdated(Map<String, dynamic> data) {
@@ -1660,6 +1695,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
     // Invalidate cached session metadata - track URLs may have changed
     if (id != null) SessionCache.clear(itemId: id);
+    _invalidatePayloadCaches();
     loadPersonalizedView(force: true);
     _checkSubscribedPodcastUpdate(data);
   }
@@ -1667,20 +1703,24 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   void _onRemoteItemRemoved(Map<String, dynamic> data) {
     final id = data['id'] as String?;
     if (id != null) SessionCache.clear(itemId: id);
+    _invalidatePayloadCaches();
     loadPersonalizedView(force: true);
   }
 
   void _onRemoteSeriesUpdated() {
+    _invalidatePayloadCaches();
     loadPersonalizedView(force: true);
     (this as LibraryProvider).loadSeries();
   }
 
   void _onRemoteCollectionUpdated() {
+    _invalidatePayloadCaches();
     loadPersonalizedView(force: true);
     loadCollections();
   }
 
   void _onRemotePlaylistUpdated() {
+    _invalidatePayloadCaches();
     loadPlaylists();
   }
 
@@ -1777,46 +1817,68 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       return;
     }
 
-    final hadData = _personalizedSections.isNotEmpty;
-    if (!hadData) {
+    final libId = _selectedLibraryId!;
+
+    // Stale-while-revalidate: on cold start memory has nothing for this
+    // library, so paint the on-disk copy first instead of leaving Home blank
+    // while the fresh fetch runs. The file cache is per-account, so one user's
+    // shelves can't bleed into another's.
+    if (_personalizedSections.isEmpty) {
+      final cached = await JsonFileCache.readList(_sectionsCacheKey(libId));
+      final sections =
+          cached?.whereType<Map<String, dynamic>>().toList() ?? const [];
+      if (sections.isNotEmpty) {
+        _personalizedSections = sections;
+        _sectionsByLibrary[libId] = _personalizedSections;
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
+
+    if (_personalizedSections.isEmpty) {
       _isLoading = true;
       notifyListeners();
     }
 
     try {
       await _refreshProgress();
-      _personalizedSections = await _api!.getPersonalizedView(
-            _selectedLibraryId!,
-            include: const ['numEpisodesIncomplete'],
-          ) ??
-          [];
-      for (final section in _personalizedSections) {
-        for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-          if (e is Map<String, dynamic>) {
-            final id = e['id'] as String?;
-            final ts = e['updatedAt'] as num?;
-            if (id != null && ts != null) registerUpdatedAt(id, ts.toInt());
-            if (id != null) {
-              final coverPath = (e['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-              registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+      final fetched = await _api!.getPersonalizedView(
+        libId,
+        include: const ['numEpisodesIncomplete'],
+      );
+      // A null response is a failed fetch, not "no shelves". Keep whatever is
+      // already on screen (the cache we just painted) rather than wiping it.
+      if (fetched != null) {
+        _personalizedSections = fetched;
+        for (final section in _personalizedSections) {
+          for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+            if (e is Map<String, dynamic>) {
+              final id = e['id'] as String?;
+              final ts = e['updatedAt'] as num?;
+              if (id != null && ts != null) registerUpdatedAt(id, ts.toInt());
+              if (id != null) {
+                final coverPath = (e['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
+                registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+              }
             }
           }
         }
+        await (this as _AbsorbingMixin)._updateAbsorbingCache();
+
+        _injectDownloadedSection();
+
+        // Snapshot after injection so a tab flip restores the full shelf set.
+        _sectionsByLibrary[libId] = _personalizedSections;
+        _sectionsFetchedAt[libId] = DateTime.now();
+        unawaited(JsonFileCache.write(_sectionsCacheKey(libId), _personalizedSections));
+
+        if (isPodcastLibrary) {
+          _hydrateRssFeedFieldsDeferred();
+        }
+
+        loadPlaylists();
+        loadCollections();
       }
-      await (this as _AbsorbingMixin)._updateAbsorbingCache();
-
-      _injectDownloadedSection();
-
-      // Snapshot after injection so a tab flip restores the full shelf set.
-      _sectionsByLibrary[_selectedLibraryId!] = _personalizedSections;
-      _sectionsFetchedAt[_selectedLibraryId!] = DateTime.now();
-
-      if (isPodcastLibrary) {
-        _hydrateRssFeedFieldsDeferred();
-      }
-
-      loadPlaylists();
-      loadCollections();
     } catch (e) {
       if (_isLikelyNetworkError(e)) {
         _goOffline();
@@ -1828,6 +1890,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _isLoading = false;
     notifyListeners();
   }
+
+  /// Cache key for the personalized home shelves of [libraryId].
+  String _sectionsCacheKey(String libraryId) => 'home_sections:$libraryId';
 
   Future<void> refreshProgressShelves({
     bool force = false,

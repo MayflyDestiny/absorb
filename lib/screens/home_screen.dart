@@ -178,6 +178,12 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   bool _lastHideEbook = false;
   bool _lastIsPodcast = false;
 
+  // Which library the filtered section cache was built for. Switching
+  // libraries drops it (the new library may have the same section count, so
+  // content identity can't be relied on); merely reloading the same library
+  // must not, or SWR repaints would flash blank.
+  String? _cachedLibraryId;
+
   // Track player state to know when to re-fetch personalized sections.
   String? _lastKnownItemId;
   bool _lastKnownPlaying = false;
@@ -356,15 +362,15 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         if (mounted && v != _showSubtitles) setState(() => _showSubtitles = v);
       });
     }
-    if (lib.isLoading) {
-      // Reset cache so stale data isn't shown after a user switch
-      // (where the new user may have the same number of sections).
+    if (lib.selectedLibraryId != _cachedLibraryId) {
+      // A different library invalidates the filtered cache; the same library
+      // mid-reload keeps it so the SWR-repainted shelves don't flash blank.
+      _cachedLibraryId = lib.selectedLibraryId;
       _cachedSections = null;
       _cachedClItems = null;
       _lastSectionsRef = null;
-    } else {
-      _refreshFilteredCache(lib);
     }
+    _refreshFilteredCache(lib);
 
     final auth = context.watch<AuthProvider>();
     final selectionAvailable = !lib.isOffline;

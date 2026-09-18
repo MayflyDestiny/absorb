@@ -14,6 +14,7 @@ import '../services/book_search_index.dart';
 import '../services/socket_service.dart';
 import '../services/download_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/json_file_cache.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/library_picker_sheet.dart';
 import '../widgets/library_search_results.dart';
@@ -695,14 +696,20 @@ class LibraryScreenState extends State<LibraryScreen>
     PlayerSettings.getLibraryListViewFor(lib.selectedLibraryId).then((v) {
       if (mounted) setState(() => _listView = v);
     });
-    _restoreSortFilter().then((_) {
+    _restoreSortFilter().then((_) async {
       if (!mounted) return;
       _lastLibraryId = lib.selectedLibraryId;
       lib.addListener(_onLibraryProviderChanged);
       if (lib.selectedLibraryId != null) {
-        _loadPage();
-        _loadFilterData();
-        _loadLists();
+        // SWR: paint the Books grid and filter chips from the on-disk cache
+        // first when the current view was cached recently; only load from the
+        // network when there is nothing renderable.
+        final restoredItems = await _restoreItemsCache();
+        final restoredFilter = await _restoreFilterDataCache();
+        if (!mounted) return;
+        if (!restoredItems) _loadPage();
+        if (!restoredFilter) _loadFilterData();
+        if (!await _restoreListsCache()) _loadLists();
       } else {
         lib.addListener(_onLibraryChanged);
       }
@@ -1039,6 +1046,7 @@ class LibraryScreenState extends State<LibraryScreen>
             .toList()
           ..sort();
       });
+      unawaited(_writeFilterDataCache());
     }
   }
 
@@ -1073,6 +1081,131 @@ class LibraryScreenState extends State<LibraryScreen>
   // ══════════════════════════════════════════════════════════════
   // LIBRARY TAB - Load a page of items
   // ══════════════════════════════════════════════════════════════
+
+  // ── On-disk Books-tab cache (per-account, stale-while-revalidate) ──
+
+  /// How old a library cache entry may be before we fall back to a fresh
+  /// network load instead of restoring it.
+  static const _libraryCacheTtl = Duration(minutes: 10);
+
+  DateTime? _lastItemsCacheWriteAt;
+
+  String _itemsCacheKey() {
+    final lib = context.read<LibraryProvider>();
+    final filter = buildLibraryFilterQuery(
+      _filter,
+      genre: _genreFilter,
+      tag: _tagFilter,
+      filterValue: _filterValue,
+      missingMetadata: _missingMetadataFilter,
+    );
+    final libId = lib.selectedLibraryId ?? '';
+    return 'library_items|$libId|${_sort.name}|$_sortAsc|$filter'
+        '|$_collapseSeries|$_hideEbookOnly|${lib.isPodcastLibrary}';
+  }
+
+  /// Restore the Books tab from the on-disk cache for the current view.
+  /// Returns true when `_items` was populated (so the caller skips the eager
+  /// network load this turn).
+  Future<bool> _restoreItemsCache() async {
+    if (_isLoadingPage || _items.isNotEmpty) return false;
+    final cached = await JsonFileCache.readMap(
+      _itemsCacheKey(),
+      maxAge: _libraryCacheTtl,
+    );
+    if (cached == null || !mounted) return false;
+    final items = cached['items'] as List<dynamic>?;
+    if (items == null || items.isEmpty) return false;
+    setState(() {
+      _items.addAll(items.whereType<Map<String, dynamic>>());
+      _loadedCount = (cached['loadedCount'] as num?)?.toInt() ?? _items.length;
+      _page = (cached['page'] as num?)?.toInt() ?? 0;
+      _hasMore = (cached['hasMore'] as bool?) ?? false;
+      _totalItems = (cached['total'] as num?)?.toInt() ?? _items.length;
+    });
+    return true;
+  }
+
+  /// Persist the current Books-tab items set (throttled, since scrolling loads
+  /// rewrite it every page).
+  void _writeItemsCache() {
+    final now = DateTime.now();
+    if (_lastItemsCacheWriteAt != null &&
+        now.difference(_lastItemsCacheWriteAt!) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastItemsCacheWriteAt = now;
+    final key = _itemsCacheKey();
+    unawaited(
+      JsonFileCache.write(key, {
+        'items': _items,
+        'loadedCount': _loadedCount,
+        'page': _page,
+        'hasMore': _hasMore,
+        'total': _totalItems,
+      }),
+    );
+  }
+
+  /// Restore the filter-chip data (genres/tags/authors/...) from disk so the
+  /// filter sheet paints instantly. Returns true when restored.
+  Future<bool> _restoreFilterDataCache() async {
+    final libId = context.read<LibraryProvider>().selectedLibraryId;
+    if (libId == null) return false;
+    final cached = await JsonFileCache.readMap(
+      'library_filter_data|$libId',
+      maxAge: _libraryCacheTtl,
+    );
+    if (cached == null || !mounted) return false;
+    setState(() {
+      _availableGenres = (cached['genres'] as List<dynamic>? ?? const [])
+          .whereType<String>().toList();
+      _availableTags = (cached['tags'] as List<dynamic>? ?? const [])
+          .whereType<String>().toList();
+      _availableSeriesFilters = _mapOfNameId(cached['series']);
+      _availableAuthorFilters = _mapOfNameId(cached['authors']);
+      _availableNarrators = (cached['narrators'] as List<dynamic>? ?? const [])
+          .whereType<String>().toList();
+      _availableLanguages = (cached['languages'] as List<dynamic>? ?? const [])
+          .whereType<String>().toList();
+      _availablePublishers = (cached['publishers'] as List<dynamic>? ?? const [])
+          .whereType<String>().toList();
+      _availablePublishedDecades =
+          (cached['publishedDecades'] as List<dynamic>? ?? const [])
+              .whereType<String>().toList();
+    });
+    return true;
+  }
+
+  static List<Map<String, String>> _mapOfNameId(dynamic raw) {
+    final list = (raw as List<dynamic>? ?? const []);
+    return list
+        .whereType<Map>()
+        .map(
+          (v) => {
+            'id': v['id']?.toString() ?? '',
+            'name': v['name']?.toString() ?? '',
+          },
+        )
+        .where((v) => v['id']!.isNotEmpty && v['name']!.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> _writeFilterDataCache() {
+    final libId = context.read<LibraryProvider>().selectedLibraryId;
+    if (libId == null) return Future.value();
+    return JsonFileCache.write('library_filter_data|$libId', {
+      'genres': _availableGenres,
+      'tags': _availableTags,
+      'series': _availableSeriesFilters,
+      'authors': _availableAuthorFilters,
+      'narrators': _availableNarrators,
+      'languages': _availableLanguages,
+      'publishers': _availablePublishers,
+      'publishedDecades': _availablePublishedDecades,
+    });
+  }
+
   Future<void> _loadPage() async {
     if (_isLoadingPage || !_hasMore) return;
     setState(() {
@@ -1236,6 +1369,7 @@ class LibraryScreenState extends State<LibraryScreen>
           _hasMore = false;
           _isLoadingPage = false;
         });
+        _writeItemsCache();
       }
     } else {
       if (_page == 0) _loadedCount = 0;
@@ -1298,6 +1432,7 @@ class LibraryScreenState extends State<LibraryScreen>
           );
           _isLoadingPage = false;
         });
+        _writeItemsCache();
       } else if (mounted && gen == _loadGeneration) {
         // Timed out or errored. Show a retry in the loader slot instead of a
         // spinner, and stop the fill loop refetching on every rebuild - on a
@@ -2062,19 +2197,51 @@ class LibraryScreenState extends State<LibraryScreen>
   /// Loads the current library+account's collections/playlists. Returns the
   /// in-flight load so callers (the sort sheet) can await it - that's what
   /// makes the Lists tab show on first open instead of after a reopen.
-  Future<void> _loadLists() {
+  Future<void> _loadLists({bool force = false}) async {
     final lib = context.read<LibraryProvider>();
     final api = context.read<AuthProvider>().apiService;
     final libId = lib.selectedLibraryId;
-    if (api == null || libId == null) return Future.value();
+    if (api == null || libId == null) return;
     final key = '${UserAccountService().activeScopeKey}|$libId';
-    if (_listsLoadingKey == key && _listsLoadFuture != null)
-      return _listsLoadFuture!;
-    if (_listsLoadedKey == key) return Future.value();
+    if (_listsLoadingKey == key && _listsLoadFuture != null) {
+      await _listsLoadFuture!;
+      return;
+    }
+    if (_listsLoadedKey == key) return;
+    // SWR: paint cached lists first when recent; only fetch when nothing to
+    // show (or when the caller explicitly asked for a refresh).
+    if (!force && await _restoreListsCache()) {
+      _listsLoadedKey = key;
+      return;
+    }
     _listsLoadingKey = key;
     final f = _fetchLists(key, api, libId);
     _listsLoadFuture = f;
-    return f;
+    await f;
+  }
+
+  /// Restore collections/playlists from the on-disk cache; true when loaded.
+  Future<bool> _restoreListsCache() async {
+    final libId = context.read<LibraryProvider>().selectedLibraryId;
+    if (libId == null) return false;
+    final cached = await JsonFileCache.readMap(
+      'library_lists|$libId',
+      maxAge: _libraryCacheTtl,
+    );
+    if (cached == null || !mounted) return false;
+    final cols = cached['collections'] as List<dynamic>?;
+    final pls = cached['playlists'] as List<dynamic>?;
+    if (cols == null && pls == null) return false;
+    setState(() {
+      _collections = (cols ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      _playlists = (pls ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      _listsFailed = false;
+    });
+    return true;
   }
 
   Future<void> _fetchLists(String key, ApiService api, String libId) async {
@@ -2105,7 +2272,13 @@ class LibraryScreenState extends State<LibraryScreen>
         _playlists = pls;
         _listsFailed = failed;
         // A failed load is not a loaded one - let the next visit retry.
-        if (!failed) _listsLoadedKey = key;
+        if (!failed) {
+          _listsLoadedKey = key;
+          unawaited(JsonFileCache.write('library_lists|$libId', {
+            'collections': _collections,
+            'playlists': _playlists,
+          }));
+        }
       });
     } finally {
       if (_listsLoadingKey == key) _listsLoadFuture = null;
@@ -2114,7 +2287,7 @@ class LibraryScreenState extends State<LibraryScreen>
 
   Future<void> _refreshLists() async {
     _listsLoadedKey = null;
-    await _loadLists();
+    await _loadLists(force: true);
   }
 
   // ── Search ──

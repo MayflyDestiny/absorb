@@ -49,6 +49,21 @@ mixin _StateMixin on ChangeNotifier {
     'listen-again',
   ];
 
+  /// Whether the on-disk progress snapshot has been restored this session, so
+  /// a cold start paints progress (bars, shelf membership) immediately and only
+  /// reads the file once.
+  bool _progressCacheRestored = false;
+  /// Throttles progress cache writes — the map covers every book in the
+  /// account and _refreshProgress runs on each tab switch, so rewriting the
+  /// file every call would undo the point of caching.
+  DateTime? _lastProgressCacheWriteAt;
+  static const _progressCacheWriteCooldown = Duration(seconds: 60);
+  /// Cooldown for the tab-switch path (refreshProgressOnly) so flipping between
+  /// Library/Absorbing/Stats doesn't fire getAllProgress on every tap — the
+  /// socket already pushes live progress deltas, and cold-start/foreground
+  /// paths refresh independently.
+  DateTime? _lastProgressOnlyRefreshAt;
+
   List<dynamic> _playlists = [];
   bool _isLoadingPlaylists = false;
   Future<void>? _playlistsInFlight;
