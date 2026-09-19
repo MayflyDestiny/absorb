@@ -319,6 +319,7 @@ class _GridBookTileState extends State<GridBookTile> {
       }
       return CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
           httpHeaders: headers, memCacheWidth: decodeWidth,
+          useOldImageOnUrlChange: true,
           placeholder: (_, __) => placeholder,
           errorWidget: (_, __, ___) => placeholder);
     }
@@ -339,10 +340,12 @@ class _GridBookTileState extends State<GridBookTile> {
     return Stack(fit: StackFit.expand, children: [
       CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
           httpHeaders: headers, memCacheWidth: 32,
+          useOldImageOnUrlChange: true,
           errorWidget: (_, __, ___) => const SizedBox.shrink()),
       Container(color: Colors.black.withValues(alpha: 0.15)),
       CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.contain,
           httpHeaders: headers, memCacheWidth: decodeWidth,
+          useOldImageOnUrlChange: true,
           placeholder: (_, __) => placeholder,
           errorWidget: (_, __, ___) => placeholder),
     ]);
@@ -491,6 +494,7 @@ class _StackedCovers extends StatelessWidget {
     }
     return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
         httpHeaders: mediaHeaders, memCacheWidth: decodeWidth,
+        useOldImageOnUrlChange: true,
         placeholder: (_, __) => _placeholder(),
         errorWidget: (_, __, ___) => _placeholder());
   }
@@ -912,6 +916,7 @@ class GridAuthorTile extends StatelessWidget {
                             fit: BoxFit.cover,
                             httpHeaders: headers,
                             memCacheWidth: coverGridDecodeWidth(context),
+                            useOldImageOnUrlChange: true,
                             placeholder: (_, __) => _placeholder(cs),
                             errorWidget: (_, __, ___) => _placeholder(cs),
                           ),
@@ -1237,6 +1242,7 @@ class _LibraryBookListTileState extends State<LibraryBookListTile> {
               fit: BoxFit.cover,
               httpHeaders: headers,
               memCacheWidth: decodeWidth,
+              useOldImageOnUrlChange: true,
               placeholder: (_, __) => placeholder,
               errorWidget: (_, __, ___) => placeholder);
       return laid;
@@ -1252,6 +1258,7 @@ class _LibraryBookListTileState extends State<LibraryBookListTile> {
             fit: BoxFit.cover,
             httpHeaders: headers,
             memCacheWidth: 32,
+            useOldImageOnUrlChange: true,
             errorWidget: (_, __, ___) => const SizedBox.shrink());
     Widget front() => coverUrl.startsWith('/')
         ? Image.file(File(coverUrl),
@@ -1263,6 +1270,7 @@ class _LibraryBookListTileState extends State<LibraryBookListTile> {
             fit: BoxFit.contain,
             httpHeaders: headers,
             memCacheWidth: decodeWidth,
+            useOldImageOnUrlChange: true,
             placeholder: (_, __) => placeholder,
             errorWidget: (_, __, ___) => placeholder);
     return Stack(fit: StackFit.expand, children: [

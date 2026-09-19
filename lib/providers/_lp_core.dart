@@ -1828,6 +1828,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final sections =
           cached?.whereType<Map<String, dynamic>>().toList() ?? const [];
       if (sections.isNotEmpty) {
+        // Register the cached epochs before painting. The first-frame cover
+        // URLs then carry the same ts the refresh will report (and the same one
+        // the previous session cached to disk), so the fetch's register call
+        // won't change every URL and re-download the whole shelfset right as
+        // the user is looking at it.
+        _registerSectionsEpochs(sections);
         _personalizedSections = sections;
         _sectionsByLibrary[libId] = _personalizedSections;
         _isLoading = false;
@@ -1850,19 +1856,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // already on screen (the cache we just painted) rather than wiping it.
       if (fetched != null) {
         _personalizedSections = fetched;
-        for (final section in _personalizedSections) {
-          for (final e in (section['entities'] as List<dynamic>? ?? [])) {
-            if (e is Map<String, dynamic>) {
-              final id = e['id'] as String?;
-              final ts = e['updatedAt'] as num?;
-              if (id != null && ts != null) registerUpdatedAt(id, ts.toInt());
-              if (id != null) {
-                final coverPath = (e['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-                registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
-              }
-            }
-          }
-        }
+        _registerSectionsEpochs(_personalizedSections);
         await (this as _AbsorbingMixin)._updateAbsorbingCache();
 
         _injectDownloadedSection();
@@ -1893,6 +1887,25 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   /// Cache key for the personalized home shelves of [libraryId].
   String _sectionsCacheKey(String libraryId) => 'home_sections:$libraryId';
+
+  /// Registers updatedAt/hasCover for every entity in [sections] so cover URLs
+  /// resolve with a stable ts. Shared by the cache-restore, fresh-fetch and
+  /// section-merge paths; running it repeatedly is a no-op when values match.
+  void _registerSectionsEpochs(List<dynamic> sections) {
+    for (final section in sections) {
+      if (section is! Map<String, dynamic>) continue;
+      for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+        if (e is! Map<String, dynamic>) continue;
+        final id = e['id'] as String?;
+        final ts = e['updatedAt'] as num?;
+        if (id == null) continue;
+        if (ts != null) registerUpdatedAt(id, ts.toInt());
+        final coverPath =
+            (e['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
+        registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+      }
+    }
+  }
 
   Future<void> refreshProgressShelves({
     bool force = false,
@@ -1946,6 +1959,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _lastProgressShelvesLibraryId = libraryId;
       if (_selectedLibraryId != libraryId || isOffline) return;
 
+      _registerSectionsEpochs(sections);
       _mergeProgressShelves(sections);
       await (this as _AbsorbingMixin)._updateAbsorbingCache();
       notifyListeners();
@@ -2025,6 +2039,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         _lastRssHydrationLibraryId = libraryId;
 
         if (_selectedLibraryId == libraryId && sections.isNotEmpty) {
+          _registerSectionsEpochs(sections);
           _personalizedSections = sections;
           await (this as _AbsorbingMixin)._updateAbsorbingCache();
           notifyListeners();

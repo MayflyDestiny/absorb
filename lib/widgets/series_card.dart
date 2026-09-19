@@ -239,7 +239,8 @@ class _StackedCovers extends StatelessWidget {
           errorBuilder: (_, __, ___) => _placeholder());
     }
     return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
-        httpHeaders: mediaHeaders, placeholder: (_, __) => _placeholder(),
+        httpHeaders: mediaHeaders, useOldImageOnUrlChange: true,
+        placeholder: (_, __) => _placeholder(),
         errorWidget: (_, __, ___) => _placeholder());
   }
 

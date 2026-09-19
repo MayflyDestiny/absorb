@@ -861,6 +861,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         imageUrl: coverUrl,
         fit: fit,
         httpHeaders: headers,
+        useOldImageOnUrlChange: true,
         fadeInDuration: Duration.zero,
         fadeOutDuration: Duration.zero,
         placeholder: (_, __) => fallback,

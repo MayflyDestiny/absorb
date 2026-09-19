@@ -840,9 +840,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                                       errorBuilder: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
                                                   : BlurPaddedCover(blurChild: CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
                                                         httpHeaders: mediaHeaders,
+                                                        useOldImageOnUrlChange: true,
                                                         errorWidget: (_, __, ___) => const SizedBox.shrink()),
                                                       enabled: !_rectangleCovers, child: CachedNetworkImage(imageUrl: _coverUrl!, fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
                                                         httpHeaders: mediaHeaders,
+                                                        useOldImageOnUrlChange: true,
                                                         placeholder: (_, __) => CoverPlaceholder(title: _title, author: _author),
                                                         errorWidget: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
                                               : CoverPlaceholder(title: _title, author: _author))),
@@ -1109,6 +1111,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
             : CachedNetworkImage(
                 imageUrl: _coverUrl!,
                 fit: BoxFit.cover,
+                useOldImageOnUrlChange: true,
                 httpHeaders: mediaHeaders,
                 imageBuilder: (_, provider) {
                   _onCoverLoaded(provider);

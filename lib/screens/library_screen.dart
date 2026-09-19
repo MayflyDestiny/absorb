@@ -19,7 +19,8 @@ import '../widgets/absorb_page_header.dart';
 import '../widgets/library_picker_sheet.dart';
 import '../widgets/library_search_results.dart';
 import '../widgets/podcast_episode_feed.dart';
-import '../main.dart' show flatNotifier, gradientIntensityNotifier;
+import '../main.dart'
+    show flatNotifier, gradientIntensityNotifier, snappyTransitionsNotifier;
 import '../widgets/library_sort_filter_sheet.dart';
 import '../widgets/desktop_batch_actions.dart';
 import '../widgets/overlay_toast.dart';
@@ -353,6 +354,12 @@ class LibraryScreenState extends State<LibraryScreen>
   // ── Tab state ──
   TabController? _tabController;
   int _currentTab = 0;
+  // Fades the tab content out/in around a switch, mirroring the app shell's
+  // page fade-through. Settled at 1.0 so the first frame is fully opaque.
+  late final AnimationController _tabTransition;
+  // Tab being switched to while the fade-out runs; a newer tap updates it so
+  // rapid taps land on the last selection instead of being dropped.
+  int? _pendingTab;
   // Podcast libraries: 0 = Shows grid, 1 = Episodes feed.
   int _podcastView = 0;
 
@@ -494,6 +501,11 @@ class LibraryScreenState extends State<LibraryScreen>
   @override
   void initState() {
     super.initState();
+    _tabTransition = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+      value: 1.0,
+    );
     _wasOffline = context.read<LibraryProvider>().isOffline;
     // Reveal driver is fed by NotificationListener at the screen level —
     // works across multiple per-tab scroll controllers in the IndexedStack
@@ -573,22 +585,47 @@ class LibraryScreenState extends State<LibraryScreen>
   }
 
   void _onTabChanged() {
-    if (_tabController == null || _tabController!.indexIsChanging) return;
+    if (_tabController == null) return;
     final newTab = _tabController!.index;
-    if (newTab == _currentTab) return;
-    setState(() => _currentTab = newTab);
+    if (newTab == _currentTab) {
+      _pendingTab = null;
+      return;
+    }
+    // A newer selection supersedes any in-flight one, so rapid taps resolve to
+    // the last tab instead of being ignored.
+    _pendingTab = newTab;
+    if (PlayerSettings.einkMode || snappyTransitionsNotifier.value) {
+      _commitPendingTab();
+      return;
+    }
+    // Already fading out: the running completion handler commits the (possibly
+    // updated) _pendingTab, so don't start a second fade.
+    if (_tabTransition.status == AnimationStatus.reverse) return;
+    _tabTransition.reverse().then((_) => _commitPendingTab());
+  }
+
+  void _commitPendingTab() {
+    final target = _pendingTab;
+    if (!mounted || target == null) return;
+    _pendingTab = null;
+    setState(() => _currentTab = target);
     // Reset reveal so the SliverAppBar is fully visible after a tab switch.
     _revealDriver.resetToShown();
-    PlayerSettings.setLibraryTab(newTab);
-    // Lazy load data for the tab
-    if (newTab == 1 && _seriesItems.isEmpty && !_isLoadingSeriesPage) {
+    PlayerSettings.setLibraryTab(target);
+    // Lazy load data for the tab.
+    if (target == 1 && _seriesItems.isEmpty && !_isLoadingSeriesPage) {
       _loadSeriesPage();
-    } else if (newTab == 2 && !_authorsLoaded && !_isLoadingAuthors) {
+    } else if (target == 2 && !_authorsLoaded && !_isLoadingAuthors) {
       _loadAuthors();
-    } else if (newTab == 3 && !_narratorsLoaded && !_isLoadingNarrators) {
+    } else if (target == 3 && !_narratorsLoaded && !_isLoadingNarrators) {
       _loadNarrators();
-    } else if (newTab == 4) {
+    } else if (target == 4) {
       _loadLists();
+    }
+    if (PlayerSettings.einkMode || snappyTransitionsNotifier.value) {
+      _tabTransition.value = 1.0;
+    } else {
+      _tabTransition.forward();
     }
   }
 
@@ -1065,6 +1102,7 @@ class LibraryScreenState extends State<LibraryScreen>
     _listsScrollController.dispose();
     _tabController?.removeListener(_onTabChanged);
     _tabController?.dispose();
+    _tabTransition.dispose();
     PlayerSettings.settingsChanged.removeListener(_onSettingsChanged);
     try {
       final lib = context.read<LibraryProvider>();
@@ -3399,7 +3437,10 @@ class LibraryScreenState extends State<LibraryScreen>
                             Theme.of(context).textTheme,
                           );
                         } else {
-                          _tabController?.animateTo(i);
+                          // Set the index directly (no animateTo) so the fade
+                          // starts on the same frame as the tap instead of
+                          // waiting out the tab controller's 300ms animation.
+                          _tabController?.index = i;
                         }
                       },
                       child: AnimatedContainer(
@@ -3664,19 +3705,24 @@ class LibraryScreenState extends State<LibraryScreen>
     final effectiveTab = _currentTab;
     Widget headerFor(int i) =>
         _buildHeaderSliver(context, useSharedFocus: i == effectiveTab);
-    // IndexedStack switches tabs instantly — no content fade or slide. Any
-    // fade first dims the incoming tab (reads as a blink) and a slide shifts
-    // content that isn't laid out to match (reads as a jump). The TabBar's own
-    // indicator animation already communicates the switch.
-    return IndexedStack(
-      index: effectiveTab,
-      children: [
-        _buildGrid(headerFor(0)),
-        _buildSeriesGrid(headerFor(1)),
-        _buildAuthorsGrid(headerFor(2)),
-        _buildNarratorsGrid(headerFor(3)),
-        _buildListsGrid(headerFor(4)),
-      ],
+    // Same fade-through the app shell uses for its main tabs: the active child
+    // fades out over the backdrop, the stack swaps at zero opacity, then the
+    // new child fades back in (driven by _tabTransition in _onTabChanged). No
+    // cross-slide — that shifted content that isn't laid out to match and read
+    // as a jump/flicker. The floating tab bar sits outside this transition, so
+    // it never blinks while the content swaps underneath it.
+    return FadeTransition(
+      opacity: _tabTransition,
+      child: IndexedStack(
+        index: effectiveTab,
+        children: [
+          _buildGrid(headerFor(0)),
+          _buildSeriesGrid(headerFor(1)),
+          _buildAuthorsGrid(headerFor(2)),
+          _buildNarratorsGrid(headerFor(3)),
+          _buildListsGrid(headerFor(4)),
+        ],
+      ),
     );
   }
 
