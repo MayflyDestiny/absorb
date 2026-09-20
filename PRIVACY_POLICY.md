@@ -1,56 +1,56 @@
-# Privacy Policy
+# 隐私政策
 
-**Absorb** — Audiobookshelf Client
+**Absorb** — Audiobookshelf 客户端
 
-Last updated: May 13, 2026
+最后更新：2026 年 5 月 13 日
 
-## Overview
+## 概述
 
-Absorb is a mobile client for Audiobookshelf servers. It connects directly to your self-hosted server and does not route any data through third-party services.
+Absorb 是一款用于连接 Audiobookshelf 服务器的移动端客户端。它直接连接到您自托管的服务器，不会将任何数据通过第三方服务进行转发。
 
-## Data Collection
+## 数据收集
 
-Absorb does not collect, store, or transmit any personal data to the developer or any third party. All data stays between your device and your Audiobookshelf server.
+Absorb 不会收集、存储或向开发者或任何第三方传输任何个人数据。所有数据仅在您的设备与 Audiobookshelf 服务器之间流转。
 
-## What the App Stores Locally
+## 应用本地存储内容
 
-The following information is stored on your device only:
+以下信息仅存储在您的设备上：
 
-- Server URL and authentication token for connecting to your server
-- Playback preferences (speed, sleep timer, equalizer settings)
-- Downloaded audiobook files for offline listening
-- Cached cover images and metadata
+- 用于连接服务器的服务器 URL 和认证令牌
+- 播放偏好设置（播放速度、睡眠定时器、均衡器设置）
+- 下载的有声书文件，用于离线收听
+- 缓存的封面图片和元数据
 
-This data never leaves your device except when communicating directly with your Audiobookshelf server.
+这些数据仅在与您的 Audiobookshelf 服务器通信时才会传输，不会发送到其他任何地方。
 
-## Network Communication
+## 网络通信
 
-Absorb communicates only with:
+Absorb 仅与以下服务进行通信：
 
-- Your self-hosted Audiobookshelf server (for library data, playback sync, and streaming)
-- Audnexus (for fetching audiobook ratings and metadata)
-- Audible's public catalog API (for series, release dates, and book details; no account or login is involved)
-- GitHub (for checking for app updates; GitHub release builds only)
-- Apple iTunes Search API (used by admin users when browsing or searching the public podcast directory)
-- Google Cast devices on your local network (only if you initiate casting)
-- Your configured OIDC/SSO identity provider (only if you choose to log in via SSO)
+- 您自托管的 Audiobookshelf 服务器（用于书库数据、播放同步和流媒体）
+- Audnexus（用于获取有声书评分和元数据）
+- Audible 公开目录 API（用于获取系列信息、发布日期和书籍详情；无需账户或登录）
+- GitHub（用于检查应用更新；仅限 GitHub Release 版本）
+- Apple iTunes Search API（管理员用户浏览或搜索公开播客目录时使用）
+- 您本地网络上的 Google Cast 设备（仅在您主动发起投屏时）
+- 您配置的 OIDC/SSO 身份提供商（仅在您选择通过 SSO 登录时）
 
-No analytics, crash reporting, or tracking services are used.
+本应用不使用任何数据分析、崩溃报告或追踪服务。
 
-## Third-Party Services
+## 第三方服务
 
-Absorb does not integrate with any advertising networks, analytics platforms, or data brokers.
+Absorb 不集成任何广告网络、数据分析平台或数据经纪服务。
 
-## Children's Privacy
+## 儿童隐私
 
-Absorb does not knowingly collect any information from children under 13.
+Absorb 不会主动收集 13 岁以下儿童的任何信息。
 
-## Changes to This Policy
+## 本政策的变更
 
-Any updates to this privacy policy will be reflected on this page with an updated date.
+本隐私政策的任何更新将在此页面上发布，并附有更新日期。
 
-## Contact
+## 联系方式
 
-If you have questions about this privacy policy, you can reach the developer through the GitHub repository:
+如果您对本隐私政策有任何疑问，可通过 GitHub 仓库联系开发者：
 
 https://github.com/pounat/absorb
