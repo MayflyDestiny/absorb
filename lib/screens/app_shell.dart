@@ -179,6 +179,7 @@ class _AppShellState extends State<AppShell>
   String? _lastItemId;
   bool _expandedIsOpen = false;
   bool _wasCasting = false;
+  bool _coversPreloaded = false;
   DateTime? _lastBackPress;
   // Tracks which item's cover we derived the scheme from.
   String? _lastCoverItemId;
@@ -379,6 +380,15 @@ class _AppShellState extends State<AppShell>
     // then the (Android-only) download-location prompt once it's dismissed.
     _runOnboarding();
     _checkForUpdate();
+
+    // Preheat provider data in background so Home/Library tabs have data
+    // ready when user switches to them (avoids jank on first tab switch).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final lib = context.read<LibraryProvider>();
+      unawaited(lib.refreshLocalProgress());
+      unawaited(lib.loadLibraries());
+    });
   }
 
   Future<void> _runOnboarding() async {
@@ -491,6 +501,50 @@ class _AppShellState extends State<AppShell>
     // theme always reflects the current [0] book.
     _deriveCoverScheme();
     _restoreBookLibraryForCurrentTab();
+
+    // One-time cover preload for absorbing + library first screen
+    if (!_coversPreloaded) {
+      _coversPreloaded = true;
+      _preloadCovers();
+    }
+  }
+
+  /// Preload covers for Absorbing list and personalized sections to eliminate
+  /// cold-start flicker. Runs once after initial library load.
+  Future<void> _preloadCovers() async {
+    if (!mounted) return;
+    final lib = context.read<LibraryProvider>();
+    final ids = <String>{};
+
+    // Absorbing items
+    for (final key in lib.absorbingBookIds) {
+      final itemId = key.length > 36 ? key.substring(0, 36) : key;
+      ids.add(itemId);
+    }
+
+    // Personalized sections (home shelves)
+    for (final section in lib.personalizedSections) {
+      for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+        if (e is Map<String, dynamic>) {
+          final id = e['id'] as String?;
+          if (id != null) ids.add(id);
+        }
+      }
+    }
+
+    if (ids.isEmpty) return;
+
+    // Fire-and-forget precache (limit to 20 to avoid overload)
+    for (final itemId in ids.take(20)) {
+      final url = lib.getCoverUrl(itemId, width: 400);
+      if (url != null && !url.startsWith('/')) {
+        unawaited(precacheImage(
+          NetworkImage(url, headers: lib.mediaHeaders),
+          rootNavigatorKey.currentContext!,
+          onError: (_, __) {},
+        ));
+      }
+    }
   }
 
   /// Attempt to derive cover scheme. Returns true if successful.

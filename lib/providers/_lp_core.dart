@@ -1903,6 +1903,93 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
   }
 
+  /// Merge [fetched] sections into [existing] preserving entity map identity.
+  /// This prevents UI flicker by keeping the same Map objects for unchanged items.
+  List<dynamic> _mergeSections(List<dynamic> existing, List<dynamic> fetched) {
+    // Build lookup of existing entities by ID
+    final existingEntities = <String, Map<String, dynamic>>{};
+    for (final section in existing) {
+      if (section is! Map<String, dynamic>) continue;
+      for (final e in (section['entities'] as List<dynamic>? ?? [])) {
+        if (e is Map<String, dynamic>) {
+          final id = e['id'] as String?;
+          if (id != null) existingEntities[id] = e;
+        }
+      }
+    }
+
+    // Merge fetched into existing entity maps
+    final mergedSections = <Map<String, dynamic>>[];
+    for (final fetchedSection in fetched) {
+      if (fetchedSection is! Map<String, dynamic>) continue;
+      final sectionId = fetchedSection['id'] as String? ?? '';
+      // Find existing section with same ID to preserve order/hints
+      final existingSection = existing
+          .whereType<Map<String, dynamic>>()
+          .firstWhere(
+            (s) => (s['id'] as String? ?? '') == sectionId,
+            orElse: () => <String, dynamic>{},
+          );
+
+      final existingSectionEntities = <String, Map<String, dynamic>>{};
+      for (final e in (existingSection['entities'] as List<dynamic>? ?? [])) {
+        if (e is Map<String, dynamic>) {
+          final id = e['id'] as String?;
+          if (id != null) existingSectionEntities[id] = e;
+        }
+      }
+
+      final mergedEntities = <Map<String, dynamic>>[];
+      final seenIds = <String>{};
+      for (final fetchedEntity in (fetchedSection['entities'] as List<dynamic>? ?? [])) {
+        if (fetchedEntity is! Map<String, dynamic>) continue;
+        final id = fetchedEntity['id'] as String?;
+        if (id == null) continue;
+        seenIds.add(id);
+
+        if (existingSectionEntities.containsKey(id)) {
+          // Update existing map in place to preserve identity
+          final existingMap = existingSectionEntities[id]!;
+          existingMap.addAll(fetchedEntity);
+          mergedEntities.add(existingMap);
+        } else if (existingEntities.containsKey(id)) {
+          // Entity exists in another section — move it here, preserve map
+          final existingMap = existingEntities[id]!;
+          existingMap.addAll(fetchedEntity);
+          mergedEntities.add(existingMap);
+        } else {
+          // Brand new entity
+          mergedEntities.add(fetchedEntity);
+        }
+      }
+
+      // Also include entities that were in existing section but not in fetched
+      // (e.g. local-only items, manually added absorbing items)
+      for (final existingEntity in existingSectionEntities.values) {
+        final id = existingEntity['id'] as String?;
+        if (id != null && !seenIds.contains(id)) {
+          mergedEntities.add(existingEntity);
+        }
+      }
+
+      mergedSections.add({
+        ...fetchedSection,
+        'entities': mergedEntities,
+      });
+    }
+
+    // Also include sections that existed locally but not in fetched
+    for (final existingSection in existing) {
+      if (existingSection is! Map<String, dynamic>) continue;
+      final sectionId = existingSection['id'] as String? ?? '';
+      if (!fetched.any((s) => s is Map && (s['id'] as String? ?? '') == sectionId)) {
+        mergedSections.add(existingSection);
+      }
+    }
+
+    return mergedSections;
+  }
+
   Future<void> _doLoadPersonalizedView() async {
     if (_api == null || _selectedLibraryId == null) return;
 
@@ -1949,7 +2036,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // A null response is a failed fetch, not "no shelves". Keep whatever is
       // already on screen (the cache we just painted) rather than wiping it.
       if (fetched != null) {
-        _personalizedSections = fetched;
+        _personalizedSections = _mergeSections(_personalizedSections, fetched);
         _registerSectionsEpochs(_personalizedSections);
         await (this as _AbsorbingMixin)._updateAbsorbingCache();
 

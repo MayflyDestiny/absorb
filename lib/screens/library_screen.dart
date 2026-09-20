@@ -786,8 +786,8 @@ class LibraryScreenState extends State<LibraryScreen>
 
   // SWR paints stale data at cold start. A timer fires ~1.5s later and quietly
   // re-pulls grid, filter chips and lists from the network so the screen
-  // converges without waiting on the (possibly dead) socket or user scroll.
-  // Canceled on dispose or when the active library switches.
+  /// converges without waiting on the (possibly dead) socket or user scroll.
+  /// Canceled on dispose or when the active library switches.
   void _schedulePostRestoreRefresh() {
     if (_cacheRefreshTimer != null) return;
     _cacheRefreshTimer = Timer(const Duration(milliseconds: 1500), () {
@@ -796,19 +796,286 @@ class LibraryScreenState extends State<LibraryScreen>
       final lib = context.read<LibraryProvider>();
       final api = context.read<AuthProvider>().apiService;
       if (api == null || lib.isOffline || lib.selectedLibraryId == null) return;
-      setState(() {
-        _resetSelectionState();
-        _items.clear();
-        _page = 0;
-        _loadedCount = 0;
-        _hasMore = true;
-        _isLoadingPage = false;
-        _loadFailed = false;
-      });
-      _loadPage();
+      _loadPageMerge();
       _loadFilterData();
       _refreshLists();
     });
+  }
+
+  /// Load a fresh page and merge with existing items, preserving Map identity
+  /// to avoid UI flicker. Only clears if the server returns an empty first page
+  /// (which shouldn't happen unless the library is actually empty).
+  Future<void> _loadPageMerge() async {
+    if (_isLoadingPage || !_hasMore) return;
+    setState(() {
+      _isLoadingPage = true;
+      _loadFailed = false;
+    });
+    final gen = ++_loadGeneration;
+
+    final auth = context.read<AuthProvider>();
+    final lib = context.read<LibraryProvider>();
+    final api = auth.apiService;
+    if (lib.selectedLibraryId == null) {
+      setState(() => _isLoadingPage = false);
+      return;
+    }
+
+    // Offline fallback: show downloaded items instead of hitting the API
+    if (api == null || lib.isOffline) {
+      _loadOfflinePage(lib);
+      return;
+    }
+
+    String sort;
+    int desc;
+    switch (_sort) {
+      case LibrarySort.recentlyAdded:
+        sort = 'addedAt';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.alphabetical:
+        sort = 'media.metadata.title';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.authorName:
+        sort = lib.isPodcastLibrary
+            ? 'media.metadata.author'
+            : 'media.metadata.authorNameLF';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.authorFirstLast:
+        sort = 'media.metadata.authorName';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.publishedYear:
+        sort = 'media.metadata.publishedYear';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.duration:
+      case LibrarySort.totalDuration:
+        sort = 'media.duration';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.fileSize:
+        sort = 'size';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.lastUpdated:
+        sort = 'updatedAt';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.fileCreated:
+        sort = 'birthtimeMs';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.lastModified:
+        sort = 'mtimeMs';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.progress:
+        sort = 'progress';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.dateStarted:
+        sort = 'progress.createdAt';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.dateFinished:
+        sort = 'progress.finishedAt';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.episodeCount:
+        sort = 'media.numTracks';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.sequence:
+        sort = 'sequence';
+        desc = _sortAsc ? 0 : 1;
+        break;
+      case LibrarySort.random:
+        sort = 'addedAt';
+        desc = 1;
+        break;
+    }
+
+    final filter = buildLibraryFilterQuery(
+      _filter,
+      genre: _genreFilter,
+      tag: _tagFilter,
+      filterValue: _filterValue,
+      missingMetadata: _missingMetadataFilter,
+    );
+    final filterDownloaded = _filter == LibraryFilter.downloaded;
+    final filterSubscribed = _filter == LibraryFilter.subscribed;
+    final useClientFilter = filterDownloaded || filterSubscribed;
+    final fetchAll = _sort == LibrarySort.random || useClientFilter;
+
+    if (fetchAll) {
+      // For fetchAll, we still need to replace since it's a full reload
+      // But we'll merge at the page level to preserve identity where possible
+      const fetchLimit = 500;
+      int fetchPage = 0;
+      int total = 0;
+      final freshItems = <Map<String, dynamic>>[];
+      while (mounted && gen == _loadGeneration) {
+        final result = await api.getLibraryItems(
+          lib.selectedLibraryId!,
+          page: fetchPage,
+          limit: fetchLimit,
+          sort: sort,
+          desc: desc,
+          filter: filter,
+          collapseSeries:
+              _collapseSeries && !useClientFilter && !lib.isPodcastLibrary,
+        );
+        if (result == null) {
+          debugPrint('[LibPage] fetch-all page=$fetchPage failed, showing '
+              'what loaded so far');
+        }
+        if (result == null || !mounted || gen != _loadGeneration) break;
+        final results = (result['results'] as List<dynamic>?) ?? [];
+        total = (result['total'] as int?) ?? 0;
+        for (final r in results) {
+          if (r is Map<String, dynamic>) {
+            final id = r['id'] as String?;
+            final ts = r['updatedAt'] as num?;
+            if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
+            if (id != null) {
+              final coverPath =
+                  (r['media'] as Map<String, dynamic>?)?['coverPath']
+                      as String?;
+              lib.registerHasCover(
+                id,
+                coverPath != null && coverPath.isNotEmpty,
+              );
+            }
+            if (filterDownloaded && !DownloadService().isDownloaded(id ?? ''))
+              continue;
+            if (filterSubscribed && !lib.isPodcastSubscribed(id ?? ''))
+              continue;
+            if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
+            freshItems.add(r);
+          }
+        }
+        fetchPage++;
+        if (fetchPage * fetchLimit >= total) break;
+      }
+      if (mounted && gen == _loadGeneration) {
+        _mergeItems(freshItems, total);
+        _writeItemsCache();
+      }
+    } else {
+      // Normal pagination: merge first page, append subsequent pages
+      if (_page == 0) _loadedCount = 0;
+      final limit =
+          _loadedCount < 40 ? 20 : (_loadedCount < 80 ? 40 : _pageSize);
+      final pageIndex = _loadedCount ~/ limit;
+      debugPrint('[LibPage] request page=$pageIndex limit=$limit loaded=$_loadedCount');
+      final result = await api.getLibraryItems(
+        lib.selectedLibraryId!,
+        page: pageIndex,
+        limit: limit,
+        sort: sort,
+        desc: desc,
+        filter: filter,
+        collapseSeries: _collapseSeries && !lib.isPodcastLibrary,
+      );
+
+      if (result != null && mounted && gen == _loadGeneration) {
+        final results = (result['results'] as List<dynamic>?) ?? [];
+        final total = (result['total'] as int?) ?? 0;
+        final freshItems = <Map<String, dynamic>>[];
+        for (final r in results) {
+          if (r is Map<String, dynamic>) {
+            final id = r['id'] as String?;
+            final ts = r['updatedAt'] as num?;
+            if (id != null && ts != null)
+              lib.registerUpdatedAt(id, ts.toInt());
+            if (id != null) {
+              final coverPath =
+                  (r['media'] as Map<String, dynamic>?)?['coverPath']
+                      as String?;
+              lib.registerHasCover(
+                id,
+                coverPath != null && coverPath.isNotEmpty,
+              );
+            }
+            if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
+            freshItems.add(r);
+          }
+        }
+        if (pageIndex == 0) {
+          _mergeItems(freshItems, total);
+        } else {
+          // Append subsequent pages
+          setState(() {
+            _items.addAll(freshItems);
+            _loadedCount += results.length;
+            _page++;
+            _hasMore = results.length >= limit;
+            _isLoadingPage = false;
+          });
+          _writeItemsCache();
+        }
+      } else if (mounted && gen == _loadGeneration) {
+        setState(() {
+          _loadFailed = true;
+          _isLoadingPage = false;
+        });
+      }
+    }
+  }
+
+  /// Merge fresh items into _items, preserving existing Map identity.
+  /// This prevents UI flicker by keeping the same Map objects for unchanged items.
+  void _mergeItems(List<Map<String, dynamic>> freshItems, int total) {
+    // Build lookup of existing items by ID
+    final existingById = <String, Map<String, dynamic>>{};
+    for (final item in _items) {
+      final id = item['id'] as String?;
+      if (id != null) existingById[id] = item;
+    }
+
+    final merged = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+
+    for (final fresh in freshItems) {
+      final id = fresh['id'] as String?;
+      if (id == null) continue;
+      seenIds.add(id);
+
+      if (existingById.containsKey(id)) {
+        // Update existing map in place to preserve identity
+        final existing = existingById[id]!;
+        existing.addAll(fresh);
+        merged.add(existing);
+      } else {
+        // New item
+        merged.add(fresh);
+      }
+    }
+
+    // Keep items that existed locally but not in fresh (e.g., local-only items)
+    for (final existing in _items) {
+      final id = existing['id'] as String?;
+      if (id != null && !seenIds.contains(id)) {
+        merged.add(existing);
+      }
+    }
+
+    setState(() {
+      _resetSelectionState();
+      _items
+        ..clear()
+        ..addAll(merged);
+      _totalItems = total;
+      _page = 1; // First page merged
+      _loadedCount = merged.length;
+      _hasMore = freshItems.length > 0; // If we got items, there might be more
+      _isLoadingPage = false;
+    });
+    _writeItemsCache();
   }
 
   Future<void> _restoreSortFilter() async {

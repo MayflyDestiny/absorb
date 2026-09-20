@@ -157,41 +157,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     return lib.getCoverUrl(_itemId, width: 1200);
   }
 
-  int? _coverUpdatedAt(LibraryProvider lib) {
-    final key = widget.item['_absorbingKey'] as String? ?? _itemId;
-    final cached = lib.absorbingItemCache[key];
-    final candidates = <Object?>[
-      widget.item['updatedAt'],
-      cached?['updatedAt'],
-      lib.itemUpdatedAt(_itemId),
-    ];
-
-    int? newest;
-    for (final candidate in candidates) {
-      final timestamp = switch (candidate) {
-        num value => value.toInt(),
-        String value => int.tryParse(value),
-        _ => null,
-      };
-      if (timestamp != null && (newest == null || timestamp > newest)) {
-        newest = timestamp;
-      }
-    }
-    return newest;
-  }
-
   String? _coverIdentity(String? coverUrl, LibraryProvider lib) {
     if (coverUrl == null) return null;
     if (coverUrl.startsWith('/')) return coverUrl;
-    return stableCoverCacheKey(
-      coverUrl,
-      updatedAt: _coverUpdatedAt(lib),
-    );
+    final key = widget.item['_absorbingKey'] as String? ?? _itemId;
+    final cached = lib.absorbingItemCache[key];
+    final localUpdatedAt = widget.item['updatedAt'] as int? ?? cached?['updatedAt'] as int?;
+    return stableCoverCacheKey(coverUrl, updatedAt: localUpdatedAt);
   }
 
   String? _currentCoverIdentity() {
     final lib = context.read<LibraryProvider>();
-    return _coverIdentity(lib.getCoverUrl(_itemId, width: 1200), lib);
+    final coverUrl = lib.getCoverUrl(_itemId, width: 1200);
+    return _coverIdentity(coverUrl, lib);
   }
 
   @override
