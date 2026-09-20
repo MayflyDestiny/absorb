@@ -1058,6 +1058,7 @@ class _RequestRow extends StatelessWidget {
                           )
                         : CachedNetworkImage(
                             imageUrl: book.coverArtUrl!,
+                            useOldImageOnUrlChange: true,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
                                 color: cs.surfaceContainerHighest),
@@ -1166,6 +1167,7 @@ class _RequestDetailSheet extends StatelessWidget {
                       )
                     : CachedNetworkImage(
                         imageUrl: book.coverArtUrl!,
+                        useOldImageOnUrlChange: true,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => Container(
                             color: cs.surfaceContainerHighest),

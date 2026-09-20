@@ -28,9 +28,16 @@ mixin _StateMixin on ChangeNotifier {
   /// Personalized sections cached per library, so tab-driven flips between
   /// the book library and the dedicated Podcasts tab restore instantly
   /// instead of blanking and refetching. Refreshed through the normal
-  /// loadPersonalizedView path.
+  /// loadPersonalizedView path. LRU-capped to a few libraries (see
+  /// `_CoreMixin._storeSections`) so visited shelf sets don't accumulate.
   final Map<String, List<dynamic>> _sectionsByLibrary = {};
   final Map<String, DateTime> _sectionsFetchedAt = {};
+
+  /// One-shot retry for a personalized-sections fetch that returned no data
+  /// without going offline (e.g. a transient 5xx). Otherwise nothing would
+  /// ever re-fetch and the cache-painted shelves would stand as final.
+  Timer? _sectionsRetryTimer;
+  int _sectionsFetchMisses = 0;
 
   Future<void>? _personalizedInFlight;
   Future<void>? _progressShelvesInFlight;
@@ -111,6 +118,10 @@ mixin _StateMixin on ChangeNotifier {
   DateTime? _readerQuietAt;
   bool _socketSoftDisconnected = false;
   DateTime? _backgroundedAt;
+  // One-shot per session: drop JSON payload files older than the TTL so an
+  // untouched cache can't grow unbounded (cold start + dead socket means the
+  // library screen may never rewrite them).
+  bool _payloadCachePrunedThisSession = false;
 
   Map<String, Map<String, dynamic>> _progressMap = {};
   final Map<String, double> _localProgressOverrides = {};

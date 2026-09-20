@@ -2156,6 +2156,21 @@ class AppLocalizationsDe extends AppLocalizations {
   String get streamingCacheCleared => 'Streaming-Cache geleert';
 
   @override
+  String get appCache => 'App-Daten-Cache';
+
+  @override
+  String appCacheHint(String size) {
+    return '$size an gecachten Regalen, Rastern und Fortschritts-Snapshots. Sie werden bei Nutzung neu heruntergeladen.';
+  }
+
+  @override
+  String get appCacheConfirm =>
+      'Alle gecachten Regale, Raster und Fortschritts-Snapshots löschen? Sie werden bei Nutzung automatisch neu heruntergeladen.';
+
+  @override
+  String get appCacheCleared => 'App-Daten-Cache geleert';
+
+  @override
   String get sectionLibrary => 'Bibliothek';
 
   @override
@@ -2688,6 +2703,16 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chooseDownloadFolder => 'Download-Ordner wählen';
 
   @override
+  String get downloadLocationPromptTitle => 'Speicherort für Downloads wählen';
+
+  @override
+  String get downloadLocationPromptBody =>
+      'Downloads werden standardmäßig im privaten Speicher der App abgelegt. Beim Löschen der App-Daten oder der Deinstallation gehen sie verloren.\n\nWähle stattdessen einen öffentlichen Ordner (z. B. deinen Download-Ordner), damit Downloads erhalten bleiben, auch wenn die App-Daten gelöscht werden.';
+
+  @override
+  String get keepDefaultDownloadLocation => 'Standard beibehalten';
+
+  @override
   String get storagePermissionDenied =>
       'Speicherberechtigung dauerhaft verweigert - aktiviere sie in den App-Einstellungen';
 
@@ -2734,6 +2759,81 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get dismiss => 'Verwerfen';
+
+  @override
+  String migrateDownloadsToFolder(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count vorhandene Downloads verschieben?',
+      one: '1 vorhandenen Download verschieben?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrateDownloadsToInternal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count vorhandene Downloads in den internen Speicher verschieben?',
+      one: '1 vorhandenen Download in den internen Speicher verschieben?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get keepDownloadsInPlace => 'Nicht übertragen';
+
+  @override
+  String get moveDownloads => 'Übertragen';
+
+  @override
+  String get migrateDownloadsTitle => 'Heruntergeladene Inhalte verschieben?';
+
+  @override
+  String get migrateDownloadsHint =>
+      'Beim Verschieben bleiben deine vorhandenen Downloads am neuen Ort verfügbar und spielen von dort weiter. Ohne Verschieben bleiben vorhandene Downloads dort, wo sie sind, und nur neue Downloads nutzen den neuen Ort.';
+
+  @override
+  String get migratingDownloads => 'Downloads werden verschoben…';
+
+  @override
+  String migrateCompleted(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Downloads verschoben',
+      one: '1 Download verschoben',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get existingDownloadsFoundTitle => 'Vorhandene Downloads gefunden';
+
+  @override
+  String existingDownloadsRecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count zuvor heruntergeladene Bücher wurden wiederhergestellt',
+      one: '1 zuvor heruntergeladenes Buch wurde wiederhergestellt',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String existingDownloadsUnrecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Ordner enthalten Audio, das die App nicht zuordnen konnte',
+      one: '1 Ordner enthält Audio, das die App nicht zuordnen konnte',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get tipsAndHiddenFeatures => 'Tipps & versteckte Funktionen';

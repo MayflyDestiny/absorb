@@ -255,7 +255,7 @@ class _PodcastEditScreenState extends State<PodcastEditScreen> {
                         border: _coverUrlCtrl.text == url ? Border.all(color: cs.primary, width: 2) : null,
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: CachedNetworkImage(imageUrl: url, fit: BoxFit.cover),
+                      child: CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, useOldImageOnUrlChange: true),
                     ),
                   ),
               ],
@@ -299,11 +299,12 @@ class _PodcastEditScreenState extends State<PodcastEditScreen> {
     final url = _coverUrlCtrl.text.trim();
     final headers = context.read<AuthProvider>().apiService?.mediaHeaders;
     if (url.isNotEmpty) {
-      return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
+      return CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, useOldImageOnUrlChange: true,
         placeholder: (_, __) => _coverPlaceholder(cs), errorWidget: (_, __, ___) => _coverPlaceholder(cs));
     }
     return CachedNetworkImage(
       imageUrl: '$serverCover?v=$_coverVersion',
+      useOldImageOnUrlChange: true,
       httpHeaders: headers,
       fit: BoxFit.cover,
       placeholder: (_, __) => _coverPlaceholder(cs),

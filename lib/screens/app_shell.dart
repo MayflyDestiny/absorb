@@ -55,6 +55,7 @@ import 'settings_screen.dart';
 import 'app_shell_navigation_policy.dart';
 import '../widgets/library_picker_sheet.dart';
 import '../widgets/welcome_sheet.dart';
+import '../widgets/download_location_prompt.dart';
 import '../services/review_service.dart';
 import '../services/settings_sync_service.dart';
 import '../services/update_checker_service.dart';
@@ -374,8 +375,15 @@ class _AppShellState extends State<AppShell>
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
     _loadPodcastTabPrefs();
     PlayerSettings.settingsChanged.addListener(_loadPodcastTabPrefs);
-    WelcomeSheet.showIfNeeded(context);
+    // On-boarding runs serially so the dialogs never stack: welcome first,
+    // then the (Android-only) download-location prompt once it's dismissed.
+    _runOnboarding();
     _checkForUpdate();
+  }
+
+  Future<void> _runOnboarding() async {
+    await WelcomeSheet.showIfNeeded(context);
+    await DownloadLocationPrompt.showIfNeeded(context);
   }
 
   Future<void> _loadPodcastTabPrefs() async {

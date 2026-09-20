@@ -265,6 +265,7 @@ class _Cover extends StatelessWidget {
               )
             : CachedNetworkImage(
                 imageUrl: url!,
+                useOldImageOnUrlChange: true,
                 fit: BoxFit.cover,
                 placeholder: (_, __) => Container(color: cs.surfaceContainerHighest),
                 errorWidget: (_, __, ___) => Container(

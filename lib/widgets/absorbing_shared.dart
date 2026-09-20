@@ -407,9 +407,33 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
     } else if (_dl.isDownloading(widget.itemId)) {
       _dl.cancelDownload(widget.itemId);
     } else {
-      final ok = await confirmDownload(context, widget.title);
-      if (!ok || !context.mounted) return;
-      final error = await _dl.downloadItem(api: api, itemId: widget.itemId, title: widget.title, author: widget.author, coverUrl: widget.coverUrl, libraryId: context.read<LibraryProvider>().selectedLibraryId);
+      // Not saved: let the user pick the chapters to download (like the
+      // saved-state flow), falling back to a whole-item confirm when the book
+      // has no chapters to choose from.
+      List<int>? selectedChapters;
+      if (widget.chapters.isEmpty) {
+        final ok = await confirmDownload(context, widget.title);
+        if (!ok || !context.mounted) return;
+      } else {
+        final result = await showChapterDownloadSheet(context,
+            accent: widget.accent,
+            title: widget.title,
+            chapters: widget.chapters,
+            downloadedChapters:
+                _dl.downloadedChapterIndicesCached(widget.itemId, widget.chapters));
+        if (!context.mounted) return;
+        if (result == null || result.selectedIndices.isEmpty) return;
+        selectedChapters = result.selectedIndices;
+      }
+      final error = await _dl.downloadItem(
+        api: api,
+        itemId: widget.itemId,
+        title: widget.title,
+        author: widget.author,
+        coverUrl: widget.coverUrl,
+        libraryId: context.read<LibraryProvider>().selectedLibraryId,
+        selectedChapters: selectedChapters,
+      );
       if (error != null && context.mounted) {
         showOverlayToast(context, error, icon: Icons.error_outline_rounded);
       }

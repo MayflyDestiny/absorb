@@ -486,6 +486,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
                           borderRadius: BorderRadius.circular(6),
                           child: coverUrls[i] != null
                             ? CachedNetworkImage(imageUrl: coverUrls[i]!, fit: BoxFit.cover, httpHeaders: headers, width: 40, height: 40,
+                                useOldImageOnUrlChange: true,
                                 errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest,
                                   child: Icon(Icons.auto_stories_rounded, size: 18, color: cs.onSurfaceVariant)))
                             : Container(color: cs.surfaceContainerHighest,
@@ -595,6 +596,7 @@ class _AuthorBooksSheetState extends State<AuthorBooksSheet> {
         child: _imageUrl != null
             ? CachedNetworkImage(
                 imageUrl: _imageUrl!,
+                useOldImageOnUrlChange: true,
                 fit: BoxFit.cover,
                 httpHeaders: headers,
                 placeholder: (_, __) => _avatarPlaceholder(cs),

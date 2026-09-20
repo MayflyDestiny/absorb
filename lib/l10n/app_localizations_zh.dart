@@ -2062,6 +2062,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamingCacheCleared => '流式缓存已清除';
 
   @override
+  String get appCache => '应用数据缓存';
+
+  @override
+  String appCacheHint(String size) {
+    return '$size 书架、网格和阅读进度缓存。使用时会自动重新下载。';
+  }
+
+  @override
+  String get appCacheConfirm => '要删除所有书架、网格和阅读进度缓存吗？它们会在使用时自动重新下载。';
+
+  @override
+  String get appCacheCleared => '应用数据缓存已清除';
+
+  @override
   String get sectionLibrary => '媒体库';
 
   @override
@@ -2552,6 +2566,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chooseDownloadFolder => '选择下载文件夹';
 
   @override
+  String get downloadLocationPromptTitle => '选择下载保存位置';
+
+  @override
+  String get downloadLocationPromptBody =>
+      '下载内容默认保存在应用内部存储中。清理应用数据或卸载应用时,这些下载会被删除。\n\n建议选择手机上的公共文件夹(如「下载」目录)作为默认下载位置,这样即使清除应用数据,下载的文件也会保留。';
+
+  @override
+  String get keepDefaultDownloadLocation => '保持默认';
+
+  @override
   String get storagePermissionDenied => '存储权限已被永久拒绝 - 请在应用设置中启用';
 
   @override
@@ -2593,6 +2617,80 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dismiss => '忽略';
+
+  @override
+  String migrateDownloadsToFolder(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '移动 $count 个已有下载到新文件夹？',
+      one: '移动 1 个已有下载到新文件夹？',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrateDownloadsToInternal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '将 $count 个已有下载移回内部存储？',
+      one: '将 1 个已有下载移回内部存储？',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get keepDownloadsInPlace => '不迁移';
+
+  @override
+  String get moveDownloads => '迁移';
+
+  @override
+  String get migrateDownloadsTitle => '是否迁移已下载内容？';
+
+  @override
+  String get migrateDownloadsHint =>
+      '迁移会把已有下载移动到新位置,之后继续在此播放使用。不迁移则保留在原位置,只有新下载使用新位置。';
+
+  @override
+  String get migratingDownloads => '正在迁移下载…';
+
+  @override
+  String migrateCompleted(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已迁移 $count 个下载',
+      one: '已迁移 1 个下载',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get existingDownloadsFoundTitle => '发现已有下载';
+
+  @override
+  String existingDownloadsRecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已识别 $count 本之前下载的书',
+      one: '已识别 1 本之前下载的书',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String existingDownloadsUnrecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '有 $count 个文件夹含无法识别的音频',
+      one: '有 1 个文件夹含无法识别的音频',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get tipsAndHiddenFeatures => '技巧与隐藏功能';

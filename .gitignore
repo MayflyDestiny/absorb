@@ -44,6 +44,9 @@ devtools_options.yaml
 /build/
 /coverage/
 
+# Android (and vendored Android packages) Gradle build outputs
+**/android/build/
+
 # Symbolication related
 app.*.symbols
 

@@ -602,11 +602,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                     : BlurPaddedCover(
                         blurChild: CachedNetworkImage(
                           imageUrl: _coverUrl!, fit: BoxFit.cover,
+                          useOldImageOnUrlChange: true,
                           httpHeaders: lib.mediaHeaders,
                           errorWidget: (_, __, ___) => const SizedBox.shrink(),
                         ),
                         child: CachedNetworkImage(
                           imageUrl: _coverUrl!, fit: BoxFit.contain,
+                          useOldImageOnUrlChange: true,
                           httpHeaders: lib.mediaHeaders,
                           placeholder: (_, __) => const SizedBox(),
                           errorWidget: (_, __, ___) => const SizedBox(),
@@ -614,6 +616,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                       ))
                 : CachedNetworkImage(
                     imageUrl: _coverUrl!, fit: BoxFit.contain,
+                    useOldImageOnUrlChange: true,
                     httpHeaders: lib.mediaHeaders,
                     placeholder: (_, __) => const SizedBox(),
                     errorWidget: (_, __, ___) => const SizedBox(),
@@ -1250,6 +1253,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHighest));
     } else {
       img = CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, httpHeaders: headers,
+        useOldImageOnUrlChange: true,
         placeholder: (_, __) => Container(color: cs.surfaceContainerHighest),
         errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest));
     }
@@ -2614,6 +2618,7 @@ class _FullCoverViewerState extends State<_FullCoverViewer> {
                 child: Center(
                   child: CachedNetworkImage(
                     imageUrl: widget.url,
+                    useOldImageOnUrlChange: true,
                     httpHeaders: widget.headers,
                     fit: BoxFit.contain,
                     placeholder: (_, __) => const CircularProgressIndicator(strokeWidth: 2),

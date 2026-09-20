@@ -108,6 +108,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
       SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.downloadLocation, const []),
     SettingSearchEntry('Manage Downloads', l.manageDownloads, l.manageDownloads, [l.manageDownloadsSubtitle]),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.streamingCache, [l.streamingCacheOffSubtitle, l.streamingCacheOff, l.clearCache]),
+    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.appCache, [l.appCacheConfirm, l.clearCache]),
 
     // ── Library ──
     SettingSearchEntry('Library', l.sectionLibrary, l.settingsPodcastTab, [l.settingsPodcastTabDesc]),

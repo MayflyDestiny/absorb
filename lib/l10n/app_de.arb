@@ -997,6 +997,17 @@
   },
   "clearCache": "Cache leeren",
   "streamingCacheCleared": "Streaming-Cache geleert",
+  "appCache": "App-Daten-Cache",
+  "appCacheHint": "{size} an gecachten Regalen, Rastern und Fortschritts-Snapshots. Sie werden bei Nutzung neu heruntergeladen.",
+  "@appCacheHint": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appCacheConfirm": "Alle gecachten Regale, Raster und Fortschritts-Snapshots löschen? Sie werden bei Nutzung automatisch neu heruntergeladen.",
+  "appCacheCleared": "App-Daten-Cache geleert",
   "sectionLibrary": "Bibliothek",
   "hideEbookOnlyTitles": "Nur-eBook-Titel ausblenden",
   "hideEbookOnlyOnSubtitle": "Bücher ohne Audiodateien werden ausgeblendet",
@@ -1252,6 +1263,9 @@
   "existingDownloadsWarning": "Vorhandene Downloads bleiben an ihrem aktuellen Speicherort. Nur neue Downloads verwenden den neuen Pfad.",
   "chooseFolder": "Ordner wählen",
   "chooseDownloadFolder": "Download-Ordner wählen",
+  "downloadLocationPromptTitle": "Speicherort für Downloads wählen",
+  "downloadLocationPromptBody": "Downloads werden standardmäßig im privaten Speicher der App abgelegt. Beim Löschen der App-Daten oder der Deinstallation gehen sie verloren.\n\nWähle stattdessen einen öffentlichen Ordner (z. B. deinen Download-Ordner), damit Downloads erhalten bleiben, auch wenn die App-Daten gelöscht werden.",
+  "keepDefaultDownloadLocation": "Standard beibehalten",
   "storagePermissionDenied": "Speicherberechtigung dauerhaft verweigert - aktiviere sie in den App-Einstellungen",
   "openSettings": "Einstellungen öffnen",
   "storagePermissionRequired": "Speicherberechtigung ist für eigene Download-Speicherorte erforderlich",
@@ -1277,6 +1291,52 @@
   "redownload": "Erneut herunterladen",
   "redownloadStarted": "Wird erneut heruntergeladen",
   "dismiss": "Verwerfen",
+  "migrateDownloadsToFolder": "{count, plural, =1{1 vorhandenen Download verschieben?} other{{count} vorhandene Downloads verschieben?}}",
+  "@migrateDownloadsToFolder": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrateDownloadsToInternal": "{count, plural, =1{1 vorhandenen Download in den internen Speicher verschieben?} other{{count} vorhandene Downloads in den internen Speicher verschieben?}}",
+  "@migrateDownloadsToInternal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "keepDownloadsInPlace": "Nicht übertragen",
+  "moveDownloads": "Übertragen",
+  "migrateDownloadsTitle": "Heruntergeladene Inhalte verschieben?",
+  "migrateDownloadsHint": "Beim Verschieben bleiben deine vorhandenen Downloads am neuen Ort verfügbar und spielen von dort weiter. Ohne Verschieben bleiben vorhandene Downloads dort, wo sie sind, und nur neue Downloads nutzen den neuen Ort.",
+  "migratingDownloads": "Downloads werden verschoben…",
+  "migrateCompleted": "{count, plural, =1{1 Download verschoben} other{{count} Downloads verschoben}}",
+  "@migrateCompleted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "existingDownloadsFoundTitle": "Vorhandene Downloads gefunden",
+  "existingDownloadsRecognized": "{count, plural, =1{1 zuvor heruntergeladenes Buch wurde wiederhergestellt} other{{count} zuvor heruntergeladene Bücher wurden wiederhergestellt}}",
+  "@existingDownloadsRecognized": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "existingDownloadsUnrecognized": "{count, plural, =1{1 Ordner enthält Audio, das die App nicht zuordnen konnte} other{{count} Ordner enthalten Audio, das die App nicht zuordnen konnte}}",
+  "@existingDownloadsUnrecognized": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "tipsAndHiddenFeatures": "Tipps & versteckte Funktionen",
   "tipsSubtitle": "Hol das Beste aus Absorb heraus",
   "adminTitle": "Server-Admin",

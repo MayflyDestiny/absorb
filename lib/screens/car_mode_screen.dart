@@ -359,6 +359,7 @@ class _CarModeScreenState extends State<CarModeScreen>
                                                 errorBuilder: (_, __, ___) => _placeholderCover(cs))
                                             : CachedNetworkImage(
                                                 imageUrl: coverUrl,
+                                                useOldImageOnUrlChange: true,
                                                 fit: BoxFit.cover,
                                                 httpHeaders: auth.apiService?.mediaHeaders ?? {},
                                                 errorWidget: (_, __, ___) => _placeholderCover(cs),

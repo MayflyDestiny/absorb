@@ -881,6 +881,7 @@ class _StatsScreenState extends State<StatsScreen>
               borderRadius: BorderRadius.circular(6),
               child: CachedNetworkImage(
                 imageUrl: api.getCoverUrl(coverIds[i], width: 120),
+                useOldImageOnUrlChange: true,
                 width: 64,
                 height: 64,
                 fit: BoxFit.cover,
@@ -2363,6 +2364,7 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
                         child: coverUrl != null
                             ? CachedNetworkImage(
                                 imageUrl: coverUrl,
+                                useOldImageOnUrlChange: true,
                                 fit: BoxFit.cover,
                                 errorWidget: (_, __, ___) => Icon(
                                     Icons.menu_book_rounded,

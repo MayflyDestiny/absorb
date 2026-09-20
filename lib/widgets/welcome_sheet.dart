@@ -9,6 +9,10 @@ import '../l10n/app_localizations.dart';
 class WelcomeSheet {
   static const _prefKey = 'has_seen_welcome';
 
+  /// Shows a one-time welcome dialog. The future only completes once the dialog
+  /// is dismissed (or immediately when it's already been seen) - so callers can
+  /// chain follow-up on-boarding (e.g. the download-location prompt) without
+  /// stacking dialogs on top of each other.
   static Future<void> showIfNeeded(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_prefKey) == true) return;
@@ -17,7 +21,7 @@ class WelcomeSheet {
     // Small delay so the app finishes its initial layout first
     await Future.delayed(const Duration(milliseconds: 800));
     if (!context.mounted) return;
-    showDialog<void>(
+    await showDialog<void>(
       context: context,
       builder: (_) => const _WelcomeDialog(),
     );

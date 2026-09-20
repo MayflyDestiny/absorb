@@ -1235,6 +1235,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                       child: coverUrl.isNotEmpty
                           ? CachedNetworkImage(
                               imageUrl: coverUrl, fit: BoxFit.cover,
+                              useOldImageOnUrlChange: true,
                               placeholder: (_, __) => _placeholder(cs),
                               errorWidget: (_, __, ___) => _placeholder(cs))
                           : _placeholder(cs),
@@ -1450,6 +1451,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                       child: coverUrl.isNotEmpty
                           ? CachedNetworkImage(
                               imageUrl: coverUrl, fit: BoxFit.cover,
+                              useOldImageOnUrlChange: true,
                               placeholder: (_, __) => _placeholder(cs),
                               errorWidget: (_, __, ___) => _placeholder(cs))
                           : _placeholder(cs),
@@ -1674,6 +1676,7 @@ class _RemovedBooksSheetState extends State<_RemovedBooksSheet> {
                                 child: coverUrl.isNotEmpty
                                     ? CachedNetworkImage(
                                         imageUrl: coverUrl, fit: BoxFit.cover,
+                                        useOldImageOnUrlChange: true,
                                         errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest))
                                     : Container(color: cs.surfaceContainerHighest),
                               ),

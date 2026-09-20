@@ -833,6 +833,7 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
             child: RepaintBoundary(
               child: CachedNetworkImage(
                 imageUrl: coverUrl, fit: BoxFit.cover,
+                useOldImageOnUrlChange: true,
                 httpHeaders: lib.mediaHeaders,
                 imageBuilder: (_, p) => ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),

@@ -2132,6 +2132,21 @@ class AppLocalizationsJa extends AppLocalizations {
   String get streamingCacheCleared => 'Streaming cache cleared';
 
   @override
+  String get appCache => 'App data cache';
+
+  @override
+  String appCacheHint(String size) {
+    return '$size of cached shelves, grids and progress snapshots. They re-download as you use the app.';
+  }
+
+  @override
+  String get appCacheConfirm =>
+      'Delete all cached shelves, grids and progress snapshots? They re-download automatically as you use the app.';
+
+  @override
+  String get appCacheCleared => 'App data cache cleared';
+
+  @override
   String get sectionLibrary => 'Library';
 
   @override
@@ -2651,6 +2666,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chooseDownloadFolder => 'Choose download folder';
 
   @override
+  String get downloadLocationPromptTitle => 'Choose where downloads are saved';
+
+  @override
+  String get downloadLocationPromptBody =>
+      'Downloads are stored in the app\'s private storage by default. Clearing app data or uninstalling the app deletes them.\n\nPick a public folder (like your Downloads directory) instead, so your downloads survive even if app data is cleared.';
+
+  @override
+  String get keepDefaultDownloadLocation => 'Keep default';
+
+  @override
   String get storagePermissionDenied =>
       'Storage permission permanently denied - enable it in app settings';
 
@@ -2697,6 +2722,80 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get dismiss => 'Dismiss';
+
+  @override
+  String migrateDownloadsToFolder(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Move $count existing downloads to the new folder?',
+      one: 'Move 1 existing download to the new folder?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrateDownloadsToInternal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Move $count existing downloads back to internal storage?',
+      one: 'Move 1 existing download back to internal storage?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get keepDownloadsInPlace => 'Don\'t migrate';
+
+  @override
+  String get moveDownloads => 'Migrate';
+
+  @override
+  String get migrateDownloadsTitle => 'Move downloaded content?';
+
+  @override
+  String get migrateDownloadsHint =>
+      'Moving keeps your existing downloads available in the new location, so they keep playing from there. If you don\'t move them, existing downloads stay where they are and only new downloads use the new location.';
+
+  @override
+  String get migratingDownloads => 'Moving downloads…';
+
+  @override
+  String migrateCompleted(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Moved $count downloads',
+      one: 'Moved 1 download',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get existingDownloadsFoundTitle => 'Existing downloads found';
+
+  @override
+  String existingDownloadsRecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count previously downloaded books were restored',
+      one: '1 previously downloaded book was restored',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String existingDownloadsUnrecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count folders have audio the app couldn\'t identify',
+      one: '1 folder has audio the app couldn\'t identify',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get tipsAndHiddenFeatures => 'Tips & Hidden Features';

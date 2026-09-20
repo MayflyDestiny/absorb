@@ -1297,6 +1297,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
                 width: 60, height: 60,
                 child: cover.isNotEmpty
                     ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover,
+                        useOldImageOnUrlChange: true,
                         placeholder: (_, __) => _placeholder(cs),
                         errorWidget: (_, __, ___) => _placeholder(cs))
                     : _placeholder(cs),
@@ -1537,6 +1538,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
                   height: 200,
                   child: CachedNetworkImage(
                     imageUrl: coverUrl,
+                    useOldImageOnUrlChange: true,
                     httpHeaders: context.read<AuthProvider>().apiService?.mediaHeaders,
                     fit: BoxFit.contain,
                     errorWidget: (_, __, ___) => _placeholder(cs),
@@ -1674,6 +1676,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
                         clipBehavior: Clip.antiAlias,
                         child: CachedNetworkImage(
                           imageUrl: url,
+                          useOldImageOnUrlChange: true,
                           fit: BoxFit.contain,
                           placeholder: (_, __) => _placeholder(cs),
                           errorWidget: (_, __, ___) => _placeholder(cs),
@@ -1800,6 +1803,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
                   child: InteractiveViewer(
                     child: CachedNetworkImage(
                       imageUrl: url,
+                      useOldImageOnUrlChange: true,
                       fit: BoxFit.contain,
                       placeholder: (_, __) => const SizedBox(
                           height: 200, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),

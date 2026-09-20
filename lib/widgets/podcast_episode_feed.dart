@@ -436,6 +436,7 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
             )
           : CachedNetworkImage(
               imageUrl: url,
+              useOldImageOnUrlChange: true,
               httpHeaders: lib.mediaHeaders,
               width: 48,
               height: 48,

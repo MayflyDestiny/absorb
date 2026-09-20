@@ -1041,6 +1041,17 @@
   },
   "clearCache": "Effacer le cache",
   "streamingCacheCleared": "Cache de diffusion vidé",
+  "appCache": "Cache des données de l'app",
+  "appCacheHint": "{size} d'étagères, de grilles et d'instantanés de progression en cache. Ils sont re-téléchargés à l'utilisation.",
+  "@appCacheHint": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appCacheConfirm": "Supprimer toutes les étagères, grilles et instantanés de progression en cache ? Ils seront re-téléchargés automatiquement à l'utilisation.",
+  "appCacheCleared": "Cache des données de l'app vidé",
   "sectionLibrary": "Bibliothèque",
   "hideEbookOnlyTitles": "Masquer les titres des ebooks seuls",
   "hideEbookOnlyOnSubtitle": "Les livres sans fichiers audio sont cachés",
@@ -1300,6 +1311,9 @@
   "existingDownloadsWarning": "Les téléchargements existants restent à leur emplacement actuel. Seuls les nouveaux téléchargements utilisent le nouveau chemin.",
   "chooseFolder": "Choisir un dossier",
   "chooseDownloadFolder": "Choisir le dossier de téléchargement",
+  "downloadLocationPromptTitle": "Choisir l'emplacement des téléchargements",
+  "downloadLocationPromptBody": "Les téléchargements sont stockés par défaut dans l'espace privé de l'application. Effacer les données de l'application ou la désinstaller les supprime.\n\nChoisissez plutôt un dossier public (comme votre dossier Téléchargements) pour que vos téléchargements restent accessibles même si les données de l'application sont effacées.",
+  "keepDefaultDownloadLocation": "Conserver par défaut",
   "storagePermissionDenied": "Autorisation d'accès au stockage définitivement refusée - activez-la dans les paramètres de l'application",
   "openSettings": "Ouvrir les paramètres",
   "storagePermissionRequired": "L'autorisation de stockage est requise pour les emplacements de téléchargement personnalisés",
@@ -1325,6 +1339,45 @@
   "redownload": "Re-télécharger",
   "redownloadStarted": "Re-téléchargement",
   "dismiss": "Ignorer",
+  "migrateDownloadsToFolder": "{count, plural, =1{Déplacer 1 téléchargement existant vers le nouveau dossier ?} other{Déplacer {count} téléchargements existants vers le nouveau dossier ?}}",
+  "@migrateDownloadsToFolder": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrateDownloadsToInternal": "{count, plural, =1{Déplacer 1 téléchargement existant vers le stockage interne ?} other{Déplacer {count} téléchargements existants vers le stockage interne ?}}",
+  "@migrateDownloadsToInternal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "keepDownloadsInPlace": "Ne pas déplacer",
+  "moveDownloads": "Déplacer",
+  "migrateDownloadsTitle": "Déplacer le contenu téléchargé ?",
+  "migrateDownloadsHint": "Déplacer vos téléchargements les garde disponibles et lisibles depuis le nouvel emplacement. Si vous ne les déplacez pas, ils restent à leur place et seuls les nouveaux téléchargements utiliseront le nouvel emplacement.",
+  "migratingDownloads": "Déplacement des téléchargements…",
+  "migrateCompleted": "{count, plural, =1{1 téléchargement déplacé} other{{count} téléchargements déplacés}}",
+  "existingDownloadsFoundTitle": "Téléchargements existants trouvés",
+  "existingDownloadsRecognized": "{count, plural, =1{1 livre précédemment téléchargé a été restauré} other{{count} livres précédemment téléchargés ont été restaurés}}",
+  "@existingDownloadsRecognized": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "existingDownloadsUnrecognized": "{count, plural, =1{1 dossier contient de l'audio que l'application n'a pas pu identifier} other{{count} dossiers contiennent de l'audio que l'application n'a pas pu identifier}}",
+  "@existingDownloadsUnrecognized": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "tipsAndHiddenFeatures": "Astuces & fonctionnalités cachées",
   "tipsSubtitle": "Tirez le maximum de Absorb",
   "adminTitle": "Administrateur du serveur",

@@ -6,6 +6,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileInputStream
@@ -36,6 +37,13 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceActivity() {
     private val TAG = "AbsorbEQ"
     private val CHANNEL = "com.absorb.equalizer"
+
+    // Marker file name stored inside each SAF book folder at download/migrate
+    // time. A scan reads it to identify previously downloaded books without
+    // opening any audio bytes.
+    companion object {
+        private const val ABSORB_MARKER = ".absorb"
+    }
 
     // Ebook reader: volume keys turn pages while watching is on. The keys are
     // consumed here so system volume doesn't change.
@@ -192,6 +200,9 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                     "moveBookToSaf" -> handleMoveBookToSaf(call, result)
+                    "migrateBook" -> handleMigrateBook(call, result)
+                    "scanSafDirectory" -> handleScanSafDirectory(call, result)
+                    "checkSafFiles" -> handleCheckSafFiles(call, result)
                     else -> result.notImplemented()
                 }
             }
@@ -295,12 +306,15 @@ class MainActivity : AudioServiceActivity() {
     // Move downloaded temp files into the user's SAF folder, creating the nested
     // [subfolder] (e.g. "Author/Title") under the granted tree via the DocumentFile
     // chain so files nest correctly and stay readable through the original grant.
-    // The byte copy runs off the main thread.
+    // The byte copy runs off the main thread. A tiny marker file ([marker], a
+    // JSON string) is written into the book folder so a later scan can identify
+    // who downloaded these files without opening any audio.
     private fun handleMoveBookToSaf(call: MethodCall, result: MethodChannel.Result) {
         val treeUri = call.argument<String>("treeUri")
         val subfolder = call.argument<String>("subfolder") ?: ""
         val filenames = call.argument<List<String>>("filenames")
         val tempPaths = call.argument<List<String>>("tempPaths")
+        val marker = call.argument<String>("marker")
         if (treeUri == null || filenames == null || tempPaths == null || filenames.size != tempPaths.size) {
             result.error("SAF_ARGS", "Invalid arguments", null)
             return
@@ -338,11 +352,248 @@ class MainActivity : AudioServiceActivity() {
                 // Only remove the internal copies once every file moved, so a
                 // mid-way failure leaves the internal download intact to fall back on.
                 temps.forEach { it.delete() }
+                // Identification marker so a folder scan can tell who owns these
+                // files. Best-effort: a read-only / stale marker never blocks a move.
+                if (!marker.isNullOrBlank()) {
+                    dir.findFile(ABSORB_MARKER)?.delete()
+                    val m = dir.createFile("application/octet-stream", ABSORB_MARKER)
+                    m?.let { doc ->
+                        contentResolver.openOutputStream(doc.uri)?.use { it.write(marker!!.toByteArray()) }
+                    }
+                }
                 val dirUri = dir.uri.toString()
                 runOnUiThread { result.success(mapOf("dirUri" to dirUri, "fileUris" to fileUris)) }
             } catch (e: Exception) {
                 Log.e(TAG, "moveBookToSaf failed: ${e.message}", e)
                 runOnUiThread { result.error("SAF_MOVE_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Move an already-completed download to a new location. Sources may be
+    // internal file paths or content:// URIs (a download already stored in a
+    // SAF folder); the destinations are either a SAF tree (with [subfolder]
+    // nesting under the granted folder) or an internal directory. Bytes are
+    // copied cross-thread and the sources are only deleted after every file
+    // landed successfully, so a mid-way failure leaves the original intact.
+    private fun handleMigrateBook(call: MethodCall, result: MethodChannel.Result) {
+        val sources = call.argument<List<String>>("sources")
+        val filenames = call.argument<List<String>>("filenames")
+        val subfolder = call.argument<String>("subfolder") ?: ""
+        val treeUri = call.argument<String>("treeUri") // SAF destination
+        val targetDir = call.argument<String>("targetDir") // internal destination
+        val marker = call.argument<String>("marker")
+        if (sources == null || filenames == null || sources.isEmpty() || sources.size != filenames.size) {
+            result.error("MIGRATE_ARGS", "Invalid arguments", null)
+            return
+        }
+        if (treeUri == null && targetDir == null) {
+            result.error("MIGRATE_ARGS", "No destination given", null)
+            return
+        }
+        Thread {
+            try {
+                val fileUris = ArrayList<String>()
+                val filePaths = ArrayList<String>()
+                var dirUri: String? = null
+                var dirPath: String? = null
+                // Open the destination: a SAF folder chain, or a plain
+                // internal directory.
+                var safDir: DocumentFile? = null
+                var intDir: File? = null
+                if (treeUri != null) {
+                    val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
+                        ?: throw IllegalStateException("Download folder not accessible")
+                    var dir = tree
+                    for (segment in subfolder.split('/').filter { it.isNotBlank() }) {
+                        val existing = dir.findFile(segment)
+                        dir = if (existing != null && existing.isDirectory) existing
+                            else (dir.createDirectory(segment)
+                                ?: throw IllegalStateException("Could not create folder: $segment"))
+                    }
+                    safDir = dir
+                } else if (targetDir != null) {
+                    val dir = File(targetDir)
+                    if (!dir.exists() && !dir.mkdirs()) {
+                        throw IllegalStateException("Could not create folder: $targetDir")
+                    }
+                    intDir = dir
+                }
+                for (i in sources.indices) {
+                    // Prefer the real display name from the source (content URIs
+                    // hide the filename), falling back to the caller's list.
+                    var name: String? = null
+                    val src = sources[i]
+                    if (src.startsWith("content://")) {
+                        try {
+                            contentResolver.query(Uri.parse(src), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                                if (c.moveToFirst()) {
+                                    name = c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    } else {
+                        name = File(src).name
+                    }
+                    if (name.isNullOrEmpty() || name == "null") name = filenames[i]
+                    val fileName = name ?: filenames[i]
+                    val input = if (src.startsWith("content://")) {
+                        contentResolver.openInputStream(Uri.parse(src))
+                            ?: throw IllegalStateException("Could not open source: $fileName")
+                    } else {
+                        val f = File(src)
+                        if (!f.exists()) throw IllegalStateException("Missing source file: $src")
+                        FileInputStream(f)
+                    }
+                    if (safDir != null) {
+                        safDir.findFile(fileName)?.delete()
+                        val doc = safDir.createFile("application/octet-stream", fileName)
+                            ?: throw IllegalStateException("Could not create file: $fileName")
+                        contentResolver.openOutputStream(doc.uri)?.use { output ->
+                            input.use { it.copyTo(output, 64 * 1024) }
+                        } ?: throw IllegalStateException("Could not write: $fileName")
+                        fileUris.add(doc.uri.toString())
+                    } else {
+                        val dst = File(intDir!!, fileName)
+                        dst.outputStream().use { output ->
+                            input.use { it.copyTo(output, 64 * 1024) }
+                        }
+                        filePaths.add(dst.absolutePath)
+                    }
+                }
+                dirUri = safDir?.uri?.toString()
+                dirPath = intDir?.absolutePath
+                // Write the identification marker into a SAF destination so a
+                // later scan still recognizes the book after migration.
+                if (safDir != null && !marker.isNullOrBlank()) {
+                    safDir.findFile(ABSORB_MARKER)?.delete()
+                    val m = safDir.createFile("application/octet-stream", ABSORB_MARKER)
+                    m?.let { doc ->
+                        contentResolver.openOutputStream(doc.uri)?.use { it.write(marker!!.toByteArray()) }
+                    }
+                }
+                // Only remove the old files once every copy succeeded.
+                for (src in sources) {
+                    if (src.startsWith("content://")) {
+                        try { contentResolver.delete(Uri.parse(src), null, null) } catch (_: Exception) {}
+                    } else {
+                        try { File(src).delete() } catch (_: Exception) {}
+                    }
+                }
+                runOnUiThread { result.success(mapOf(
+                    "dirUri" to dirUri, "fileUris" to fileUris,
+                    "dirPath" to dirPath, "filePaths" to filePaths)) }
+            } catch (e: Exception) {
+                Log.e(TAG, "migrateBook failed: ${e.message}", e)
+                runOnUiThread { result.error("MIGRATE_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Light-weight scan of a SAF download folder: walks at most three levels
+    // (root -> Author -> Title), reads only the tiny .absorb marker files, never
+    // the audio bytes, and returns each book folder whose marker exists plus a
+    // count of audio-bearing folders without a marker (likely foreign files).
+    // Runs off the main thread and is only triggered once when the user picks a
+    // folder, so per-build cost stays negligible.
+    private fun handleScanSafDirectory(call: MethodCall, result: MethodChannel.Result) {
+        val treeUri = call.argument<String>("treeUri")
+        if (treeUri == null) {
+            result.error("SCAN_ARGS", "treeUri is required", null)
+            return
+        }
+        Thread {
+            try {
+                val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
+                    ?: throw IllegalStateException("Download folder not accessible")
+                val audioExts = setOf(
+                    "mp3", "m4a", "m4b", "m4p", "m4v", "flac", "aac",
+                    "ogg", "oga", "opus", "wav", "amr", "mka")
+                val known = ArrayList<Map<String, Any?>>()
+                var unknownCount = 0
+
+                fun walk(dir: DocumentFile, depth: Int) {
+                    if (depth > 2) return
+                    for (child in dir.listFiles()) {
+                        if (!child.isDirectory) continue
+                        val marker = child.findFile(ABSORB_MARKER)
+                        if (marker != null && marker.isFile) {
+                            val content = try {
+                                contentResolver.openInputStream(marker.uri)
+                                    ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                            } catch (e: Exception) { null }
+                            if (content != null && content.isNotBlank()) {
+                                val fileUris = ArrayList<String>()
+                                val fileNames = ArrayList<String>()
+                                for (f in child.listFiles()) {
+                                    if (!f.isFile || f.name == ABSORB_MARKER) continue
+                                    val ext = (f.name ?: "").substringAfterLast('.', "").lowercase()
+                                    if (audioExts.contains(ext)) {
+                                        fileUris.add(f.uri.toString())
+                                        fileNames.add(f.name ?: "")
+                                    }
+                                }
+                                known.add(mapOf(
+                                    "dirUri" to child.uri.toString(),
+                                    "marker" to content,
+                                    "fileUris" to fileUris,
+                                    "fileNames" to fileNames,
+                                ))
+                            } else {
+                                // Marker present but unreadable/corrupt: still an
+                                // Absorb book folder, but treat as unidentified.
+                                unknownCount++
+                            }
+                        } else {
+                            // No marker here: might be an Author dir holding book
+                            // subdirs, or an unidentified leaf. Recurse, then count
+                            // this folder as unidentified only if it holds audio.
+                            walk(child, depth + 1)
+                            var hasAudio = false
+                            for (f in child.listFiles()) {
+                                if (f.isFile) {
+                                    val ext = (f.name ?: "").substringAfterLast('.', "").lowercase()
+                                    if (audioExts.contains(ext)) { hasAudio = true; break }
+                                }
+                            }
+                            if (hasAudio) unknownCount++
+                        }
+                    }
+                }
+
+                walk(tree, 0)
+                runOnUiThread {
+                    result.success(mapOf("known" to known, "unknownCount" to unknownCount))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "scanSafDirectory failed: ${e.message}", e)
+                runOnUiThread { result.error("SCAN_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Batch existence check for SAF content URIs. The download registry cannot
+    // stat content:// URIs from Dart, so native probes each one cheaply via
+    // DocumentsContract without opening audio bytes. Runs off the main thread.
+    private fun handleCheckSafFiles(call: MethodCall, result: MethodChannel.Result) {
+        val uris = call.argument<List<String>>("uris") ?: emptyList()
+        Thread {
+            try {
+                val exists = HashMap<String, Boolean>()
+                for (u in uris) {
+                    val ok = try {
+                        Uri.parse(u).let { uri ->
+                            contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                        }
+                    } catch (e: Exception) {
+                        false
+                    }
+                    exists[u] = ok
+                }
+                runOnUiThread { result.success(exists) }
+            } catch (e: Exception) {
+                Log.e(TAG, "checkSafFiles failed: ${e.message}", e)
+                runOnUiThread { result.error("CHECK_ERROR", e.message, null) }
             }
         }.start()
     }

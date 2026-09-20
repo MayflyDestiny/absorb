@@ -191,6 +191,10 @@ class LibraryProvider extends ChangeNotifier
         if (accountLoadGeneration != _accountLoadGeneration) return;
         debugPrint(
             '[Library] restoreOfflineMode done, serverReachable=${auth.serverReachable} api=${_api != null} offline=$isOffline');
+        if (!_payloadCachePrunedThisSession) {
+          _payloadCachePrunedThisSession = true;
+          unawaited(JsonFileCache.clearOlderThan(const Duration(days: 7)));
+        }
         _startConnectivityMonitoring();
         await _loadManualAbsorbing();
         await _loadRollingDownloadSeries();
@@ -228,22 +232,7 @@ class LibraryProvider extends ChangeNotifier
         }
         if (auth.serverUrl != null && auth.token != null) {
           final socket = SocketService();
-          socket.onProgressUpdated = _onRemoteProgressUpdated;
-          socket.onAuthenticated = _catchUpRemoteProgress;
-          socket.onItemUpdated = _onRemoteItemUpdated;
-          socket.onItemRemoved = _onRemoteItemRemoved;
-          socket.onSeriesUpdated = _onRemoteSeriesUpdated;
-          socket.onCollectionUpdated = _onRemoteCollectionUpdated;
-          socket.onPlaylistUpdated = _onRemotePlaylistUpdated;
-          socket.onUserUpdated = _onRemoteUserUpdated;
-          socket.onReconnectFailed = _onSocketReconnectFailed;
-          socket.onEncodeFinished = _onEncodeFinished;
-          socket.onEreaderDevicesUpdated = (devices) {
-            // Admin broadcasts deliver the FULL unfiltered list; the per-user
-            // emit is already filtered. Run the same filter here either way -
-            // it's a no-op on an already-filtered list.
-            auth.setEreaderDevices(auth.filterDevicesForCurrentUser(devices));
-          };
+          _wireSocketCallbacks();
           socket.connect(auth.serverUrl!, auth.token!, customHeaders: auth.customHeaders);
         }
         debugPrint('[Library] Calling loadLibraries()');

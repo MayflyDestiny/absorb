@@ -324,6 +324,59 @@ String? _stripLibraryItem(String? sessionJson) {
   return sessionJson;
 }
 
+/// Compact a persisted session down to the fields offline playback actually
+/// reads, so the `.absorb` marker stays tiny: per track only index/duration/
+/// title/mimeType and the original filename survive; server-only URL fields and
+/// the bulky track objects are dropped.
+String? _compactMarkerSession(String? sessionJson) {
+  if (sessionJson == null) return null;
+  try {
+    final session = jsonDecode(sessionJson) as Map<String, dynamic>;
+    final tracks = (session['audioTracks'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    if (tracks.isEmpty) return sessionJson;
+    session['audioTracks'] = [
+      for (final t in tracks)
+        () {
+          final trimmed = <String, dynamic>{
+            'index': t['index'],
+            'duration': t['duration'],
+            'title': t['title'],
+          };
+          if (t['mimeType'] != null) trimmed['mimeType'] = t['mimeType'];
+          final trackMeta = t['metadata'];
+          if (trackMeta is Map && trackMeta['filename'] != null) {
+            trimmed['metadata'] = {'filename': trackMeta['filename']};
+          }
+          return trimmed;
+        }(),
+    ];
+    return jsonEncode(session);
+  } catch (_) {
+    return sessionJson;
+  }
+}
+
+/// Encode a marker payload so it stays small and ASCII-safe on disk:
+/// gzip + base64 with a `gz1:` prefix (old plain-JSON markers remain parseable).
+String _encodeMarker(String json) =>
+    'gz1:${base64Encode(gzip.encode(utf8.encode(json)))}';
+
+/// Decode a marker written by [_encodeMarker], falling back to plain JSON for
+/// legacy markers. Returns null when a gzipped marker fails to decode.
+String? _decodeMarker(String content) {
+  if (content.startsWith('gz1:')) {
+    try {
+      return utf8.decode(gzip.decode(base64Decode(content.substring(4))));
+    } catch (_) {
+      return null;
+    }
+  }
+  return content;
+}
+
 /// Sanitize a string for use as a filesystem directory/file name.
 String _sanitizePath(String name) {
   // Replace filesystem-illegal characters with underscore
@@ -335,6 +388,41 @@ String _sanitizePath(String name) {
   // Limit length to avoid filesystem issues
   if (s.length > 100) s = s.substring(0, 100).trim();
   return s;
+}
+
+/// Check whether [dirUri] (a SAF document URI for a nested folder) lies inside
+/// the tree granted by [treeUri]. Both share the same authority and the
+/// decoded document id either equals the tree id or starts with it plus a
+/// separator (the id encodes `/` as `%2F`, so compare after decoding).
+bool _sameSafTree(String treeUri, String dirUri) {
+  if (dirUri.isEmpty) return false;
+  Uri? tree;
+  Uri? dir;
+  try {
+    tree = Uri.parse(treeUri);
+    dir = Uri.parse(dirUri);
+  } catch (_) {
+    return false;
+  }
+  if (tree.authority != dir.authority) return false;
+  String? treeId;
+  String? docId;
+  final tSegs = tree.pathSegments;
+  final dSegs = dir.pathSegments;
+  for (var i = 0; i < tSegs.length - 1; i++) {
+    if (tSegs[i] == 'tree') {
+      treeId = Uri.decodeComponent(tSegs[i + 1]);
+      break;
+    }
+  }
+  for (var i = 0; i < dSegs.length - 1; i++) {
+    if (dSegs[i] == 'document') {
+      docId = Uri.decodeComponent(dSegs[i + 1]);
+      break;
+    }
+  }
+  if (treeId == null || docId == null) return false;
+  return docId == treeId || docId.startsWith('$treeId/');
 }
 
 class DownloadService extends ChangeNotifier {
@@ -469,6 +557,225 @@ class DownloadService extends ChangeNotifier {
       await prefs.remove('custom_download_uri');
     }
     notifyListeners();
+  }
+
+  /// Whether the one-time "pick a public download folder" first-run prompt
+  /// should show: Android only, never set a custom folder, and not dismissed
+  /// before. The prompt guides new users out of the app-private storage where
+  /// clearing app data deletes their downloads.
+  static const _locationPromptSeenKey = 'download_location_prompt_seen';
+
+  Future<bool> shouldShowFirstRunLocationPrompt() async {
+    if (!Platform.isAndroid) return false;
+    if (_customDownloadUri != null && _customDownloadUri!.isNotEmpty) {
+      return false;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_locationPromptSeenKey) != true;
+  }
+
+  /// Persist that the first-run location prompt was shown/dismissed.
+  Future<void> markFirstRunLocationPromptSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_locationPromptSeenKey, true);
+  }
+
+  /// Move every completed download to a new location.
+  ///
+  /// [treeUri] non-null: files move into that SAF folder under
+  /// "Author/Title" (matching where new downloads land). [treeUri] null: files
+  /// move back to the internal default storage. Sources may be internal file
+  /// paths or existing content:// URIs, so internal→SAF, SAF→SAF and SAF→
+  /// internal migrations all work. Returns how many downloads were moved.
+  Future<int> migrateAllDownloads({String? treeUri}) async {
+    if (!Platform.isAndroid) return 0;
+    var migrated = 0;
+    final items =
+        _downloads.values.where((d) => d.status == DownloadStatus.downloaded).toList();
+    for (final info in items) {
+      if (info.localPaths.isEmpty) continue;
+      if (await _migrateOneDownload(info, treeUri)) migrated++;
+    }
+    if (migrated > 0) notifyListeners();
+    return migrated;
+  }
+
+  /// Scan a SAF download folder for previously downloaded books and register
+  /// those the app recognizes (via the `.absorb` marker written at download /
+  /// migrate time) back into the downloads registry, so they show as downloaded
+  /// and stay playable offline. Folders with audio files but no marker are only
+  /// counted, never registered. A one-off, dependency-free walk: the native side
+  /// reads only the small marker files, never the audio bytes, and it only runs
+  /// when the user picks a folder. Returns how many books were recognized and
+  /// how many audio-bearing folders had no marker.
+  Future<({int recognized, int unknown})> scanAndRegisterExistingDownloads(
+      String treeUri) async {
+    if (!Platform.isAndroid) return (recognized: 0, unknown: 0);
+    Map? res;
+    try {
+      res = await _storageChannel.invokeMethod<Map>('scanSafDirectory', {
+        'treeUri': treeUri,
+      });
+    } catch (e) {
+      debugPrint('[Download] scanSafDirectory failed: $e');
+      return (recognized: 0, unknown: 0);
+    }
+    final known = (res?['known'] as List<dynamic>?) ?? const <dynamic>[];
+    var recognized = 0;
+    final alreadySeen = <String>{};
+    for (final entry in known.cast<Map>()) {
+      final dirUri = entry['dirUri'] as String?;
+      final marker = entry['marker'] as String?;
+      final fileUris = (entry['fileUris'] as List<dynamic>?)?.cast<String>() ?? const [];
+      if (dirUri == null || marker == null || marker.isEmpty || fileUris.isEmpty) {
+        continue;
+      }
+      try {
+        final decoded = _decodeMarker(marker);
+        if (decoded == null) continue;
+        final m = jsonDecode(decoded) as Map<String, dynamic>;
+        final itemId = m['itemId'] as String?;
+        if (itemId == null || itemId.isEmpty) continue;
+        // Prefer the marker's title/author/session; use the current registry
+        // entry when this book is already known (fresh download metadata).
+        final existing = _downloads[itemId];
+        final session = (m['session'] as String?) ?? existing?.sessionData;
+        final title = (m['title'] as String?) ?? existing?.title;
+        final author = (m['author'] as String?) ?? existing?.author;
+        if (alreadySeen.contains(itemId)) continue;
+        alreadySeen.add(itemId);
+        _downloads[itemId] = DownloadInfo(
+          itemId: itemId,
+          status: DownloadStatus.downloaded,
+          localPaths: fileUris,
+          sessionData: session,
+          title: title,
+          author: author,
+          coverUrl: m['coverUrl'] as String? ?? existing?.coverUrl,
+          localCoverPath: existing?.localCoverPath,
+          localDirPath: dirUri,
+          libraryId: m['libraryId'] as String? ?? existing?.libraryId,
+        );
+        recognized++;
+      } catch (e) {
+        debugPrint('[Download] scan entry failed: $e');
+      }
+    }
+    if (recognized > 0) {
+      await _save();
+      notifyListeners();
+    }
+    final unknown = (res?['unknownCount'] as num?)?.toInt() ?? 0;
+    return (recognized: recognized, unknown: unknown);
+  }
+
+  Future<bool> _migrateOneDownload(DownloadInfo info, String? treeUri) async {
+    final sources = info.localPaths;
+
+    // Skip items that already live at the destination: internal downloads when
+    // reverting to default, and SAF downloads already inside the target tree
+    // (moving a folder onto itself would delete the files).
+    if (treeUri == null) {
+      if (sources.every((s) => !isContentUri(s))) return true;
+    } else if (sources.every(isContentUri) &&
+        _sameSafTree(treeUri, info.localDirPath ?? '')) {
+      return true;
+    }
+
+    // Nested target folder, using the same layout the downloader produces.
+    final title = info.title ?? info.itemId;
+    final nestedName = (info.author != null && info.author!.isNotEmpty)
+        ? '${_sanitizePath(info.author!)}/${_sanitizePath(title)}'
+        : _sanitizePath(title);
+
+    // Filename fallbacks. Internal paths keep their basename; the native side
+    // prefers the real display name from content URIs, so these only matter if
+    // that lookup fails.
+    final filenames = <String>[];
+    for (var i = 0; i < sources.length; i++) {
+      if (!isContentUri(sources[i])) {
+        filenames.add(sources[i].split(RegExp(r'[\\/]')).last);
+      } else {
+        filenames.add(_migrationFallbackName(info, i));
+      }
+    }
+
+    final String? targetDir;
+    if (treeUri == null) {
+      final base = await downloadBasePath;
+      targetDir = '$base/$nestedName';
+    } else {
+      targetDir = null;
+    }
+
+    try {
+      // Carry a marker into a SAF destination so a later scan still recognizes
+      // the moved book; internal destinations don't need one. The marker
+      // includes the persisted session so a scan can restore the book offline.
+      final marker = treeUri != null
+          ? _encodeMarker(jsonEncode({
+              'itemId': info.itemId,
+              'title': info.title ?? info.itemId,
+              'author': info.author,
+              'libraryId': info.libraryId,
+              'coverUrl': info.coverUrl,
+              'session': _compactMarkerSession(info.sessionData),
+            }))
+          : null;
+      final res = await _storageChannel.invokeMethod<Map>('migrateBook', {
+        'sources': sources,
+        'filenames': filenames,
+        'subfolder': nestedName,
+        'treeUri': treeUri,
+        'targetDir': targetDir,
+        if (marker != null) 'marker': marker,
+      });
+      final newPaths = treeUri != null
+          ? (res?['fileUris'] as List?)?.map((e) => e as String).toList()
+          : (res?['filePaths'] as List?)?.map((e) => e as String).toList();
+      final newDir = treeUri != null
+          ? (res?['dirUri'] as String?)
+          : (res?['dirPath'] as String?);
+      if (newPaths == null || newPaths.length != sources.length || newDir == null) {
+        debugPrint('[Download] migrate "$title": result missing files, keeping source');
+        return false;
+      }
+
+      _downloads[info.itemId] = DownloadInfo(
+        itemId: info.itemId,
+        status: DownloadStatus.downloaded,
+        localPaths: newPaths,
+        sessionData: info.sessionData,
+        title: info.title,
+        author: info.author,
+        coverUrl: info.coverUrl,
+        localCoverPath: info.localCoverPath,
+        localDirPath: newDir,
+        libraryId: info.libraryId,
+      );
+      await _save();
+      debugPrint('[Download] migrated "$title" (${sources.length} files)');
+      return true;
+    } catch (e) {
+      debugPrint('[Download] migrate "$title" failed: $e');
+      return false;
+    }
+  }
+
+  /// Best-effort filename for a content:// source when the native display-name
+  /// lookup fails. Uses the track's original filename when stored, else a
+  /// generic per-track name.
+  String _migrationFallbackName(DownloadInfo info, int i) {
+    if (info.sessionData != null) {
+      try {
+        final s = jsonDecode(info.sessionData!) as Map<String, dynamic>;
+        final tracks = (s['audioTracks'] as List<dynamic>?) ?? const [];
+        if (i < tracks.length && tracks[i] is Map<String, dynamic>) {
+          return _trackFileName(tracks[i] as Map<String, dynamic>, i);
+        }
+      } catch (_) {}
+    }
+    return 'track_${i.toString().padLeft(3, '0')}.mp3';
   }
 
   /// Get a human-readable label for the current download location.
@@ -762,7 +1069,7 @@ class DownloadService extends ChangeNotifier {
     notifyListeners();
 
     // Validate files and clean up orphans in background after startup
-    _validateDownloads();
+    validateDownloads();
   }
 
   void _startReconciler() {
@@ -1145,31 +1452,91 @@ class DownloadService extends ChangeNotifier {
   }
 
   /// Validate that downloaded files still exist on disk and clean up orphans.
-  /// Runs in background so it doesn't block app startup.
-  Future<void> _validateDownloads() async {
+  /// Runs in background so it doesn't block app startup. Also probes SAF
+  /// content:// URIs through the native side (Dart can't stat them) in batched
+  /// calls, so files deleted externally disappear from the downloads registry.
+  /// Re-entrant calls coalesce onto the in-flight run instead of duplicating it.
+  Future<void>? _runningValidate;
+  Future<void> validateDownloads() {
+    return _runningValidate ??= _validateDownloadsNow().whenComplete(() {
+      _runningValidate = null;
+    });
+  }
+
+  Future<void> _validateDownloadsNow() async {
     try {
-      final orphanIds = <String>[];
       final entries = Map<String, DownloadInfo>.from(_downloads);
+      // Collect every content:// URI across all entries so the native probe
+      // is a single channel call instead of one per file/track.
+      final safByItem = <String, List<String>>{};
+      for (final entry in entries.entries) {
+        if (entry.value.status != DownloadStatus.downloaded) continue;
+        if (_legacyExternalIds.contains(entry.key)) continue;
+        final uris = entry.value.localPaths.where(isContentUri).toList();
+        if (uris.isNotEmpty) safByItem[entry.key] = uris;
+      }
+      final safExists = <String, bool>{};
+      if (safByItem.isNotEmpty) {
+        final all = {
+          for (final uris in safByItem.values) ...uris,
+        }.toList();
+        // Probe in chunks so a huge registry (many books x tracks) stays within
+        // a comfortable channel-batch size instead of one giant call; the native
+        // side walks each chunk serially anyway. Failures fall back to keeping
+        // every entry scanned in that chunk, never wiping the registry.
+        const chunkSize = 400;
+        var ok = true;
+        for (var start = 0;
+            start < all.length && ok;
+            start += chunkSize) {
+          final end = (start + chunkSize).clamp(0, all.length);
+          final chunk = all.sublist(start, end);
+          try {
+            final res = await _storageChannel
+                .invokeMethod<Map>('checkSafFiles', {'uris': chunk})
+                .timeout(const Duration(seconds: 8));
+            if (res != null) {
+              for (final e in res.entries) {
+                safExists[e.key as String] = e.value == true;
+              }
+            }
+          } catch (e) {
+            // SAF probe failed (permission revoked etc.) - be conservative and
+            // keep everything rather than wiping the registry.
+            ok = false;
+            debugPrint('[Download] SAF existence probe incomplete: $e');
+          }
+        }
+      }
+
+      final orphanIds = <String>[];
       for (final entry in entries.entries) {
         if (entry.value.status != DownloadStatus.downloaded) continue;
         // Legacy external entries are kept for re-download, not validated away.
         if (_legacyExternalIds.contains(entry.key)) continue;
         bool allExist = true;
         for (final path in entry.value.localPaths) {
-          // No cheap existence check for a SAF content URI; assume present and
-          // let a real playback failure surface a re-download instead.
-          if (isContentUri(path)) continue;
-          try {
-            final exists = await File(path).exists()
-                .timeout(const Duration(seconds: 3));
-            if (!exists) {
+          if (isContentUri(path)) {
+            // Existence decided by the native probe above. If it has no answer
+            // (scan was skipped/failed) treat as present and move on.
+            final exists = safExists[path];
+            if (exists == false) {
               allExist = false;
               break;
             }
-          } catch (_) {
-            // Timeout or permission error — treat as missing
-            allExist = false;
-            break;
+          } else {
+            try {
+              final exists = await File(path).exists()
+                  .timeout(const Duration(seconds: 3));
+              if (!exists) {
+                allExist = false;
+                break;
+              }
+            } catch (_) {
+              // Timeout or permission error — treat as missing
+              allExist = false;
+              break;
+            }
           }
         }
         if (!allExist) {
@@ -2213,15 +2580,19 @@ class DownloadService extends ChangeNotifier {
   /// Move a completed book's internal files into the SAF folder [treeUri] under
   /// [subfolder] (e.g. "Author/Title"), via the native DocumentFile helper.
   /// Returns the created folder URI and the per-file content URIs, or null if
-  /// the move failed.
+  /// the move failed. [markerJson] (a JSON string identifying the book) is
+  /// written into the SAF folder as a small marker file so a later folder scan
+  /// can recognize the book without opening any audio bytes.
   Future<({String dirUri, List<String> fileUris})?> _moveBookToSaf(
-      String treeUri, String subfolder, List<String> filenames, List<String> tempPaths) async {
+      String treeUri, String subfolder, List<String> filenames, List<String> tempPaths,
+      [String? markerJson]) async {
     try {
       final res = await _storageChannel.invokeMethod<Map>('moveBookToSaf', {
         'treeUri': treeUri,
         'subfolder': subfolder,
         'filenames': filenames,
         'tempPaths': tempPaths,
+        if (markerJson != null) 'marker': markerJson,
       });
       final dirUri = res?['dirUri'] as String?;
       final fileUris = (res?['fileUris'] as List?)?.map((e) => e as String).toList();
@@ -2254,11 +2625,26 @@ class DownloadService extends ChangeNotifier {
 
     // SAF: move the downloaded files into the user's chosen folder under
     // "Author/Title" and play/delete via the returned content URIs. If the move
-    // fails the book stays usable from its internal copy.
+    // fails the book stays usable from its internal copy. A tiny marker file is
+    // written into the SAF folder so a later scan can recognize this book.
     if (p.isSaf) {
       final filenames = [for (final path in localPaths) path.split('/').last];
+      // A tiny marker file is written into the SAF folder so a later scan can
+      // recognize this book and restore it fully offline. It carries the slim
+      // session (the same JSON this download persists) so playback metadata
+      // survives without the network; only the audio bytes are re-scanned.
+      final marker = _encodeMarker(jsonEncode({
+        'itemId': p.itemId,
+        'apiItemId': p.apiItemId,
+        'episodeId': p.episodeId,
+        'title': p.title,
+        'author': p.author,
+        'libraryId': p.libraryId,
+        'coverUrl': p.coverUrl,
+        'session': _compactMarkerSession(p.slimSessionJson),
+      }));
       final moved = await _moveBookToSaf(
-          p.safTreeUri!, p.safSubfolder ?? '', filenames, localPaths);
+          p.safTreeUri!, p.safSubfolder ?? '', filenames, localPaths, marker);
       if (moved != null) {
         finalPaths = moved.fileUris;
         finalDirPath = moved.dirUri;

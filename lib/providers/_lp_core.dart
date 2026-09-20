@@ -424,6 +424,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     } else if (!offline && wasOffline && !_manualOffline) {
       _stopServerPingTimer();
       _startHealthCheckTimer();
+      // A socket that gave up (5 capped attempts) is gone for good: the only
+      // re-establish paths used to be foregrounding or a new play(). Coming
+      // back online now rebuilds it too, or live events (progress push, item
+      // changes) silently stop flowing while the shelves look healthy. Guarded
+      // for background/reader like the other live work.
+      if (!_isBackgrounded && !_readerQuiet) _ensureSocketConnected();
       PaintingBinding.instance.imageCache.clear();
       // If we launched offline (e.g. right after an app update), the user info
       // (type/permissions) never loaded and admin-only UI stayed hidden. Now
@@ -1100,6 +1106,24 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
   }
 
+  /// Evict the Library screen's per-view payload caches (grid/filter/lists) for
+  /// the current library. Those keys are namespaced per sort/filter/variant, so
+  /// a prefix sweep is required — [JsonFileCache.invalidate] only removes one
+  /// exact key. Runs on CONTENT mutations (item/series/collection/playlist
+  /// events); NOT on progress pushes, which never change grid/lists and would
+  /// churn disk on every cross-device progress update.
+  void _invalidateLibraryScreenCaches() {
+    final selected = _selectedLibraryId;
+    if (selected == null) return;
+    unawaited(
+      JsonFileCache.invalidatePrefixes([
+        'library_items|$selected',
+        'library_filter_data|$selected',
+        'library_lists|$selected',
+      ]),
+    );
+  }
+
   // ── Connectivity ──
 
   void _startConnectivityMonitoring() {
@@ -1444,7 +1468,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   /// and awake. [quietSince] is when live work stopped, so a long gap can
   /// replay what the socket would have delivered.
   void _resumeLiveWork({DateTime? quietSince}) {
-    _softReconnectSocket();
+    _ensureSocketConnected();
     if (_networkOffline && _deviceHasConnectivity && !_manualOffline) {
       _startServerPingTimer();
     } else if (!_networkOffline && !_manualOffline) {
@@ -1499,7 +1523,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   void onPlaybackStarted() {
     if (!_isBackgrounded && !_readerQuiet) {
-      _softReconnectSocket();
+      _ensureSocketConnected();
     }
     _startLocalProbeTimer();
   }
@@ -1515,6 +1539,56 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (_socketSoftDisconnected || _manualOffline) return;
     _socketSoftDisconnected = true;
     SocketService().softDisconnect();
+  }
+
+  // Single-slot callbacks SocketService fans live events through. Idempotent:
+  // the same methods are assigned every time, including from loadAccount after
+  // a cold-start-while-offline re-connect (where they were never wired).
+  void _wireSocketCallbacks() {
+    final socket = SocketService();
+    final auth = _auth;
+    socket.onProgressUpdated = _onRemoteProgressUpdated;
+    socket.onAuthenticated = _catchUpRemoteProgress;
+    socket.onItemUpdated = _onRemoteItemUpdated;
+    socket.onItemRemoved = _onRemoteItemRemoved;
+    socket.onSeriesUpdated = _onRemoteSeriesUpdated;
+    socket.onCollectionUpdated = _onRemoteCollectionUpdated;
+    socket.onPlaylistUpdated = _onRemotePlaylistUpdated;
+    socket.onUserUpdated = _onRemoteUserUpdated;
+    socket.onReconnectFailed = _onSocketReconnectFailed;
+    socket.onEncodeFinished = _onEncodeFinished;
+    socket.onEreaderDevicesUpdated = (devices) {
+      // Admin broadcasts deliver the FULL unfiltered list; the per-user
+      // emit is already filtered. Run the same filter here either way -
+      // it's a no-op on an already-filtered list.
+      if (auth == null) return;
+      auth.setEreaderDevices(auth.filterDevicesForCurrentUser(devices));
+    };
+  }
+
+  /// Bring the socket back whether it was soft-disconnected, gave up after its
+  /// capped reconnects, or (cold start while the server was down) never got
+  /// wired at all. battery-quiet callers guard with _isBackgrounded/_readerQuiet.
+  void _ensureSocketConnected() {
+    if (_manualOffline || PlayerSettings.einkMode) return;
+    final socket = SocketService();
+    if (socket.hasSocket) return;
+    final auth = _auth;
+    if (auth == null) return;
+    final url = auth.serverUrl;
+    final token = auth.token;
+    if (url == null || token == null) return;
+    if (socket.hasCredentials) {
+      // reconnect_failed / softDisconnect kept credentials: cheap re-use.
+      _softReconnectSocket();
+      return;
+    }
+    // Never connected this session (loadAccount bailed before wiring the
+    // socket). Callbacks AND credentials are both missing, so wire everything
+    // and do a full connect() — there is nothing to softReconnect.
+    debugPrint('[Library] Back online — establishing socket for the first time');
+    _wireSocketCallbacks();
+    socket.connect(url, token, customHeaders: auth.customHeaders);
   }
 
   void _softReconnectSocket() {
@@ -1696,6 +1770,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     // Invalidate cached session metadata - track URLs may have changed
     if (id != null) SessionCache.clear(itemId: id);
     _invalidatePayloadCaches();
+    _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
     _checkSubscribedPodcastUpdate(data);
   }
@@ -1704,23 +1779,27 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final id = data['id'] as String?;
     if (id != null) SessionCache.clear(itemId: id);
     _invalidatePayloadCaches();
+    _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
   }
 
   void _onRemoteSeriesUpdated() {
     _invalidatePayloadCaches();
+    _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
     (this as LibraryProvider).loadSeries();
   }
 
   void _onRemoteCollectionUpdated() {
     _invalidatePayloadCaches();
+    _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
     loadCollections();
   }
 
   void _onRemotePlaylistUpdated() {
     _invalidatePayloadCaches();
+    _invalidateLibraryScreenCaches();
     loadPlaylists();
   }
 
@@ -1809,6 +1888,21 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
   }
 
+  /// Stash [sections] for [libId] under an LRU cap so tab flips between a few
+  /// libraries restore instantly without pinning every visited shelf set (and
+  /// its cover URLs) in RAM. Re-assigning a key moves it to the tail of the
+  /// LinkedHashMap, so `keys.first` is always the least recently used.
+  static const _maxCachedSectionsLibraries = 3;
+
+  void _storeSections(String libId, List<dynamic> sections) {
+    _sectionsByLibrary[libId] = sections;
+    if (_sectionsByLibrary.length > _maxCachedSectionsLibraries) {
+      final evict = _sectionsByLibrary.keys.first;
+      _sectionsByLibrary.remove(evict);
+      _sectionsFetchedAt.remove(evict);
+    }
+  }
+
   Future<void> _doLoadPersonalizedView() async {
     if (_api == null || _selectedLibraryId == null) return;
 
@@ -1835,7 +1929,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         // the user is looking at it.
         _registerSectionsEpochs(sections);
         _personalizedSections = sections;
-        _sectionsByLibrary[libId] = _personalizedSections;
+        _storeSections(libId, _personalizedSections);
         _isLoading = false;
         notifyListeners();
       }
@@ -1862,8 +1956,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         _injectDownloadedSection();
 
         // Snapshot after injection so a tab flip restores the full shelf set.
-        _sectionsByLibrary[libId] = _personalizedSections;
+        _storeSections(libId, _personalizedSections);
         _sectionsFetchedAt[libId] = DateTime.now();
+        _sectionsRetryTimer?.cancel();
+        _sectionsRetryTimer = null;
+        _sectionsFetchMisses = 0;
         unawaited(JsonFileCache.write(_sectionsCacheKey(libId), _personalizedSections));
 
         if (isPodcastLibrary) {
@@ -1872,6 +1969,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
         loadPlaylists();
         loadCollections();
+      } else {
+        // A null response is a failed fetch, not "no shelves"; keep whatever is
+        // on screen and give the server one short window to recover before we
+        // re-fetch (non-network failures don't flip us offline, so nothing else
+        // would ever schedule a retry).
+        _scheduleSectionsRetry();
       }
     } catch (e) {
       if (_isLikelyNetworkError(e)) {
@@ -1888,6 +1991,20 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   /// Cache key for the personalized home shelves of [libraryId].
   String _sectionsCacheKey(String libraryId) => 'home_sections:$libraryId';
 
+  /// Arms a one-shot retry of the personalized fetch after a failed (but not
+  /// offline-inducing) response. Limited to a single retry per failure streak
+  /// so a persistently failing server can't spin a retry loop; success resets
+  /// the counter.
+  void _scheduleSectionsRetry() {
+    if (_sectionsRetryTimer != null || _sectionsFetchMisses >= 1) return;
+    _sectionsFetchMisses++;
+    _sectionsRetryTimer = Timer(const Duration(seconds: 3), () {
+      _sectionsRetryTimer = null;
+      if (_api == null || _selectedLibraryId == null || isOffline) return;
+      loadPersonalizedView(force: true);
+    });
+  }
+
   /// Registers updatedAt/hasCover for every entity in [sections] so cover URLs
   /// resolve with a stable ts. Shared by the cache-restore, fresh-fetch and
   /// section-merge paths; running it repeatedly is a no-op when values match.
@@ -1900,9 +2017,18 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         final ts = e['updatedAt'] as num?;
         if (id == null) continue;
         if (ts != null) registerUpdatedAt(id, ts.toInt());
-        final coverPath =
-            (e['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-        registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+        // Only assert "has no cover" when the entity actually carries a media
+        // map. Series entities and partial shelf payloads omit it; pinning
+        // their ids into _itemsWithoutCover would make getCoverUrl() return
+        // null and hide a real cover until a full grid payload re-registers it.
+        final media = e['media'];
+        if (media is Map<String, dynamic>) {
+          registerHasCover(
+            id,
+            media['coverPath'] is String &&
+                (media['coverPath'] as String).isNotEmpty,
+          );
+        }
       }
     }
   }

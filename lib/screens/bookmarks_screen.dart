@@ -1108,6 +1108,7 @@ class _BookCover extends StatelessWidget {
 
     return CachedNetworkImage(
       imageUrl: coverUrl!,
+      useOldImageOnUrlChange: true,
       fit: BoxFit.cover,
       httpHeaders: mediaHeaders,
       placeholder: (_, __) => _placeholder(),

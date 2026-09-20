@@ -85,6 +85,7 @@ class BookResultTile extends StatelessWidget {
                     coverUrl != null
                         ? CachedNetworkImage(
                             imageUrl: coverUrl,
+                            useOldImageOnUrlChange: true,
                             fit: BoxFit.cover,
                             httpHeaders: lib.mediaHeaders,
                             placeholder: (_, __) => _ph(cs),
@@ -323,6 +324,7 @@ class EpisodeResultTile extends StatelessWidget {
                 child: coverUrl != null
                     ? CachedNetworkImage(
                         imageUrl: coverUrl,
+                        useOldImageOnUrlChange: true,
                         fit: BoxFit.cover,
                         httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                         placeholder: (_, __) => _ph(cs),
@@ -432,6 +434,7 @@ class AuthorResultTile extends StatelessWidget {
                   child: imageUrl != null
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
+                          useOldImageOnUrlChange: true,
                           fit: BoxFit.cover,
                           httpHeaders: context.read<LibraryProvider>().mediaHeaders,
                           placeholder: (_, __) => _ph(cs),

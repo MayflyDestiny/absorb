@@ -408,6 +408,7 @@ class _EditAuthorContentState extends State<_EditAuthorContent>
                 child: SizedBox(
                   width: 60, height: 60,
                   child: CachedNetworkImage(imageUrl: imageUrl, fit: BoxFit.cover,
+                    useOldImageOnUrlChange: true,
                     httpHeaders: headers,
                     placeholder: (_, __) => Container(color: cs.surfaceContainerHighest),
                     errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest,

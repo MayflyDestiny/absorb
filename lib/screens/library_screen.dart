@@ -425,6 +425,10 @@ class LibraryScreenState extends State<LibraryScreen>
   int _totalItems = 0;
   int? _randomSeed;
   int _loadGeneration = 0; // prevents stale async loads from corrupting state
+  // One-shot refresh scheduled after a cold-start cache restore so the grid,
+  // filter chips and lists converge to the server even if no socket event or
+  // scroll ever triggers a load. Pending every restore to avoid re-fetching.
+  Timer? _cacheRefreshTimer;
   // Largest grid page. The first request asks for 20 so something paints
   // fast, then sizes double (20, 40, 80) and stay at 80: on a slow server a
   // page costs roughly per item, and 80 at a time means a screenful or more
@@ -589,6 +593,11 @@ class LibraryScreenState extends State<LibraryScreen>
     final newTab = _tabController!.index;
     if (newTab == _currentTab) {
       _pendingTab = null;
+      // A tap back to the tab still on screen cancels the in-flight fade-out.
+      // Leaving the controller at 0 (or half-faded) would blank the library
+      // content; forward() also cancels the pending reverse, so its completion
+      // handler never commits a stale tab.
+      _tabTransition.forward();
       return;
     }
     // A newer selection supersedes any in-flight one, so rapid taps resolve to
@@ -601,7 +610,17 @@ class LibraryScreenState extends State<LibraryScreen>
     // Already fading out: the running completion handler commits the (possibly
     // updated) _pendingTab, so don't start a second fade.
     if (_tabTransition.status == AnimationStatus.reverse) return;
-    _tabTransition.reverse().then((_) => _commitPendingTab());
+    _tabTransition.reverse().then(
+      (_) {
+        // Only commit when the fade-out actually finished; a newer forward()
+        // (returning to the current tab) cancels this future and must not
+        // swap the content underneath the fade-in.
+        if (mounted && _tabTransition.isDismissed) _commitPendingTab();
+      },
+      onError: (Object _) {
+        // Preempted by a newer forward()/reverse(); nothing to commit.
+      },
+    );
   }
 
   void _commitPendingTab() {
@@ -639,6 +658,9 @@ class LibraryScreenState extends State<LibraryScreen>
     if (lib.selectedLibraryId != _lastLibraryId &&
         lib.selectedLibraryId != null) {
       _lastLibraryId = lib.selectedLibraryId;
+      // The cache-restore refresh no longer applies to the old library's view.
+      _cacheRefreshTimer?.cancel();
+      _cacheRefreshTimer = null;
       _loadGeneration++;
       // Cover shape and subtitles can differ per library.
       PlayerSettings.getRectangleCoversFor(lib.selectedLibraryId).then((v) {
@@ -743,15 +765,50 @@ class LibraryScreenState extends State<LibraryScreen>
         // network when there is nothing renderable.
         final restoredItems = await _restoreItemsCache();
         final restoredFilter = await _restoreFilterDataCache();
+        final restoredLists = await _restoreListsCache();
         if (!mounted) return;
         if (!restoredItems) _loadPage();
         if (!restoredFilter) _loadFilterData();
-        if (!await _restoreListsCache()) _loadLists();
+        if (!restoredLists) _loadLists();
+        // Anything came from the cache, it is (by definition) stale: schedule
+        // a quiet network refresh that no longer depends on the socket or on
+        // the user scrolling. Cold start, dead socket, idle screen — the grid
+        // still converges.
+        if (restoredItems || restoredFilter || restoredLists) {
+          _schedulePostRestoreRefresh();
+        }
       } else {
         lib.addListener(_onLibraryChanged);
       }
     });
     PlayerSettings.settingsChanged.addListener(_onSettingsChanged);
+  }
+
+  // SWR paints stale data at cold start. A timer fires ~1.5s later and quietly
+  // re-pulls grid, filter chips and lists from the network so the screen
+  // converges without waiting on the (possibly dead) socket or user scroll.
+  // Canceled on dispose or when the active library switches.
+  void _schedulePostRestoreRefresh() {
+    if (_cacheRefreshTimer != null) return;
+    _cacheRefreshTimer = Timer(const Duration(milliseconds: 1500), () {
+      _cacheRefreshTimer = null;
+      if (!mounted) return;
+      final lib = context.read<LibraryProvider>();
+      final api = context.read<AuthProvider>().apiService;
+      if (api == null || lib.isOffline || lib.selectedLibraryId == null) return;
+      setState(() {
+        _resetSelectionState();
+        _items.clear();
+        _page = 0;
+        _loadedCount = 0;
+        _hasMore = true;
+        _isLoadingPage = false;
+        _loadFailed = false;
+      });
+      _loadPage();
+      _loadFilterData();
+      _refreshLists();
+    });
   }
 
   Future<void> _restoreSortFilter() async {
@@ -1090,6 +1147,7 @@ class LibraryScreenState extends State<LibraryScreen>
   @override
   void dispose() {
     SocketService().removeAuthorsChangedListener(_onAuthorsChanged);
+    _cacheRefreshTimer?.cancel();
     _authorsRefreshDebounce?.cancel();
     _debounce?.cancel();
     _searchController.dispose();

@@ -298,6 +298,7 @@ class _AddBooksSearchSheetState extends State<AddBooksSearchSheet> {
                   child: coverUrl != null && !coverUrl.startsWith('/')
                       ? CachedNetworkImage(
                           imageUrl: coverUrl,
+                          useOldImageOnUrlChange: true,
                           fit: BoxFit.cover,
                           httpHeaders: lib.mediaHeaders,
                           placeholder: (_, __) => _coverPh(cs),

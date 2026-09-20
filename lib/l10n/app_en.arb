@@ -1058,6 +1058,17 @@
   },
   "clearCache": "Clear cache",
   "streamingCacheCleared": "Streaming cache cleared",
+  "appCache": "App data cache",
+  "appCacheHint": "{size} of cached shelves, grids and progress snapshots. They re-download as you use the app.",
+  "@appCacheHint": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appCacheConfirm": "Delete all cached shelves, grids and progress snapshots? They re-download automatically as you use the app.",
+  "appCacheCleared": "App data cache cleared",
   "sectionLibrary": "Library",
   "hideEbookOnlyTitles": "Hide eBook-only titles",
   "hideEbookOnlyOnSubtitle": "Books with no audio files are hidden",
@@ -1324,6 +1335,9 @@
   "existingDownloadsWarning": "Existing downloads stay in their current location. Only new downloads use the new path.",
   "chooseFolder": "Choose folder",
   "chooseDownloadFolder": "Choose download folder",
+  "downloadLocationPromptTitle": "Choose where downloads are saved",
+  "downloadLocationPromptBody": "Downloads are stored in the app's private storage by default. Clearing app data or uninstalling the app deletes them.\n\nPick a public folder (like your Downloads directory) instead, so your downloads survive even if app data is cleared.",
+  "keepDefaultDownloadLocation": "Keep default",
   "storagePermissionDenied": "Storage permission permanently denied - enable it in app settings",
   "openSettings": "Open Settings",
   "storagePermissionRequired": "Storage permission is required for custom download locations",
@@ -1349,6 +1363,52 @@
   "redownload": "Re-download",
   "redownloadStarted": "Re-downloading",
   "dismiss": "Dismiss",
+  "migrateDownloadsToFolder": "{count, plural, =1{Move 1 existing download to the new folder?} other{Move {count} existing downloads to the new folder?}}",
+  "@migrateDownloadsToFolder": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrateDownloadsToInternal": "{count, plural, =1{Move 1 existing download back to internal storage?} other{Move {count} existing downloads back to internal storage?}}",
+  "@migrateDownloadsToInternal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "keepDownloadsInPlace": "Don't migrate",
+  "moveDownloads": "Migrate",
+  "migrateDownloadsTitle": "Move downloaded content?",
+  "migrateDownloadsHint": "Moving keeps your existing downloads available in the new location, so they keep playing from there. If you don't move them, existing downloads stay where they are and only new downloads use the new location.",
+  "migratingDownloads": "Moving downloads…",
+  "migrateCompleted": "{count, plural, =1{Moved 1 download} other{Moved {count} downloads}}",
+  "@migrateCompleted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "existingDownloadsFoundTitle": "Existing downloads found",
+  "existingDownloadsRecognized": "{count, plural, =1{1 previously downloaded book was restored} other{{count} previously downloaded books were restored}}",
+  "@existingDownloadsRecognized": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "existingDownloadsUnrecognized": "{count, plural, =1{1 folder has audio the app couldn't identify} other{{count} folders have audio the app couldn't identify}}",
+  "@existingDownloadsUnrecognized": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "tipsAndHiddenFeatures": "Tips & Hidden Features",
   "tipsSubtitle": "Get the most out of Absorb",
   "adminTitle": "Server Admin",

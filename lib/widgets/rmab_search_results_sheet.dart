@@ -361,6 +361,7 @@ class _RmabResultRow extends StatelessWidget {
                           )
                         : CachedNetworkImage(
                             imageUrl: book.coverArtUrl!,
+                            useOldImageOnUrlChange: true,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
                                 color: cs.surfaceContainerHighest),

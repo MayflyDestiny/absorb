@@ -21,6 +21,10 @@ class SocketService {
 
   bool get isConnected => _socket?.connected ?? false;
   bool get hasSocket => _socket != null;
+  // Credentials survive reconnect_failed and softDisconnect (only disconnect()
+  // clears them), so a non-null result means we can cheaply softReconnect
+  // instead of doing a full connect().
+  bool get hasCredentials => _serverUrl != null && _token != null;
 
   Map<String, String> _customHeaders = {};
 

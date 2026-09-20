@@ -623,6 +623,7 @@ class _MetadataLookupSheetState extends State<MetadataLookupSheet>
                 width: 60, height: 60,
                 child: cover.isNotEmpty
                     ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover,
+                        useOldImageOnUrlChange: true,
                         placeholder: (_, __) => _placeholder(cs),
                         errorWidget: (_, __, ___) => _placeholder(cs))
                     : _placeholder(cs),

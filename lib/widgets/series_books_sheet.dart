@@ -1238,6 +1238,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                                   errorBuilder: (_, __, ___) => _placeholder(cs))
                               : CachedNetworkImage(
                                   imageUrl: coverUrl, fit: BoxFit.cover,
+                                  useOldImageOnUrlChange: true,
                                   httpHeaders: lib.mediaHeaders,
                                   placeholder: (_, __) => _placeholder(cs),
                                   errorWidget: (_, __, ___) => _placeholder(cs)))

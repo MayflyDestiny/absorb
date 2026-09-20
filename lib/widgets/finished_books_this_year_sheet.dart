@@ -379,6 +379,7 @@ class _FinishedBooksThisYearSheetState
     }
     return CachedNetworkImage(
       imageUrl: coverUrl,
+      useOldImageOnUrlChange: true,
       fit: BoxFit.cover,
       httpHeaders: lib.mediaHeaders,
       placeholder: (_, __) => _placeholder(cs),

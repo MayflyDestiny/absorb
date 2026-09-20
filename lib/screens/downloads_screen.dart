@@ -45,6 +45,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   }
 
   Future<void> _load() async {
+    // Re-check downloaded files before rendering so entries whose audio was
+    // deleted externally (SAF content URIs especially) drop off the list.
+    await DownloadService().validateDownloads();
     final items = DownloadService().downloadedItems;
     final sizes = <String, int>{};
     final times = <String, DateTime>{};
@@ -1262,6 +1265,7 @@ class _DownloadCover extends StatelessWidget {
       } else {
         return CachedNetworkImage(
           imageUrl: url,
+          useOldImageOnUrlChange: true,
           fit: BoxFit.cover,
           httpHeaders: mediaHeaders,
           placeholder: (_, __) => _placeholder(),

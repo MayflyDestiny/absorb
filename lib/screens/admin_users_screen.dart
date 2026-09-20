@@ -1341,6 +1341,7 @@ class _AdminSessionDetailsSheet extends StatelessWidget {
                         child: coverUrl != null
                             ? CachedNetworkImage(
                                 imageUrl: coverUrl,
+                                useOldImageOnUrlChange: true,
                                 fit: BoxFit.cover,
                                 errorWidget: (_, __, ___) => Icon(
                                     Icons.menu_book_rounded,

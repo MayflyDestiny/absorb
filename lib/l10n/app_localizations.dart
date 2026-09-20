@@ -3940,6 +3940,30 @@ abstract class AppLocalizations {
   /// **'Streaming cache cleared'**
   String get streamingCacheCleared;
 
+  /// No description provided for @appCache.
+  ///
+  /// In en, this message translates to:
+  /// **'App data cache'**
+  String get appCache;
+
+  /// No description provided for @appCacheHint.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} of cached shelves, grids and progress snapshots. They re-download as you use the app.'**
+  String appCacheHint(String size);
+
+  /// No description provided for @appCacheConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete all cached shelves, grids and progress snapshots? They re-download automatically as you use the app.'**
+  String get appCacheConfirm;
+
+  /// No description provided for @appCacheCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'App data cache cleared'**
+  String get appCacheCleared;
+
   /// No description provided for @sectionLibrary.
   ///
   /// In en, this message translates to:
@@ -4846,6 +4870,24 @@ abstract class AppLocalizations {
   /// **'Choose download folder'**
   String get chooseDownloadFolder;
 
+  /// No description provided for @downloadLocationPromptTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where downloads are saved'**
+  String get downloadLocationPromptTitle;
+
+  /// No description provided for @downloadLocationPromptBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads are stored in the app\'s private storage by default. Clearing app data or uninstalling the app deletes them.\n\nPick a public folder (like your Downloads directory) instead, so your downloads survive even if app data is cleared.'**
+  String get downloadLocationPromptBody;
+
+  /// No description provided for @keepDefaultDownloadLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep default'**
+  String get keepDefaultDownloadLocation;
+
   /// No description provided for @storagePermissionDenied.
   ///
   /// In en, this message translates to:
@@ -4911,6 +4953,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dismiss'**
   String get dismiss;
+
+  /// No description provided for @migrateDownloadsToFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Move 1 existing download to the new folder?} other{Move {count} existing downloads to the new folder?}}'**
+  String migrateDownloadsToFolder(int count);
+
+  /// No description provided for @migrateDownloadsToInternal.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Move 1 existing download back to internal storage?} other{Move {count} existing downloads back to internal storage?}}'**
+  String migrateDownloadsToInternal(int count);
+
+  /// No description provided for @keepDownloadsInPlace.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t migrate'**
+  String get keepDownloadsInPlace;
+
+  /// No description provided for @moveDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate'**
+  String get moveDownloads;
+
+  /// No description provided for @migrateDownloadsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Move downloaded content?'**
+  String get migrateDownloadsTitle;
+
+  /// No description provided for @migrateDownloadsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving keeps your existing downloads available in the new location, so they keep playing from there. If you don\'t move them, existing downloads stay where they are and only new downloads use the new location.'**
+  String get migrateDownloadsHint;
+
+  /// No description provided for @migratingDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving downloads…'**
+  String get migratingDownloads;
+
+  /// No description provided for @migrateCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Moved 1 download} other{Moved {count} downloads}}'**
+  String migrateCompleted(int count);
+
+  /// No description provided for @existingDownloadsFoundTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Existing downloads found'**
+  String get existingDownloadsFoundTitle;
+
+  /// No description provided for @existingDownloadsRecognized.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 previously downloaded book was restored} other{{count} previously downloaded books were restored}}'**
+  String existingDownloadsRecognized(int count);
+
+  /// No description provided for @existingDownloadsUnrecognized.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 folder has audio the app couldn\'t identify} other{{count} folders have audio the app couldn\'t identify}}'**
+  String existingDownloadsUnrecognized(int count);
 
   /// No description provided for @tipsAndHiddenFeatures.
   ///

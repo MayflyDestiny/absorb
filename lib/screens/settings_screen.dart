@@ -16,6 +16,7 @@ import '../services/episode_notification_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
 import '../services/log_service.dart';
+import '../services/json_file_cache.dart';
 import '../services/quick_actions_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/socket_service.dart';
@@ -191,6 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'hero', 'goals', 'periods', 'activity', 'chart', 'heatmap', 'dayofweek', 'top', 'yearreview',
   ];
   int _streamingCacheSizeMb = 0;
+  int _jsonCacheBytes = 0;
   bool _localServerEnabled = false;
   String _localServerUrl = '';
   late final TextEditingController _localServerController;
@@ -1080,6 +1082,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     final duckBriefInterruptions = await PlayerSettings.getDuckBriefInterruptions();
     final autoplayOnCarConnect = await PlayerSettings.getAutoplayOnCarConnect();
+    unawaited(JsonFileCache.usageBytes().then((b) {
+      if (mounted) setState(() => _jsonCacheBytes = b);
+    }));
 
     // Chapter skip settings
     if (mounted) setState(() {
@@ -1205,6 +1210,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'hide': return l.subtitleVisibilityHide;
       default: return l.subtitleVisibilityDefault;
     }
+  }
+
+  String _fmtBytes(int b) => b < 1024 * 1024
+      ? '${(b / 1024).ceil()} KB'
+      : '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+
+  Future<void> _clearJsonCache() async {
+    final l = AppLocalizations.of(context)!;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.appCache),
+        content: Text(l.appCacheConfirm),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l.cancel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l.clearCache)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await JsonFileCache.clearAll();
+    if (!mounted) return;
+    setState(() => _jsonCacheBytes = 0);
+    showOverlayToast(context, l.appCacheCleared,
+        icon: Icons.delete_outline_rounded);
   }
 
   /// Default/Show/Hide picker for the currently selected library.
@@ -4120,7 +4154,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     },
                                   ),
                                 ],
-                                const SizedBox(height: 8),
+                          const SizedBox(height: 12),
+                          ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                            title: Text(l.appCache),
+                            subtitle: Text(
+                              l.appCacheHint(_fmtBytes(_jsonCacheBytes)),
+                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                            trailing: TextButton.icon(
+                              icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                              label: Text(l.clearCache),
+                              onPressed: _jsonCacheBytes > 0 ? _clearJsonCache : null,
+                            ),
+                          ),
+                                const SizedBox(height: 4),
                               ],
                             ),
                           ),
@@ -5087,7 +5135,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     }
                     return;
                   }
+                  // Offer to move existing downloads into the new folder.
+                  final existing = dl.downloadedItems.length;
+                  if (existing > 0 && mounted) {
+                    final migrate =
+                        await _askMigrateDownloads(context, existing);
+                    if (migrate == null) return; // user cancelled the switch
+                    if (migrate == true) {
+                      await _migrateWithProgress(context, treeUri.toString());
+                    }
+                  }
                   await dl.setCustomDownloadUri(treeUri);
+                  // One-off scan of the chosen folder: recognize previously
+                  // downloaded books (via the .absorb marker) and surface them.
+                  final scan = await dl.scanAndRegisterExistingDownloads(
+                      treeUri.toString());
+                  if (scan.recognized > 0 || scan.unknown > 0) {
+                    if (mounted) {
+                      await _askAboutExistingDownloads(
+                          context, scan.recognized, scan.unknown);
+                    }
+                  }
                   final label = await dl.downloadLocationLabel;
                   if (mounted) {
                     setState(() => _downloadLocationLabel = label);
@@ -5108,6 +5176,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: Text(l.resetToDefault),
                   onPressed: () async {
                     Navigator.pop(ctx);
+                    // Offer to move existing downloads back to internal storage.
+                    final existing = dl.downloadedItems.length;
+                    if (existing > 0 && mounted) {
+                      final migrate = await _askMigrateDownloads(
+                          context, existing, toInternal: true);
+                      if (migrate == null) return; // user cancelled the reset
+                      if (migrate == true) {
+                        await _migrateWithProgress(context, null);
+                      }
+                    }
                     await dl.setCustomDownloadUri(null);
                     final label = await dl.downloadLocationLabel;
                     if (mounted) {
@@ -5122,6 +5200,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// Ask whether to move existing downloads when the download location
+  /// changes. Returns true = migrate, false = keep in place, null = cancel
+  /// the whole switch. [toInternal] tweaks the description for reverting to
+  /// the built-in storage.
+  Future<bool?> _askMigrateDownloads(BuildContext context, int count,
+      {bool toInternal = false}) async {
+    final l = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(20)),
+        ),
+        title: Text(l.migrateDownloadsTitle,
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              toInternal
+                  ? l.migrateDownloadsToInternal(count)
+                  : l.migrateDownloadsToFolder(count),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.2)),
+              ),
+              child: Text(l.migrateDownloadsHint,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l.keepDownloadsInPlace),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.moveDownloads),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tell the user the chosen download folder already had content the app
+  /// recognized as its own downloads (now restored) plus, optionally, folders
+  /// with audio the app couldn't identify. Purely informational.
+  Future<void> _askAboutExistingDownloads(
+      BuildContext context, int recognized, int unknown) async {
+    final l = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(20)),
+        ),
+        icon: Icon(Icons.folder_shared_rounded,
+            color: theme.colorScheme.primary, size: 28),
+        title: Text(l.existingDownloadsFoundTitle,
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.existingDownloadsRecognized(recognized),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            if (unknown > 0) ...[
+              const SizedBox(height: 10),
+              Text(l.existingDownloadsUnrecognized(unknown),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ],
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.ok),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Run a download migration behind a non-dismissible progress dialog so the
+  /// user isn't left wondering while large files move. Returns nothing; errors
+  /// per book are handled inside the service and only a summary toast shows.
+  Future<void> _migrateWithProgress(BuildContext context, String? treeUri) async {
+    final l = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    if (!context.mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.colorScheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(20)),
+        ),
+        content: Row(
+          children: [
+            const SizedBox(
+                width: 24, height: 24,
+                child: CircularProgressIndicator(strokeWidth: 3)),
+            const SizedBox(width: 20),
+            Expanded(child: Text(l.migratingDownloads)),
+          ],
+        ),
+      ),
+    );
+    final dl = DownloadService();
+    final migrated = await dl.migrateAllDownloads(treeUri: treeUri);
+    if (context.mounted) Navigator.of(context).pop(); // close the progress dialog
+    if (!context.mounted) return;
+    showOverlayToast(context, l.migrateCompleted(migrated),
+        icon: Icons.drive_file_move_rounded);
   }
 
   bool _syncUploading = false;

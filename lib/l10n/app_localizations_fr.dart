@@ -2163,6 +2163,21 @@ class AppLocalizationsFr extends AppLocalizations {
   String get streamingCacheCleared => 'Cache de diffusion vidé';
 
   @override
+  String get appCache => 'Cache des données de l\'app';
+
+  @override
+  String appCacheHint(String size) {
+    return '$size d\'étagères, de grilles et d\'instantanés de progression en cache. Ils sont re-téléchargés à l\'utilisation.';
+  }
+
+  @override
+  String get appCacheConfirm =>
+      'Supprimer toutes les étagères, grilles et instantanés de progression en cache ? Ils seront re-téléchargés automatiquement à l\'utilisation.';
+
+  @override
+  String get appCacheCleared => 'Cache des données de l\'app vidé';
+
+  @override
   String get sectionLibrary => 'Bibliothèque';
 
   @override
@@ -2698,6 +2713,17 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chooseDownloadFolder => 'Choisir le dossier de téléchargement';
 
   @override
+  String get downloadLocationPromptTitle =>
+      'Choisir l\'emplacement des téléchargements';
+
+  @override
+  String get downloadLocationPromptBody =>
+      'Les téléchargements sont stockés par défaut dans l\'espace privé de l\'application. Effacer les données de l\'application ou la désinstaller les supprime.\n\nChoisissez plutôt un dossier public (comme votre dossier Téléchargements) pour que vos téléchargements restent accessibles même si les données de l\'application sont effacées.';
+
+  @override
+  String get keepDefaultDownloadLocation => 'Conserver par défaut';
+
+  @override
   String get storagePermissionDenied =>
       'Autorisation d\'accès au stockage définitivement refusée - activez-la dans les paramètres de l\'application';
 
@@ -2744,6 +2770,84 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get dismiss => 'Ignorer';
+
+  @override
+  String migrateDownloadsToFolder(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Déplacer $count téléchargements existants vers le nouveau dossier ?',
+      one: 'Déplacer 1 téléchargement existant vers le nouveau dossier ?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrateDownloadsToInternal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Déplacer $count téléchargements existants vers le stockage interne ?',
+      one: 'Déplacer 1 téléchargement existant vers le stockage interne ?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get keepDownloadsInPlace => 'Ne pas déplacer';
+
+  @override
+  String get moveDownloads => 'Déplacer';
+
+  @override
+  String get migrateDownloadsTitle => 'Déplacer le contenu téléchargé ?';
+
+  @override
+  String get migrateDownloadsHint =>
+      'Déplacer vos téléchargements les garde disponibles et lisibles depuis le nouvel emplacement. Si vous ne les déplacez pas, ils restent à leur place et seuls les nouveaux téléchargements utiliseront le nouvel emplacement.';
+
+  @override
+  String get migratingDownloads => 'Déplacement des téléchargements…';
+
+  @override
+  String migrateCompleted(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count téléchargements déplacés',
+      one: '1 téléchargement déplacé',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get existingDownloadsFoundTitle => 'Téléchargements existants trouvés';
+
+  @override
+  String existingDownloadsRecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count livres précédemment téléchargés ont été restaurés',
+      one: '1 livre précédemment téléchargé a été restauré',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String existingDownloadsUnrecognized(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count dossiers contiennent de l\'audio que l\'application n\'a pas pu identifier',
+      one:
+          '1 dossier contient de l\'audio que l\'application n\'a pas pu identifier',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get tipsAndHiddenFeatures => 'Astuces & fonctionnalités cachées';

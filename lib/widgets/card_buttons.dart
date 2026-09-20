@@ -2333,18 +2333,27 @@ class CardActionDelegate {
         showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
         return;
       }
-      final already = dl.downloadedChapterIndices(dlKey, chapters);
-      if (already.length >= chapters.length) {
+      final already = dl.downloadedChapterIndices(dlKey, chapters).toList()..sort();
+      if (already.isEmpty) {
         showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
         return;
       }
-      final result = await showChapterDownloadSheet(ctx,
-          accent: accent,
-          title: title,
-          chapters: chapters,
-          downloadedChapters: already);
-      if (!ctx.mounted) return;
-      if (result == null || result.selectedIndices.isEmpty) return;
+      final result = await showDownloadedChaptersSheet(
+        ctx,
+        itemId: itemId,
+        accent: accent,
+        title: title,
+        chapters: chapters,
+        downloadedChapters: already,
+        onRemoveChapters: (indices) =>
+            dl.deleteDownloadChapters(dlKey, chapters, indices),
+      );
+      if (!ctx.mounted || result == null) return;
+      if (result.removeDownload) {
+        showOverlayToast(ctx, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+        return;
+      }
+      if (result.selectedIndices.isEmpty) return;
       await _startDownload(dlKey, result.selectedIndices);
     } else if (dl.isDownloading(dlKey)) {
       dl.cancelDownload(dlKey);

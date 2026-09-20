@@ -303,6 +303,7 @@ class _AdminMissingItemsScreenState extends State<AdminMissingItemsScreen> {
                     ? _coverPlaceholder(cs)
                     : CachedNetworkImage(
                         imageUrl: api.getCoverUrl(id, width: 120),
+                        useOldImageOnUrlChange: true,
                         httpHeaders: api.mediaHeaders,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => _coverPlaceholder(cs),
