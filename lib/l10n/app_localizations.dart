@@ -3943,26 +3943,140 @@ abstract class AppLocalizations {
   /// No description provided for @appCache.
   ///
   /// In en, this message translates to:
-  /// **'App data cache'**
+  /// **'Progress cache'**
   String get appCache;
 
   /// No description provided for @appCacheHint.
   ///
   /// In en, this message translates to:
-  /// **'{size} of cached shelves, grids and progress snapshots. They re-download as you use the app.'**
+  /// **'{size} of cached shelves, grids, progress and playback-session snapshots. They re-download as you use the app.'**
   String appCacheHint(String size);
 
   /// No description provided for @appCacheConfirm.
   ///
   /// In en, this message translates to:
-  /// **'Delete all cached shelves, grids and progress snapshots? They re-download automatically as you use the app.'**
+  /// **'Delete all cached shelves, grids, progress and playback sessions? They re-download automatically as you use the app.'**
   String get appCacheConfirm;
 
   /// No description provided for @appCacheCleared.
   ///
   /// In en, this message translates to:
-  /// **'App data cache cleared'**
+  /// **'Progress cache cleared'**
   String get appCacheCleared;
+
+  /// No description provided for @clearCacheHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Covers, progress, streaming and leftovers. Clear each separately.'**
+  String get clearCacheHint;
+
+  /// No description provided for @clearCacheSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear cache'**
+  String get clearCacheSheetTitle;
+
+  /// No description provided for @clearCacheSheetSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick what to clear. Everything rebuilds automatically as you use the app.'**
+  String get clearCacheSheetSubtitle;
+
+  /// No description provided for @cacheCovers.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover cache'**
+  String get cacheCovers;
+
+  /// No description provided for @cacheCoversHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded cover art plus widget/home-screen cover copies.'**
+  String get cacheCoversHint;
+
+  /// No description provided for @cacheAppDataHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached shelves, grids, progress snapshots and playback sessions.'**
+  String get cacheAppDataHint;
+
+  /// No description provided for @cacheStreamingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently streamed audio kept on disk for instant replay.'**
+  String get cacheStreamingHint;
+
+  /// No description provided for @clearAllCaches.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get clearAllCaches;
+
+  /// No description provided for @clearAllCachesConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete every cache? They rebuild automatically as you use the app.'**
+  String get clearAllCachesConfirm;
+
+  /// No description provided for @cacheAllCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'All caches cleared'**
+  String get cacheAllCleared;
+
+  /// No description provided for @coverCacheCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover cache cleared'**
+  String get coverCacheCleared;
+
+  /// No description provided for @cacheSystemCacheLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'System cache'**
+  String get cacheSystemCacheLabel;
+
+  /// No description provided for @cacheSystemDataLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'System data'**
+  String get cacheSystemDataLabel;
+
+  /// No description provided for @cacheSystemStatsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'As reported by Android for this app.'**
+  String get cacheSystemStatsHint;
+
+  /// No description provided for @cacheCodeCacheLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Code cache'**
+  String get cacheCodeCacheLabel;
+
+  /// No description provided for @cacheTilesSumLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Listed categories total'**
+  String get cacheTilesSumLabel;
+
+  /// No description provided for @cacheExports.
+  ///
+  /// In en, this message translates to:
+  /// **'Leftover cache'**
+  String get cacheExports;
+
+  /// No description provided for @cacheExportsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Share cards, clipped audio, transcripts, e-book files, update packages.'**
+  String get cacheExportsHint;
+
+  /// No description provided for @exportsCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Leftover cache cleared'**
+  String get exportsCleared;
 
   /// No description provided for @sectionLibrary.
   ///
@@ -4963,7 +5077,7 @@ abstract class AppLocalizations {
   /// No description provided for @migrateDownloadsToInternal.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =1{Move 1 existing download back to internal storage?} other{Move {count} existing downloads back to internal storage?}}'**
+  /// **'{count, plural, =1{Move 1 existing download back to the default location?} other{Move {count} existing downloads back to the default location?}}'**
   String migrateDownloadsToInternal(int count);
 
   /// No description provided for @keepDownloadsInPlace.
@@ -7525,6 +7639,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Off - explicit badge hidden'**
   String get showExplicitBadgeOffSubtitle;
+
+  /// No description provided for @finishedBadgeMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished badge'**
+  String get finishedBadgeMode;
+
+  /// No description provided for @finishedBadgeModeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show a finished check on covers: with a label, icon only, or off.'**
+  String get finishedBadgeModeSubtitle;
+
+  /// No description provided for @finishedBadgeModeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Label'**
+  String get finishedBadgeModeText;
+
+  /// No description provided for @finishedBadgeModeIcon.
+  ///
+  /// In en, this message translates to:
+  /// **'Icon'**
+  String get finishedBadgeModeIcon;
+
+  /// No description provided for @finishedBadgeModeOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get finishedBadgeModeOff;
 
   /// No description provided for @libraryFallback.
   ///
@@ -16346,6 +16490,54 @@ abstract class AppLocalizations {
     String adjusted,
     String speed,
   );
+
+  /// No description provided for @playerErrorConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach the server. Check your connection and try again.'**
+  String get playerErrorConnect;
+
+  /// No description provided for @playerErrorNoAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'No audio files found - this item may be missing on the server'**
+  String get playerErrorNoAudio;
+
+  /// No description provided for @playerErrorInit.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback couldn\'t start'**
+  String get playerErrorInit;
+
+  /// No description provided for @playerErrorNotDownloadedOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'This isn\'t downloaded, and you\'re offline'**
+  String get playerErrorNotDownloadedOffline;
+
+  /// No description provided for @playerErrorDownloadsMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded files are missing - try downloading again'**
+  String get playerErrorDownloadsMissing;
+
+  /// No description provided for @playerErrorTranscodeStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start converted playback'**
+  String get playerErrorTranscodeStart;
+
+  /// No description provided for @playerErrorTranscodeNoAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'No audio files in the converted session'**
+  String get playerErrorTranscodeNoAudio;
+
+  /// No description provided for @playerErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback failed: {error}'**
+  String playerErrorGeneric(String error);
 }
 
 class _AppLocalizationsDelegate

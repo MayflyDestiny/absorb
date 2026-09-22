@@ -525,15 +525,27 @@ class DownloadService extends ChangeNotifier {
 
   /// Get the effective default (non-custom) download base directory.
   ///
-  /// Android custom folders no longer use a filesystem base path - they go
-  /// through SAF ([_customDownloadUri]) in the task builder. This getter now
-  /// only resolves the built-in location: the iOS app group container (so the
-  /// widget extension and native player core can read it; falls back to
-  /// Documents/ if the app group lookup fails) or Android internal storage.
+  /// Android custom folders still go through SAF ([_customDownloadUri]) in the
+  /// task builder. This getter only resolves the built-in location:
+  ///   - iOS: the app group container (so the widget extension and native
+  ///     player core can read it), falling back to Documents/ if the lookup
+  ///     fails.
+  ///   - Android: the app-specific external files dir
+  ///     (/storage/emulated/0/Android/data/<pkg>/files/downloads), which needs
+  ///     no permission and is visible to the user via file managers. Falls back
+  ///     to internal storage if the external dir is unavailable (rare: e.g.
+  ///     adopted storage unmounted).
   Future<String> get downloadBasePath async {
     if (Platform.isIOS) {
       final groupPath = await _iosAppGroupAudioBase();
       if (groupPath != null) return groupPath;
+    } else if (Platform.isAndroid) {
+      try {
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) return '${extDir.path}/downloads';
+      } catch (_) {
+        // Fall through to internal storage below.
+      }
     }
     final appDir = await getApplicationDocumentsDirectory();
     return '${appDir.path}/downloads';
@@ -782,7 +794,7 @@ class DownloadService extends ChangeNotifier {
   Future<String> get downloadLocationLabel async {
     final uri = _customDownloadUri;
     if (uri != null && uri.isNotEmpty) return _friendlySafLabel(uri);
-    return 'App Internal Storage (Default)';
+    return 'App Data (Default)';
   }
 
   /// Turn a SAF tree URI into a friendly folder name. Tree URIs encode the
@@ -905,6 +917,28 @@ class DownloadService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[Download] getDeviceStorage error: $e');
+    }
+    return null;
+  }
+
+  /// System storage stats for this app, matching Android's Settings → Apps →
+  /// Storage figures: {cacheBytes, dataBytes, codeCacheBytes}. codeCacheBytes
+  /// is the ART/JIT code_cache directory the OS folds into its cacheBytes but
+  /// Dart can't measure directly; the settings panel uses it to reconcile the
+  /// gap between the categorized tiles and the system total. Returns null on
+  /// failure or platforms without a native handler.
+  static Future<Map<String, int>?> getStorageStats() async {
+    try {
+      final result = await _storageChannel.invokeMethod('getStorageStats');
+      if (result is Map) {
+        return {
+          'cacheBytes': (result['cacheBytes'] as num).toInt(),
+          'dataBytes': (result['dataBytes'] as num).toInt(),
+          'codeCacheBytes': (result['codeCacheBytes'] as num?)?.toInt() ?? 0,
+        };
+      }
+    } catch (e) {
+      debugPrint('[Download] getStorageStats error: $e');
     }
     return null;
   }
@@ -1449,6 +1483,20 @@ class DownloadService extends ChangeNotifier {
     _legacyExternalIds.clear();
     await _save();
     notifyListeners();
+  }
+
+  /// Whether any tracked download task is still alive (queued, running, paused
+  /// or waiting to retry). A temp-dir cache sweep consults this: while a task is
+  /// alive its `com.bbflight.background_downloader*` chunk file must be kept
+  /// (it holds the partial download for resume), so the sweep skips all chunk
+  /// files; otherwise nothing alive references them and they're fair game.
+  Future<bool> hasActiveDownloaderTasks() async {
+    try {
+      final records = await FileDownloader().database.allRecords();
+      return records.any((r) => !_terminal.contains(r.status));
+    } catch (_) {
+      return true; // Conservative: if we can't read the DB, protect the chunks.
+    }
   }
 
   /// Validate that downloaded files still exist on disk and clean up orphans.
@@ -2033,23 +2081,21 @@ class DownloadService extends ChangeNotifier {
         unawaited(_cacheEbookForOffline(api, apiItemId, ebookFile, title));
       }
 
-      // Per-book destination. Android downloads to internal storage first - for
-      // both the internal default AND SAF custom folders. SAF books are then
-      // moved into the user's chosen folder under "Author/Title" on completion
-      // (a direct SAF write can't nest subfolders). iOS downloads into the app
-      // group container.
+      // Per-book destination. Android downloads into the app-specific external
+      // files dir by default, and (for SAF custom folders) into a temp dir that
+      // is moved into the user's chosen folder under "Author/Title" on
+      // completion (a direct SAF write can't nest subfolders). iOS downloads
+      // into the app group container.
       final nestedName = (author != null && author.isNotEmpty)
           ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
           : _sanitizePath(title);
-      String? relDir; // Android: relative to applicationDocuments
-      if (Platform.isIOS) {
-        final basePath = await downloadBasePath;
-        bookDir = Directory('$basePath/$nestedName');
-      } else {
-        final appDir = await getApplicationDocumentsDirectory();
-        relDir = 'downloads/$nestedName';
-        bookDir = Directory('${appDir.path}/$relDir');
-      }
+      // iOS downloads into the app group container; Android into the
+      // app-specific external files dir
+      // (/storage/emulated/0/Android/data/<pkg>/files/downloads), which needs
+      // no permission and survives downloads across reboots. Both fall back to
+      // Documents/ when the platform base can't be resolved.
+      final basePath = await downloadBasePath;
+      bookDir = Directory('$basePath/$nestedName');
       if (!bookDir.existsSync()) bookDir.createSync(recursive: true);
       bookDirRef = bookDir.path;
       debugPrint('[Download] "$title" location=${useSaf ? 'SAF' : 'default'} dir=${bookDir.path} tracks=${files.length}');
@@ -2150,38 +2196,20 @@ class DownloadService extends ChangeNotifier {
 
       for (int i = 0; i < files.length; i++) {
         final meta = jsonEncode({'itemId': itemId, 'i': i, 'n': files.length});
-        final Task task;
-        if (Platform.isIOS) {
-          task = DownloadTask(
-            taskId: _taskId(itemId, i),
-            url: files[i].url,
-            headers: api.mediaHeaders,
-            filename: files[i].filename,
-            baseDirectory: BaseDirectory.root,
-            directory: bookDir.path,
-            group: _dlGroup,
-            metaData: meta,
-            updates: Updates.statusAndProgress,
-            requiresWiFi: wifiOnly,
-            retries: 3,
-            allowPause: true,
-          );
-        } else {
-          task = DownloadTask(
-            taskId: _taskId(itemId, i),
-            url: files[i].url,
-            headers: api.mediaHeaders,
-            filename: files[i].filename,
-            baseDirectory: BaseDirectory.applicationDocuments,
-            directory: relDir!,
-            group: _dlGroup,
-            metaData: meta,
-            updates: Updates.statusAndProgress,
-            requiresWiFi: wifiOnly,
-            retries: 3,
-            allowPause: true,
-          );
-        }
+        final task = DownloadTask(
+          taskId: _taskId(itemId, i),
+          url: files[i].url,
+          headers: api.mediaHeaders,
+          filename: files[i].filename,
+          baseDirectory: BaseDirectory.root,
+          directory: bookDir.path,
+          group: _dlGroup,
+          metaData: meta,
+          updates: Updates.statusAndProgress,
+          requiresWiFi: wifiOnly,
+          retries: 3,
+          allowPause: true,
+        );
         // Must be registered before enqueue - the config is serialized into
         // the native task, so it survives app kills along with the task.
         FileDownloader().configureNotificationForTask(
@@ -3552,12 +3580,12 @@ class DownloadService extends ChangeNotifier {
   /// Deletes one audio file of a completed download and keeps the item's
   /// metadata consistent (trims `localPaths` + `sessionData.audioTracks` so
   /// offline playback maps 1:1). Deleting the last remaining track removes the
-  /// whole download. SAF (content URI) tracks are skipped.
+  /// whole download. SAF (content URI) tracks are removed per-file too, via the
+  /// same helper [deleteDownload] uses.
   Future<void> deleteLocalTrack(String itemId, int index) async {
     final info = _downloads[itemId];
     if (info == null || info.status != DownloadStatus.downloaded) return;
     if (index < 0 || index >= info.localPaths.length) return;
-    if (isContentUri(info.localPaths[index])) return;
 
     if (info.localPaths.length <= 1) {
       await deleteDownload(itemId, skipStopCheck: true, byUser: true);
@@ -3565,8 +3593,13 @@ class DownloadService extends ChangeNotifier {
     }
 
     try {
-      final file = File(info.localPaths[index]);
-      if (file.existsSync()) await file.delete();
+      final path = info.localPaths[index];
+      if (isContentUri(path)) {
+        await FileDownloader().uri.deleteFile(Uri.parse(path));
+      } else {
+        final file = File(path);
+        if (file.existsSync()) await file.delete();
+      }
     } catch (_) {}
 
     final newPaths = List<String>.from(info.localPaths)..removeAt(index);

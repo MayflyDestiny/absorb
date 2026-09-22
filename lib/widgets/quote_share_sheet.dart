@@ -12,9 +12,10 @@ import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/library_provider.dart';
+import '../services/inflight_temp_writes.dart';
+import '../utils/share_origin.dart';
 import 'adaptive_modal.dart';
 import 'overlay_toast.dart';
-import '../utils/share_origin.dart';
 
 /// Card shapes offered for a shared quote, as width/height.
 enum _QuoteShape {
@@ -180,7 +181,12 @@ class _QuoteShareSheetState extends State<_QuoteShareSheet> {
           .trim();
       final file =
           File('${dir.path}/${safe.isEmpty ? 'quote' : safe}_quote.png');
-      await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      registerInFlightWrite(file.path);
+      try {
+        await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      } finally {
+        unregisterInFlightWrite(file.path);
+      }
 
       if (!mounted) return;
       await Share.shareXFiles(

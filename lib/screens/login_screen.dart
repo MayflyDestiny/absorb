@@ -49,6 +49,10 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isConnecting = false;
   String _protocol = 'https://';
 
+  // Set briefly while the protocol dropdown is changed by hand so the
+  // auto-inference below (IP -> HTTP) doesn't override the explicit choice.
+  bool _skipAutoProtocol = false;
+
   // Server validation state
   bool _serverValid = false;
   bool _serverChecking = false;
@@ -182,7 +186,33 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   void _onServerChanged() {
-    final text = _serverController.text.trim();
+    final raw = _serverController.text;
+    final text = raw.trim();
+
+    // Auto-extract the host when a full URL carrying a scheme is entered or
+    // pasted ("https://github.com/MayflyDestiny/absorb" -> "github.com"): the
+    // scheme moves into the protocol dropdown and any path/query is dropped.
+    final scheme = RegExp(
+      r'^(https?):\/\/([^\/?#]*)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (scheme != null) {
+      final protocol = '${scheme.group(1)!.toLowerCase()}://';
+      final host = scheme.group(2) ?? '';
+      if (protocol != _protocol) {
+        setState(() => _protocol = protocol);
+      }
+      // Rewriting the field re-enters this listener with the clean host, which
+      // then runs the validation below. The explicit scheme is an explicit
+      // protocol choice, so the IP default below must not override it.
+      if (host != raw) {
+        _skipAutoProtocol = true;
+        _serverController.text = host;
+        _skipAutoProtocol = false;
+      }
+      return;
+    }
+
     if (text.isEmpty) {
       setState(() {
         _serverValid = false;
@@ -192,6 +222,24 @@ class _LoginScreenState extends State<LoginScreen>
         _lastValidatedServer = '';
       });
       _debounce?.cancel();
+      return;
+    }
+
+    // IP literals use the ABS LAN convention: HTTP + port 13378 unless the
+    // user typed an explicit port (or hand-picked the protocol). Explicit
+    // ports and domain records keep what was typed (https/http stay on their
+    // implicit 443/80).
+    final hostPart = text.split(RegExp(r'[\/?#]')).first;
+    if (_isIpWithoutPort(hostPart)) {
+      if (!_skipAutoProtocol && _protocol != 'http://') {
+        setState(() => _protocol = 'http://');
+      }
+      final withPort = '$hostPart:13378${text.substring(hostPart.length)}';
+      if (withPort != raw) {
+        // Rewriting re-enters this listener with the port in place; the IP
+        // branch is then a no-op and the validation below runs once.
+        _serverController.text = withPort;
+      }
       return;
     }
 
@@ -214,6 +262,17 @@ class _LoginScreenState extends State<LoginScreen>
 
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 800), () => _checkServer());
+  }
+
+  /// True when [host] is an IP literal with no port suffix - IPv4, a bracketed
+  /// IPv6, or a compressed bare IPv6 (contains `::`).
+  bool _isIpWithoutPort(String host) {
+    if (RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(host)) return true;
+    if (RegExp(r'^\[[0-9a-fA-F:]+\]$').hasMatch(host)) return true;
+    if (RegExp(r'^[0-9a-fA-F:]+$').hasMatch(host) && host.contains('::')) {
+      return true;
+    }
+    return false;
   }
 
   Map<String, String> _collectHeaders() {
@@ -565,11 +624,13 @@ class _LoginScreenState extends State<LoginScreen>
                                           ],
                                           onChanged: (v) {
                                             if (v != null) {
+                                              _skipAutoProtocol = true;
                                               setState(() {
                                                 _protocol = v;
                                                 _serverValid = false;
                                               });
                                               _onServerChanged();
+                                              _skipAutoProtocol = false;
                                             }
                                           },
                                         ),

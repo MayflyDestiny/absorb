@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'inflight_temp_writes.dart';
 import 'update_policy.dart';
 
 class UpdateInfo {
@@ -47,7 +48,7 @@ int? betaNumberFromReleaseNotes(String notes) {
 }
 
 class UpdateCheckerService {
-  static const _repo = 'pounat/absorb'; // Update this to your repo
+  static const _repo = 'MayflyDestiny/absorb';
   static const _checkInterval = Duration(hours: 12);
   static const _dismissedKey = 'update_dismissed_version';
   static const _lastCheckKey = 'update_last_check';
@@ -252,6 +253,7 @@ class ApkUpdater {
 
     final client = http.Client();
     _activeClient = client;
+    registerInFlightWrite(file.path);
     try {
       final request = http.Request('GET', Uri.parse(info.downloadUrl));
       final response = await client.send(request);
@@ -277,6 +279,7 @@ class ApkUpdater {
       }
       return file;
     } finally {
+      unregisterInFlightWrite(file.path);
       if (_activeClient == client) _activeClient = null;
       client.close();
     }

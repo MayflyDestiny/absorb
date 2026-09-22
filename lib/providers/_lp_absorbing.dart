@@ -552,13 +552,24 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     if (itemId.length > 36 && existing['isFinished'] != true) {
       nudgeUnfinishedEpisodeCount(itemId.substring(0, 36), -1);
     }
-    _progressMap[itemId] = {...existing, 'isFinished': true};
+    _progressMap[itemId] = {
+      ...existing,
+      'isFinished': true,
+      // Keep a finished date so the stats widget's "books this year" count
+      // reflects the finish immediately, before the server round-trip.
+      'finishedAt':
+          existing['finishedAt'] ?? DateTime.now().millisecondsSinceEpoch,
+    };
     _localProgressOverrides[itemId] = 1.0;
     _lastFinishedItemId = itemId;
     _locallyFinishedItems.add(itemId);
     // Stats widget shows "books finished this year"; force a refresh so it
-    // reflects the new count without waiting on the 15-min throttle.
-    HomeWidgetService().refreshStats(force: true);
+    // reflects the new count without waiting on the 15-min throttle. Hand it
+    // the progress we already hold so it skips its own getAllProgress pull.
+    HomeWidgetService().refreshStats(
+      force: true,
+      knownProgress: isOffline ? null : _progressMap.values.toList(),
+    );
     if (fromRemote) {
       // Finished on another device: leave Absorbing right away, same as when
       // the book isn't loaded - don't linger until the next play press

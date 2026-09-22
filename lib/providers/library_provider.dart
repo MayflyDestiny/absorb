@@ -312,7 +312,14 @@ class LibraryProvider extends ChangeNotifier
       }
     } catch (e) {
       if (_isLikelyNetworkError(e)) {
-        _goOffline();
+        // A weak-but-alive link can make the retried libraries fetch still fail
+        // without the server being down. Keep the cached library list and stay
+        // online; genuine unreachability is decided by the ping/health-check
+        // path (which requires repeated misses) instead of one slow response.
+        debugPrint(
+            '[Library] loadLibraries failed ($e) — keeping cached libraries online');
+        await _restoreCachedLibraries();
+        await _restoreSelectedLibrary();
       } else {
         debugPrint('[Library] Non-network error (staying online): $e');
       }
@@ -325,7 +332,7 @@ class LibraryProvider extends ChangeNotifier
     unawaited(_catchUpQueueAutoDownloads());
     catchUpSubscribedPodcasts();
     final ebookApi = _api;
-    if (ebookApi != null) {
+    if (ebookApi != null && !isOffline) {
       unawaited(DownloadService().catchUpEbookCaches(ebookApi));
     }
   }

@@ -539,7 +539,7 @@ class _AppShellState extends State<AppShell>
       final url = lib.getCoverUrl(itemId, width: 400);
       if (url != null && !url.startsWith('/')) {
         unawaited(precacheImage(
-          NetworkImage(url, headers: lib.mediaHeaders),
+          CachedNetworkImageProvider(url, headers: lib.mediaHeaders),
           rootNavigatorKey.currentContext!,
           onError: (_, __) {},
         ));

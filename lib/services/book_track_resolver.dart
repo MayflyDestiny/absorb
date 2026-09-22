@@ -21,7 +21,11 @@ typedef TrackHit = ({int index, double localOffset, BookTrack track});
 /// cached sessions are stored under the whole key; the API needs the show id
 /// and the episode's own audio file.
 class BookTrackResolver {
-  static Future<List<BookTrack>?> resolve(String itemId, ApiService? api) async {
+  static Future<List<BookTrack>?> resolve(
+    String itemId,
+    ApiService? api, {
+    bool cacheOnly = false,
+  }) async {
     // Downloaded book: local files + cached track durations.
     final localPaths = DownloadService().getLocalPaths(itemId);
     final sessionRaw = DownloadService().getCachedSessionData(itemId);
@@ -48,8 +52,26 @@ class BookTrackResolver {
     // Streamed book: build per-file URLs from the library item.
     if (api == null) return null;
     final ids = splitEpisodeKey(itemId);
-    final item = await api.getLibraryItem(ids.itemId);
+    // [cacheOnly] keeps this disk-only (no network round-trip) so a play can
+    // start instantly from an already-fetched item; the caller pairs it with a
+    // background /play session for the real stream.
+    final item = cacheOnly
+        ? await api.getCachedLibraryItem(ids.itemId)
+        : await api.getLibraryItem(ids.itemId);
     if (item == null) return null;
+    return tracksFromItem(itemId, item, api);
+  }
+
+  /// Build the per-file stream tracks from an already-fetched library [item]
+  /// (as returned by `getLibraryItem`/`getCachedLibraryItem`). Pure and
+  /// network-free, so a caller that already holds the item pays for no second
+  /// read.
+  static List<BookTrack>? tracksFromItem(
+    String itemId,
+    Map<String, dynamic> item,
+    ApiService api,
+  ) {
+    final ids = splitEpisodeKey(itemId);
     final media = item['media'] as Map<String, dynamic>? ?? {};
 
     // A podcast item has no audioFiles - each episode carries its own single

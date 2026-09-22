@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'api_service.dart';
 import 'book_track_resolver.dart';
+import 'inflight_temp_writes.dart';
 
 /// Outcome of a clip export. [tempPath] is a freshly written .m4a in the temp
 /// dir that the caller should hand to a save/share sheet and then delete.
@@ -82,6 +83,7 @@ class ClipExportService {
         '${tmp.path}/absorb_clip_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
     var ok = false;
+    registerInFlightWrite(outPath);
     try {
       ok = await _channel.invokeMethod<bool>('exportClip', {
             'source': track.source,
@@ -95,6 +97,8 @@ class ClipExportService {
     } on PlatformException catch (e) {
       debugPrint('[ClipExport] native error: ${e.code} ${e.message}');
       throw ClipExportException(e.message ?? e.code);
+    } finally {
+      unregisterInFlightWrite(outPath);
     }
     if (!ok) throw ClipExportException('native export returned false');
 

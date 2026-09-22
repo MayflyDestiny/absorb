@@ -87,6 +87,30 @@ class SessionCache {
     }
   }
 
+  /// Approximate on-disk footprint of cached session metadata for the active
+  /// user scope, in bytes (sum of stored strings encoded as UTF-8). Used by
+  /// the settings clear-cache screen, which can't see SharedPreferences files
+  /// directly.
+  static Future<int> byteSize() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final scope = UserAccountService().activeScopeKey;
+      final prefix = scope.isEmpty ? '' : '$scope:';
+      final cachePrefix = '${prefix}session_cache_';
+      var total = 0;
+      for (final k in prefs.getKeys().toList()) {
+        if (k.startsWith(cachePrefix)) {
+          final raw = prefs.getString(k);
+          if (raw != null) total += utf8.encode(raw).length;
+        }
+      }
+      return total;
+    } catch (e) {
+      debugPrint('[SessionCache] Failed to measure size: $e');
+      return 0;
+    }
+  }
+
   /// Clear all session cache entries for the active user scope.
   static Future<void> clearAll() async {
     try {

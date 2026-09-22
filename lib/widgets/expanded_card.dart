@@ -1138,7 +1138,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
     if (_isCastingThis) {
       pos = cast.castPosition.inMilliseconds / 1000.0;
     } else if (_isActive) {
-      pos = widget.player.position.inMilliseconds / 1000.0;
+      // Use the player's load-aware chapter position so a slow next-episode
+      // load resolves against the pending start instead of the stale
+      // previous-book position (which map to the last chapter).
+      pos = widget.player.chapterResolvePosSec;
     } else {
       final lib = context.read<LibraryProvider>();
       final progress = (_episodeId != null)

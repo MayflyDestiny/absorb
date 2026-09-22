@@ -1252,8 +1252,12 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                           child: Text('#$sequence', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
                         ),
                       ),
+                    if (isFinished)
+                      const Positioned(top: 3, right: 3,
+                        child: CoverFinishedBadge(),
+                      ),
                     if (isExplicit)
-                      Positioned(top: 4, right: 4,
+                      Positioned(top: 4 + (isFinished ? 24 : 0), right: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(4)),
@@ -1261,7 +1265,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                         ),
                       ),
                     if (!isDownloaded && isDownloading)
-                      Positioned(top: isExplicit ? 22 : 4, right: 4,
+                      Positioned(top: (isExplicit ? 22 : 4) + (isFinished ? 24 : 0), right: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
@@ -1274,9 +1278,9 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                           value: progress.clamp(0.0, 1.0), minHeight: 3,
                           backgroundColor: Colors.black38, valueColor: AlwaysStoppedAnimation(cs.primary)),
                       ),
-                    if (isFinished || isDownloaded)
+                    if (isDownloaded)
                       Positioned(left: 0, right: 0, bottom: 0,
-                        child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
+                        child: CoverStateBadges(isDownloaded: isDownloaded),
                       ),
                   ]),
                 ),

@@ -28,6 +28,7 @@ import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
 import 'services/settings_sync_service.dart';
 import 'services/scoped_prefs.dart';
+import 'services/cover_cache_manager.dart';
 import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
 import 'services/carplay_service.dart';
@@ -204,6 +205,12 @@ Future<void> applyOrientationLock() async {
 void main() async {
   HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+
+  // Give every cached network image real connect/read timeouts instead of the
+  // package default (which has none, so stalled cover downloads keep their
+  // sockets alive indefinitely on a slow link).
+  CoverCacheManager.install();
+
   final appLinks = AppLinks();
 
   // These calls use platform channels that require an Activity. When Android

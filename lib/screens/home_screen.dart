@@ -1267,14 +1267,32 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       return;
     }
 
-    // Fetch full item data to get chapters
-    final fullItem = await api.getLibraryItem(itemId);
-    if (fullItem == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
+    // Full item data to get chapters. The shelf item already carries the
+    // media payload (metadata, chapters, duration) for most shelves, so use it
+    // directly and only hit the disk cache — then the network — when the
+    // chapters aren't already in hand. A 30s expanded fetch should never
+    // block starting a book that's sitting on screen.
+    var media = widget.item['media'] as Map<String, dynamic>? ?? {};
+    var fullItem = widget.item;
+    bool hasChapters(Map<String, dynamic> m) =>
+        (m['chapters'] as List<dynamic>?)?.isNotEmpty ?? false;
+    if (!hasChapters(media)) {
+      final cached = await api.getCachedLibraryItem(itemId);
+      if (cached != null) {
+        fullItem = cached;
+        media = cached['media'] as Map<String, dynamic>? ?? {};
+      }
+    }
+    if (!hasChapters(media)) {
+      final fetched = await api.getLibraryItem(itemId);
+      if (fetched == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      fullItem = fetched;
+      media = fetched['media'] as Map<String, dynamic>? ?? {};
     }
 
-    final media = fullItem['media'] as Map<String, dynamic>? ?? {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
     final title = metadata['title'] as String? ?? '';
     final author = metadata['authorName'] as String? ?? '';

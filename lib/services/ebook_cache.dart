@@ -79,6 +79,40 @@ int cachedEbookBytesSync(String itemId) {
   return 0;
 }
 
+/// Total bytes of all cached ebook files. Regenerable from the server, so this
+/// can be surfaced in the settings clear-cache sheet.
+Future<int> ebookCacheUsageBytes() async {
+  try {
+    final dir = await _ebookCacheDir();
+    var total = 0;
+    await for (final f in dir.list(recursive: false, followLinks: false)) {
+      if (f is File) {
+        try {
+          total += f.lengthSync();
+        } catch (_) {}
+      }
+    }
+    return total;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/// Delete every cached ebook file. Cached ebooks are re-downloaded on demand
+/// the next time the reader wants one, so this is a safe cache clear.
+Future<void> clearEbookCache() async {
+  try {
+    final dir = await _ebookCacheDir();
+    for (final f in dir.listSync()) {
+      if (f is File) {
+        try {
+          f.deleteSync();
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
 /// Synthesizes an ebookFile map from a cached file on disk, so a downloaded
 /// book can open its ebook offline even when no ebook metadata survived (old
 /// downloads persisted before the trimmed libraryItem was kept). The format

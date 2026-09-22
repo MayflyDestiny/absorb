@@ -873,6 +873,17 @@ class PlayerSettings {
     await _set('showExplicitBadge', value);
   }
 
+  /// How the "Finished" badge renders on cover art. 'text' (label + check,
+  /// default), 'icon' (check only) or 'off'. Cached for synchronous reads in
+  /// widget build methods.
+  static String finishedBadgeMode = 'text';
+  static Future<String> getFinishedBadgeMode() =>
+      _get('finishedBadgeMode', 'text');
+  static Future<void> setFinishedBadgeMode(String value) async {
+    finishedBadgeMode = value;
+    await _set('finishedBadgeMode', value, notify: true);
+  }
+
   /// Cached value for synchronous access when building audio sources.
   static bool mp3IndexSeeking = false;
   static Future<bool> getMp3IndexSeeking() => _get('mp3IndexSeeking', false);

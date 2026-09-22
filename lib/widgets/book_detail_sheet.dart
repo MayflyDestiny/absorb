@@ -32,6 +32,7 @@ import '../services/bookmark_preview_player.dart';
 import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/inflight_temp_writes.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/socket_service.dart';
@@ -190,6 +191,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _rating;
   String? _asin;
   bool _isLoading = true;
+  bool _seededFromCache = false;
   bool _chaptersExpanded = false;
   bool _bookmarksExpanded = false;
   BookmarkPreviewPlayer? _preview;
@@ -292,6 +294,27 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final auth = context.read<AuthProvider>();
     final lib = context.read<LibraryProvider>();
     final api = auth.apiService;
+
+    // Paint the on-disk full-detail cache before touching the network: the
+    // initialItem passed from a tile is minified (no chapters), and the server
+    // fetch below can spend tens of seconds on a weak link. Only the first
+    // load seeds, so live item-update callbacks don't resurrect a stale
+    // snapshot over the newer data they were triggered by.
+    if (api != null && !_seededFromCache) {
+      _seededFromCache = true;
+      final cached = await api.getCachedLibraryItem(widget.itemId);
+      if (cached != null && mounted) {
+        final override = await MetadataOverrideService().get(widget.itemId);
+        setState(() {
+          _item = override != null
+              ? MetadataOverrideService().applyOverrides(cached, override)
+              : cached;
+          _hasLocalOverride = override != null;
+          _isLoading = false;
+        });
+        _deriveCoverScheme();
+      }
+    }
 
     // Try server first
     if (api != null && !lib.isOffline) {
@@ -1996,10 +2019,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           }
 
           final sink = cachedFile.openWrite();
+          registerInFlightWrite(cachedFile.path);
           try {
             await response.stream.pipe(sink);
           } finally {
             await sink.close();
+            unregisterInFlightWrite(cachedFile.path);
           }
         } finally {
           client.close();
@@ -2285,30 +2310,31 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (confirmed != true) return;
     final api = auth.apiService;
     if (api == null) return;
+    // Capture the provider + root navigator while the sheet is still on
+    // screen, so a mid-request dismissal can't cancel the local update, the
+    // shelf refresh or the toast (they must not depend on the sheet's context).
+    if (!context.mounted) return;
+    final navigator = rootNavigatorKey.currentState;
+    final lib = context.read<LibraryProvider>();
     final player = AudioPlayerService();
     // Mark finished locally first so the card updates immediately
     // when the player stops (which triggers the expanded card to pop)
-    if (context.mounted) {
-      context.read<LibraryProvider>().markFinishedLocally(widget.itemId, skipRefresh: true, skipAutoAdvance: true);
-    }
+    lib.markFinishedLocally(widget.itemId, skipRefresh: true, skipAutoAdvance: true);
     if (player.currentItemId == widget.itemId) await player.stopWithoutSaving();
     try {
       await api.markFinished(widget.itemId, duration);
       await ProgressSyncService().deleteLocal(widget.itemId);
-      if (context.mounted) {
-        final lib = context.read<LibraryProvider>();
-        await _loadItem();
-        await lib.refresh();
-        await lib.removeFromAbsorbing(widget.itemId);
-        if (mounted) setState(() {});
-        if (context.mounted) {
-          showOverlayToast(context, l.markedAsFinishedNiceWork, icon: Icons.check_circle_rounded);
-        }
-      }
+      // Only progress-driven shelves changed. Skip the full personalized
+      // re-fetch (and the extra getAllProgress it triggered) that
+      // lib.refresh() used to run here; the sheet rebuilds off the
+      // provider's progress map, so no item re-fetch is needed either.
+      unawaited(lib.refreshProgressOnly());
+      unawaited(lib.refreshProgressShelves(force: true, reason: 'mark-finished'));
+      await lib.removeFromAbsorbing(widget.itemId);
+      if (mounted) setState(() {});
+      showNavigatorOverlayToast(navigator, l.markedAsFinishedNiceWork, icon: Icons.check_circle_rounded);
     } catch (_) {
-      if (context.mounted) {
-        showOverlayToast(context, l.failedToUpdateCheckConnection, icon: Icons.error_outline_rounded);
-      }
+      showNavigatorOverlayToast(navigator, l.failedToUpdateCheckConnection, icon: Icons.error_outline_rounded);
     }
   }
 
@@ -2328,21 +2354,23 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (confirmed != true) return;
     final api = auth.apiService;
     if (api == null) return;
+    // Capture the provider + root navigator while the sheet is still on
+    // screen, so a mid-request dismissal can't cancel the local update, the
+    // shelf refresh or the toast (they must not depend on the sheet's context).
+    if (!context.mounted) return;
+    final navigator = rootNavigatorKey.currentState;
+    final lib = context.read<LibraryProvider>();
     try {
       await api.markNotFinished(widget.itemId, currentTime: currentTime, duration: duration);
-      if (context.mounted) {
-        final lib = context.read<LibraryProvider>();
-        await lib.markNotFinishedLocally(widget.itemId);
-        lib.unblockFromAbsorbing(widget.itemId);
-        await _loadItem();
-        await lib.refresh();
-        if (mounted) setState(() {});
-        showOverlayToast(context, l.markedAsNotFinishedBackAtIt, icon: Icons.replay_rounded);
-      }
+      await lib.markNotFinishedLocally(widget.itemId);
+      lib.unblockFromAbsorbing(widget.itemId);
+      // Progress-only change: skip the full personalized re-fetch.
+      unawaited(lib.refreshProgressOnly());
+      unawaited(lib.refreshProgressShelves(force: true, reason: 'mark-not-finished'));
+      if (mounted) setState(() {});
+      showNavigatorOverlayToast(navigator, l.markedAsNotFinishedBackAtIt, icon: Icons.replay_rounded);
     } catch (_) {
-      if (context.mounted) {
-        showOverlayToast(context, l.failedToUpdateCheckConnection, icon: Icons.error_outline_rounded);
-      }
+      showNavigatorOverlayToast(navigator, l.failedToUpdateCheckConnection, icon: Icons.error_outline_rounded);
     }
   }
 
@@ -2364,36 +2392,39 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (confirmed != true) return;
     final api = auth.apiService;
     if (api == null) return;
+    // Capture the provider + root navigator while the sheet is still on
+    // screen, so a mid-request dismissal can't cancel the local update, the
+    // shelf refresh or the toast (they must not depend on the sheet's context).
+    if (!context.mounted) return;
+    final navigator = rootNavigatorKey.currentState;
+    final lib = context.read<LibraryProvider>();
     final player = AudioPlayerService();
-    
+
     // Stop player without saving progress
     if (player.currentItemId == widget.itemId) {
       await player.stopWithoutSaving();
     }
-    
+
     // Clear local progress
     await ProgressSyncService().deleteLocal(widget.itemId);
-    
+
     // Reset server progress (PATCH to zero + hide from continue listening)
-    String? progressId;
-    if (context.mounted) {
-      final data = context.read<LibraryProvider>().getProgressData(widget.itemId);
-      progressId = data?['id'] as String?;
-    }
+    final progressData = lib.getProgressData(widget.itemId);
+    final progressId = progressData?['id'] as String?;
     final serverSuccess =
         await api.resetProgress(widget.itemId, duration, progressId: progressId);
-    
+
     // Clear from library provider (mark as reset — forces 0 progress)
-    if (context.mounted) context.read<LibraryProvider>().resetProgressFor(widget.itemId);
-    if (context.mounted) {
-      await _loadItem();
-      await context.read<LibraryProvider>().refresh();
-      showOverlayToast(
-        context,
-        serverSuccess ? l.progressResetFreshStart : l.resetMayNotHaveSynced,
-        icon: serverSuccess ? Icons.restart_alt_rounded : Icons.warning_amber_rounded,
-      );
-    }
+    lib.resetProgressFor(widget.itemId);
+    // Progress-only change: skip the full personalized re-fetch.
+    unawaited(lib.refreshProgressOnly());
+    unawaited(lib.refreshProgressShelves(force: true, reason: 'reset-progress'));
+    if (mounted) setState(() {});
+    showNavigatorOverlayToast(
+      navigator,
+      serverSuccess ? l.progressResetFreshStart : l.resetMayNotHaveSynced,
+      icon: serverSuccess ? Icons.restart_alt_rounded : Icons.warning_amber_rounded,
+    );
   }
 
   /// Delete the item on the server, optionally taking its files with it.
@@ -2556,7 +2587,12 @@ class _FullCoverViewerState extends State<_FullCoverViewer> {
       final safeTitle = widget.title.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$safeTitle$ext');
-      await file.writeAsBytes(response.bodyBytes);
+      registerInFlightWrite(file.path);
+      try {
+        await file.writeAsBytes(response.bodyBytes);
+      } finally {
+        unregisterInFlightWrite(file.path);
+      }
       if (!mounted) return;
       await Share.shareXFiles(
         [XFile(file.path)],

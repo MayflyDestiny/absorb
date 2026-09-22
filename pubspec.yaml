@@ -1,7 +1,7 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.21.3+353
+version: 1.21.4+365
 
 environment:
   sdk: '>=3.10.0 <4.0.0'
@@ -25,6 +25,7 @@ dependencies:
   
   # Image caching
   cached_network_image: ^3.3.0
+  flutter_cache_manager: ^3.4.1
 
   # Audio playback
   just_audio:

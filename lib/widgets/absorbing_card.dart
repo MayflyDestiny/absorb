@@ -273,7 +273,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final api = auth.apiService;
     if (api == null) return;
     try {
-      final fullItem = await api.getLibraryItem(_itemId);
+      // Disk copy first: on a cold restart the network copy of the item can
+      // take tens of seconds, while chapter switching on the active card
+      // needs to unlock immediately. Only fetch when nothing was cached.
+      final fullItem = await api.getCachedLibraryItem(_itemId) ??
+          await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
         // Cache ebookFile if the inline item didn't have it. resolveEbookFile
@@ -1234,12 +1238,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (_isCastingThis) {
       pos = cast.castPosition.inMilliseconds / 1000.0;
     } else if (_isActive) {
-      final seekTarget = widget.player.activeSeekTarget;
-      if (seekTarget != null) {
-        pos = seekTarget;
-      } else {
-        pos = widget.player.position.inMilliseconds / 1000.0;
-      }
+      // Use the player's load-aware chapter position so a slow next-episode
+      // load resolves against the pending start instead of the stale
+      // previous-book position (which map to the last chapter).
+      pos = widget.player.chapterResolvePosSec;
     } else {
       // Use stored progress to calculate position when not actively playing
       final lib = context.read<LibraryProvider>();
@@ -1264,7 +1266,11 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       final ch = ChromecastService().currentChapter;
       return ch?['title'] as String?;
     }
-    if (_isActive && widget.player.activeSeekTarget == null && widget.player.currentChapter != null) {
+    // currentChapter resolves through chapterResolvePosSec, which uses the
+    // active seek target while a slow seek is still buffering - so the label
+    // shows the chapter a jump is heading to immediately instead of staying on
+    // the pre-seek chapter until the position catches up.
+    if (_isActive && widget.player.currentChapter != null) {
       return widget.player.currentChapter!['title'] as String?;
     }
     if (chapterIdx >= 0 && chapterIdx < _chapters.length) {

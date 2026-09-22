@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'cover_badges.dart';
@@ -389,12 +390,12 @@ class _EpisodeCard extends StatelessWidget {
                                   child: Icon(Icons.podcasts_rounded, size: 32,
                                     color: cs.onSurfaceVariant.withValues(alpha: 0.3)))))
                         : BlurPaddedCover(
-                            blurChild: Image.network(coverUrl, fit: BoxFit.cover,
-                                headers: lib.mediaHeaders,
-                                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                            child: Image.network(coverUrl, fit: BoxFit.contain,
-                                headers: lib.mediaHeaders,
-                                errorBuilder: (_, __, ___) => Container(
+                            blurChild: CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+                                httpHeaders: lib.mediaHeaders,
+                                errorWidget: (_, __, ___) => const SizedBox.shrink()),
+                            child: CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.contain,
+                                httpHeaders: lib.mediaHeaders,
+                                errorWidget: (_, __, ___) => Container(
                                   color: cs.surfaceContainerHigh,
                                   child: Icon(Icons.podcasts_rounded, size: 32,
                                     color: cs.onSurfaceVariant.withValues(alpha: 0.3)))))
@@ -418,20 +419,25 @@ class _EpisodeCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  // Finished / downloaded badge
-                  if (isFinished || isDownloaded)
+                  // Finished badge (top-right corner)
+                  if (isFinished)
+                    const Positioned(
+                      top: 4, right: 4,
+                      child: CoverFinishedBadge(),
+                    ),
+                  // Downloaded badge
+                  if (isDownloaded)
                     Positioned(
                       left: 0, right: 0, bottom: 0,
                       child: CoverStateBadges(
                         isDownloaded: isDownloaded,
-                        isFinished: isFinished,
                         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
                       ),
                     ),
                   // Subscribed bell
                   if (isSubscribed)
                     Positioned(
-                      top: 4,
+                      top: 4 + (isFinished ? 24 : 0),
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.all(3),

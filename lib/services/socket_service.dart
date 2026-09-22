@@ -41,7 +41,10 @@ class SocketService {
   }
 
   /// Build socket.io options with capped reconnection to avoid
-  /// hammering an unreachable server (and draining battery).
+  /// hammering an unreachable server (and draining battery). The attempt count
+  /// is generous on purpose: on a weak link the first few attempts commonly
+  /// fail while the server is still reachable, and exhausting them too early
+  /// would flip the whole library offline for no reason.
   @visibleForTesting
   static Map<String, dynamic> buildSocketOptions(
     String socketPath, {
@@ -52,9 +55,9 @@ class SocketService {
         .setPath(socketPath)
         .enableForceNew()
         .enableReconnection()
-        .setReconnectionDelay(1000)
+        .setReconnectionDelay(1500)
         .setReconnectionDelayMax(30000)
-        .setReconnectionAttempts(5);
+        .setReconnectionAttempts(10);
     if (customHeaders.isNotEmpty) {
       builder.setExtraHeaders(customHeaders);
     }

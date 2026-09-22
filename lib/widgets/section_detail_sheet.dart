@@ -181,12 +181,18 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
                     aspectRatio: widget.coverAspectRatio,
                     child: Stack(children: [
                       Positioned.fill(child: _cover(coverUrl, lib, cs)),
-                      if (isExplicit) _explicitBadge(l),
+                      if (isFinished)
+                        Positioned(
+                          top: 4, right: 4,
+                          child: CoverFinishedBadge(),
+                        ),
+                      if (isExplicit)
+                        _explicitBadge(l, top: 4 + (isFinished ? 24 : 0)),
                       if (progress > 0 && !isFinished) _progressBar(cs, progress),
-                      if (isFinished || isDownloaded)
+                      if (isDownloaded)
                         Positioned(
                           left: 0, right: 0, bottom: 0,
-                          child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
+                          child: CoverStateBadges(isDownloaded: isDownloaded),
                         ),
                     ]),
                   ),
@@ -294,13 +300,19 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
                   borderRadius: BorderRadius.circular(10),
                   child: Stack(children: [
                     Positioned.fill(child: _cover(coverUrl, lib, cs)),
-                    if (isExplicit) _explicitBadge(l),
+                    if (isFinished)
+                      Positioned(
+                        top: 4, right: 4,
+                        child: CoverFinishedBadge(),
+                      ),
+                    if (isExplicit)
+                      _explicitBadge(l, top: 4 + (isFinished ? 24 : 0)),
                     if (progress > 0 && !isFinished)
                       _progressBar(cs, progress),
-                    if (isFinished || isDownloaded)
+                    if (isDownloaded)
                       Positioned(
                         left: 0, right: 0, bottom: 0,
-                        child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
+                        child: CoverStateBadges(isDownloaded: isDownloaded),
                       ),
                   ]),
                 ),
@@ -346,8 +358,8 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
         child: Icon(Icons.book_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.3)),
       );
 
-  Widget _explicitBadge(AppLocalizations l) => Positioned(
-        top: 4, right: 4,
+  Widget _explicitBadge(AppLocalizations l, {double top = 4}) => Positioned(
+        top: top, right: 4,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
           decoration: BoxDecoration(

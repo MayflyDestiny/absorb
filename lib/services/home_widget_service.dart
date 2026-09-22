@@ -958,7 +958,10 @@ class HomeWidgetService {
     }
   }
 
-  Future<void> refreshStats({bool force = false}) async {
+  Future<void> refreshStats({
+    bool force = false,
+    List<Map<String, dynamic>>? knownProgress,
+  }) async {
     if (_refreshingStats) {
       debugPrint('[StatsWidget] Skipping refresh: already in flight');
       return;
@@ -982,7 +985,10 @@ class HomeWidgetService {
 
       debugPrint('[StatsWidget] Fetching listening-stats and progress');
       final stats = await api.getListeningStats();
-      final progress = await api.getAllProgress();
+      // Callers that already hold the account's progress (e.g. the library
+      // provider right after marking a book finished) pass it in so this does
+      // not re-pull the whole list for a count it already has.
+      final progress = knownProgress ?? await api.getAllProgress();
 
       if (stats == null)
         debugPrint('[StatsWidget] listening-stats returned null');

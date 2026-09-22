@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/player_settings.dart';
 
 /// State banner across the bottom of cover art: a finished check + "Finished"
 /// (green) and a downloaded arrow + "Downloaded" (white), stacked, over a strong
@@ -22,7 +23,7 @@ class CoverStateBadges extends StatelessWidget {
   const CoverStateBadges({
     super.key,
     required this.isDownloaded,
-    required this.isFinished,
+    this.isFinished = false,
     this.iconSize = 13,
     this.iconOnly = false,
     this.borderRadius,
@@ -100,13 +101,15 @@ class CoverStateBadges extends StatelessWidget {
   }
 }
 
-/// Compact status chips for covers. When [surfaceTone] is true (default
-/// false), the chips use theme surface colors instead of the dark/white
-/// overlay palette, so they can sit *outside* the cover artwork (e.g. centered
-/// below a grid cover).
+/// Compact download-status chip for covers. When [surfaceTone] is true
+/// (default false), the chip uses theme surface colors instead of the
+/// dark/white overlay palette, so it can sit *outside* the cover artwork (e.g.
+/// centered below a grid cover).
+///
+/// The "finished" check is no longer part of this chip — it lives in the
+/// top-right corner via [CoverFinishedBadge].
 class CoverStatusChips extends StatelessWidget {
   final bool isDownloaded;
-  final bool isFinished;
 
   /// Downloaded chapters and the book's full chapter count. When [savedChapters]
   /// is 0 or below [totalChapters] is 0/unknown, the plain label is shown.
@@ -119,7 +122,6 @@ class CoverStatusChips extends StatelessWidget {
   const CoverStatusChips({
     super.key,
     required this.isDownloaded,
-    required this.isFinished,
     this.savedChapters = 0,
     this.totalChapters = 0,
     this.surfaceTone = false,
@@ -127,40 +129,19 @@ class CoverStatusChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!isDownloaded && !isFinished) return const SizedBox.shrink();
+    if (!isDownloaded) return const SizedBox.shrink();
     final l = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final partial =
-        isDownloaded && totalChapters > 0 && savedChapters < totalChapters;
+    final partial = totalChapters > 0 && savedChapters < totalChapters;
     final savedLabel = partial
         ? l.coverSavedCount(savedChapters, totalChapters)
         : l.saved;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        if (isFinished)
-          _chip(
-            icon: Icons.check_circle_rounded,
-            label: l.finished,
-            background: surfaceTone
-                ? Colors.green.withValues(alpha: dark ? 0.18 : 0.12)
-                : Colors.green.shade700.withValues(alpha: 0.92),
-            foreground: surfaceTone
-                ? (dark ? Colors.greenAccent.shade100 : Colors.green.shade800)
-                : Colors.white,
-          ),
-        if (isFinished && isDownloaded) const SizedBox(height: 3),
-        if (isDownloaded)
-          _chip(
-            icon: Icons.download_rounded,
-            label: savedLabel,
-            background:
-                surfaceTone ? cs.surfaceContainerHighest : Colors.black.withValues(alpha: 0.62),
-            foreground: surfaceTone ? cs.onSurfaceVariant : Colors.white,
-          ),
-      ],
+    return _chip(
+      icon: Icons.download_rounded,
+      label: savedLabel,
+      background:
+          surfaceTone ? cs.surfaceContainerHighest : Colors.black.withValues(alpha: 0.62),
+      foreground: surfaceTone ? cs.onSurfaceVariant : Colors.white,
     );
   }
 
@@ -191,6 +172,59 @@ class CoverStatusChips extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Green "Finished" badge for the top-right corner of a cover. The display
+/// style is controlled by the global `finishedBadgeMode` setting: with the
+/// "Finished" label (default), icon-only, or hidden entirely. Rebuilds when
+/// the setting changes.
+class CoverFinishedBadge extends StatelessWidget {
+  const CoverFinishedBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: PlayerSettings.settingsChanged,
+      builder: (context, _) {
+        final l = AppLocalizations.of(context)!;
+        final background = Colors.green.shade700.withValues(alpha: 0.92);
+        final mode = PlayerSettings.finishedBadgeMode;
+        if (mode == 'off') return const SizedBox.shrink();
+        if (mode == 'icon') {
+          return Container(
+            padding: const EdgeInsets.all(3),
+            decoration:
+                BoxDecoration(color: background, shape: BoxShape.circle),
+            child: const Icon(Icons.check_circle_rounded,
+                size: 12, color: Colors.white),
+          );
+        }
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  size: 11, color: Colors.white),
+              const SizedBox(width: 3),
+              Text(
+                l.finished,
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

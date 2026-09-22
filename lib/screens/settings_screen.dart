@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart' show AudioPlayer;
+import 'package:path_provider/path_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -17,6 +18,11 @@ import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
 import '../services/log_service.dart';
 import '../services/json_file_cache.dart';
+import '../services/cover_cache_manager.dart';
+import '../services/session_cache.dart';
+import '../services/transcript_line_store.dart';
+import '../services/ebook_cache.dart';
+import '../services/inflight_temp_writes.dart';
 import '../services/quick_actions_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/socket_service.dart';
@@ -145,6 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hideEbookOnly = false;
   bool _showGoodreadsButton = false;
   bool _showExplicitBadge = true;
+  String _finishedBadgeMode = 'text';
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
   bool _lockPortrait = false;
@@ -193,6 +200,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ];
   int _streamingCacheSizeMb = 0;
   int _jsonCacheBytes = 0;
+  int _coverCacheBytes = 0;
+  int _transcriptCacheBytes = 0;
+  int _streamingCacheBytes = 0;
+  int _sessionCacheBytes = 0;
+  int _ebookCacheBytes = 0;
+  int _exportCacheBytes = 0;
+  int? _systemCacheBytes;
+  int? _systemDataBytes;
+  int? _systemCodeCacheBytes;
   bool _localServerEnabled = false;
   String _localServerUrl = '';
   late final TextEditingController _localServerController;
@@ -205,7 +221,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AudiobookshelfServerUpdate? _serverUpdate;
   String? _serverUpdateCheckedFor;
   bool _serverUpdateCheckRunning = false;
-  String _downloadLocationLabel = 'App Internal Storage (Default)';
+  String _downloadLocationLabel = 'App Data (Default)';
   bool _canPickDownloadLocation = false;
   int _totalDownloadSizeBytes = 0;
   int _deviceTotalBytes = 0;
@@ -1082,8 +1098,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     final duckBriefInterruptions = await PlayerSettings.getDuckBriefInterruptions();
     final autoplayOnCarConnect = await PlayerSettings.getAutoplayOnCarConnect();
+    final finishedBadgeMode = await PlayerSettings.getFinishedBadgeMode();
     unawaited(JsonFileCache.usageBytes().then((b) {
       if (mounted) setState(() => _jsonCacheBytes = b);
+    }));
+    unawaited(CoverCacheManager.instance.sizeBytes().then((b) {
+      if (mounted) setState(() => _coverCacheBytes = b);
+    }));
+    unawaited(TranscriptLineStore.instance.cacheBytes().then((b) {
+      if (mounted) setState(() => _transcriptCacheBytes = b);
+    }));
+    unawaited(ebookCacheUsageBytes().then((b) {
+      if (mounted) setState(() => _ebookCacheBytes = b);
+    }));
+    unawaited(_measureExportBytes().then((b) {
+      if (mounted) setState(() => _exportCacheBytes = b);
+    }));
+    unawaited(DownloadService.getStorageStats().then((s) {
+      if (mounted && s != null) {
+        setState(() {
+          _systemCacheBytes = s['cacheBytes'];
+          _systemDataBytes = s['dataBytes'];
+          _systemCodeCacheBytes = s['codeCacheBytes'];
+        });
+      }
     }));
 
     // Chapter skip settings
@@ -1107,6 +1145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _notifSpeedBookmark = notifSpeedBookmark;
         _duckBriefInterruptions = duckBriefInterruptions;
         _autoplayOnCarConnect = autoplayOnCarConnect;
+        _finishedBadgeMode = finishedBadgeMode;
         _lockSeekBar = lockSeek;
         _speedAdjustedTime = speedAdj;
         _forwardSkip = fwd;
@@ -1216,13 +1255,428 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ? '${(b / 1024).ceil()} KB'
       : '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
 
-  Future<void> _clearJsonCache() async {
+  /// Sum of the categorized cache tiles. Android's reported cacheBytes adds
+  /// the ART/JIT code_cache on top of everything here, so the panel shows
+  /// `tiles + code cache` to reconcile with the system figure.
+  int get _tileCacheSumBytes =>
+      _jsonCacheBytes +
+      _coverCacheBytes +
+      _transcriptCacheBytes +
+      _streamingCacheBytes +
+      _sessionCacheBytes +
+      _ebookCacheBytes +
+      _exportCacheBytes;
+
+  /// First external cache directory, or null when none is available (iOS).
+  Future<Directory?> _externalCacheDir() async {
+    try {
+      final dirs = await getExternalCacheDirectories();
+      if (dirs == null || dirs.isEmpty) return null;
+      return dirs.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Disk footprint of the ExoPlayer streaming cache (Android) or the just_audio
+  /// native streaming cache (other platforms), in bytes. Android puts the
+  /// ExoPlayer cache in the *external* cache directory
+  /// (externalCacheDir/streaming_cache) while the pure-Dart just_audio cache
+  /// lives under the app's temporary directory, so both are summed here.
+  Future<int> _measureStreamingCacheBytes() async {
+    var total = 0;
+    try {
+      final appDir = await getTemporaryDirectory();
+      final extDir = await _externalCacheDir();
+      final roots = [
+        appDir.path,
+        if (extDir != null) extDir.path,
+      ];
+      for (final root in roots) {
+        for (final dirName in ['streaming_cache', 'just_audio_streaming_cache']) {
+          final dir = Directory('$root${Platform.pathSeparator}$dirName');
+          if (!dir.existsSync()) continue;
+          await for (final entity
+              in dir.list(recursive: true, followLinks: false)) {
+            if (entity is File) {
+              try {
+                total += entity.lengthSync();
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[Settings] Failed to measure streaming cache: $e');
+    }
+    return total;
+  }
+
+  /// E-book file extensions (lowercase, no dot) recognised by the app's
+  /// readers. Used to tell loose ebook files sitting in the temp root (the
+  /// save-to-device / reader snippet caches) apart from the export fallout.
+  static const _ebookExts = [
+    'epub', 'pdf', 'mobi', 'azw', 'azw3', 'azw4', 'cbz', 'cbr', 'djvu', 'fb2',
+  ];
+
+  static bool _isEbookFile(String path) {
+    final lower = path.toLowerCase();
+    return _ebookExts.any((ext) => lower.endsWith('.$ext'));
+  }
+
+  /// Temp + external cache roots that the per-category measures share.
+  Future<List<Directory>> _cacheRoots() async {
+    final roots = <Directory>[(await getTemporaryDirectory())];
+    final ext = await _externalCacheDir();
+    if (ext != null) roots.add(ext);
+    return roots;
+  }
+
+  /// Recursive byte count of [dir] (0 when missing/unreadable).
+  Future<int> _dirBytes(Directory dir) async {
+    var total = 0;
+    try {
+      if (!dir.existsSync()) return 0;
+      await for (final entity
+          in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          try {
+            total += entity.lengthSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return total;
+  }
+
+  /// Cover-image bytes: the flutter_cache_manager store plus the home-widget
+  /// cover art (widget_covers) and Android Auto cover cache (aa_covers). All
+  /// three are regenerable pictures, so they share the "Cover images" tile.
+  Future<int> _measureCoverBytes() async {
+    var total = await CoverCacheManager.instance.sizeBytes();
+    for (final root in await _cacheRoots()) {
+      for (final name in ['widget_covers', 'aa_covers']) {
+        total += await _dirBytes(
+            Directory('${root.path}${Platform.pathSeparator}$name'));
+      }
+    }
+    return total;
+  }
+
+  /// E-book bytes: the reader's offline cache in app support plus loose
+  /// ebook-format files the cache helpers copy into the temp root.
+  Future<int> _measureEbookBytes() async {
+    var total = await ebookCacheUsageBytes();
+    for (final root in await _cacheRoots()) {
+      await for (final e in root.list(followLinks: false)) {
+        if (e is File && _isEbookFile(e.path)) {
+          try {
+            total += e.lengthSync();
+          } catch (_) {}
+        }
+      }
+    }
+    return total;
+  }
+
+  /// Exports and interrupted-download leftovers plus the rebuilt-on-demand
+  /// transcript and e-book caches: everything in the temp + external cache
+  /// directories that isn't owned by a named category above (covers,
+  /// streaming, json) and isn't a loose ebook file is treated as leftover;
+  /// transcript lines and e-book files are folded into this tile as well.
+  Future<int> _measureExportBytes() async {
+    var total = 0;
+    const owned = <String>{
+      'widget_covers',
+      'aa_covers',
+      'streaming_cache',
+      'just_audio_streaming_cache',
+      'json_cache',
+      'absorbCoverCache',
+    };
+    try {
+      for (final root in await _cacheRoots()) {
+        if (!root.existsSync()) continue;
+        await for (final entity
+            in root.list(recursive: true, followLinks: false)) {
+          if (entity is! File) continue;
+          final segs =
+              entity.path.substring(root.path.length + 1).split(Platform.pathSeparator);
+          if (owned.contains(segs.first)) continue;
+          if (_isEbookFile(entity.path)) continue;
+          try {
+            total += entity.lengthSync();
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      debugPrint('[Settings] Failed to measure exports: $e');
+    }
+    return total;
+  }
+
+  /// One place to clear the app's caches, by category.
+  Future<void> _showClearCacheSheet() async {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+
+    // Refresh sizes so the sheet reflects the current state.
+    final jsonBytes = await JsonFileCache.usageBytes();
+    final coverBytes = await _measureCoverBytes();
+    final transcriptBytes = await TranscriptLineStore.instance.cacheBytes();
+    final [streamBytes, sessionBytes] = await Future.wait([
+      _measureStreamingCacheBytes(),
+      SessionCache.byteSize(),
+    ]);
+    final exportBytes = await _measureExportBytes();
+    final systemStats = await DownloadService.getStorageStats();
+    final ebookBytes = await _measureEbookBytes();
+    if (!mounted) return;
+    setState(() {
+      _jsonCacheBytes = jsonBytes;
+      _coverCacheBytes = coverBytes;
+      _transcriptCacheBytes = transcriptBytes;
+      _streamingCacheBytes = streamBytes;
+      _sessionCacheBytes = sessionBytes;
+      _ebookCacheBytes = ebookBytes;
+      _exportCacheBytes = exportBytes;
+      _systemCacheBytes = systemStats?['cacheBytes'];
+      _systemDataBytes = systemStats?['dataBytes'];
+      _systemCodeCacheBytes = systemStats?['codeCacheBytes'];
+    });
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cs.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          void refresh() {
+            if (mounted) setState(() {});
+            setSheetState(() {});
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(l.clearCacheSheetTitle,
+                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(l.clearCacheSheetSubtitle,
+                    textAlign: TextAlign.center,
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                if (_systemCacheBytes != null && _systemDataBytes != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.storage_outlined,
+                            size: 18, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${l.cacheSystemCacheLabel} ${_fmtBytes(_systemCacheBytes!)}'
+                                ' · ${l.cacheSystemDataLabel} ${_fmtBytes(_systemDataBytes!)}',
+                                style: tt.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              Text(l.cacheSystemStatsHint,
+                                  style: tt.bodySmall?.copyWith(
+                                      color: cs.onSurfaceVariant)),
+                              const SizedBox(height: 2),
+                              if (_systemCodeCacheBytes != null &&
+                                  _systemCodeCacheBytes! > 0)
+                                Text(
+                                  '${l.cacheCodeCacheLabel} ${_fmtBytes(_systemCodeCacheBytes!)} · '
+                                  '${l.cacheTilesSumLabel} ${_fmtBytes(_tileCacheSumBytes)}',
+                                  style: tt.bodySmall?.copyWith(
+                                      color: cs.onSurfaceVariant),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _cacheTile(
+                  cs: cs,
+                  tt: tt,
+                  icon: Icons.image_outlined,
+                  title: l.cacheCovers,
+                  subtitle: l.cacheCoversHint,
+                  sizeBytes: _coverCacheBytes,
+                  enabled: _coverCacheBytes > 0,
+                  clearedMessage: l.coverCacheCleared,
+                  onClear: () async {
+                    await CoverCacheManager.instance.clear();
+                    await _deleteCoverDirs();
+                    if (mounted) setState(() => _coverCacheBytes = 0);
+                  },
+                  onChanged: refresh,
+                ),
+                _cacheTile(
+                  cs: cs,
+                  tt: tt,
+                  icon: Icons.dns_outlined,
+                  title: l.appCache,
+                  subtitle: l.cacheAppDataHint,
+                  sizeBytes: _jsonCacheBytes + _sessionCacheBytes,
+                  enabled: _jsonCacheBytes + _sessionCacheBytes > 0,
+                  clearedMessage: l.appCacheCleared,
+                  onClear: () async {
+                    await JsonFileCache.clearAll();
+                    await SessionCache.clearAll();
+                    if (mounted) {
+                      setState(() {
+                        _jsonCacheBytes = 0;
+                        _sessionCacheBytes = 0;
+                      });
+                    }
+                  },
+                  onChanged: refresh,
+                ),
+                _cacheTile(
+                  cs: cs,
+                  tt: tt,
+                  icon: Icons.download_for_offline_outlined,
+                  title: l.streamingCache,
+                  subtitle: l.cacheStreamingHint,
+                  sizeBytes: _streamingCacheBytes,
+                  enabled: _streamingCacheBytes > 0,
+                  clearedMessage: l.streamingCacheCleared,
+                  onClear: () async {
+                    try {
+                      await AudioPlayer.clearStreamingCache();
+                    } catch (_) {}
+                    final remaining = await _measureStreamingCacheBytes();
+                    if (mounted) {
+                      setState(() => _streamingCacheBytes = remaining);
+                    }
+                  },
+                  onChanged: refresh,
+                ),
+                _cacheTile(
+                  cs: cs,
+                  tt: tt,
+                  icon: Icons.folder_delete_outlined,
+                  title: l.cacheExports,
+                  subtitle: l.cacheExportsHint,
+                  sizeBytes: _exportCacheBytes +
+                      _transcriptCacheBytes +
+                      _ebookCacheBytes,
+                  enabled: _exportCacheBytes +
+                          _transcriptCacheBytes +
+                          _ebookCacheBytes >
+                      0,
+                  clearedMessage: l.exportsCleared,
+                  onClear: () async {
+                    await _clearTempFiles();
+                    await TranscriptLineStore.instance.clearAll();
+                    await clearEbookCache();
+                    await _deleteLooseEbooks();
+                    if (mounted) {
+                      setState(() {
+                        _exportCacheBytes = 0;
+                        _transcriptCacheBytes = 0;
+                        _ebookCacheBytes = 0;
+                      });
+                    }
+                  },
+                  onChanged: refresh,
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    label: Text(l.clearAllCaches),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _clearAllCaches();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _cacheTile({
+    required ColorScheme cs,
+    required TextTheme tt,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required int? sizeBytes,
+    required bool enabled,
+    required Future<void> Function() onClear,
+    required VoidCallback onChanged,
+    required String clearedMessage,
+  }) {
+    final l = AppLocalizations.of(context)!;
+    final sizeLabel = sizeBytes == null ? null : _fmtBytes(sizeBytes);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: enabled ? cs.primary : cs.onSurfaceVariant),
+      title: Text(title),
+      subtitle: Text(
+        sizeLabel == null ? subtitle : '$sizeLabel · $subtitle',
+        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: TextButton(
+        onPressed: enabled
+            ? () async {
+                await onClear();
+                if (!mounted) return;
+                showOverlayToast(context, clearedMessage,
+                    icon: Icons.delete_outline_rounded);
+                onChanged();
+              }
+            : null,
+        child: Text(l.clearCache),
+      ),
+    );
+  }
+
+  Future<void> _clearAllCaches() async {
     final l = AppLocalizations.of(context)!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(l.appCache),
-        content: Text(l.appCacheConfirm),
+        title: Text(l.clearAllCaches),
+        content: Text(l.clearAllCachesConfirm),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1235,10 +1689,177 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (ok != true || !mounted) return;
     await JsonFileCache.clearAll();
+    await CoverCacheManager.instance.clear();
+    await _deleteCoverDirs();
+    await clearEbookCache();
+    await _deleteLooseEbooks();
+    await SessionCache.clearAll();
+    await TranscriptLineStore.instance.clearAll();
+    try {
+      await AudioPlayer.clearStreamingCache();
+    } catch (_) {}
+    await _sweepOrphanTempFiles();
+    await _sweepExternalCacheOthers();
     if (!mounted) return;
-    setState(() => _jsonCacheBytes = 0);
-    showOverlayToast(context, l.appCacheCleared,
+    setState(() {
+      _jsonCacheBytes = 0;
+      _coverCacheBytes = 0;
+      _transcriptCacheBytes = 0;
+      _streamingCacheBytes = 0;
+      _sessionCacheBytes = 0;
+      _ebookCacheBytes = 0;
+      _exportCacheBytes = 0;
+    });
+    showOverlayToast(context, l.cacheAllCleared,
         icon: Icons.delete_outline_rounded);
+  }
+
+  /// Deletes the home-widget (widget_covers) and Android Auto (aa_covers)
+  /// cover-art directories from every cache root. Regenerable, so safe to wipe
+  /// alongside the main cover cache.
+  Future<void> _deleteCoverDirs() async {
+    for (final root in await _cacheRoots()) {
+      for (final name in ['widget_covers', 'aa_covers']) {
+        try {
+          final dir = Directory('${root.path}${Platform.pathSeparator}$name');
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// Deletes loose ebook-format files in the temp/external cache roots (the
+  /// save-to-device / reader snippet copies), keeping the app-support
+  /// ebook_cache directory intact (that one is cleared by [clearEbookCache]).
+  Future<void> _deleteLooseEbooks() async {
+    for (final root in await _cacheRoots()) {
+      await for (final e in root.list(followLinks: false)) {
+        if (e is File && _isEbookFile(e.path) && !isInFlightWrite(e.path)) {
+          try {
+            e.deleteSync();
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  /// Splits one path relative to a root into its leading (top-level) segment.
+  /// The export measures/clears use this to keep other categories' folders
+  /// out: widget/aa covers belong to "Cover images", streaming caches to the
+  /// streaming tile, json_cache to "App data cache", and the cover cache is
+  /// measured through CoverCacheManager.
+  static const _ownedCacheDirs = <String>{
+    'widget_covers',
+    'aa_covers',
+    'streaming_cache',
+    'just_audio_streaming_cache',
+    'json_cache',
+    'absorbCoverCache',
+  };
+
+  /// Clears the "Exports & leftovers" category: one-off artifacts in the temp
+  /// + external cache directories that no named category owns (share cards,
+  /// notes exports, clips, transcription WAVs, update packages, interrupted
+  /// downloader chunks). Keeps live downloader chunks so a download in flight
+  /// can still resume.
+  Future<void> _clearTempFiles() async {
+    await _sweepOrphanTempFiles(staleAfter: Duration.zero);
+    await _sweepExternalCacheOthers(staleAfter: Duration.zero);
+  }
+
+  /// Best-effort sweep of the external cache directory (Android) outside the
+  /// named category folders, keeping background_downloader chunks while any
+  /// download task is still alive.
+  Future<void> _sweepExternalCacheOthers({
+    Duration staleAfter = const Duration(minutes: 30),
+  }) async {
+    try {
+      final ext = await _externalCacheDir();
+      if (ext == null || !ext.existsSync()) return;
+      final hasLiveDownloads = await DownloadService().hasActiveDownloaderTasks();
+      final now = DateTime.now();
+      for (final e in ext.listSync(followLinks: false)) {
+        try {
+          if (e is Directory) {
+            if (_ownedCacheDirs.contains(
+                e.path.split(Platform.pathSeparator).last)) {
+              continue;
+            }
+            await for (final f in e.list(recursive: true, followLinks: false)) {
+              if (f is! File) continue;
+              if (isInFlightWrite(f.path)) continue;
+              final stat = f.statSync();
+              if (now.difference(stat.modified) < staleAfter) continue;
+              if (hasLiveDownloads &&
+                  f.path.split(Platform.pathSeparator).last
+                      .startsWith('com.bbflight.background_downloader')) {
+                continue;
+              }
+              await f.delete();
+            }
+            continue;
+          }
+          if (e is! File) continue;
+          if (isInFlightWrite(e.path)) continue;
+          final stat = e.statSync();
+          if (now.difference(stat.modified) < staleAfter) continue;
+          await e.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  /// Best-effort sweep of everything else living in the app's temp directory
+  /// that isn't covered by the named cache clearances above: leftover
+  /// background_downloader chunk files (from interrupted/never-resumed
+  /// downloads), and one-off export files (share cards, notes, clips,
+  /// transcription WAVs, update packages). Skips background_downloader chunk
+  /// files while any download task is still alive (those hold partial bytes
+  /// for resume), anything touched within the last [staleAfter] (so an
+  /// in-flight write isn't razed), and the directories other categories own
+  /// (widget/aa covers, streaming caches, json_cache, cover cache).
+  Future<void> _sweepOrphanTempFiles({
+    Duration staleAfter = const Duration(minutes: 30),
+  }) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      if (!dir.existsSync()) return;
+      final hasLiveDownloads = await DownloadService().hasActiveDownloaderTasks();
+      final now = DateTime.now();
+
+      Future<void> sweep(Directory d) async {
+        for (final e in d.listSync(followLinks: false)) {
+          try {
+            if (e is Directory) {
+              // Never descend into a directory another category owns.
+              if (_ownedCacheDirs.contains(
+                  e.path.split(Platform.pathSeparator).last)) {
+                continue;
+              }
+              await sweep(e);
+              continue;
+            }
+            if (e is! File) continue;
+            // Loose ebook copies belong to the e-book category, not here.
+            if (_isEbookFile(e.path)) continue;
+            if (isInFlightWrite(e.path)) continue;
+            final stat = e.statSync();
+            if (now.difference(stat.modified) < staleAfter) continue;
+            // Background downloader chunk files are named
+            // com.bbflight.background_downloader<digits>; keep them whole while
+            // a download can still resume from them.
+            if (hasLiveDownloads &&
+                e.path.split(Platform.pathSeparator).last
+                    .startsWith('com.bbflight.background_downloader')) {
+              continue;
+            }
+            await e.delete();
+          } catch (_) {}
+        }
+      }
+
+      await sweep(dir);
+    } catch (_) {}
   }
 
   /// Default/Show/Hide picker for the currently selected library.
@@ -2941,6 +3562,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           const Divider(height: 1, indent: 16, endIndent: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 12),
+                                Text(l.finishedBadgeMode,
+                                    style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                                const SizedBox(height: 4),
+                                Text(l.finishedBadgeModeSubtitle,
+                                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: SegmentedButton<String>(
+                                    showSelectedIcon: false,
+                                    segments: [
+                                      ButtonSegment(
+                                          value: 'text',
+                                          label: Text(l.finishedBadgeModeText)),
+                                      ButtonSegment(
+                                          value: 'icon',
+                                          label: Text(l.finishedBadgeModeIcon)),
+                                      ButtonSegment(
+                                          value: 'off',
+                                          label: Text(l.finishedBadgeModeOff)),
+                                    ],
+                                    selected: {_finishedBadgeMode},
+                                    onSelectionChanged: _loaded ? (v) {
+                                      setState(() => _finishedBadgeMode = v.first);
+                                      PlayerSettings.setFinishedBadgeMode(v.first);
+                                    } : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1, indent: 16, endIndent: 16),
                           SwitchListTile(
                             title: Text(l.wordingClassicTitle),
                             subtitle: Text(
@@ -4138,35 +4798,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               PlayerSettings.setStreamingCacheSizeMb(v.first);
                                     },
                           )),
-                                if (_streamingCacheSizeMb > 0) ...[
-                                  const SizedBox(height: 8),
-                                  TextButton.icon(
-                              icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                                    label: Text(l.clearCache),
-                                    onPressed: () async {
-                                      try {
-                                        await AudioPlayer.clearStreamingCache();
-                                      } catch (_) {}
-                                      if (mounted) {
-                                  showOverlayToast(context, l.streamingCacheCleared,
-                                      icon: Icons.delete_outline_rounded);
-                                      }
-                                    },
-                                  ),
-                                ],
                           const SizedBox(height: 12),
                           ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                            title: Text(l.appCache),
+                            leading: Icon(Icons.cleaning_services_outlined, color: cs.primary),
+                            title: Text(l.clearCache),
                             subtitle: Text(
-                              l.appCacheHint(_fmtBytes(_jsonCacheBytes)),
+                              l.clearCacheHint,
                               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                             ),
-                            trailing: TextButton.icon(
-                              icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                              label: Text(l.clearCache),
-                              onPressed: _jsonCacheBytes > 0 ? _clearJsonCache : null,
-                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: _showClearCacheSheet,
                           ),
                                 const SizedBox(height: 4),
                               ],
@@ -4484,7 +5126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: Icon(Icons.open_in_new_rounded,
                           size: 18, color: cs.onSurfaceVariant),
                             onTap: () => launchUrl(
-                          Uri.parse('https://github.com/pounat/absorb/issues'),
+                          Uri.parse('https://github.com/MayflyDestiny/absorb/issues'),
                           mode: LaunchMode.externalApplication),
                           ),
                           const Divider(height: 1, indent: 16, endIndent: 16),
@@ -5205,7 +5847,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Ask whether to move existing downloads when the download location
   /// changes. Returns true = migrate, false = keep in place, null = cancel
   /// the whole switch. [toInternal] tweaks the description for reverting to
-  /// the built-in storage.
+  /// the default (non-custom) download location.
   Future<bool?> _askMigrateDownloads(BuildContext context, int count,
       {bool toInternal = false}) async {
     final l = AppLocalizations.of(context)!;

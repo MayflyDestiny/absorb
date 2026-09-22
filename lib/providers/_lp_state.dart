@@ -41,6 +41,7 @@ mixin _StateMixin on ChangeNotifier {
 
   Future<void>? _personalizedInFlight;
   Future<void>? _progressShelvesInFlight;
+  Future<void>? _refreshProgressInFlight;
   DateTime? _lastProgressShelvesFetchAt;
   String? _lastProgressShelvesLibraryId;
   bool _rssHydrationInFlight = false;
@@ -106,6 +107,8 @@ mixin _StateMixin on ChangeNotifier {
   bool _isReconnecting = false;
   Timer? _serverPingTimer;
   Timer? _healthCheckTimer;
+  int _healthCheckMisses = 0;
+  int _connectivityPingMisses = 0;
   Timer? _localProbeTimer;
   int _localProbeFailures = 0;
   DateTime? _localLastReachableAt;

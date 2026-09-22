@@ -611,7 +611,7 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
   }
 }
 
-/// Speed button as wide card �?opens the full speed sheet with slider
+/// Speed button as wide card — opens the full speed sheet with slider
 class CardSpeedButtonInline extends StatefulWidget {
   final AudioPlayerService player;
   final Color accent;
@@ -1534,10 +1534,10 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
   }
 }
 
-// ══════════════════════════════════════════════════════════════�?
+// ══════════════════════════════════════════════════════════════
 // Shared action delegate for absorbing card & expanded card
 // Eliminates duplicated button/sheet logic between the two.
-// ══════════════════════════════════════════════════════════════�?
+// ══════════════════════════════════════════════════════════════
 
 class CardActionDelegate {
   final BuildContext context;

@@ -199,6 +199,32 @@ class MainActivity : AudioServiceActivity() {
                             result.error("STORAGE_ERROR", e.message, null)
                         }
                     }
+                    "getStorageStats" -> {
+                        // Android 8+ counts what the system shows under
+                        // Settings → Apps → {app} → Storage. dataBytes is the
+                        // "App data / 数据" figure, cacheBytes the "Cache /
+                        // 缓存" figure. queryStatsForPackage needs no extra
+                        // permission when the queried package is ourselves.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            try {
+                                val storageManager = getSystemService(
+                                    Context.STORAGE_SERVICE) as android.app.usage.StorageStatsManager
+                                val stats = storageManager.queryStatsForPackage(
+                                    android.os.storage.StorageManager.UUID_DEFAULT,
+                                    packageName,
+                                    android.os.Process.myUserHandle())
+                                result.success(mapOf(
+                                    "cacheBytes" to stats.cacheBytes,
+                                    "dataBytes" to stats.dataBytes,
+                                    "codeCacheBytes" to codeCacheDirSize()
+                                ))
+                            } catch (e: Exception) {
+                                result.error("STORAGE_ERROR", e.message, null)
+                            }
+                        } else {
+                            result.error("UNSUPPORTED", "StorageStats requires API 26+", null)
+                        }
+                    }
                     "moveBookToSaf" -> handleMoveBookToSaf(call, result)
                     "migrateBook" -> handleMigrateBook(call, result)
                     "scanSafDirectory" -> handleScanSafDirectory(call, result)
@@ -301,6 +327,23 @@ class MainActivity : AudioServiceActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * Size of the app's code_cache directory (ART/JIT compiled output). The
+     * OS counts it inside StorageStats.cacheBytes, but Dart can't reach it via
+     * path_provider (it exposes the plain cache dir only), so the settings
+     * cache panel would otherwise under-report against the system figure.
+     * Reported separately so the panel can reconcile the ~sub-MB gap.
+     */
+    private fun codeCacheDirSize(): Long {
+        return try {
+            val dir = File(codeCacheDir, ".")
+            if (!dir.exists()) return 0L
+            dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     // Move downloaded temp files into the user's SAF folder, creating the nested

@@ -2132,19 +2132,83 @@ class AppLocalizationsPt extends AppLocalizations {
   String get streamingCacheCleared => 'Streaming cache cleared';
 
   @override
-  String get appCache => 'App data cache';
+  String get appCache => 'Progress cache';
 
   @override
   String appCacheHint(String size) {
-    return '$size of cached shelves, grids and progress snapshots. They re-download as you use the app.';
+    return '$size of cached shelves, grids, progress and playback-session snapshots. They re-download as you use the app.';
   }
 
   @override
   String get appCacheConfirm =>
-      'Delete all cached shelves, grids and progress snapshots? They re-download automatically as you use the app.';
+      'Delete all cached shelves, grids, progress and playback sessions? They re-download automatically as you use the app.';
 
   @override
-  String get appCacheCleared => 'App data cache cleared';
+  String get appCacheCleared => 'Progress cache cleared';
+
+  @override
+  String get clearCacheHint =>
+      'Covers, progress, streaming and leftovers. Clear each separately.';
+
+  @override
+  String get clearCacheSheetTitle => 'Clear cache';
+
+  @override
+  String get clearCacheSheetSubtitle =>
+      'Pick what to clear. Everything rebuilds automatically as you use the app.';
+
+  @override
+  String get cacheCovers => 'Cover cache';
+
+  @override
+  String get cacheCoversHint =>
+      'Downloaded cover art plus widget/home-screen cover copies.';
+
+  @override
+  String get cacheAppDataHint =>
+      'Cached shelves, grids, progress snapshots and playback sessions.';
+
+  @override
+  String get cacheStreamingHint =>
+      'Recently streamed audio kept on disk for instant replay.';
+
+  @override
+  String get clearAllCaches => 'Clear all';
+
+  @override
+  String get clearAllCachesConfirm =>
+      'Delete every cache? They rebuild automatically as you use the app.';
+
+  @override
+  String get cacheAllCleared => 'All caches cleared';
+
+  @override
+  String get coverCacheCleared => 'Cover cache cleared';
+
+  @override
+  String get cacheSystemCacheLabel => 'System cache';
+
+  @override
+  String get cacheSystemDataLabel => 'System data';
+
+  @override
+  String get cacheSystemStatsHint => 'As reported by Android for this app.';
+
+  @override
+  String get cacheCodeCacheLabel => 'Code cache';
+
+  @override
+  String get cacheTilesSumLabel => 'Listed categories total';
+
+  @override
+  String get cacheExports => 'Leftover cache';
+
+  @override
+  String get cacheExportsHint =>
+      'Share cards, clipped audio, transcripts, e-book files, update packages.';
+
+  @override
+  String get exportsCleared => 'Leftover cache cleared';
 
   @override
   String get sectionLibrary => 'Library';
@@ -2739,8 +2803,8 @@ class AppLocalizationsPt extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Move $count existing downloads back to internal storage?',
-      one: 'Move 1 existing download back to internal storage?',
+      other: 'Move $count existing downloads back to the default location?',
+      one: 'Move 1 existing download back to the default location?',
     );
     return '$_temp0';
   }
@@ -4202,6 +4266,22 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get showExplicitBadgeOffSubtitle => 'Off - explicit badge hidden';
+
+  @override
+  String get finishedBadgeMode => 'Finished badge';
+
+  @override
+  String get finishedBadgeModeSubtitle =>
+      'Show a finished check on covers: with a label, icon only, or off.';
+
+  @override
+  String get finishedBadgeModeText => 'Label';
+
+  @override
+  String get finishedBadgeModeIcon => 'Icon';
+
+  @override
+  String get finishedBadgeModeOff => 'Off';
 
   @override
   String get libraryFallback => 'Library';
@@ -9508,5 +9588,36 @@ class AppLocalizationsPt extends AppLocalizations {
     String speed,
   ) {
     return '-$seconds ($adjusted @ $speed)';
+  }
+
+  @override
+  String get playerErrorConnect =>
+      'Couldn\'t reach the server. Check your connection and try again.';
+
+  @override
+  String get playerErrorNoAudio =>
+      'No audio files found - this item may be missing on the server';
+
+  @override
+  String get playerErrorInit => 'Playback couldn\'t start';
+
+  @override
+  String get playerErrorNotDownloadedOffline =>
+      'This isn\'t downloaded, and you\'re offline';
+
+  @override
+  String get playerErrorDownloadsMissing =>
+      'Downloaded files are missing - try downloading again';
+
+  @override
+  String get playerErrorTranscodeStart => 'Couldn\'t start converted playback';
+
+  @override
+  String get playerErrorTranscodeNoAudio =>
+      'No audio files in the converted session';
+
+  @override
+  String playerErrorGeneric(String error) {
+    return 'Playback failed: $error';
   }
 }

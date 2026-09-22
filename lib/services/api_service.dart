@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'auth_tokens.dart';
+import 'json_file_cache.dart';
 import '../models/auth_session.dart';
 import '../utils/server_url.dart';
 
@@ -262,6 +264,29 @@ class ApiService {
   Completer<_RefreshOutcome>? _refreshCompleter;
   static Completer<void>? _tokenMutationCompleter;
 
+  // Timestamp of the last completed server HTTP response. A finished exchange
+  // (any status, even 4xx/5xx) proves the server is alive, so weak-link offline
+  // detection can defer offline flips while real traffic is still flowing.
+  static DateTime? lastServerAnswerAt;
+
+  // The last progress write this device issued locally (socket-echo dedup).
+  // The server broadcasts our own PATCH back over the socket; remembering the
+  // key + time lets the reacting shelf refresh skip a redundant re-fetch.
+  static String? _lastLocalProgressKey;
+  static int _lastLocalProgressAtMs = 0;
+
+  static void noteLocalProgressPush(String key) {
+    _lastLocalProgressKey = key;
+    _lastLocalProgressAtMs = DateTime.now().millisecondsSinceEpoch;
+  }
+
+  static bool wasRecentLocalProgressPush(String key,
+      [int withinMs = 5000]) {
+    if (_lastLocalProgressKey != key) return false;
+    final age = DateTime.now().millisecondsSinceEpoch - _lastLocalProgressAtMs;
+    return age >= 0 && age <= withinMs;
+  }
+
   // Device info - set once at app start
   static String deviceManufacturer = '';
   static String deviceModel = '';
@@ -306,6 +331,30 @@ class ApiService {
 
   static String get userAgent => 'Absorb/$appVersionFull';
 
+  /// EWMA of recent `/play` session-POST latency, in milliseconds. The player
+  /// uses it to decide when a session is "unusually slow" and worth hedging
+  /// with a direct-file fetch: a fast server (small EWMA) is given a short
+  /// leash, a slow one a longer one, so the hedge only fires when it helps.
+  /// Null until the first session has been timed.
+  static double? playSessionLatencyEwmaMs;
+
+  /// How long the player should wait for `/play` before hedging. At least 4s so
+  /// a normally fast server is never hedged against, and up to 2x the recent
+  /// latency so a habitually slow server still gets its session first. Capped
+  /// at 12s.
+  Duration get adaptiveSessionRaceDeadline {
+    final ewma = playSessionLatencyEwmaMs;
+    final ms = ewma == null ? 4000.0 : (ewma * 2).clamp(4000.0, 12000.0);
+    return Duration(milliseconds: ms.round());
+  }
+
+  /// Fold one `/play` measurement into [playSessionLatencyEwmaMs].
+  static void _recordPlaySessionLatency(int ms) {
+    final prev = playSessionLatencyEwmaMs;
+    playSessionLatencyEwmaMs =
+        prev == null ? ms.toDouble() : (prev * 0.7) + (ms * 0.3);
+  }
+
   Map<String, String> get _headers => {
         ...customHeaders,
         'Authorization': 'Bearer $_accessToken',
@@ -326,10 +375,6 @@ class ApiService {
 
   String get _cleanBaseUrl => normalizeServerUrl(baseUrl);
 
-  Future<http.Response> _get(Uri url, {Map<String, String>? headers}) {
-    return _httpClient?.get(url, headers: headers) ?? http.get(url, headers: headers);
-  }
-
   Future<http.Response> _post(Uri url, {Map<String, String>? headers, Object? body}) {
     return _httpClient?.post(url, headers: headers, body: body) ??
         http.post(url, headers: headers, body: body);
@@ -340,8 +385,46 @@ class ApiService {
         http.patch(url, headers: headers, body: body);
   }
 
-  Future<http.Response> _delete(Uri url, {Map<String, String>? headers}) {
-    return _httpClient?.delete(url, headers: headers) ?? http.delete(url, headers: headers);
+  /// Run a request on a client this call owns so the transfer can be aborted
+  /// the moment it exceeds [timeout]. `package:http`'s top-level helpers create
+  /// a client per call but only close it once the request future settles, so a
+  /// plain `.timeout()` on them stops *waiting* while the socket keeps draining
+  /// the response in the background - a request that "failed" on a slow link
+  /// still burns data. Owning the client lets us force-close it when we give up.
+  Future<http.Response> _sendAbortable(
+    Future<http.Response> Function(http.Client client) send,
+    Duration timeout,
+    String label,
+  ) {
+    final shared = _httpClient;
+    if (shared != null) {
+      // Injected shared client: force-closing it would abort unrelated
+      // in-flight calls, so we can only bound the wait.
+      return send(shared)
+          .timeout(timeout)
+          .then((r) {
+            lastServerAnswerAt = DateTime.now();
+            return r;
+          });
+    }
+    final client = http.Client();
+    final future = send(client);
+    return future
+        .timeout(
+          timeout,
+          onTimeout: () {
+            // Mark the abandoned future handled before killing the socket, or
+            // its teardown error surfaces as an unhandled async exception.
+            unawaited(future.then((_) {}, onError: (_) {}));
+            client.close();
+            throw TimeoutException('$label exceeded $timeout');
+          },
+        )
+        .whenComplete(client.close)
+        .then((r) {
+          lastServerAnswerAt = DateTime.now();
+          return r;
+        });
   }
 
   /// Loggable token identity: length plus the signature tail, enough to tell
@@ -630,7 +713,11 @@ class ApiService {
     if (sendRefreshTokenHeader && _refreshToken != null) {
       h = {...h, 'x-refresh-token': _refreshToken!};
     }
-    var response = await _get(url, headers: h).timeout(timeout);
+    var response = await _sendAbortable(
+      (c) => c.get(url, headers: h),
+      timeout,
+      'GET ${url.path}',
+    );
     if (response.statusCode == 401) {
       debugPrint('[API] 401 on GET ${url.path} - isLegacy=$_isLegacyToken, hasRefresh=${_refreshToken != null}, tokenLen=${_accessToken.length}');
     }
@@ -643,41 +730,170 @@ class ApiService {
             _refreshToken != null) {
           refreshedHeaders['x-refresh-token'] = _refreshToken!;
         }
-        response = await _get(url, headers: refreshedHeaders).timeout(timeout);
+        response = await _sendAbortable(
+          (c) => c.get(url, headers: refreshedHeaders),
+          timeout,
+          'GET ${url.path}',
+        );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
     }
     return response;
+  }
+
+  /// GET with bounded retries for transient failures only (connect/read
+  /// timeouts, dropped connections, 5xx). GETs are idempotent, so replaying is
+  /// safe. [attempts] caps the number of tries and [totalDeadline] caps the
+  /// wall-clock time spent across ALL tries, so a persistently slow server
+  /// cannot multiply [timeout] into a multi-minute hang. A 4xx (other than the
+  /// 401 refresh path inside [_authGet]) is returned as-is and never retried.
+  Future<http.Response> _authGetRetrying(
+    Uri url, {
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 15),
+    int attempts = 3,
+    Duration totalDeadline = const Duration(seconds: 45),
+  }) async {
+    final deadline = DateTime.now().add(totalDeadline);
+    Object? lastError;
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) break;
+      final attemptTimeout = remaining < timeout ? remaining : timeout;
+      try {
+        final response = await _authGet(
+          url,
+          headers: headers,
+          timeout: attemptTimeout,
+        );
+        if (response.statusCode >= 500 && attempt < attempts) {
+          if (!await _waitBeforeApiRetry(attempt, deadline)) break;
+          continue;
+        }
+        return response;
+      } catch (e) {
+        lastError = e;
+        if (attempt >= attempts || !_isTransientNetworkError(e)) rethrow;
+        if (!await _waitBeforeApiRetry(attempt, deadline)) rethrow;
+      }
+    }
+    if (lastError != null) throw lastError;
+    throw TimeoutException('GET ${url.path} exceeded $totalDeadline');
+  }
+
+  /// Whether [error] is a transport-level failure worth retrying. Deliberately
+  /// avoids `dart:io` types (this file is also compiled for web) by matching on
+  /// the exception class names the IO client surfaces through `toString`.
+  static bool _isTransientNetworkError(Object error) {
+    if (error is TimeoutException || error is http.ClientException) return true;
+    final s = error.toString();
+    return s.contains('SocketException') ||
+        s.contains('HandshakeException') ||
+        s.contains('Connection closed') ||
+        s.contains('Connection reset') ||
+        s.contains('Connection terminated') ||
+        s.contains('Software caused connection abort');
+  }
+
+  static final Random _apiRetryJitter = Random();
+
+  /// Exponential backoff with jitter between API retries: ~300ms, 900ms,
+  /// 2.1s, capped at ~9.7s. Returns false once [deadline] has passed so the
+  /// caller can stop instead of sleeping past its budget.
+  Future<bool> _waitBeforeApiRetry(int attempt, DateTime deadline) async {
+    final remaining = deadline.difference(DateTime.now());
+    if (remaining <= Duration.zero) return false;
+    final base = 300 * (1 << (attempt - 1).clamp(0, 5));
+    final delay = Duration(milliseconds: base + _apiRetryJitter.nextInt(200));
+    await Future.delayed(delay < remaining ? delay : remaining);
+    return deadline.difference(DateTime.now()) > Duration.zero;
   }
 
   /// Make an authenticated POST request, retrying once on 401 with a refreshed token.
   Future<http.Response> _authPost(Uri url, {Map<String, String>? headers, Object? body, Duration timeout = const Duration(seconds: 15)}) async {
     await _ensureFreshAccessToken();
     final h = headers ?? _headers;
-    var response = await _post(url, headers: h, body: body).timeout(timeout);
+    var response = await _sendAbortable(
+      (c) => c.post(url, headers: h, body: body),
+      timeout,
+      'POST ${url.path}',
+    );
     if (response.statusCode == 401 && !_isLegacyToken) {
       final outcome = await _refreshAccessToken();
       if (outcome == _RefreshOutcome.refreshed) {
         final refreshedHeaders = Map<String, String>.from(h)
           ..['Authorization'] = 'Bearer $_accessToken';
-        response = await _post(url, headers: refreshedHeaders, body: body).timeout(timeout);
+        response = await _sendAbortable(
+          (c) => c.post(url, headers: refreshedHeaders, body: body),
+          timeout,
+          'POST ${url.path}',
+        );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
     }
     return response;
   }
 
+  /// POST with bounded retries for transient failures. Opt-in, and only for
+  /// requests that are safe to replay: opening a playback session qualifies -
+  /// a lost response just leaves an orphan session the server reaps, whereas a
+  /// false failure aborts playback entirely. Never use it for writes with a
+  /// unique side effect (creating an item, posting a bookmark, ...).
+  Future<http.Response> _authPostRetrying(
+    Uri url, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration timeout = const Duration(seconds: 15),
+    int attempts = 3,
+    Duration totalDeadline = const Duration(seconds: 45),
+  }) async {
+    final deadline = DateTime.now().add(totalDeadline);
+    Object? lastError;
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) break;
+      final attemptTimeout = remaining < timeout ? remaining : timeout;
+      try {
+        final response = await _authPost(
+          url,
+          headers: headers,
+          body: body,
+          timeout: attemptTimeout,
+        );
+        if (response.statusCode >= 500 && attempt < attempts) {
+          if (!await _waitBeforeApiRetry(attempt, deadline)) break;
+          continue;
+        }
+        return response;
+      } catch (e) {
+        lastError = e;
+        if (attempt >= attempts || !_isTransientNetworkError(e)) rethrow;
+        if (!await _waitBeforeApiRetry(attempt, deadline)) rethrow;
+      }
+    }
+    if (lastError != null) throw lastError;
+    throw TimeoutException('POST ${url.path} exceeded $totalDeadline');
+  }
+
   /// Make an authenticated PATCH request, retrying once on 401 with a refreshed token.
   Future<http.Response> _authPatch(Uri url, {Map<String, String>? headers, Object? body, Duration timeout = const Duration(seconds: 15)}) async {
     await _ensureFreshAccessToken();
     final h = headers ?? _headers;
-    var response = await _patch(url, headers: h, body: body).timeout(timeout);
+    var response = await _sendAbortable(
+      (c) => c.patch(url, headers: h, body: body),
+      timeout,
+      'PATCH ${url.path}',
+    );
     if (response.statusCode == 401 && !_isLegacyToken) {
       final outcome = await _refreshAccessToken();
       if (outcome == _RefreshOutcome.refreshed) {
         final refreshedHeaders = Map<String, String>.from(h)
           ..['Authorization'] = 'Bearer $_accessToken';
-        response = await _patch(url, headers: refreshedHeaders, body: body).timeout(timeout);
+        response = await _sendAbortable(
+          (c) => c.patch(url, headers: refreshedHeaders, body: body),
+          timeout,
+          'PATCH ${url.path}',
+        );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
     }
@@ -688,13 +904,21 @@ class ApiService {
   Future<http.Response> _authDelete(Uri url, {Map<String, String>? headers, Duration timeout = const Duration(seconds: 15)}) async {
     await _ensureFreshAccessToken();
     final h = headers ?? _headers;
-    var response = await _delete(url, headers: h).timeout(timeout);
+    var response = await _sendAbortable(
+      (c) => c.delete(url, headers: h),
+      timeout,
+      'DELETE ${url.path}',
+    );
     if (response.statusCode == 401 && !_isLegacyToken) {
       final outcome = await _refreshAccessToken();
       if (outcome == _RefreshOutcome.refreshed) {
         final refreshedHeaders = Map<String, String>.from(h)
           ..['Authorization'] = 'Bearer $_accessToken';
-        response = await _delete(url, headers: refreshedHeaders).timeout(timeout);
+        response = await _sendAbortable(
+          (c) => c.delete(url, headers: refreshedHeaders),
+          timeout,
+          'DELETE ${url.path}',
+        );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
     }
@@ -911,8 +1135,11 @@ class ApiService {
   /// Get all libraries.
   Future<List<dynamic>> getLibraries() async {
     try {
-      final response = await _authGet(
+      final response = await _authGetRetrying(
         Uri.parse('$_cleanBaseUrl/api/libraries'),
+        timeout: const Duration(seconds: 20),
+        attempts: 2,
+        totalDeadline: const Duration(seconds: 45),
       );
 
       if (response.statusCode == 200) {
@@ -949,9 +1176,12 @@ class ApiService {
       }
       if (limit != null) query['limit'] = '$limit';
 
-      final response = await _authGet(
+      final response = await _authGetRetrying(
         Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/personalized')
             .replace(queryParameters: query.isEmpty ? null : query),
+        timeout: const Duration(seconds: 30),
+        attempts: 2,
+        totalDeadline: const Duration(seconds: 90),
       );
 
       if (response.statusCode == 200) {
@@ -991,8 +1221,14 @@ class ApiService {
       if (filter != null) url += '&filter=$filter';
       if (expanded) url += '&minified=0';
       if (collapseSeries) url += '&collapseseries=1';
-      final response = await _authGet(
+      // Library pages can be heavy on big servers, so they get a wider
+      // per-attempt timeout and one bounded retry. Kept conservative because
+      // the search-index builder pages through a whole library concurrently.
+      final response = await _authGetRetrying(
         Uri.parse(url),
+        timeout: const Duration(seconds: 20),
+        attempts: 2,
+        totalDeadline: const Duration(seconds: 35),
       );
 
       if (response.statusCode == 200) {
@@ -1808,6 +2044,7 @@ class ApiService {
   /// POST /api/items/:id/play
   /// Returns the full session object including audioTracks with contentUrl.
   Future<Map<String, dynamic>?> startPlaybackSession(String itemId, {String? episodeId, bool forceDirectPlay = false, bool forceTranscode = false, double? startOffset}) async {
+    final sw = Stopwatch()..start();
     try {
       final epPath = episodeId != null ? '/$episodeId' : '';
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
@@ -1836,10 +2073,14 @@ class ApiService {
         ],
       };
       if (startOffset != null && startOffset > 0) body['startOffset'] = startOffset;
-      final response = await _authPost(
+      // Opening a session is replay-safe, and a dropped response here means no
+      // audio at all, so it gets one bounded retry on a flaky link.
+      final response = await _authPostRetrying(
         Uri.parse(url),
         body: jsonEncode(body),
-        timeout: const Duration(seconds: 20));
+        timeout: const Duration(seconds: 20),
+        attempts: 2,
+        totalDeadline: const Duration(seconds: 40));
 
       debugPrint('[ABS] Play session response: ${response.statusCode}');
       if (response.statusCode == 200) {
@@ -1857,6 +2098,9 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('[ABS] Play session error: $e');
+    } finally {
+      sw.stop();
+      _recordPlaySessionLatency(sw.elapsedMilliseconds);
     }
     return null;
   }
@@ -2214,6 +2458,7 @@ class ApiService {
             body: jsonEncode({'isFinished': false}),
             timeout: const Duration(seconds: 10));
         debugPrint('[API] updateProgress unfinish $progressPath: ${unfinish.statusCode}');
+        noteLocalProgressPush(itemId);
         return;
       }
       final body = jsonEncode({
@@ -2228,6 +2473,7 @@ class ApiService {
         body: body,
         timeout: const Duration(seconds: 10));
       debugPrint('[API] updateProgress response: ${resp.statusCode} ${resp.body}');
+      noteLocalProgressPush(itemId);
     } catch (e) {
       debugPrint('[API] updateProgress error: $e');
       rethrow;
@@ -2370,10 +2616,11 @@ class ApiService {
   /// POST /api/items/:itemId/play/:episodeId
   Future<Map<String, dynamic>?> startEpisodePlaybackSession(
       String itemId, String episodeId, {bool forceTranscode = false}) async {
+    final sw = Stopwatch()..start();
     try {
       final url = '$_cleanBaseUrl/api/items/$itemId/play/$episodeId';
       debugPrint('[ABS] Starting episode session: POST $url (forceTranscode: $forceTranscode)');
-      final response = await _authPost(
+      final response = await _authPostRetrying(
         Uri.parse(url),
         body: jsonEncode({
           'deviceInfo': _deviceInfo,
@@ -2396,7 +2643,9 @@ class ApiService {
             'audio/x-ms-wma',
           ],
         }),
-        timeout: const Duration(seconds: 20));
+        timeout: const Duration(seconds: 20),
+        attempts: 2,
+        totalDeadline: const Duration(seconds: 40));
 
       debugPrint('[ABS] Episode session response: ${response.statusCode}');
       if (response.statusCode == 200) {
@@ -2406,6 +2655,9 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('[ABS] Episode session error: $e');
+    } finally {
+      sw.stop();
+      _recordPlaySessionLatency(sw.elapsedMilliseconds);
     }
     return null;
   }
@@ -2444,6 +2696,7 @@ class ApiService {
             body: jsonEncode({'isFinished': false}),
             timeout: const Duration(seconds: 10));
         debugPrint('[API] updateEpisodeProgress unfinish $episodeId: ${unfinish.statusCode}');
+        noteLocalProgressPush('$itemId-$episodeId');
         return;
       }
       final resp = await _authPatch(url,
@@ -2454,6 +2707,7 @@ class ApiService {
           if (isFinished == true) 'isFinished': true,
         }),
         timeout: const Duration(seconds: 10));
+      noteLocalProgressPush('$itemId-$episodeId');
       if (resp.statusCode != 200) {
         debugPrint('[API] updateEpisodeProgress $episodeId: HTTP ${resp.statusCode}');
       }
@@ -2525,20 +2779,79 @@ class ApiService {
     return [];
   }
 
-  /// Get a single library item with full detail (expanded=1 gives chapters, tracks, etc.)
+  /// Get a single library item with full detail (expanded=1 gives chapters,
+  /// tracks, etc.)
+  ///
+  /// This is the heaviest read in the app: a chapter-rich book yields a
+  /// multi-MB body, which is exactly the request that dies first on a weak
+  /// link. It therefore gets a longer per-attempt timeout plus bounded
+  /// retries, and the last successful payload is kept on disk so a failed
+  /// refresh still returns something renderable instead of null.
   Future<Map<String, dynamic>?> getLibraryItem(String itemId) async {
+    final cacheKey = 'library_item|$itemId';
     try {
-      final response = await _authGet(
+      final response = await _authGetRetrying(
         Uri.parse('$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress'),
+        timeout: const Duration(seconds: 30),
+        attempts: 3,
+        totalDeadline: const Duration(seconds: 60),
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        unawaited(JsonFileCache.write(cacheKey, data));
+        return data;
       }
+      debugPrint('[API] getLibraryItem $itemId: HTTP ${response.statusCode}');
     } catch (e) {
-      // ignore
+      debugPrint('[API] getLibraryItem $itemId failed: $e');
     }
-    return null;
+    final cached = await JsonFileCache.readMap(cacheKey);
+    if (cached != null) {
+      debugPrint('[API] getLibraryItem $itemId: serving cached copy');
+    }
+    return cached;
+  }
+
+  /// Read the last successful [getLibraryItem] payload from disk without
+  /// touching the network. Lets a detail view paint immediately from cache
+  /// while a fresh [getLibraryItem] runs in the background. Returns null when
+  /// nothing has been cached yet.
+  Future<Map<String, dynamic>?> getCachedLibraryItem(String itemId) =>
+      JsonFileCache.readMap('library_item|$itemId');
+
+  /// [getLibraryItem] for a caller that owns the connection and may abort it
+  /// mid-flight (by closing [client]) when a faster path wins a race. Same
+  /// request shape and disk cache as [getLibraryItem], but a single attempt on
+  /// the caller's own client - no shared-client state and no retry loop - so
+  /// closing the client genuinely cancels the transfer. Falls back to the disk
+  /// cache when the request fails or is aborted.
+  Future<Map<String, dynamic>?> getLibraryItemCancellable(
+    String itemId,
+    http.Client client,
+  ) async {
+    final cacheKey = 'library_item|$itemId';
+    try {
+      final response = await client
+          .get(
+            Uri.parse(
+              '$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress',
+            ),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        unawaited(JsonFileCache.write(cacheKey, data));
+        return data;
+      }
+      debugPrint(
+        '[API] getLibraryItemCancellable $itemId: HTTP ${response.statusCode}',
+      );
+    } catch (e) {
+      debugPrint('[API] getLibraryItemCancellable $itemId failed: $e');
+    }
+    return JsonFileCache.readMap(cacheKey);
   }
 
   // ─── Bookmark Endpoints ───────────────────────────────────

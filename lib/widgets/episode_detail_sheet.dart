@@ -254,7 +254,11 @@ class _EpisodeDetailSheetState extends State<EpisodeDetailSheet> {
           isFinished: false,
         );
         await lib.markNotFinishedLocally(key);
-        await lib.refresh();
+        // Progress-only change: skip the full lib.refresh() (personalized
+        // view + getAllProgress + per-item prefs writes) that made un-finishing
+        // slow and chatty. Same light refresh the book sheet already uses.
+        unawaited(lib.refreshProgressOnly());
+        unawaited(lib.refreshProgressShelves(force: true, reason: 'episode-not-finished'));
         if (mounted) {
           showOverlayToast(
             context,

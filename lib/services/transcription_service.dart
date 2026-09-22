@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 
 import 'download_service.dart';
+import 'inflight_temp_writes.dart';
 import 'player_settings.dart';
 
 /// On-device bookmark transcription using Whisper (whisper.cpp via
@@ -590,6 +591,7 @@ class TranscriptionService {
     final tmpDir = await getTemporaryDirectory();
     final outPath =
         '${tmpDir.path}${Platform.pathSeparator}absorb_transcribe_${DateTime.now().microsecondsSinceEpoch}.wav';
+    registerInFlightWrite(outPath);
     try {
       final ok = await _channel.invokeMethod<bool>('extractWav', {
         'sourcePath': sourcePath,
@@ -602,6 +604,8 @@ class TranscriptionService {
       throw TranscriptionException(TranscriptionError.extractFailed, e.message);
     } on MissingPluginException catch (e) {
       throw TranscriptionException(TranscriptionError.extractFailed, e.message);
+    } finally {
+      unregisterInFlightWrite(outPath);
     }
   }
 }

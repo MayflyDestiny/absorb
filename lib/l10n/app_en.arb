@@ -1058,8 +1058,8 @@
   },
   "clearCache": "Clear cache",
   "streamingCacheCleared": "Streaming cache cleared",
-  "appCache": "App data cache",
-  "appCacheHint": "{size} of cached shelves, grids and progress snapshots. They re-download as you use the app.",
+  "appCache": "Progress cache",
+  "appCacheHint": "{size} of cached shelves, grids, progress and playback-session snapshots. They re-download as you use the app.",
   "@appCacheHint": {
     "placeholders": {
       "size": {
@@ -1067,8 +1067,27 @@
       }
     }
   },
-  "appCacheConfirm": "Delete all cached shelves, grids and progress snapshots? They re-download automatically as you use the app.",
-  "appCacheCleared": "App data cache cleared",
+  "appCacheConfirm": "Delete all cached shelves, grids, progress and playback sessions? They re-download automatically as you use the app.",
+  "appCacheCleared": "Progress cache cleared",
+  "clearCacheHint": "Covers, progress, streaming and leftovers. Clear each separately.",
+  "clearCacheSheetTitle": "Clear cache",
+  "clearCacheSheetSubtitle": "Pick what to clear. Everything rebuilds automatically as you use the app.",
+  "cacheCovers": "Cover cache",
+  "cacheCoversHint": "Downloaded cover art plus widget/home-screen cover copies.",
+  "cacheAppDataHint": "Cached shelves, grids, progress snapshots and playback sessions.",
+  "cacheStreamingHint": "Recently streamed audio kept on disk for instant replay.",
+  "clearAllCaches": "Clear all",
+  "clearAllCachesConfirm": "Delete every cache? They rebuild automatically as you use the app.",
+  "cacheAllCleared": "All caches cleared",
+  "coverCacheCleared": "Cover cache cleared",
+  "cacheSystemCacheLabel": "System cache",
+  "cacheSystemDataLabel": "System data",
+  "cacheSystemStatsHint": "As reported by Android for this app.",
+  "cacheCodeCacheLabel": "Code cache",
+  "cacheTilesSumLabel": "Listed categories total",
+  "cacheExports": "Leftover cache",
+  "cacheExportsHint": "Share cards, clipped audio, transcripts, e-book files, update packages.",
+  "exportsCleared": "Leftover cache cleared",
   "sectionLibrary": "Library",
   "hideEbookOnlyTitles": "Hide eBook-only titles",
   "hideEbookOnlyOnSubtitle": "Books with no audio files are hidden",
@@ -1371,7 +1390,7 @@
       }
     }
   },
-  "migrateDownloadsToInternal": "{count, plural, =1{Move 1 existing download back to internal storage?} other{Move {count} existing downloads back to internal storage?}}",
+  "migrateDownloadsToInternal": "{count, plural, =1{Move 1 existing download back to the default location?} other{Move {count} existing downloads back to the default location?}}",
   "@migrateDownloadsToInternal": {
     "placeholders": {
       "count": {
@@ -2179,6 +2198,11 @@
   "showExplicitBadge": "Show explicit badge",
   "showExplicitBadgeOnSubtitle": "Explicit items show an \"E\" badge",
   "showExplicitBadgeOffSubtitle": "Off - explicit badge hidden",
+  "finishedBadgeMode": "Finished badge",
+  "finishedBadgeModeSubtitle": "Show a finished check on covers: with a label, icon only, or off.",
+  "finishedBadgeModeText": "Label",
+  "finishedBadgeModeIcon": "Icon",
+  "finishedBadgeModeOff": "Off",
   "libraryFallback": "Library",
   "preReleaseUpdatesInfoTitle": "Pre-release Updates",
   "preReleaseUpdatesInfoContent": "When enabled, the update checker will also notify you about alpha and pre-release builds from GitHub. These may be less stable but include the latest features and fixes.",
@@ -5389,6 +5413,19 @@
       "seconds": {"type": "String"},
       "adjusted": {"type": "String"},
       "speed": {"type": "String"}
+    }
+  },
+  "playerErrorConnect": "Couldn't reach the server. Check your connection and try again.",
+  "playerErrorNoAudio": "No audio files found - this item may be missing on the server",
+  "playerErrorInit": "Playback couldn't start",
+  "playerErrorNotDownloadedOffline": "This isn't downloaded, and you're offline",
+  "playerErrorDownloadsMissing": "Downloaded files are missing - try downloading again",
+  "playerErrorTranscodeStart": "Couldn't start converted playback",
+  "playerErrorTranscodeNoAudio": "No audio files in the converted session",
+  "playerErrorGeneric": "Playback failed: {error}",
+  "@playerErrorGeneric": {
+    "placeholders": {
+      "error": {"type": "String"}
     }
   }
 }

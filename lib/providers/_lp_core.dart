@@ -314,6 +314,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> setManualOffline(bool value) async {
     debugPrint('[Library] setManualOffline($value)');
     _manualOffline = value;
+    AudioPlayerService().setManualOffline(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('manual_offline_mode', value);
     if (!value) {
@@ -349,6 +350,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> restoreOfflineMode() async {
     final prefs = await SharedPreferences.getInstance();
     _manualOffline = prefs.getBool('manual_offline_mode') ?? false;
+    AudioPlayerService().setManualOffline(_manualOffline);
   }
 
   /// User-triggered reconnect attempt for the offline cloud icon. If currently
@@ -407,6 +409,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   void setNetworkOffline(bool offline) {
     final wasOffline = _networkOffline;
+    if (!offline) _connectivityPingMisses = 0;
     _networkOffline = offline;
     // Mirror into AudioPlayerService so playback start can skip server session
     // creation immediately - otherwise a downloaded book waits ~5s for the
@@ -573,6 +576,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   }
 
   void _injectDownloadedSection() {
+    // The Downloads shelf is rebuilt from scratch each time. A section that
+    // survived from the persisted/mapped page (like the one restored by
+    // `_doLoadPersonalizedView`) must not linger, or a cached copy plus this
+    // fresh one would duplicate the shelf on every cold start.
+    _personalizedSections = _personalizedSections
+        .where((s) => (s as Map)['id'] != 'downloaded-books')
+        .toList();
     final isPodcast = isPodcastLibrary;
     final allDownloads = DownloadService().downloadedItems;
     final downloads = allDownloads.where((dl) {
@@ -973,7 +983,23 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (changed) notifyListeners();
   }
 
-  Future<void> _refreshProgress() async {
+  /// Dedupe concurrent progress pulls: `refresh()` and the personalized-view
+  /// path both call this in the same tick, and a finished item can trigger it
+  /// again via the stats widget. Without this guard each call hit
+  /// `getAllProgress` separately.
+  Future<void> _refreshProgress() {
+    final existing = _refreshProgressInFlight;
+    if (existing != null) return existing;
+    final inFlight = _doRefreshProgress();
+    _refreshProgressInFlight = inFlight;
+    return inFlight.whenComplete(() {
+      if (identical(_refreshProgressInFlight, inFlight)) {
+        _refreshProgressInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _doRefreshProgress() async {
     if (_api == null) return;
     // Cold start: paint progress from the on-disk snapshot before the first
     // network pull lands, so progress bars and shelf membership don't sit
@@ -1152,13 +1178,23 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final hasConnectivity = !result.contains(ConnectivityResult.none);
       _deviceHasConnectivity = hasConnectivity;
       if (!hasConnectivity) {
+        // Debounce short connectivity-none blips (wifi scans, radio
+        // handoffs, the radio going quiet while a heavy view is loading)
+        // before flipping offline — an instant flip on a momentary `none`
+        // was turning a routine refresh on a weak link into a full offline
+        // view even though the server was still answering.
         _connectivityDebounce?.cancel();
-        _stopServerPingTimer();
-        _stopLocalProbeTimer();
-        setNetworkOffline(true);
-        // Don't flip the local/remote choice here. The local server may still
-        // be reachable on a lower-priority interface (e.g. wifi briefly drops
-        // out of the connectivity list during scans). The probe timer decides.
+        _connectivityDebounce = Timer(const Duration(seconds: 2), () async {
+          final latest = await Connectivity().checkConnectivity();
+          if (latest.contains(ConnectivityResult.none)) {
+            _stopServerPingTimer();
+            _stopLocalProbeTimer();
+            setNetworkOffline(true);
+          }
+          // If connectivity actually returned during the window, the
+          // "connected" listen() branch below runs the standard recovery
+          // path and cancels this timer first.
+        });
         return;
       }
       if (_manualOffline) return;
@@ -1173,7 +1209,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         // whether the connectivity list happens to contain wifi this tick.
         final reachable =
             await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
-        if (reachable) {
+        if (reachable || _serverAnsweredRecently()) {
           setNetworkOffline(false);
           if (_rollingDownloadSeries.isNotEmpty) _catchUpRollingDownloads();
           unawaited(_catchUpQueueAutoDownloads());
@@ -1183,10 +1219,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             unawaited(DownloadService().catchUpEbookCaches(ebookApi));
           }
         } else {
-          debugPrint('[Library] Connectivity changed but server unreachable — starting ping timer');
+          // Hysteresis like the health check: one lost ping on a saturated
+          // link is congestion, not an outage. Flip only after two misses.
+          _connectivityPingMisses++;
+          debugPrint('[Library] Connectivity ping miss $_connectivityPingMisses/2');
           if (_networkOffline) {
             _startServerPingTimer();
-          } else {
+          } else if (_connectivityPingMisses >= 2) {
+            _connectivityPingMisses = 0;
             _goOffline();
           }
         }
@@ -1374,9 +1414,24 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final reachableUrl =
           await _pingActiveServerWithFallback(const Duration(seconds: 10));
       if (reachableUrl == null) {
-        debugPrint('[Library] Health check failed — server unreachable, going offline');
-        setNetworkOffline(true);
+        // Hysteresis: a single slow/lost ping on a weak link must not flip the
+        // whole library to its offline view. Require two consecutive misses
+        // (the local-server probe and socket path both already do this). If a
+        // real data request answered recently, the server is alive — reset the
+        // miss count instead of counting this ping miss.
+        if (_serverAnsweredRecently()) {
+          _healthCheckMisses = 0;
+        } else {
+          _healthCheckMisses++;
+        }
+        if (_healthCheckMisses >= 2) {
+          debugPrint('[Library] Health check failed twice — server unreachable, going offline');
+          _healthCheckMisses = 0;
+          setNetworkOffline(true);
+        }
       } else {
+        _healthCheckMisses = 0;
+        _connectivityPingMisses = 0;
         notifyServerReachable(reachableUrl);
         // Safety net: if user info never loaded (e.g. /me failed at launch
         // while the server was technically reachable), admin-only UI stays
@@ -1601,7 +1656,25 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     SocketService().softReconnect();
   }
 
-  void _onSocketReconnectFailed() {
+  Future<void> _onSocketReconnectFailed() async {
+    // Socket.io exhausted its reconnection attempts, but on a slow link that
+    // alone doesn't mean the server is unreachable. Verify with a live ping
+    // first: if the HTTP endpoint still answers, just re-open the socket
+    // instead of flipping the whole library to its offline view.
+    if (!_manualOffline && _deviceHasConnectivity) {
+      final auth = _auth;
+      if (auth != null && auth.serverUrl != null) {
+        final reachable = await ApiService.pingServer(
+          auth.serverUrl!,
+          customHeaders: auth.customHeaders,
+        ).timeout(const Duration(seconds: 10), onTimeout: () => false);
+        if (reachable) {
+          debugPrint('[Library] Socket reconnect failed but server pings OK — reconnecting socket');
+          _softReconnectSocket();
+          return;
+        }
+      }
+    }
     debugPrint('[Library] Socket reconnection failed — going offline');
     _goOffline();
   }
@@ -1617,8 +1690,25 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     );
   }
 
+  /// The server answered a real request recently (any status). Means the link
+  /// is alive but possibly saturated — a lost ping is then a symptom of the
+  /// congestion, not a reason to flip the whole library offline.
+  bool _serverAnsweredRecently([Duration within = const Duration(seconds: 30)]) {
+    final t = ApiService.lastServerAnswerAt;
+    if (t == null) return false;
+    return DateTime.now().difference(t) <= within;
+  }
+
   void _goOffline() {
     if (_networkOffline) return;
+    if (_serverAnsweredRecently()) {
+      // Traffic is demonstrably flowing (a page/play/session request just
+      // completed against the server), so a concurrent ping timeout is
+      // congestion, not an outage. Stay online — the 60s health check keeps
+      // verifying.
+      debugPrint('[Library] Server answered recently — deferring offline flip');
+      return;
+    }
     debugPrint('[Library] Network error — going offline');
     _networkOffline = true;
     _buildOfflineSections();
@@ -1746,7 +1836,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     (this as _AbsorbingMixin)._pruneRemotelyFinishedBooks([key]);
     notifyListeners();
 
+    // Own-device PATCHes are broadcast back over the socket; the sheet already
+    // forced a shelf refresh, so skip the redundant re-fetch for those.
     _progressRefreshDebounce?.cancel();
+    if (ApiService.wasRecentLocalProgressPush(key)) {
+      _invalidatePayloadCaches();
+      return;
+    }
     _progressRefreshDebounce = Timer(const Duration(seconds: 2), () {
       refreshProgressShelves(reason: 'remote-progress');
     });
@@ -2065,7 +2161,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
     } catch (e) {
       if (_isLikelyNetworkError(e)) {
-        _goOffline();
+        // A weak-but-alive link can make the heavy personalized fetch exceed
+        // its deadline without the server being down. Keep the cached shelves
+        // on screen and retry with backoff rather than flipping the whole
+        // library to its offline view on a single slow response. Genuine
+        // unreachability is decided by the ping/health-check and socket paths,
+        // which both require consecutive failures before going offline.
+        debugPrint(
+          '[Library] Personalized fetch failed ($e) — keeping cached shelves, will retry',
+        );
+        _scheduleSectionsRetry();
       } else {
         debugPrint('[Library] Non-network error (staying online): $e');
       }
@@ -2078,14 +2183,17 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   /// Cache key for the personalized home shelves of [libraryId].
   String _sectionsCacheKey(String libraryId) => 'home_sections:$libraryId';
 
-  /// Arms a one-shot retry of the personalized fetch after a failed (but not
-  /// offline-inducing) response. Limited to a single retry per failure streak
-  /// so a persistently failing server can't spin a retry loop; success resets
-  /// the counter.
+  /// Arms a retry of the personalized fetch after a failed (but not
+  /// offline-inducing) response, with exponential backoff (3s, 6s, 12s) capped
+  /// at three attempts per failure streak so a persistently failing server
+  /// can't spin an infinite retry loop; success resets the counter.
   void _scheduleSectionsRetry() {
-    if (_sectionsRetryTimer != null || _sectionsFetchMisses >= 1) return;
+    if (_sectionsRetryTimer != null || _sectionsFetchMisses >= 3) return;
     _sectionsFetchMisses++;
-    _sectionsRetryTimer = Timer(const Duration(seconds: 3), () {
+    final backoff = Duration(
+      seconds: 3 * (1 << (_sectionsFetchMisses - 1).clamp(0, 2)),
+    );
+    _sectionsRetryTimer = Timer(backoff, () {
       _sectionsRetryTimer = null;
       if (_api == null || _selectedLibraryId == null || isOffline) return;
       loadPersonalizedView(force: true);
@@ -2606,21 +2714,30 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
     if (_sectionOrder.isEmpty) {
       final result = <Map<String, dynamic>>[];
+      final seen = <String>{};
       for (final s in _personalizedSections) {
         final id = (s as Map)['id'] as String? ?? '';
-        if (allSections.containsKey(id)) result.add(allSections[id]!);
+        if (id.isNotEmpty && allSections.containsKey(id) && seen.add(id)) {
+          result.add(allSections[id]!);
+        }
       }
       for (final p in _playlists) {
         final id = 'playlist:${(p as Map)['id']}';
-        if (allSections.containsKey(id)) result.add(allSections[id]!);
+        if (allSections.containsKey(id) && seen.add(id)) {
+          result.add(allSections[id]!);
+        }
       }
       for (final c in _collections) {
         final id = 'collection:${(c as Map)['id']}';
-        if (allSections.containsKey(id)) result.add(allSections[id]!);
+        if (allSections.containsKey(id) && seen.add(id)) {
+          result.add(allSections[id]!);
+        }
       }
       for (final genre in _addedGenres) {
         final id = 'genre:$genre';
-        if (allSections.containsKey(id)) result.add(allSections[id]!);
+        if (allSections.containsKey(id) && seen.add(id)) {
+          result.add(allSections[id]!);
+        }
       }
       return result;
     }
@@ -2637,10 +2754,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   List<Map<String, String>> getAllSectionMeta() {
     final result = <Map<String, String>>[];
+    final seen = <String>{};
     for (final s in _personalizedSections) {
       final id = (s as Map)['id'] as String? ?? '';
       final label = s['label'] as String? ?? id;
-      if (id.isNotEmpty) result.add({'id': id, 'label': label});
+      if (id.isNotEmpty && seen.add(id)) {
+        result.add({'id': id, 'label': label});
+      }
     }
     for (final p in _playlists) {
       final pm = p as Map<String, dynamic>;

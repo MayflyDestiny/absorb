@@ -418,6 +418,17 @@ class LibraryScreenState extends State<LibraryScreen>
   // The last page request timed out or errored: the grid shows a retry in the
   // loader slot and stops auto-fetching until the user asks.
   bool _loadFailed = false;
+  // Auto-reconnect after a failed grid page. A bounded, backed-off retry lets a
+  // slow network recover on its own instead of leaving the grid stuck on the
+  // retry button until the user acts. Reset on success and on any fresh view.
+  Timer? _loadRetryTimer;
+  int _loadRetryAttempt = 0;
+  static const _maxLoadRetryAttempts = 3;
+  static const List<Duration> _loadRetryDelays = [
+    Duration(seconds: 3),
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+  ];
   // Tracks the offline state so the grid reloads when it flips (offline shows
   // only downloads; back online shows the full library again).
   bool _wasOffline = false;
@@ -661,6 +672,7 @@ class LibraryScreenState extends State<LibraryScreen>
       // The cache-restore refresh no longer applies to the old library's view.
       _cacheRefreshTimer?.cancel();
       _cacheRefreshTimer = null;
+      _resetLoadRetry();
       _loadGeneration++;
       // Cover shape and subtitles can differ per library.
       PlayerSettings.getRectangleCoversFor(lib.selectedLibraryId).then((v) {
@@ -1321,8 +1333,19 @@ class LibraryScreenState extends State<LibraryScreen>
     final lib = context.read<LibraryProvider>();
     if (lib.selectedLibraryId != null && _items.isEmpty && !_isLoadingPage) {
       lib.removeListener(_onLibraryChanged);
-      _loadPage();
-      _loadFilterData();
+      // Same SWR path the cold-start restore uses: paint the cached grid
+      // first, only hit the network when there is nothing renderable. If the
+      // library id only arrives after login, a bare _loadPage() would spin
+      // on the spinner while the cache sits on disk.
+      _restoreItemsCache().then((restored) {
+        if (!mounted) return;
+        if (!restored) {
+          _loadPage();
+        } else {
+          _schedulePostRestoreRefresh();
+        }
+        _loadFilterData();
+      });
     }
   }
 
@@ -1415,6 +1438,7 @@ class LibraryScreenState extends State<LibraryScreen>
   void dispose() {
     SocketService().removeAuthorsChangedListener(_onAuthorsChanged);
     _cacheRefreshTimer?.cancel();
+    _loadRetryTimer?.cancel();
     _authorsRefreshDebounce?.cancel();
     _debounce?.cancel();
     _searchController.dispose();
@@ -1479,6 +1503,25 @@ class LibraryScreenState extends State<LibraryScreen>
     if (cached == null || !mounted) return false;
     final items = cached['items'] as List<dynamic>?;
     if (items == null || items.isEmpty) return false;
+    // Re-register what the previous session merged, so cover URLs keep the
+    // same &ts= revision as the disk-cache keys that were persisted under it.
+    // Without this, cold starts render bare (no-ts) URLs, every tile keys
+    // differently than what's on disk, and the grid refetches the full cover
+    // download before the ~1.5s post-restore refresh "fixes" the URLs.
+    final lib = context.read<LibraryProvider>();
+    for (final r in items.whereType<Map<String, dynamic>>()) {
+      final id = r['id'] as String?;
+      final ts = r['updatedAt'] as num?;
+      if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
+      if (id != null) {
+        final coverPath =
+            (r['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
+        lib.registerHasCover(
+          id,
+          coverPath != null && coverPath.isNotEmpty,
+        );
+      }
+    }
     setState(() {
       _items.addAll(items.whereType<Map<String, dynamic>>());
       _loadedCount = (cached['loadedCount'] as num?)?.toInt() ?? _items.length;
@@ -1571,6 +1614,7 @@ class LibraryScreenState extends State<LibraryScreen>
 
   Future<void> _loadPage() async {
     if (_isLoadingPage || !_hasMore) return;
+    _loadRetryTimer?.cancel();
     setState(() {
       _isLoadingPage = true;
       _loadFailed = false;
@@ -1682,7 +1726,7 @@ class LibraryScreenState extends State<LibraryScreen>
       const fetchLimit = 500;
       int fetchPage = 0;
       int total = 0;
-      while (mounted && gen == _loadGeneration) {
+      while (mounted && gen == _loadGeneration && !lib.isOffline) {
         final result = await api.getLibraryItems(
           lib.selectedLibraryId!,
           page: fetchPage,
@@ -1796,18 +1840,47 @@ class LibraryScreenState extends State<LibraryScreen>
           _isLoadingPage = false;
         });
         _writeItemsCache();
+        _resetLoadRetry();
       } else if (mounted && gen == _loadGeneration) {
         // Timed out or errored. Show a retry in the loader slot instead of a
         // spinner, and stop the fill loop refetching on every rebuild - on a
         // struggling server that was one more request every 15s, forever.
         debugPrint('[LibPage] page=$pageIndex limit=$limit failed after '
-            '${sw.elapsedMilliseconds}ms, waiting for retry');
+            '${sw.elapsedMilliseconds}ms, scheduling retry');
         setState(() {
           _isLoadingPage = false;
           _loadFailed = true;
         });
+        _scheduleLoadRetry();
       }
     }
+  }
+
+  /// Arrange one bounded, backed-off retry of the failed grid page so a slow
+  /// network recovers on its own. Skipped while offline (the offline view owns
+  /// the screen then) and once the attempt budget is spent, which leaves the
+  /// manual retry button as the final fallback.
+  void _scheduleLoadRetry() {
+    if (_loadRetryAttempt >= _maxLoadRetryAttempts) return;
+    final lib = context.read<LibraryProvider>();
+    if (lib.isOffline || lib.selectedLibraryId == null) return;
+    final delay = _loadRetryDelays[_loadRetryAttempt];
+    _loadRetryAttempt++;
+    debugPrint('[LibPage] auto-retry $_loadRetryAttempt/$_maxLoadRetryAttempts '
+        'in ${delay.inSeconds}s');
+    _loadRetryTimer?.cancel();
+    _loadRetryTimer = Timer(delay, () {
+      if (!mounted) return;
+      _loadPage();
+    });
+  }
+
+  /// Clear the auto-retry budget - call whenever a load succeeds or a fresh
+  /// view is set up, so a new context gets its own retries.
+  void _resetLoadRetry() {
+    _loadRetryTimer?.cancel();
+    _loadRetryTimer = null;
+    _loadRetryAttempt = 0;
   }
 
   /// Offline fallback: populate the grid from downloaded items.
@@ -3168,6 +3241,7 @@ class LibraryScreenState extends State<LibraryScreen>
           _hasMore = true;
           _isLoadingPage = false;
         });
+        _resetLoadRetry();
         _loadPage();
       });
     }
@@ -4079,6 +4153,7 @@ class LibraryScreenState extends State<LibraryScreen>
   // ── Pull-to-refresh ──
   Future<void> _refreshAll() async {
     final lib = context.read<LibraryProvider>();
+    _resetLoadRetry();
     await lib.refresh();
     setState(() {
       _items.clear();

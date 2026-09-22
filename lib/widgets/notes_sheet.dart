@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
+import '../services/inflight_temp_writes.dart';
 import '../services/notes_service.dart';
 import '../utils/share_origin.dart';
 
@@ -161,7 +162,12 @@ class _NotesSheetState extends State<NotesSheet> {
     final dir = await getTemporaryDirectory();
     final safe = widget.itemTitle.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
     final file = File('${dir.path}/${safe}_notes.$format');
-    await file.writeAsString(buffer.toString());
+    registerInFlightWrite(file.path);
+    try {
+      await file.writeAsString(buffer.toString());
+    } finally {
+      unregisterInFlightWrite(file.path);
+    }
     await Share.shareXFiles(
       [XFile(file.path)],
       sharePositionOrigin: shareOriginFor(context),

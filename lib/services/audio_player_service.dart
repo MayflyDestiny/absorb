@@ -6,8 +6,10 @@ import 'package:flutter/services.dart';
 import '_audio_player.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'book_track_resolver.dart';
 import 'download_service.dart';
 import 'offline_source.dart';
 import 'playback_history_service.dart' hide PlaybackEvent;
@@ -28,7 +30,17 @@ import 'home_widget_service.dart';
 import 'bookmark_service.dart';
 import 'review_service.dart';
 import '../utils/episode_key.dart';
+import '../l10n/app_localizations.dart';
+import '../main.dart' show rootNavigatorKey;
 export 'player_settings.dart';
+
+/// Localized user-facing playback errors. The player runs without a
+/// BuildContext, so it resolves strings from the root navigator; falls back to
+/// the English literal when no context is mounted yet (e.g. headless start).
+AppLocalizations? _l10n() {
+  final ctx = rootNavigatorKey.currentContext;
+  return ctx != null ? AppLocalizations.of(ctx) : null;
+}
 
 String playbackDownloadKey(String itemId, String? episodeId) =>
     episodeKeyFor(itemId, episodeId);
@@ -340,9 +352,10 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   PlaybackState _transformEvent(PlaybackEvent event) {
     final playPause = (_player.playing ? MediaControl.pause : MediaControl.play)
         .copyWith(
-      androidIcon:
-          _player.playing ? 'drawable/ic_widget_pause' : 'drawable/ic_widget_play',
-    );
+          androidIcon: _player.playing
+              ? 'drawable/ic_widget_pause'
+              : 'drawable/ic_widget_play',
+        );
 
     final rewindControl = MediaControl(
       androidIcon: _skipIconName(_cachedBackSkip, forward: false),
@@ -877,9 +890,12 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     // exactly the state a double-press-to-skip expects.
     final fastPlay = _fastPathPlayAt;
     if (fastPlay != null &&
-        DateTime.now().difference(fastPlay) < const Duration(milliseconds: 600)) {
+        DateTime.now().difference(fastPlay) <
+            const Duration(milliseconds: 600)) {
       _fastPathPlayAt = null;
-      debugPrint('[Handler] -> second press after instant play -> SKIP FORWARD');
+      debugPrint(
+        '[Handler] -> second press after instant play -> SKIP FORWARD',
+      );
       await fastForward();
       return;
     }
@@ -931,7 +947,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           // inside the resolver so double/triple presses still skip.
           if (await SleepTimerService().snoozeFromMediaButton()) {
             _lastClickKeyCode = null;
-            debugPrint('[Handler] → single press consumed by sleep timer snooze');
+            debugPrint(
+              '[Handler] → single press consumed by sleep timer snooze',
+            );
             break;
           }
           _inClickResolver = true;
@@ -1420,7 +1438,7 @@ class AudioPlayerService extends ChangeNotifier {
   /// Called when a new item starts playing. Used by LibraryProvider to trigger
   /// rolling downloads for the next items in a series/podcast.
   static Future<void> Function(String key, double duration)?
-      _onPlayStartedCallback;
+  _onPlayStartedCallback;
   static void setOnPlayStartedCallback(
     Future<void> Function(String key, double duration)? cb,
   ) {
@@ -1496,7 +1514,8 @@ class AudioPlayerService extends ChangeNotifier {
     double duration,
     String title,
     String author,
-  })? _pendingLoadOnlySession;
+  })?
+  _pendingLoadOnlySession;
 
   /// Externally-pushed signal that the server is currently unreachable.
   /// AuthProvider mirrors `serverReachable` here on each ping result so we
@@ -1507,8 +1526,50 @@ class AudioPlayerService extends ChangeNotifier {
   /// their own server fetches.
   bool _knownOffline = false;
   bool get knownOffline => _knownOffline;
+
+  /// Manual offline mode, mirrored from LibraryProvider so it behaves the same
+  /// as a dropped connection for playback purposes.
+  bool _manualOffline = false;
+
+  /// Set when we pause a remote stream only because we went offline; cleared
+  /// when the user takes over (pause/stop) so a reconnect doesn't auto-resume.
+  bool _pausedForOffline = false;
+
+  bool get _offline => _knownOffline || _manualOffline;
+
   void setKnownOffline(bool offline) {
+    if (_knownOffline == offline) return;
     _knownOffline = offline;
+    unawaited(_onOfflineStateChanged());
+  }
+
+  void setManualOffline(bool offline) {
+    if (_manualOffline == offline) return;
+    _manualOffline = offline;
+    unawaited(_onOfflineStateChanged());
+  }
+
+  /// Offline must stop a remote stream from being hammered: pause it (a
+  /// downloaded book keeps playing), skip stall/retry recovery, and resume
+  /// where it left off once the connection is back.
+  Future<void> _onOfflineStateChanged() async {
+    if (_offline) {
+      if (_pausedForOffline) return;
+      if (_player == null || !_player!.playing) return;
+      if (!_streamIsRemote) return;
+      _stuckCheckTimer?.cancel();
+      _stuckCheckTimer = null;
+      _resetStuckDetection();
+      debugPrint('[Player] Offline - pausing remote stream');
+      _logEvent(PlaybackEventType.pause, detail: 'offline');
+      // Flag set after pause(): pause() clears it for any explicit user pause.
+      await pause();
+      _pausedForOffline = true;
+    } else if (_pausedForOffline) {
+      _pausedForOffline = false;
+      debugPrint('[Player] Back online - resuming remote stream');
+      await play();
+    }
   }
 
   bool _isBackgrounded = false;
@@ -1737,8 +1798,10 @@ class AudioPlayerService extends ChangeNotifier {
     });
     if (Platform.isIOS) {
       unawaited(
-        Future.wait([fwdFuture, backFuture])
-            .then((v) => _pushIosSkipIntervals(v[0], v[1])),
+        Future.wait([
+          fwdFuture,
+          backFuture,
+        ]).then((v) => _pushIosSkipIntervals(v[0], v[1])),
       );
     }
   }
@@ -1786,6 +1849,12 @@ class AudioPlayerService extends ChangeNotifier {
   double? _lastSeekTargetSeconds;
   DateTime? _lastSeekTime;
 
+  /// Absolute start (seconds) of the item currently being loaded, captured at
+  /// playItem time. While `_isLoadingNewItem` the stream position is stale
+  /// (still points into the previous book), so chapter/UI resolution must use
+  /// this instead of the live position.
+  double _pendingStartSec = 0;
+
   /// Timestamp of the most recent user-initiated seek (skipForward,
   /// skipBackward, seekTo).
   /// Used to suppress chapter intro/outro auto-skip so it doesn't immediately
@@ -1830,9 +1899,29 @@ class AudioPlayerService extends ChangeNotifier {
     if (_lastSeekTargetSeconds == null || _lastSeekTime == null) return null;
     final elapsed = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
     if (elapsed > 8000) {
-      _lastSeekTargetSeconds = null;
-      _lastSeekTime = null;
-      return null;
+      // The 8s timer alone can expire BEFORE a slow-network chapter jump
+      // actually lands (the target track/file is still buffering). Dropping
+      // the target then makes chapter resolution fall back to the stale
+      // pre-seek position — the book's tail — which maps to the LAST
+      // chapter's title. Keep the target until the stream position has truly
+      // caught up (forward: reached within a small band; backward: has been
+      // pulled down to it), with a generous hard cap so a dropped/aborted
+      // seek still recovers to the live position instead of pinning forever.
+      final pos = position.inMilliseconds / 1000.0;
+      final target = _lastSeekTargetSeconds!;
+      // Landed = the playhead has reached the target. The lower band allows
+      // the known "seeks lands a hair before the metadata start" drift
+      // (same drift `_latchChapterJumpTarget` compensates for); the upper
+      // band rejects stale/bogus composite positions so we keep pinning the
+      // intended chapter instead of flashing a wrong one.
+      final caughtUp = pos >= target - 3.0 && pos <= target + 30.0;
+      if (caughtUp || elapsed > 60000) {
+        _lastSeekTargetSeconds = null;
+        _lastSeekTime = null;
+        _pendingStartSec = 0;
+        return null;
+      }
+      return target;
     }
     return _lastSeekTargetSeconds;
   }
@@ -1841,6 +1930,26 @@ class AudioPlayerService extends ChangeNotifier {
   void clearSeekTarget() {
     _lastSeekTargetSeconds = null;
     _lastSeekTime = null;
+  }
+
+  /// Absolute seconds used to resolve the current chapter. While a new item
+  /// is loading, the stream position is stale, so resolve against the pending
+  /// start instead — otherwise the UI shows the previous/last chapter during
+  /// a slow load and flickers when the real position catches up.
+  double get chapterResolvePosSec {
+    if (_isLoadingNewItem) return _pendingStartSec;
+    final t = activeSeekTarget;
+    if (t != null) return t;
+    final p = position.inMilliseconds / 1000.0;
+    // The stream position can lag a long way behind after a slow item/seek
+    // switch: a stale value from the previous book (often its tail) maps
+    // past the new book's last chapter and the UI falls back to the LAST
+    // chapter's title. Treat anything absurdly past the book end as "not
+    // ready yet" and resolve against the pending start instead.
+    if (_totalDuration > 0 && p > _totalDuration + 30.0) {
+      return _pendingStartSec;
+    }
+    return p;
   }
 
   final _progressSync = ProgressSyncService();
@@ -2401,8 +2510,9 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> reassertIosClaimWhilePaused(String reason) async {
     if (!Platform.isIOS || !hasBook || isPlaying) return;
     try {
-      final info = await _eqChannelForDiag
-          .invokeMethod<Map<dynamic, dynamic>>('getAudioDiagnostics');
+      final info = await _eqChannelForDiag.invokeMethod<Map<dynamic, dynamic>>(
+        'getAudioDiagnostics',
+      );
       if (info?['isOtherAudioPlaying'] == true ||
           info?['secondaryAudioShouldBeSilencedHint'] == true) {
         debugPrint(
@@ -2684,11 +2794,11 @@ class AudioPlayerService extends ChangeNotifier {
   /// Absolute book position (accounts for multi-file track offsets).
   Duration get position {
     if (_player == null) return Duration.zero;
-    // While swapping to a new item, return the target seek position so the UI
-    // doesn't flash stale progress from the previous book.
-    final seekTarget = _lastSeekTargetSeconds;
-    if (_isLoadingNewItem && seekTarget != null && seekTarget > 0) {
-      return Duration(milliseconds: (seekTarget * 1000).round());
+    // While swapping to a new item, return the pending start so the UI
+    // doesn't flash stale progress from the previous book (also covers
+    // startTime 0, where the old seek-target branch left position stale).
+    if (_isLoadingNewItem) {
+      return Duration(milliseconds: (_pendingStartSec * 1000).round());
     }
     final trackRelative = _player!.position;
     if (_trackStartOffsets.length <= 1) return trackRelative; // single file
@@ -2722,7 +2832,10 @@ class AudioPlayerService extends ChangeNotifier {
   /// [absoluteStarts], when supplied and length-matched, gives each track's
   /// offset in the full book timeline (used for partial downloads, where the
   /// present files are not contiguous). Otherwise offsets are cumulative from 0.
-  void _buildTrackOffsets(List<dynamic> audioTracks, {List<double>? absoluteStarts}) {
+  void _buildTrackOffsets(
+    List<dynamic> audioTracks, {
+    List<double>? absoluteStarts,
+  }) {
     _trackDurations = [
       for (final t in audioTracks)
         ((t as Map<String, dynamic>)['duration'] as num?)?.toDouble() ?? 0,
@@ -2740,7 +2853,9 @@ class AudioPlayerService extends ChangeNotifier {
     // Sentinel = end of the last track, so `.last` still means "timeline end"
     // for the contiguous case and callers reading the final element.
     _trackStartOffsets.add(
-      _trackStartOffsets.isEmpty ? 0.0 : _trackStartOffsets.last + _trackDurations.last,
+      _trackStartOffsets.isEmpty
+          ? 0.0
+          : _trackStartOffsets.last + _trackDurations.last,
     );
     debugPrint('[Player] Track offsets: $_trackStartOffsets');
   }
@@ -2762,8 +2877,10 @@ class AudioPlayerService extends ChangeNotifier {
     final n = _trackStartOffsets.length - 1;
     if (n <= 0) return 0;
     for (int i = 0; i < n; i++) {
-      if (absoluteSeconds < _trackStartOffsets[i] + _trackDurationAt(i)) return i;
-      if (i + 1 < n && absoluteSeconds < _trackStartOffsets[i + 1]) return i + 1;
+      if (absoluteSeconds < _trackStartOffsets[i] + _trackDurationAt(i))
+        return i;
+      if (i + 1 < n && absoluteSeconds < _trackStartOffsets[i + 1])
+        return i + 1;
     }
     return n - 1;
   }
@@ -2812,12 +2929,14 @@ class AudioPlayerService extends ChangeNotifier {
       final track = t as Map<String, dynamic>;
       final contentUrl = track['contentUrl'] as String? ?? '';
       if (contentUrl.isEmpty) continue;
-      urls.add(api.buildTrackUrl(
-        contentUrl,
-        sessionId: sessionId,
-        trackIndex: (track['index'] as num?)?.toInt(),
-        playMethod: playMethod,
-      ));
+      urls.add(
+        api.buildTrackUrl(
+          contentUrl,
+          sessionId: sessionId,
+          trackIndex: (track['index'] as num?)?.toInt(),
+          playMethod: playMethod,
+        ),
+      );
     }
     if (urls.isNotEmpty) {
       final u = Uri.parse(urls.first);
@@ -2868,6 +2987,62 @@ class AudioPlayerService extends ChangeNotifier {
     );
   }
 
+  /// Resolve an absolute book position to the (track index, local offset) it
+  /// lands on, including the chapter-start file-boundary snap. Shared by the
+  /// seek path and fresh-session starts (setAudioSource's initialIndex and
+  /// initialPosition) so a start at a chapter boundary and a later jump land
+  /// identically.
+  ({int index, double localOffset}) _resolveAbsolutePosition(
+    double absoluteSeconds, {
+    bool chapterJump = false,
+  }) {
+    // Single file (or unknown offsets) - no track math and no drift snap.
+    if (_trackStartOffsets.length <= 1) {
+      return (index: 0, localOffset: absoluteSeconds);
+    }
+    final nTracks = _trackStartOffsets.length - 1;
+    var target = _trackIndexForAbsolute(absoluteSeconds);
+    final trackStart = _trackStartOffsets[target];
+    final localOffset = (absoluteSeconds - trackStart).clamp(
+      0.0,
+      _trackDurationAt(target),
+    );
+    // Chapter-start snap (only for explicit chapter jumps - the [chapterJump]
+    // flag). The chapter metadata timeline and the per-file duration timeline
+    // drift apart by a fraction of a second to a few seconds growing with the
+    // chapter count, which can drop a "jump to chapter N" target into the tail
+    // of file N-1 - landing on the metadata start alone would "play the
+    // previous chapter" or pin the bar near full. The closer the NEXT file
+    // boundary is, the more surely the arithmetic file pick is the drifted
+    // one, so hop to that file's start. No fixed tolerance - drift is
+    // book-dependent. Precise seeks (scrub, bookmarks, ...) never pass
+    // [chapterJump] and land exactly where asked. The snap is DISABLED for
+    // multi-file books with far more tracks than chapters (e.g. one long
+    // hour-long audio file split into ~100 per-file tracks but a small chapter
+    // list): file boundaries don't map to chapter boundaries there, so
+    // snapping can land in the wrong chapter's file. A one-file-per-chapter
+    // book (track count ≈ chapter count, ~1.5x allowance for intro/credits
+    // files) snaps freely.
+    if (chapterJump &&
+        target + 1 < nTracks &&
+        _isChapterStartWithin(absoluteSeconds) &&
+        _chapters.isNotEmpty &&
+        nTracks * 2 <= _chapters.length * 3) {
+      final distNext = _trackStartOffsets[target + 1] - absoluteSeconds;
+      final distCurrent = absoluteSeconds - _trackStartOffsets[target];
+      if (distNext > 0 && distNext < distCurrent) {
+        debugPrint(
+          '[Player] Chapter-start snap ${absoluteSeconds.toStringAsFixed(1)}s '
+          '(next boundary ${distNext.toStringAsFixed(2)}s away, containing '
+          'start ${distCurrent.toStringAsFixed(2)}s ago) -> index '
+          '${target + 1} at 0',
+        );
+        return (index: target + 1, localOffset: 0.0);
+      }
+    }
+    return (index: target, localOffset: localOffset);
+  }
+
   /// Seek to an absolute book position, handling multi-file offset conversion.
   Future<void> _seekAbsolute(
     double absoluteSeconds, {
@@ -2882,18 +3057,16 @@ class AudioPlayerService extends ChangeNotifier {
     // back to plain metadata lookup.
     if (!chapterJump) _chapterJumpLatchIndex = -1;
 
-    // A seek already interrupts audio, so if a fresh session is waiting this
-    // is the free moment to swap the source onto its tokenless URLs - the
-    // rebuild lands directly at the target instead of seeking the old source.
-    if (_pendingSessionUpgrade != null) {
-      final resume = _player!.playing;
-      if (await _applyPendingSessionUpgrade(
-        seekToSeconds: absoluteSeconds,
-        resumeAfter: resume,
-      )) {
-        return;
-      }
-    }
+    // A fresh session used to be adopted here (a seek is interrupted audio, so
+    // a rebuild could ride it) - but every chapter switch or scrub target
+    // would then tear down and re-prepare the whole concatenated source before
+    // audio lands, which is exactly the first-switch stall on a slow link.
+    // Seek on the current source first so audio starts immediately; the
+    // tokenless swap waits for the next pause, or the dead-source/retry paths.
+    debugPrint(
+      '[Player] Seek while a session upgrade is pending - deferring the swap '
+      'to a pause (${_pendingSessionUpgrade?['id'] ?? 'none'})',
+    );
 
     // Incomplete download: there's no audio past the decoded end, so clamp the
     // target there instead of letting the player report a phantom position
@@ -2907,6 +3080,23 @@ class AudioPlayerService extends ChangeNotifier {
     _lastSeekTargetSeconds = absoluteSeconds;
     _lastSeekTime = DateTime.now();
 
+    // Debug aid: log the chapter the seek lands in so a slow buffering switch
+    // (stale position until ready) can be verified against the log.
+    if (_chapters.isNotEmpty) {
+      for (final ch0 in _chapters) {
+        final m = ch0 as Map<String, dynamic>;
+        final s = (m['start'] as num?)?.toDouble() ?? 0;
+        final e = (m['end'] as num?)?.toDouble() ?? _totalDuration;
+        if (absoluteSeconds >= s && absoluteSeconds < e) {
+          final t = m['title'] as String?;
+          if (t != null && t.isNotEmpty) {
+            debugPrint('[Player] Seek chapter → "$t"');
+          }
+          break;
+        }
+      }
+    }
+
     if (_trackStartOffsets.length <= 1) {
       // Single file — seek directly
       await _player!.seek(
@@ -2915,48 +3105,17 @@ class AudioPlayerService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    // Multi-file — find the right track and local offset. Gap-aware: a target
-    // inside an un-downloaded region snaps to the next available track.
-    final nTracks = _trackStartOffsets.length - 1;
-    var target = _trackIndexForAbsolute(absoluteSeconds);
-    final trackStart = _trackStartOffsets[target];
-    var localOffset =
-        (absoluteSeconds - trackStart).clamp(0.0, _trackDurationAt(target));
-    // Chapter-start snap (only for explicit chapter jumps — the [chapterJump]
-    // flag). The chapter metadata timeline and the per-file duration timeline
-    // drift apart by a fraction of a second to a few seconds growing with the
-    // chapter count, which can drop a "jump to chapter N" target into the tail
-    // of file N-1 — that's why landing on the metadata start alone still
-    // "plays the previous chapter" or pins the bar near full. Compare the
-    // containing track vs. the next track by which FILE boundary is closer:
-    // the closer the next boundary is, the more surely the arithmetic file
-    // pick is the drifted one, so hop to that file's start. No fixed
-    // tolerance — drift is book-dependent. Precise seeks (scrub, bookmarks,
-    // …) never pass [chapterJump] and land exactly where asked. The snap is
-    // DISABLED for multi-file books (many more tracks than chapters; e.g. one
-    // long hour-long audio file split into ~100 per-file tracks but a small
-    // chapter list): file boundaries then don't correspond to chapter
-    // boundaries and snapping can land in the wrong chapter's file. A
-    // one-file-per-chapter book (track count ≈ chapter count, ~1.5x allowance
-    // for intro/credits files) snaps freely.
-    if (chapterJump &&
-        target + 1 < nTracks &&
-        _isChapterStartWithin(absoluteSeconds) &&
-        _chapters.isNotEmpty &&
-        nTracks * 2 <= _chapters.length * 3) {
-      final distNext = _trackStartOffsets[target + 1] - absoluteSeconds;
-      final distCurrent = absoluteSeconds - _trackStartOffsets[target];
-      if (distNext > 0 && distNext < distCurrent) {
-        debugPrint(
-          '[Player] Chapter-start snap ${absoluteSeconds.toStringAsFixed(1)}s '
-          '(next boundary ${distNext.toStringAsFixed(2)}s away, containing '
-          'start ${distCurrent.toStringAsFixed(2)}s ago) -> track '
-          '${target + 1} at 0',
-        );
-        target = target + 1;
-        localOffset = 0.0;
-      }
-    }
+    // Multi-file — find the right track and local offset (gap-aware: a target
+    // inside an un-downloaded region snaps to the next available track). The
+    // [chapterJump] boundary snap lives in [_resolveAbsolutePosition], shared
+    // with fresh-session starts so a start at a chapter boundary and a later
+    // jump land identically.
+    final resolved = _resolveAbsolutePosition(
+      absoluteSeconds,
+      chapterJump: chapterJump,
+    );
+    final target = resolved.index;
+    final localOffset = resolved.localOffset;
     debugPrint(
       '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s -> track $target '
       'at ${localOffset.toStringAsFixed(1)}s '
@@ -3173,6 +3332,7 @@ class AudioPlayerService extends ChangeNotifier {
     _duckWatchdogTimer?.cancel();
     _duckWatchdogTimer = null;
   }
+
   // Last time the app entered the foreground. Used by [ClickDebug] to see
   // whether a MediaSession click's 400ms debounce window overlapped with
   // an app-foreground event — the fingerprint of an Android Auto disconnect
@@ -3494,12 +3654,14 @@ class AudioPlayerService extends ChangeNotifier {
   /// process may take before it is killed. Both in MB, -1 when unavailable.
   static Future<({int footprintMb, int availableMb})> _iosMemoryInfo() async {
     try {
-      final info = await _eqChannelForDiag
-          .invokeMethod<Map<dynamic, dynamic>>('getMemoryInfo');
+      final info = await _eqChannelForDiag.invokeMethod<Map<dynamic, dynamic>>(
+        'getMemoryInfo',
+      );
       int mb(dynamic v) {
         final n = (v as num?)?.toInt() ?? -1;
         return n < 0 ? -1 : n ~/ 1048576;
       }
+
       return (
         footprintMb: mb(info?['footprint']),
         availableMb: mb(info?['available']),
@@ -3516,9 +3678,11 @@ class AudioPlayerService extends ChangeNotifier {
   static Future<void> _logBackgroundMemory(int rssMb, int droppedMb) async {
     final m = await _iosMemoryInfo();
     final playing = _instance.isPlaying;
-    debugPrint('[Memory] Backgrounded: footprint=${m.footprintMb}MB '
-        'available=${m.availableMb}MB rss=${rssMb}MB playing=$playing, '
-        'dropped ${droppedMb}MB of decoded covers');
+    debugPrint(
+      '[Memory] Backgrounded: footprint=${m.footprintMb}MB '
+      'available=${m.availableMb}MB rss=${rssMb}MB playing=$playing, '
+      'dropped ${droppedMb}MB of decoded covers',
+    );
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -3535,8 +3699,10 @@ class AudioPlayerService extends ChangeNotifier {
       await prefs.remove(_bgMarkerKey);
     } catch (_) {}
     final m = await _iosMemoryInfo();
-    debugPrint('[Memory] Foregrounded: footprint=${m.footprintMb}MB '
-        'available=${m.availableMb}MB');
+    debugPrint(
+      '[Memory] Foregrounded: footprint=${m.footprintMb}MB '
+      'available=${m.availableMb}MB',
+    );
   }
 
   static Future<void> _reportPreviousBackgroundDeath() async {
@@ -3551,9 +3717,11 @@ class AudioPlayerService extends ChangeNotifier {
           .difference(DateTime.fromMillisecondsSinceEpoch(at))
           .inMinutes;
       String part(int i) => parts.length > i ? parts[i] : '?';
-      debugPrint('[Memory] Previous process ended in the background, '
-          '${ago}min after it went there (or was swiped away): '
-          'footprint=${part(1)}MB available=${part(2)}MB playing=${part(3)}');
+      debugPrint(
+        '[Memory] Previous process ended in the background, '
+        '${ago}min after it went there (or was swiped away): '
+        'footprint=${part(1)}MB available=${part(2)}MB playing=${part(3)}',
+      );
     } catch (_) {}
   }
 
@@ -3564,8 +3732,10 @@ class AudioPlayerService extends ChangeNotifier {
     if (!Platform.isIOS) return;
     unawaited(() async {
       final m = await _iosMemoryInfo();
-      debugPrint('[Memory] iOS memory warning: footprint=${m.footprintMb}MB '
-          'available=${m.availableMb}MB');
+      debugPrint(
+        '[Memory] iOS memory warning: footprint=${m.footprintMb}MB '
+        'available=${m.availableMb}MB',
+      );
     }());
   }
 
@@ -3734,7 +3904,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     if (_handler == null) {
       debugPrint('[Player] Handler init failed, cannot play');
-      return 'Player failed to initialize';
+      return _l10n()?.playerErrorInit ?? 'Player failed to initialize';
     }
 
     // Alpha: catalog every playItem caller so we can find the phantom
@@ -3775,6 +3945,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _isLoadingNewItem = true;
+    _pendingStartSec = 0; // explicit start resolved below (pre-await safe)
     _api = api;
     _currentItemId = itemId;
     _currentSeriesId = seriesId;
@@ -3799,6 +3970,27 @@ class AudioPlayerService extends ChangeNotifier {
     _chapters = chapters;
     _shortLocalDurationSec = null; // re-evaluated per source in _playFromLocal
     _handler?.updateChaptersQueue(chapters);
+    // Cold-restart gap: minified shelf cards and chapterless session blobs
+    // both arrive with no chapters, which leaves chapter switching dead until
+    // the network copy of the item lands (tens of seconds on a weak link).
+    // The expanded item is usually already on disk from the last browse, so
+    // seed from it instantly. Disk-only; skipped when the caller had chapters.
+    if (chapters.isEmpty) {
+      try {
+        final diskItem = await api.getCachedLibraryItem(itemId);
+        final seeded = _chaptersFromItem(diskItem, episodeId);
+        if (seeded.isNotEmpty) {
+          chapters = seeded;
+          _chapters = seeded;
+          _handler?.updateChaptersQueue(seeded);
+          debugPrint(
+            '[Player] Seeded ${seeded.length} chapter(s) from the disk item cache',
+          );
+        }
+      } catch (e) {
+        debugPrint('[Player] Disk chapter seed failed: $e');
+      }
+    }
     // New book = fresh session — clear any auto sleep dismissal
     SleepTimerService().resetDismiss();
 
@@ -3874,7 +4066,10 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
 
-    // Set seek target early so the UI doesn't flash chapter 1 while loading
+    // Set seek target early so the UI doesn't flash chapter 1 while loading.
+    // Remember the pending start for the whole load so chapter resolution
+    // doesn't fall back to the stale previous-book position.
+    _pendingStartSec = startTime;
     if (startTime > 0) {
       _lastSeekTargetSeconds = startTime;
       _lastSeekTime = DateTime.now();
@@ -3911,22 +4106,32 @@ class AudioPlayerService extends ChangeNotifier {
         loadOnly,
       );
     } else {
-      // Check manual offline — don't stream from server
+      // Check offline — don't stream from server. Covers both the manual
+      // offline toggle and *real* network loss: with no reachable server a
+      // non-downloaded play is never going to stream, so fail fast instead of
+      // spinning on timeouts; a downloaded book already took the local path
+      // above.
       final prefs = await SharedPreferences.getInstance();
       final manualOffline = prefs.getBool('manual_offline_mode') ?? false;
-      if (manualOffline) {
+      if (manualOffline || _offline) {
         debugPrint(
-          '[Player] Manual offline — cannot stream non-downloaded item',
+          '[Player] Offline (manual=$manualOffline, known=$_knownOffline) '
+          '— cannot stream non-downloaded item',
         );
         _endAdvanceBuffering();
         _clearState();
-        return 'This item isn\'t downloaded and offline mode is on';
+        return _l10n()?.playerErrorNotDownloadedOffline ??
+            'This item isn\'t downloaded and offline mode is on';
       }
-      // Try to play from cached session metadata first (instant start)
-      final cachedSession = await SessionCache.load(
-        itemId: itemId,
-        episodeId: episodeId,
-      );
+      // Try to play from cached session metadata first (instant start). When
+      // no session has been cached yet, fall back to the last disk-cached
+      // library item so a first play can also start instantly from its
+      // per-file URLs while the real /play session is opened in the
+      // background. Disk-only and short-circuited: repeat plays that already
+      // have a session cache pay for no extra read.
+      final cachedSession =
+          await SessionCache.load(itemId: itemId, episodeId: episodeId) ??
+          await _sessionShapeFromCachedItem(itemId, episodeId);
       if (cachedSession != null) {
         // Race the real session against the cache. When the server answers
         // inside the window (LAN, good WiFi) the play starts through the
@@ -3940,8 +4145,9 @@ class AudioPlayerService extends ChangeNotifier {
         final pendingSession = episodeId != null
             ? api.startEpisodePlaybackSession(itemId, episodeId)
             : api.startPlaybackSession(itemId);
-        final raceWindow =
-            fromUi ? _serverPositionCheckCap : _sessionRaceWindow;
+        final raceWindow = fromUi
+            ? _serverPositionCheckCap
+            : _sessionRaceWindow;
         Map<String, dynamic>? racedSession;
         try {
           racedSession = await pendingSession.timeout(raceWindow);
@@ -4003,8 +4209,18 @@ class AudioPlayerService extends ChangeNotifier {
           }
         }
       } else {
-        // No cache - stream from server
-        result = await _playFromServer(
+        // Nothing cached to start from. Race the /play POST against a
+        // cancellable direct-file item fetch *from t=0* instead of idling on
+        // the adaptive leash first: on a weak link the expanded item fetch
+        // usually lands well inside the leash (and far faster than a
+        // many-chapter /play), so playback starts from files while the real
+        // session completes in the background for a tokenless upgrade. A fast
+        // server still wins the hedge outright and gets the fresh path, so the
+        // only cost of the parallel fetch is a cancelled client on LAN.
+        final pendingSession = episodeId != null
+            ? api.startEpisodePlaybackSession(itemId, episodeId)
+            : api.startPlaybackSession(itemId);
+        result = await _playFromHedgedItem(
           api,
           itemId,
           title,
@@ -4013,6 +4229,10 @@ class AudioPlayerService extends ChangeNotifier {
           totalDuration,
           chapters,
           startTime,
+          progressKey,
+          localTimestampAtStart,
+          playbackGeneration,
+          pendingSession,
           forceStartTime: forceStartTime,
         );
       }
@@ -4171,10 +4391,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     final api = _api;
     final streamingSessionId = _playbackSessionId;
-    final progressKey = playbackDownloadKey(
-      _currentItemId!,
-      _currentEpisodeId,
-    );
+    final progressKey = playbackDownloadKey(_currentItemId!, _currentEpisodeId);
     final currentTime = position.inMilliseconds / 1000.0;
 
     try {
@@ -4206,8 +4423,9 @@ class AudioPlayerService extends ChangeNotifier {
     if (api == null || streamingSessionId == null) return;
 
     try {
-      final pendingBefore =
-          await _progressSync.getStreamingPendingTime(progressKey);
+      final pendingBefore = await _progressSync.getStreamingPendingTime(
+        progressKey,
+      );
       final synced = await api.syncPlaybackSession(
         streamingSessionId,
         currentTime: currentTime,
@@ -4365,7 +4583,8 @@ class AudioPlayerService extends ChangeNotifier {
     if (localPaths == null || localPaths.isEmpty) {
       debugPrint('[Player] No local files found');
       _clearState();
-      return 'Downloaded files not found - try re-downloading';
+      return _l10n()?.playerErrorDownloadsMissing ??
+          'Downloaded files not found - try re-downloading';
     }
 
     // Get cached session data for track durations (and chapters if needed)
@@ -4419,7 +4638,8 @@ class AudioPlayerService extends ChangeNotifier {
       // than the full book. Treat the layout as complete only when the persisted
       // starts begin at 0 and reach the end; otherwise local coverage stops
       // wherever the downloaded tracks do.
-      final startsCoverBook = absoluteStarts != null &&
+      final startsCoverBook =
+          absoluteStarts != null &&
           absoluteStarts.isNotEmpty &&
           absoluteStarts.first <= 0.001 &&
           _trackDurations.length == absoluteStarts.length &&
@@ -4562,8 +4782,10 @@ class AudioPlayerService extends ChangeNotifier {
         // book paused, a headset press has a live target, and the transcript
         // can build its runway - but nothing plays and no session exists
         // until the user presses play, which creates the session then.
-        debugPrint('[Player] Loaded paused (no session) at '
-            '${startTime.toStringAsFixed(0)}s');
+        debugPrint(
+          '[Player] Loaded paused (no session) at '
+          '${startTime.toStringAsFixed(0)}s',
+        );
         _pendingLoadOnlySession = (
           progressKey: pKey,
           itemId: _currentItemId!,
@@ -4642,8 +4864,82 @@ class AudioPlayerService extends ChangeNotifier {
       }
 
       _clearState();
-      return 'Playback failed: ${e.toString().split('\n').first}';
+      return (_l10n()?.playerErrorGeneric(e.toString().split('\n').first)) ??
+          'Playback failed: ${e.toString().split('\n').first}';
     }
+  }
+
+  /// Build a session-shaped track list from the last disk-cached library item
+  /// so a first play can start instantly from its per-file URLs while a real
+  /// `/play` session is opened in the background (the cached-session path then
+  /// hot-swaps to the tokenless session URLs at the next pause/seek). Strictly
+  /// disk-only - no network - and returns null when the item has never been
+  /// cached, so callers that already have a session cache never pay for it.
+  Future<Map<String, dynamic>?> _sessionShapeFromCachedItem(
+    String itemId,
+    String? episodeId,
+  ) async {
+    final api = _api;
+    if (api == null) return null;
+    final progressKey = playbackDownloadKey(itemId, episodeId);
+    final item = await api.getCachedLibraryItem(
+      splitEpisodeKey(progressKey).itemId,
+    );
+    if (item == null) return null;
+    return _sessionShapeFromItem(progressKey, item, api);
+  }
+
+  /// Shape a library-item payload into the `{'audioTracks': [...]}` form the
+  /// cached-session path consumes. Shared by the disk-cache seed and the
+  /// slow-`/play` hedge, which already holds a freshly fetched item. Returns
+  /// null when the item carries no resolvable tracks.
+  Map<String, dynamic>? _sessionShapeFromItem(
+    String progressKey,
+    Map<String, dynamic> item,
+    ApiService api,
+  ) {
+    final tracks = BookTrackResolver.tracksFromItem(progressKey, item, api);
+    if (tracks == null || tracks.isEmpty) return null;
+    debugPrint(
+      '[Player] Shaping instant start from item: ${tracks.length} track(s)',
+    );
+    // Carry the item's chapters through: _playFromSessionCache consumes a
+    // `chapters` key from this blob, and without it a cold-restart start runs
+    // with an empty chapter list (no switching) until the network copy of the
+    // item lands.
+    final itemChapters =
+        _chaptersFromItem(item, splitEpisodeKey(progressKey).episodeId);
+    return {
+      'audioTracks': [
+        for (var i = 0; i < tracks.length; i++)
+          {
+            'contentUrl': tracks[i].source,
+            'index': i,
+            'duration': tracks[i].duration,
+          },
+      ],
+      if (itemChapters.isNotEmpty) 'chapters': itemChapters,
+    };
+  }
+
+  /// Chapters carried by a full library-item payload: `media.chapters` for a
+  /// book, the matching episode's list for a podcast. Empty when the item has
+  /// none (or is a minified/shelf shape without them).
+  static List<dynamic> _chaptersFromItem(
+    Map<String, dynamic>? item,
+    String? episodeId,
+  ) {
+    if (item == null) return const [];
+    final media = item['media'] as Map<String, dynamic>? ?? {};
+    final chapters = media['chapters'] as List<dynamic>? ?? [];
+    if (chapters.isNotEmpty || episodeId == null) return chapters;
+    for (final ep in ((media['episodes'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()) {
+      if (ep['id'] == episodeId) {
+        return ep['chapters'] as List<dynamic>? ?? const [];
+      }
+    }
+    return const [];
   }
 
   /// Play from cached session metadata. Starts playback instantly without
@@ -4668,6 +4964,9 @@ class AudioPlayerService extends ChangeNotifier {
     _isOfflineMode = false;
     _playbackSessionId =
         null; // No server session yet; _refreshServerSession will set it
+
+    final offlineError = _abortIfOffline();
+    if (offlineError != null) return offlineError;
 
     final audioTracks = cached['audioTracks'] as List<dynamic>?;
     if (audioTracks == null || audioTracks.isEmpty) {
@@ -4695,7 +4994,6 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     try {
-      _currentTrackIndex = 0;
       final audioHeaders = api.playbackSessionHeaders;
       _buildTrackOffsets(audioTracks);
       _captureStreamUrls(audioTracks, api);
@@ -4724,11 +5022,7 @@ class AudioPlayerService extends ChangeNotifier {
       } catch (e) {
         debugPrint('[Player] Pre-source setActive failed (cached-session): $e');
       }
-      _resetPreBufferState();
-      await _player!.setAudioSource(source, itemId: _currentItemId);
-      _activeConcatSource = source as ConcatenatingAudioSource;
-      _currentBookTrackCount = trackSources.length;
-
+      // If the saved position is at (or past) the end, restart from the beginning
       if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
@@ -4737,17 +5031,32 @@ class AudioPlayerService extends ChangeNotifier {
         forceStartTime: forceStartTime,
         speed: speed,
       );
-      if (startTime > 0) {
-        // Starting a session at a chapter boundary (chapter tap in the sheet's
-        // inactive branch, bookmark at a chapter start): snap to the matching
-        // file boundary to avoid drift-induced tail landing. Mid-chapter picks
-        // stay exact (a plain resume position is never a chapter start).
-        await _seekAbsolute(
-          startTime,
-          chapterJump: _isChapterStartWithin(startTime),
-        );
+
+      // Resolve the landing track before the source is set so the cached
+      // start initializes directly at the saved position's file instead of
+      // pre-rolling track 0 and seeking into place (see the stream path).
+      final chapterStart = startTime > 0 && _isChapterStartWithin(startTime);
+      final resolved = _resolveAbsolutePosition(
+        startTime,
+        chapterJump: chapterStart,
+      );
+      _currentTrackIndex = resolved.index;
+      if (chapterStart && _trackStartOffsets.length > 1) {
+        _latchChapterJumpTarget(startTime);
       }
-      clearSeekTarget();
+      final initialPosition = Duration(
+        milliseconds: (resolved.localOffset * 1000).round(),
+      );
+
+      _resetPreBufferState();
+      await _player!.setAudioSource(
+        source,
+        initialIndex: resolved.index,
+        initialPosition: initialPosition,
+        itemId: _currentItemId,
+      );
+      _activeConcatSource = source as ConcatenatingAudioSource;
+      _currentBookTrackCount = trackSources.length;
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
@@ -4832,10 +5141,11 @@ class AudioPlayerService extends ChangeNotifier {
       final progressRequest = api.getItemProgress(progressKey);
       // The race in playItem may already have a POST in flight - consume it
       // rather than opening a second session.
-      final sessionData = await (pendingSession ??
-          (episodeIdAtStart != null
-              ? api.startEpisodePlaybackSession(itemId, episodeIdAtStart)
-              : api.startPlaybackSession(itemId)));
+      final sessionData =
+          await (pendingSession ??
+              (episodeIdAtStart != null
+                  ? api.startEpisodePlaybackSession(itemId, episodeIdAtStart)
+                  : api.startPlaybackSession(itemId)));
       if (sessionData == null) {
         debugPrint('[Player] Background session refresh returned null');
         return;
@@ -4905,6 +5215,201 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Start playback when `/play` outran [ApiService.adaptiveSessionRaceDeadline]
+  /// without answering. Fetches the item's own metadata on a client we own and
+  /// races it against the still-pending session POST: a session that lands
+  /// while the item is downloading wins and the transfer is aborted (nothing
+  /// extra is paid on a link that was merely a little slow); the item landing
+  /// first starts audio instantly from its per-file URLs and hands the session
+  /// POST to the background upgrade so it hot-swaps to tokenless session URLs
+  /// at the next pause/seek. Both failing falls back to [_playFromServer].
+  Future<String?> _playFromHedgedItem(
+    ApiService api,
+    String itemId,
+    String title,
+    String author,
+    String? coverUrl,
+    double totalDuration,
+    List<dynamic> chapters,
+    double startTime,
+    String progressKey,
+    int localTimestampAtStart,
+    int playbackGeneration,
+    Future<Map<String, dynamic>?> pendingSession, {
+    bool forceStartTime = false,
+  }) async {
+    debugPrint('[Player] /play slow - hedging with a direct-file item fetch');
+    final client = http.Client();
+    final itemFuture = api.getLibraryItemCancellable(itemId, client);
+
+    // First *usable* result wins: a non-null session, or a non-null item.
+    // Failures don't win - they only let the race settle once both paths die.
+    final race = Completer<String>();
+    Map<String, dynamic>? session;
+    Map<String, dynamic>? item;
+    var settled = 0;
+
+    void onSettle() {
+      settled++;
+      if (settled < 2 || race.isCompleted) return;
+      race.complete(
+        session != null ? 'session' : (item != null ? 'item' : 'none'),
+      );
+    }
+
+    unawaited(
+      pendingSession
+          .then((s) {
+            if (s != null) {
+              session = s;
+              if (!race.isCompleted) race.complete('session');
+            } else {
+              onSettle();
+            }
+          })
+          .catchError((_) => onSettle()),
+    );
+
+    unawaited(
+      itemFuture
+          .then((it) {
+            if (it != null) {
+              item = it;
+              if (!race.isCompleted) race.complete('item');
+            } else {
+              onSettle();
+            }
+          })
+          .catchError((_) => onSettle()),
+    );
+
+    String winner;
+    try {
+      // EWMA-shaped cap: a normally fast server (small EWMA) gets a short
+      // leash (floor 4s) before the hedge re-checks; a habitually slow one
+      // gets up to 12s. Replaces the old flat 45s.
+      winner = await race.future.timeout(api.adaptiveSessionRaceDeadline);
+    } on TimeoutException {
+      // The leash expired with no usable answer. The old behavior - close
+      // the client and re-attempt a clean /play - killed a still-viable item
+      // fetch (a 5-8s near-miss became the full 44s /play-timeout cascade)
+      // and opened a SECOND POST while the first was still in flight. Keep
+      // waiting instead: both legs carry their own hard budgets (item GET
+      // 30s single attempt, /play 20s x2 inside a 40s deadline), so the race
+      // is bounded and whichever lands first starts audio.
+      debugPrint('[Player] Hedge leash expired - waiting on the surviving legs');
+      winner = await race.future;
+    }
+
+    if (winner == 'session' && session != null) {
+      // The session answered while the item was still downloading, so the
+      // direct-file transfer is now pointless - cancel it.
+      client.close();
+      debugPrint('[Player] Session won the hedge - aborted item fetch');
+      return _playFromServer(
+        api,
+        itemId,
+        title,
+        author,
+        coverUrl,
+        totalDuration,
+        chapters,
+        startTime,
+        forceStartTime: forceStartTime,
+        preFetchedSession: session,
+      );
+    }
+
+    if (winner == 'item' && item != null) {
+      client.close();
+      final shaped = _sessionShapeFromItem(progressKey, item!, api);
+      if (shaped != null) {
+        debugPrint(
+          '[Player] Item won the hedge - direct start, session upgrades in background',
+        );
+        return _playFromSessionCache(
+          api,
+          itemId,
+          title,
+          author,
+          coverUrl,
+          totalDuration,
+          chapters,
+          startTime,
+          shaped,
+          localTimestampAtStart,
+          playbackGeneration,
+          forceStartTime,
+          pendingSession,
+        );
+      }
+      // The fetched item carries no playable tracks (odd server data) - the
+      // real session is the only remaining hope; it is still in flight or
+      // already settled, and is never opened a second time here.
+      debugPrint('[Player] Hedged item had no tracks - waiting on the session');
+      Map<String, dynamic>? lateSession;
+      try {
+        lateSession = await pendingSession;
+      } catch (_) {}
+      if (lateSession != null) {
+        return _playFromServer(
+          api,
+          itemId,
+          title,
+          author,
+          coverUrl,
+          totalDuration,
+          chapters,
+          startTime,
+          forceStartTime: forceStartTime,
+          preFetchedSession: lateSession,
+        );
+      }
+      return _playFromDirectFiles(
+        api,
+        itemId,
+        title,
+        author,
+        coverUrl,
+        totalDuration,
+        chapters,
+        startTime,
+        forceStartTime: forceStartTime,
+      );
+    }
+
+    // Both legs died: /play exhausted its retry budget and the item GET
+    // failed with no cached copy to serve. A third POST would stack another
+    // 40s of retries on a server that just proved unreachable - go straight
+    // to direct-file streaming, which resolves the item itself (disk cache
+    // first) and reports through the client-owned local session.
+    client.close();
+    debugPrint('[Player] Hedge lost both legs - direct-file fallback');
+    return _playFromDirectFiles(
+      api,
+      itemId,
+      title,
+      author,
+      coverUrl,
+      totalDuration,
+      chapters,
+      startTime,
+      forceStartTime: forceStartTime,
+    );
+  }
+
+  /// If the library flipped offline while a server stream was being prepared,
+  /// tear down instead of starting a stream from a server we were told to
+  /// abandon. Returns the offline error string, or null while still online.
+  String? _abortIfOffline() {
+    if (!_offline) return null;
+    debugPrint('[Player] Went offline during stream setup — aborting');
+    _endAdvanceBuffering();
+    _clearState();
+    return _l10n()?.playerErrorNotDownloadedOffline ??
+        'This item isn\'t downloaded and offline mode is on';
+  }
+
   Future<String?> _playFromServer(
     ApiService api,
     String itemId,
@@ -4922,8 +5427,12 @@ class AudioPlayerService extends ChangeNotifier {
     _isOfflineMode = false;
     _localSessionMode = false;
 
+    final offlineError = _abortIfOffline();
+    if (offlineError != null) return offlineError;
+
     // Use episode endpoint if this is a podcast episode
-    final sessionData = preFetchedSession ??
+    final sessionData =
+        preFetchedSession ??
         (_currentEpisodeId != null
             ? await api.startEpisodePlaybackSession(
                 _currentItemId!,
@@ -4935,9 +5444,25 @@ class AudioPlayerService extends ChangeNotifier {
                 forceTranscode: forceTranscode,
               ));
     if (sessionData == null) {
-      debugPrint('[Player] Failed to start playback session');
-      _clearState();
-      return 'Could not connect to server';
+      // The /play POST is the one hard dependency of streamed playback, and on
+      // a slow link a long, many-file book can time it out entirely. Rather
+      // than give up, stream the item's own audio files directly - the same
+      // per-file URLs the bookmark preview and clip exporter already use - and
+      // report listening through the client-owned LOCAL session model.
+      debugPrint(
+        '[Player] Failed to start playback session - falling back to direct-file streaming',
+      );
+      return _playFromDirectFiles(
+        api,
+        itemId,
+        title,
+        author,
+        coverUrl,
+        totalDuration,
+        chapters,
+        startTime,
+        forceStartTime: forceStartTime,
+      );
     }
 
     _playbackSessionId = sessionData['id'] as String?;
@@ -4959,7 +5484,8 @@ class AudioPlayerService extends ChangeNotifier {
     var sessionPlayMethod = (sessionData['playMethod'] as num?)?.toInt();
     if (audioTracks == null || audioTracks.isEmpty) {
       _clearState();
-      return 'No audio files found - this item may be missing on the server';
+      return _l10n()?.playerErrorNoAudio ??
+          'No audio files found - this item may be missing on the server';
     }
 
     // Detect Dolby Atmos / EAC-3 / AC-3 tracks. Samsung has a hardware Dolby
@@ -4998,14 +5524,16 @@ class AudioPlayerService extends ChangeNotifier {
             : await api.startPlaybackSession(itemId, forceTranscode: true);
         if (retrySession == null) {
           _clearState();
-          return 'Could not start transcoded playback';
+          return _l10n()?.playerErrorTranscodeStart ??
+              'Could not start transcoded playback';
         }
         _playbackSessionId = retrySession['id'] as String?;
         audioTracks = retrySession['audioTracks'] as List<dynamic>? ?? [];
         sessionPlayMethod = (retrySession['playMethod'] as num?)?.toInt();
         if (audioTracks.isEmpty) {
           _clearState();
-          return 'No audio files in transcoded session';
+          return _l10n()?.playerErrorTranscodeNoAudio ??
+              'No audio files in transcoded session';
         }
         final sessionChapters =
             retrySession['chapters'] as List<dynamic>? ?? [];
@@ -5113,7 +5641,6 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     try {
-      _currentTrackIndex = 0;
       final audioHeaders = api.playbackSessionHeaders;
 
       // Build audio source - one source per track file
@@ -5144,18 +5671,6 @@ class AudioPlayerService extends ChangeNotifier {
       }
       final source = ConcatenatingAudioSource(children: trackSources);
 
-      await _configureAudioSession();
-      try {
-        final activated = await (await AudioSession.instance).setActive(true);
-        debugPrint('[Player] Pre-source setActive(true)=$activated (stream)');
-      } catch (e) {
-        debugPrint('[Player] Pre-source setActive failed (stream): $e');
-      }
-      _resetPreBufferState();
-      await _player!.setAudioSource(source, itemId: _currentItemId);
-      _activeConcatSource = source;
-      _currentBookTrackCount = trackSources.length;
-
       // If the saved position is at (or past) the end, restart from the beginning
       if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
       final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
@@ -5165,17 +5680,43 @@ class AudioPlayerService extends ChangeNotifier {
         forceStartTime: forceStartTime,
         speed: speed,
       );
-      if (startTime > 0) {
-        // Starting a session at a chapter boundary (chapter tap in the sheet's
-        // inactive branch, bookmark at a chapter start): snap to the matching
-        // file boundary to avoid drift-induced tail landing. Mid-chapter picks
-        // stay exact (a plain resume position is never a chapter start).
-        await _seekAbsolute(
-          startTime,
-          chapterJump: _isChapterStartWithin(startTime),
-        );
+
+      // Resolve the landing track before the source is set so the player
+      // initializes directly at the target file instead of pre-rolling
+      // track 0 and seeking across the whole playlist into place (two extra
+      // source transitions and a wasted first-track grab on a slow link).
+      // Starting at a chapter boundary (chapter tap in the sheet's inactive
+      // branch, bookmark at a chapter start) also snaps to the matching file
+      // boundary and latches the intended chapter, exactly like a later jump.
+      final chapterStart = startTime > 0 && _isChapterStartWithin(startTime);
+      final resolved = _resolveAbsolutePosition(
+        startTime,
+        chapterJump: chapterStart,
+      );
+      _currentTrackIndex = resolved.index;
+      if (chapterStart && _trackStartOffsets.length > 1) {
+        _latchChapterJumpTarget(startTime);
       }
-      clearSeekTarget(); // Seek done; let position events flow immediately
+      final initialPosition = Duration(
+        milliseconds: (resolved.localOffset * 1000).round(),
+      );
+
+      await _configureAudioSession();
+      try {
+        final activated = await (await AudioSession.instance).setActive(true);
+        debugPrint('[Player] Pre-source setActive(true)=$activated (stream)');
+      } catch (e) {
+        debugPrint('[Player] Pre-source setActive failed (stream): $e');
+      }
+      _resetPreBufferState();
+      await _player!.setAudioSource(
+        source,
+        initialIndex: resolved.index,
+        initialPosition: initialPosition,
+        itemId: _currentItemId,
+      );
+      _activeConcatSource = source;
+      _currentBookTrackCount = trackSources.length;
 
       _subscribeTrackIndex();
       final initChapter = _initChapterInfo(startTime);
@@ -5254,7 +5795,227 @@ class AudioPlayerService extends ChangeNotifier {
       }
 
       _clearState();
-      return 'Playback failed: ${e.toString().split('\n').first}';
+      return (_l10n()?.playerErrorGeneric(e.toString().split('\n').first)) ??
+          'Playback failed: ${e.toString().split('\n').first}';
+    }
+  }
+
+  /// Last-resort playback when the server's `/play` session can't be opened:
+  /// stream the item's own per-file URLs (built from the library item by
+  /// [BookTrackResolver]) instead of session track URLs. There is no server
+  /// session id, so listening is reported through the client-owned LOCAL
+  /// session model - the same path downloaded playback uses - and the start
+  /// position is reconciled against the server's saved progress here because
+  /// there is no `/play` response to carry it.
+  Future<String?> _playFromDirectFiles(
+    ApiService api,
+    String itemId,
+    String title,
+    String author,
+    String? coverUrl,
+    double totalDuration,
+    List<dynamic> chapters,
+    double startTime, {
+    bool forceStartTime = false,
+  }) async {
+    debugPrint('[Player] Playing from direct files: $title');
+    _isOfflineMode = false;
+
+    final offlineError = _abortIfOffline();
+    if (offlineError != null) return offlineError;
+
+    final progressKey = playbackDownloadKey(_currentItemId!, _currentEpisodeId);
+
+    // Resolve per-file stream URLs from the library item. Disk copy first:
+    // this fallback runs BECAUSE the network path just failed, so paying
+    // another network-first getLibraryItem (30s x3, cache only after its 60s
+    // deadline) would re-create the very delay we escaped. The network
+    // variant only runs when the item has never been cached.
+    var resolved = await BookTrackResolver.resolve(
+      progressKey,
+      api,
+      cacheOnly: true,
+    );
+    if (resolved == null || resolved.isEmpty) {
+      resolved = await BookTrackResolver.resolve(progressKey, api);
+    }
+    if (resolved == null || resolved.isEmpty) {
+      debugPrint('[Player] Direct-file fallback: no tracks resolved');
+      _clearState();
+      return _l10n()?.playerErrorConnect ?? 'Could not connect to server';
+    }
+
+    try {
+      await LocalSessionService().beginSession(
+        progressKey: progressKey,
+        libraryItemId: _currentItemId!,
+        episodeId: _currentEpisodeId,
+        mediaType: _currentEpisodeId != null ? 'podcast' : 'book',
+        duration: totalDuration,
+        startTime: startTime,
+        displayTitle: title,
+        displayAuthor: author,
+      );
+    } catch (e) {
+      debugPrint(
+        '[Player] Direct-file fallback: local session begin failed: $e',
+      );
+    }
+    _localSessionMode = true;
+    _playbackSessionId = null;
+    _logEvent(PlaybackEventType.sessionStart, detail: 'direct-file');
+
+    final audioTracks = <dynamic>[
+      for (var i = 0; i < resolved.length; i++)
+        {
+          'contentUrl': resolved[i].source,
+          'index': i,
+          'duration': resolved[i].duration,
+        },
+    ];
+
+    // No /play response means no server position, so reconcile against
+    // /me/progress directly (mirrors _playFromLocal).
+    if (!forceStartTime && !_knownOffline) {
+      try {
+        final serverProgress = await api
+            .getItemProgress(progressKey)
+            .timeout(_serverPositionCheckCap, onTimeout: () => null);
+        final serverPos =
+            (serverProgress?['currentTime'] as num?)?.toDouble() ?? 0;
+        final serverLastUpdate =
+            (serverProgress?['lastUpdate'] as num?)?.toInt() ?? 0;
+        final localTs = await _progressSync.getSavedTimestamp(progressKey);
+        if (serverPos > startTime + 1.0) {
+          debugPrint(
+            '[Player] Direct-file: server position is ahead: server=${serverPos}s vs local=${startTime}s — using server',
+          );
+          startTime = serverPos;
+          await _progressSync.saveLocal(
+            itemId: progressKey,
+            currentTime: serverPos,
+            duration: totalDuration,
+            speed: 1.0,
+          );
+        } else if (startTime > 0) {
+          final hasPending = await _progressSync.hasPendingSync(progressKey);
+          final gap = startTime - serverPos;
+          if (localTs > 0 &&
+              !hasPending &&
+              gap <= SyncLogic.localAheadSafetySeconds &&
+              serverLastUpdate > localTs) {
+            debugPrint(
+              '[Player] Direct-file: local position is stale — using server=${serverPos}s',
+            );
+            startTime = serverPos;
+          }
+        } else if (serverPos > 0) {
+          debugPrint(
+            '[Player] Direct-file: no local position, using server: ${serverPos}s',
+          );
+          startTime = serverPos;
+        }
+      } catch (e) {
+        debugPrint('[Player] Direct-file progress reconcile failed: $e');
+      }
+    }
+
+    try {
+      _currentTrackIndex = 0;
+      final audioHeaders = api.playbackSessionHeaders;
+      _buildTrackOffsets(audioTracks);
+      _captureStreamUrls(audioTracks, api);
+      final trackSources = <AudioSource>[];
+      for (final t in audioTracks) {
+        final track = t as Map<String, dynamic>;
+        final contentUrl = track['contentUrl'] as String? ?? '';
+        trackSources.add(
+          AudioSource.uri(
+            Uri.parse(api.buildTrackUrl(contentUrl)),
+            headers: audioHeaders,
+            options: mp3ExtractorOptions(),
+          ),
+        );
+      }
+      final source = ConcatenatingAudioSource(children: trackSources);
+
+      await _configureAudioSession();
+      try {
+        await (await AudioSession.instance).setActive(true);
+      } catch (_) {}
+      _resetPreBufferState();
+      await _player!.setAudioSource(source, itemId: _currentItemId);
+      _activeConcatSource = source;
+      _currentBookTrackCount = trackSources.length;
+
+      if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
+      final bookSpeed = await PlayerSettings.getBookSpeed(itemId);
+      final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
+      startTime = await _sessionStartRewound(
+        startTime,
+        forceStartTime: forceStartTime,
+        speed: speed,
+      );
+      if (startTime > 0) {
+        await _seekAbsolute(
+          startTime,
+          chapterJump: _isChapterStartWithin(startTime),
+        );
+      }
+      clearSeekTarget();
+
+      _subscribeTrackIndex();
+      final initChapter = _initChapterInfo(startTime);
+      // Speed before _pushMediaItem - the pushed duration is speed-adjusted.
+      await _player!.setSpeed(speed);
+      _pushMediaItem(
+        itemId,
+        title,
+        author,
+        coverUrl,
+        totalDuration,
+        chapter: initChapter,
+      );
+      await _primeNowPlaying(
+        title: title,
+        artist: author,
+        duration: totalDuration,
+        elapsed: startTime,
+        chapter: initChapter,
+      );
+      await EqualizerService().switchItem(itemId);
+      debugPrint('[Player] Starting direct-file playback at ${speed}x');
+      _handler?.refreshPlaybackState();
+      await Future.delayed(const Duration(milliseconds: 200));
+      try {
+        (await AudioSession.instance).setActive(true);
+      } catch (_) {}
+      _player!.play();
+      _scheduleAudioDiagnostics('direct-file');
+      notifyListeners();
+      _setupSync();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _handler?.refreshPlaybackState();
+      });
+      final sleepTimer = SleepTimerService();
+      sleepTimer.resetDismiss();
+      sleepTimer.checkAutoSleep();
+      // Cache what we started from so the next play of this item takes the
+      // instant cached path; direct-file starts previously saved nothing and
+      // re-paid the whole slow path on every replay.
+      SessionCache.save(
+        itemId: itemId,
+        episodeId: _currentEpisodeId,
+        audioTracks: audioTracks,
+        chapters: chapters,
+        totalDuration: totalDuration,
+      );
+      return null;
+    } catch (e, stack) {
+      debugPrint('[Player] Direct-file play error: $e\n$stack');
+      _clearState();
+      return (_l10n()?.playerErrorGeneric(e.toString().split('\n').first)) ??
+          'Playback failed: ${e.toString().split('\n').first}';
     }
   }
 
@@ -5427,8 +6188,11 @@ class AudioPlayerService extends ChangeNotifier {
     // Grossly past it means the chapters don't cover the timeline (e.g.
     // duplicate audio files doubling the duration, GH #345) - report no
     // chapter rather than pinning the last one.
-    final graceIdx =
-        ChapterLookup.indexAtWithGrace(_chapters, posSeconds, _totalDuration);
+    final graceIdx = ChapterLookup.indexAtWithGrace(
+      _chapters,
+      posSeconds,
+      _totalDuration,
+    );
     if (graceIdx != null) {
       final ch = _chapters[graceIdx] as Map<String, dynamic>;
       _currentChapterStart = (ch['start'] as num?)?.toDouble() ?? 0;
@@ -5548,7 +6312,15 @@ class AudioPlayerService extends ChangeNotifier {
     // artist/chapter text but the car still shows old, the issue is downstream
     // of audio_service's MediaSession push.
     debugPrint(
-      '[Handler] mediaItem.add: item=$itemId title="${labels.title}" artist="${labels.subtitle}" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null} art=${coverUrl == null ? 'none' : coverUrl.startsWith('content:') ? 'content' : coverUrl.startsWith('file:') ? 'file' : coverUrl.startsWith('http') ? 'http' : 'other'}',
+      '[Handler] mediaItem.add: item=$itemId title="${labels.title}" artist="${labels.subtitle}" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null} art=${coverUrl == null
+          ? 'none'
+          : coverUrl.startsWith('content:')
+          ? 'content'
+          : coverUrl.startsWith('file:')
+          ? 'file'
+          : coverUrl.startsWith('http')
+          ? 'http'
+          : 'other'}',
     );
     _handler!.mediaItem.add(
       MediaItem(
@@ -5695,7 +6467,9 @@ class AudioPlayerService extends ChangeNotifier {
       if (!tokenless) {
         // Old server or transcode session - the swap would just re-bake a
         // token, which is what the current source already has.
-        debugPrint('[StreamUpgrade] Session URLs still carry a token - skipping');
+        debugPrint(
+          '[StreamUpgrade] Session URLs still carry a token - skipping',
+        );
         return false;
       }
       // Map the absolute target onto (track, local position) for the new source.
@@ -5745,6 +6519,10 @@ class AudioPlayerService extends ChangeNotifier {
   /// the meantime, falls back to local files automatically.
   Future<void> _attemptStreamRetry(Object error) async {
     if (_retryInProgress) return;
+    if (_offline) {
+      debugPrint('[Player] Stream retry skipped - offline');
+      return;
+    }
     if (_currentItemId == null || _api == null) return;
     if (_streamRetryCount >= _maxStreamRetries) {
       debugPrint(
@@ -6023,8 +6801,9 @@ class AudioPlayerService extends ChangeNotifier {
           // the latched chapter's end.
           if (_chapterJumpLatchIndex >= 0) {
             final lEnd =
-                (_chapters[_chapterJumpLatchIndex]['end'] as num?)?.toDouble() ??
-                    _totalDuration;
+                (_chapters[_chapterJumpLatchIndex]['end'] as num?)
+                    ?.toDouble() ??
+                _totalDuration;
             if (posSec < lEnd) {
               chapterIdx = _chapterJumpLatchIndex;
             } else {
@@ -6065,7 +6844,11 @@ class AudioPlayerService extends ChangeNotifier {
 
           // Within the grace window past the last chapter, keep the last one
           if (chapterIdx < 0) {
-            final g = ChapterLookup.indexAtWithGrace(_chapters, posSec, _totalDuration);
+            final g = ChapterLookup.indexAtWithGrace(
+              _chapters,
+              posSec,
+              _totalDuration,
+            );
             if (g != null) {
               final ch = _chapters[g] as Map<String, dynamic>;
               chapterIdx = g;
@@ -6303,6 +7086,17 @@ class AudioPlayerService extends ChangeNotifier {
     _stuckCheckLastPosition = -1;
   }
 
+  /// Whether the current source is a remote stream rather than downloaded
+  /// local files. A frozen position on a remote source means its URL went bad,
+  /// which re-seeking cannot fix - the session/URLs have to be rebuilt.
+  bool get _streamIsRemote {
+    final itemId = _currentItemId;
+    if (itemId == null) return false;
+    return !_downloadService.isDownloaded(
+      playbackDownloadKey(itemId, _currentEpisodeId),
+    );
+  }
+
   /// Verify that playback actually started after calling play().
   /// iOS USAC/xHE-AAC decoder can silently fail after a seek, leaving the
   /// player in a non-playing state with no error events. If after 3 seconds
@@ -6343,17 +7137,23 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Start a periodic timer that checks if playback position is advancing.
-  /// If position is stuck for ~20 seconds while playing (2 consecutive checks),
-  /// force a re-seek to the same position to kick the iOS decoder.
+  /// Detect a position frozen while the player claims to be playing, and
+  /// recover. Two failures share this shape:
+  ///  - iOS xHE-AAC/USAC decoder freeze: re-seeking the same source kicks it.
+  ///  - A dead stream URL that never surfaces an error - e.g. a rotated token
+  ///    on the direct-file fallback, which can sit in `buffering` forever
+  ///    instead of erroring. Re-seeking the same URL is useless there, so the
+  ///    session/URLs are rebuilt instead (fresh token via [_attemptStreamRetry]).
+  /// Runs on every platform; Android checks less often to limit wakeups.
   void _startStuckDetection() {
     _stuckCheckTimer?.cancel();
     _resetStuckDetection();
 
-    // Stuck detection is only needed on iOS (xHE-AAC/USAC decoder freeze).
-    // Skip on Android to reduce background CPU wakeups.
-    if (!Platform.isIOS) return;
+    final interval = Platform.isIOS
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 15);
 
-    _stuckCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    _stuckCheckTimer = Timer.periodic(interval, (_) async {
       // Only check while actively playing
       if (_player == null || !_player!.playing) {
         _stuckCheckLastPosition = -1;
@@ -6361,15 +7161,10 @@ class AudioPlayerService extends ChangeNotifier {
         return;
       }
 
-      // Don't check during loading/buffering
       final state = _player!.processingState;
-      if (state == ProcessingState.loading ||
-          state == ProcessingState.buffering) {
-        return;
-      }
-
-      // Give up after max re-seek attempts to avoid infinite loops
-      if (_stuckReseekAttempts >= _maxStuckReseekAttempts) return;
+      final buffering =
+          state == ProcessingState.loading ||
+          state == ProcessingState.buffering;
 
       final currentPos = position.inMilliseconds / 1000.0;
       if (currentPos <= 0) return;
@@ -6384,16 +7179,36 @@ class AudioPlayerService extends ChangeNotifier {
         } else {
           // Position hasn't moved
           _stuckConsecutiveCount++;
-          if (_stuckConsecutiveCount >= 2) {
-            // Stuck for ~20 seconds - force re-seek
-            _stuckReseekAttempts++;
+          // A dead URL can stay in `buffering` indefinitely, so a stall there
+          // counts too - but only after a longer grace period than a plain
+          // decoder freeze, sparing a legitimately slow buffer on a poor link.
+          final threshold = buffering ? 4 : 2;
+          if (_stuckConsecutiveCount >= threshold) {
             _stuckConsecutiveCount = 0;
-            debugPrint(
-              '[Player] Stuck position detected - re-seeking '
-              '(attempt $_stuckReseekAttempts/$_maxStuckReseekAttempts '
-              'at ${currentPos.toStringAsFixed(1)}s)',
-            );
-            await _seekAbsolute(currentPos);
+            if (_streamIsRemote &&
+                !_retryInProgress &&
+                _streamRetryCount < _maxStreamRetries) {
+              debugPrint(
+                '[Player] Silent stall at ${currentPos.toStringAsFixed(1)}s '
+                '(${buffering ? 'buffering' : 'ready'}) - rebuilding stream',
+              );
+              _logEvent(
+                PlaybackEventType.sessionStart,
+                detail: 'stall recovery',
+              );
+              await _attemptStreamRetry(
+                StateError('silent stall at ${currentPos.toStringAsFixed(1)}s'),
+              );
+            } else if (_stuckReseekAttempts < _maxStuckReseekAttempts) {
+              // Local files or retries exhausted - kick the decoder instead.
+              _stuckReseekAttempts++;
+              debugPrint(
+                '[Player] Stuck position detected - re-seeking '
+                '(attempt $_stuckReseekAttempts/$_maxStuckReseekAttempts '
+                'at ${currentPos.toStringAsFixed(1)}s)',
+              );
+              await _seekAbsolute(currentPos);
+            }
           }
         }
       }
@@ -6678,10 +7493,13 @@ class AudioPlayerService extends ChangeNotifier {
   /// Called when the network comes back or the active server changes.
   void resetServerSyncBackoff() {
     if (_positionSyncFailures == 0 && _noSessionSyncRetryAt == null) return;
-    debugPrint('[Player] Sync backoff cleared (failures=$_positionSyncFailures)');
+    debugPrint(
+      '[Player] Sync backoff cleared (failures=$_positionSyncFailures)',
+    );
     _positionSyncFailures = 0;
     _noSessionSyncRetryAt = null;
   }
+
   int _playbackGeneration = 0;
   int? _cachedStartReconcileGeneration;
 
@@ -6999,8 +7817,10 @@ class AudioPlayerService extends ChangeNotifier {
     // Moot when we just jumped to another device's position; consume the undo
     // anyway so it can't fire on a later resume.
     if (_player != null) {
-      final undoTo = SleepTimerService()
-          .takeSleepRewindUndo(_currentItemId, position);
+      final undoTo = SleepTimerService().takeSleepRewindUndo(
+        _currentItemId,
+        position,
+      );
       if (undoTo != null && !adoptedServerPos) {
         await seekTo(undoTo, logDetail: 'sleep rewind undone');
         // seekTo flags a paused seek; this one is ours, not the user's, and
@@ -7195,7 +8015,8 @@ class AudioPlayerService extends ChangeNotifier {
         );
         return false;
       }
-      final serverPos = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
+      final serverPos =
+          (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
       final serverTs = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
       final localPos = position.inMilliseconds / 1000.0;
       // Timestamp gate, like the sync path: our own pre-rewind position still
@@ -7209,7 +8030,8 @@ class AudioPlayerService extends ChangeNotifier {
       await _seekAbsolute(serverPos);
       _logEvent(
         PlaybackEventType.seek,
-        detail: 'adopted server position ${serverPos.toStringAsFixed(1)}s before resume',
+        detail:
+            'adopted server position ${serverPos.toStringAsFixed(1)}s before resume',
       );
       return true;
     } catch (e) {
@@ -7222,8 +8044,9 @@ class AudioPlayerService extends ChangeNotifier {
   /// URLs. Null for tokened item URLs and local files.
   String? get _sourceSessionId {
     if (_activeStreamUrls.isEmpty) return null;
-    final m = RegExp(r'/public/session/([^/]+)/')
-        .firstMatch(_activeStreamUrls.first);
+    final m = RegExp(
+      r'/public/session/([^/]+)/',
+    ).firstMatch(_activeStreamUrls.first);
     return m?.group(1);
   }
 
@@ -7345,6 +8168,9 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> pause() async {
     _markPauseRequested();
+    // Any pause other than our own offline auto-pause is the user taking over,
+    // so a reconnect must not resume for them.
+    _pausedForOffline = false;
     debugPrint('[Service] pause() called');
     _playVerifyTimer?.cancel();
     _wasPlayingBeforeInterrupt = false;
@@ -7395,7 +8221,7 @@ class AudioPlayerService extends ChangeNotifier {
       _lastAccrual = DateTime.now();
     }
 
-    if (manualOffline) return;
+    if (manualOffline || _knownOffline) return;
 
     if (!_isOfflineMode && _playbackSessionId != null) {
       await _syncToServer(pos);
@@ -7474,10 +8300,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player != null && !_player!.playing) _seekedWhilePaused = true;
     _lastUserSeekTime = DateTime.now();
     final from = position;
-    await _seekAbsolute(
-      pos.inMilliseconds / 1000.0,
-      chapterJump: chapterJump,
-    );
+    await _seekAbsolute(pos.inMilliseconds / 1000.0, chapterJump: chapterJump);
     _logEvent(
       logAs,
       detail: logDetail ?? '${_formatPos(from)} → ${_formatPos(pos)}',
@@ -7591,11 +8414,16 @@ class AudioPlayerService extends ChangeNotifier {
     // aren't briefly played while the skip waits for the first post-landing
     // position tick. Mirrors the prev-chapter handler.
     double? preJumpTarget;
-    final chapterIdx =
-        ChapterLookup.indexAtWithGrace(_chapters, target.seconds, _totalDuration);
+    final chapterIdx = ChapterLookup.indexAtWithGrace(
+      _chapters,
+      target.seconds,
+      _totalDuration,
+    );
     if (chapterIdx != null) {
-      preJumpTarget =
-          await _crossChapterIntroSkipTarget(chapterIdx, target.seconds);
+      preJumpTarget = await _crossChapterIntroSkipTarget(
+        chapterIdx,
+        target.seconds,
+      );
     }
     await _seekAbsolute(
       preJumpTarget ?? target.seconds,
@@ -7621,12 +8449,17 @@ class AudioPlayerService extends ChangeNotifier {
     if (directJump) {
       // Direct mode: always jump straight to the previous chapter. At the first
       // chapter (or when the position isn't inside any chapter), restart.
-      final currentIdx =
-          ChapterLookup.indexAtWithGrace(_chapters, posS, _totalDuration);
+      final currentIdx = ChapterLookup.indexAtWithGrace(
+        _chapters,
+        posS,
+        _totalDuration,
+      );
       if (currentIdx != null && currentIdx > 0) {
         final i = currentIdx - 1;
         final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
-        debugPrint('[Service] skipToPreviousChapter (direct) → chapter $i at ${start}s');
+        debugPrint(
+          '[Service] skipToPreviousChapter (direct) → chapter $i at ${start}s',
+        );
         // Crossing into a genuinely DIFFERENT chapter keeps the intro skip
         // armed - pre-jump straight to the intro-skip point so the chapter's
         // opening words aren't briefly played while the skip waits for the
@@ -7661,7 +8494,10 @@ class AudioPlayerService extends ChangeNotifier {
         // position forward again and lock prev-navigation in a bounce loop).
         // Crossing into a genuinely DIFFERENT chapter keeps the skip armed so
         // it fires once, as requested.
-        final disarmedSameChapter = _disarmIntroForSameChapterRewind(posS, start);
+        final disarmedSameChapter = _disarmIntroForSameChapterRewind(
+          posS,
+          start,
+        );
         // Crossing into a genuinely DIFFERENT chapter the intro skip stays
         // armed - pre-jump straight to the intro-skip point so the chapter's
         // opening words aren't briefly played while the skip waits for the
@@ -7697,10 +8533,16 @@ class AudioPlayerService extends ChangeNotifier {
   /// the normal entry-change in [_maybeSkipChapterIntroOutro].
   bool _disarmIntroForSameChapterRewind(double fromPosSec, double arrivalSec) {
     if (_chapters.isEmpty) return false;
-    final fromIdx =
-        ChapterLookup.indexAtWithGrace(_chapters, fromPosSec, _totalDuration);
-    final toIdx =
-        ChapterLookup.indexAtWithGrace(_chapters, arrivalSec, _totalDuration);
+    final fromIdx = ChapterLookup.indexAtWithGrace(
+      _chapters,
+      fromPosSec,
+      _totalDuration,
+    );
+    final toIdx = ChapterLookup.indexAtWithGrace(
+      _chapters,
+      arrivalSec,
+      _totalDuration,
+    );
     if (fromIdx == null || fromIdx != toIdx) {
       _disarmRewindChapterIdx = null;
       _disarmRewindUntil = null;
@@ -7741,8 +8583,8 @@ class AudioPlayerService extends ChangeNotifier {
     final ch = _chapters[chapterIdx] as Map<String, dynamic>;
     double? chapterEndFromData = (ch['end'] as num?)?.toDouble();
     if (chapterEndFromData == null && chapterIdx + 1 < _chapters.length) {
-      chapterEndFromData =
-          ((_chapters[chapterIdx + 1] as Map)['start'] as num?)?.toDouble();
+      chapterEndFromData = ((_chapters[chapterIdx + 1] as Map)['start'] as num?)
+          ?.toDouble();
     }
     final chapterEnd = chapterEndFromData ?? _totalDuration;
     if (chapterEnd - target < 1.0) return null;
@@ -7771,7 +8613,11 @@ class AudioPlayerService extends ChangeNotifier {
     // a deliberate user navigation (e.g. rewinding to a chapter start).
     if (now.difference(_lastUserSeekTime).inMilliseconds < 3000) return;
 
-    final chapterIdx = ChapterLookup.indexAtWithGrace(_chapters, posSec, _totalDuration);
+    final chapterIdx = ChapterLookup.indexAtWithGrace(
+      _chapters,
+      posSec,
+      _totalDuration,
+    );
     if (chapterIdx == null) return;
     final ch = _chapters[chapterIdx] as Map<String, dynamic>;
     final chapterStart = (ch['start'] as num?)?.toDouble() ?? 0;
@@ -7783,8 +8629,8 @@ class AudioPlayerService extends ChangeNotifier {
     // user started (short ~5-10s chapters + a 10s intro skip).
     double? chapterEndFromData = (ch['end'] as num?)?.toDouble();
     if (chapterEndFromData == null && chapterIdx + 1 < _chapters.length) {
-      chapterEndFromData =
-          ((_chapters[chapterIdx + 1] as Map)['start'] as num?)?.toDouble();
+      chapterEndFromData = ((_chapters[chapterIdx + 1] as Map)['start'] as num?)
+          ?.toDouble();
     }
     final chapterEnd = chapterEndFromData ?? _totalDuration;
 
@@ -7927,16 +8773,36 @@ class AudioPlayerService extends ChangeNotifier {
 
   Map<String, dynamic>? get currentChapter {
     if (_chapters.isEmpty || _player == null) return null;
-    final pos = position.inMilliseconds / 1000.0; // absolute book position
-    for (final ch in _chapters) {
-      final start = (ch['start'] as num?)?.toDouble() ?? 0;
-      final end = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
-      if (pos >= start && pos < end) return ch as Map<String, dynamic>;
+    final pos = chapterResolvePosSec; // absolute book position
+    final idx = _resolveChapterIndex(pos);
+    if (idx == null || idx < 0 || idx >= _chapters.length) return null;
+    return _chapters[idx] as Map<String, dynamic>;
+  }
+
+  /// Chapter index for [posSec], mirroring the notification tick's semantics
+  /// so the card/expanded title agrees with the lock screen:
+  /// 1. a held chapter-jump latch is authoritative until the position passes
+  ///    the latched chapter's end (metadata-vs-track drift can otherwise
+  ///    demote a landed jump to a boundary gap / the previous chapter);
+  /// 2. otherwise strict containment;
+  /// 3. otherwise the trailing grace window past the last chapter end.
+  int? _resolveChapterIndex(double posSec) {
+    if (_chapters.isEmpty) return null;
+    if (_chapterJumpLatchIndex >= 0 &&
+        _chapterJumpLatchIndex < _chapters.length) {
+      final lEnd = (_chapters[_chapterJumpLatchIndex]['end'] as num?)
+              ?.toDouble() ??
+          _totalDuration;
+      if (posSec < lEnd) return _chapterJumpLatchIndex;
+      _chapterJumpLatchIndex = -1;
     }
-    return null;
+    final plain = ChapterLookup.indexAt(_chapters, posSec, _totalDuration);
+    if (plain != null) return plain;
+    return ChapterLookup.indexAtWithGrace(_chapters, posSec, _totalDuration);
   }
 
   Future<void> stop({bool keepSleepTimer = false}) async {
+    _pausedForOffline = false;
     _pauseStopTimer?.cancel();
     _pauseStopTimer = null;
     _endAdvanceBuffering();
@@ -8013,6 +8879,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Stop playback without saving progress — used by reset progress.
   Future<void> stopWithoutSaving() async {
+    _pausedForOffline = false;
     _endAdvanceBuffering();
     // Close server session without syncing position
     if (_playbackSessionId != null && _api != null) {

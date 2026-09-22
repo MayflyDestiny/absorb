@@ -450,7 +450,12 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         final api = context.read<AuthProvider>().apiService;
         if (api == null) return;
         final lib = context.read<LibraryProvider>();
-        final fullItem = await api.getLibraryItem(widget.itemId!);
+        // Prefer the disk-cached item — the sheet is already showing this
+        // book's chapter/timing data on screen, so a weak link should never
+        // gate a chapter jump behind a full network fetch. Fall back to the
+        // network only when the item was never cached.
+        final cachedItem = await api.getCachedLibraryItem(widget.itemId!);
+        final fullItem = cachedItem ?? await api.getLibraryItem(widget.itemId!);
         if (fullItem == null) return;
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
         final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
@@ -459,8 +464,12 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         final coverUrl = lib.getCoverUrl(widget.itemId!);
         final dur = (media['duration'] is num)
             ? (media['duration'] as num).toDouble()
-            : 0.0;
-        final chs = (media['chapters'] as List<dynamic>?) ?? [];
+            : widget.totalDuration;
+        final mediaChapters = (media['chapters'] as List<dynamic>?)
+                ?.whereType<Map<String, dynamic>>()
+                .toList() ??
+            [];
+        final chs = mediaChapters.isNotEmpty ? mediaChapters : widget.chapters;
         await widget.player.playItem(
           api: api,
           itemId: widget.itemId!,

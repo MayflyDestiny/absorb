@@ -9,6 +9,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
+import 'stable_cached_network_image.dart';
 import 'book_detail_sheet.dart';
 import 'books_sheet_shared.dart' show coverGridTextScale, coverGridDecodeWidth;
 import 'episode_list_sheet.dart';
@@ -84,6 +85,8 @@ class _GridBookTileState extends State<GridBookTile> {
     final isSubscribed = lib.isPodcastLibrary && lib.isPodcastSubscribed(itemId);
     final unfinishedCount =
         lib.isPodcastLibrary ? lib.getUnfinishedEpisodeCount(widget.item) : 0;
+    // Pushes the other top-right badges below the "finished" badge.
+    final finishedOffset = isFinished ? 24.0 : 0.0;
 
     return GestureDetector(
       // opaque so taps on the blank space below the title (the tile's tall
@@ -124,7 +127,9 @@ class _GridBookTileState extends State<GridBookTile> {
                 children: [
                   // Cover image
                   coverUrl != null
-                      ? _blurCover(coverUrl, lib.mediaHeaders, cs, widget.coverAspectRatio, title, author)
+                      ? _blurCover(coverUrl, lib.mediaHeaders, cs, widget.coverAspectRatio, title, author,
+                          cacheKey: stableCoverCacheKey(coverUrl,
+                              updatedAt: lib.itemUpdatedAt(itemId)))
                       : CoverPlaceholder(title: title, author: author),
 
                   // Progress bar at bottom of cover
@@ -141,10 +146,18 @@ class _GridBookTileState extends State<GridBookTile> {
                       ),
                     ),
 
+                  // Finished badge (top-right corner)
+                  if (isFinished)
+                    const Positioned(
+                      top: 4,
+                      right: 4,
+                      child: CoverFinishedBadge(),
+                    ),
+
                   // Unplayed-episode count badge (podcasts only)
                   if (unfinishedCount > 0)
                     Positioned(
-                      top: 4,
+                      top: 4 + finishedOffset,
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -167,7 +180,7 @@ class _GridBookTileState extends State<GridBookTile> {
                   // Subscribed bell (sits below unplayed badge when both show)
                   if (isSubscribed)
                     Positioned(
-                      top: unfinishedCount > 0 ? 26 : 4,
+                      top: (unfinishedCount > 0 ? 26 : 4) + finishedOffset,
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.all(3),
@@ -183,7 +196,9 @@ class _GridBookTileState extends State<GridBookTile> {
                   // Explicit badge
                   if (isExplicit)
                     Positioned(
-                      top: (unfinishedCount > 0 ? 26 : 4) + (isSubscribed ? 22 : 0),
+                      top: (unfinishedCount > 0 ? 26 : 4) +
+                          (isSubscribed ? 22 : 0) +
+                          finishedOffset,
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -210,8 +225,8 @@ class _GridBookTileState extends State<GridBookTile> {
                       ),
                     ),
 
-                  // ── State chips (downloaded / finished), bottom-center ──
-                  if (isFinished || isDownloaded)
+                  // ── State chips (downloaded), bottom-center ──
+                  if (isDownloaded)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -219,7 +234,6 @@ class _GridBookTileState extends State<GridBookTile> {
                       child: Center(
                         child: CoverStatusChips(
                           isDownloaded: isDownloaded,
-                          isFinished: isFinished,
                           savedChapters: dlCounts?.saved ?? 0,
                           totalChapters: dlCounts?.total ?? 0,
                         ),
@@ -307,7 +321,9 @@ class _GridBookTileState extends State<GridBookTile> {
     );
   }
 
-  Widget _blurCover(String coverUrl, Map<String, String> headers, ColorScheme cs, double aspectRatio, String title, String author) {
+  Widget _blurCover(String coverUrl, Map<String, String> headers, ColorScheme cs,
+      double aspectRatio, String title, String author,
+      {String? cacheKey}) {
     final placeholder = CoverPlaceholder(title: title, author: author);
     final isSquare = (aspectRatio - 1.0).abs() < 0.01;
     final decodeWidth = coverGridDecodeWidth(context);
@@ -317,7 +333,8 @@ class _GridBookTileState extends State<GridBookTile> {
             cacheWidth: decodeWidth,
             errorBuilder: (_, __, ___) => placeholder);
       }
-      return CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+      return CachedNetworkImage(imageUrl: coverUrl, cacheKey: cacheKey,
+          fit: BoxFit.cover,
           httpHeaders: headers, memCacheWidth: decodeWidth,
           useOldImageOnUrlChange: true,
           placeholder: (_, __) => placeholder,
@@ -338,12 +355,14 @@ class _GridBookTileState extends State<GridBookTile> {
       ]);
     }
     return Stack(fit: StackFit.expand, children: [
-      CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+      CachedNetworkImage(imageUrl: coverUrl, cacheKey: cacheKey,
+          fit: BoxFit.cover,
           httpHeaders: headers, memCacheWidth: 32,
           useOldImageOnUrlChange: true,
           errorWidget: (_, __, ___) => const SizedBox.shrink()),
       Container(color: Colors.black.withValues(alpha: 0.15)),
-      CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.contain,
+      CachedNetworkImage(imageUrl: coverUrl, cacheKey: cacheKey,
+          fit: BoxFit.contain,
           httpHeaders: headers, memCacheWidth: decodeWidth,
           useOldImageOnUrlChange: true,
           placeholder: (_, __) => placeholder,
@@ -1129,14 +1148,19 @@ class _LibraryBookListTileState extends State<LibraryBookListTile> {
                         valueColor: AlwaysStoppedAnimation(cs.primary),
                       ),
                     ),
-                  if (isFinished || isDownloaded)
+                  if (isFinished)
+                    const Positioned(
+                      top: 3,
+                      right: 3,
+                      child: CoverFinishedBadge(),
+                    ),
+                  if (isDownloaded)
                     Positioned(
                       left: 0,
                       right: 0,
                       bottom: 4,
                       child: CoverStatusChips(
                         isDownloaded: isDownloaded,
-                        isFinished: isFinished,
                         savedChapters: dlCounts?.saved ?? 0,
                         totalChapters: dlCounts?.total ?? 0,
                       ),

@@ -255,7 +255,6 @@ class BookCard extends StatelessWidget {
                       child: Center(
                         child: CoverStatusChips(
                           isDownloaded: true,
-                          isFinished: false,
                           savedChapters: savedChapters,
                           totalChapters: totalChapters,
                         ),
@@ -387,9 +386,15 @@ class BookCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (isFinished)
+                    const Positioned(
+                      top: 4,
+                      right: 4,
+                      child: CoverFinishedBadge(),
+                    ),
                   if (isExplicit)
                     Positioned(
-                      top: unfinishedCount > 0 ? 26 : 4,
+                      top: (unfinishedCount > 0 ? 26 : 4) + (isFinished ? 24 : 0),
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -402,7 +407,7 @@ class BookCard extends StatelessWidget {
                     ),
                   if (unfinishedCount > 0)
                     Positioned(
-                      top: 4,
+                      top: 4 + (isFinished ? 24 : 0),
                       right: 4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -421,13 +426,12 @@ class BookCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (isFinished || isDownloaded)
+                  if (isDownloaded)
                     Positioned(
                       left: 0, right: 0, bottom: 5,
                       child: Center(
                         child: CoverStatusChips(
                           isDownloaded: isDownloaded,
-                          isFinished: isFinished,
                           savedChapters: savedChapters,
                           totalChapters: totalChapters,
                         ),

@@ -455,7 +455,9 @@ class _EpisodeListSheetState extends State<EpisodeListSheet> {
       }
     }
 
-    await lib.refresh();
+    // Progress-only change: skip the full lib.refresh() — the per-item
+    // mark calls already updated the provider and forced shelf refreshes.
+    unawaited(lib.refreshProgressOnly());
     if (mounted) {
       setState(() {
         _isBatchUpdating = false;

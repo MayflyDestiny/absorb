@@ -105,9 +105,14 @@ class BookResultTile extends StatelessWidget {
                             style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w600)),
                         ),
                       ),
+                    if (isFinished)
+                      const Positioned(
+                        top: 3, right: 3,
+                        child: CoverFinishedBadge(),
+                      ),
                     if (isExplicit)
                       Positioned(
-                        top: 3, right: 3,
+                        top: isFinished ? 21 : 3, right: 3,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
                           decoration: BoxDecoration(
@@ -117,12 +122,11 @@ class BookResultTile extends StatelessWidget {
                           child: Text(l.librarySearchResultsExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
                         ),
                       ),
-                    if (isFinished || isDownloaded)
+                    if (isDownloaded)
                       Positioned(
                         left: 0, right: 0, bottom: 0,
                         child: CoverStateBadges(
                           isDownloaded: isDownloaded,
-                          isFinished: isFinished,
                           iconOnly: true,
                           iconSize: 14,
                         ),

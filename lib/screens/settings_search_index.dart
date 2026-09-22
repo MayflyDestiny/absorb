@@ -30,6 +30,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Appearance', l.sectionAppearance, l.rectangleBookCovers, [l.rectangleBookCoversOnSubtitle, l.rectangleBookCoversOffSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.coverSize, [l.coverSizeSubtitle, l.coverSizeSmall, l.coverSizeMedium, l.coverSizeLarge]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.wordingClassicTitle, [l.wordingClassicOnSubtitle, l.wordingClassicOffSubtitle]),
+    SettingSearchEntry('Appearance', l.sectionAppearance, l.finishedBadgeMode, [l.finishedBadgeModeSubtitle, l.finishedBadgeModeText, l.finishedBadgeModeIcon, l.finishedBadgeModeOff]),
     if (!(Platform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600))
       SettingSearchEntry('Appearance', l.sectionAppearance, l.rotationLockTitle, [l.rotationLockOnSubtitle, l.rotationLockOffSubtitle]),
 
@@ -108,7 +109,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
       SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.downloadLocation, const []),
     SettingSearchEntry('Manage Downloads', l.manageDownloads, l.manageDownloads, [l.manageDownloadsSubtitle]),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.streamingCache, [l.streamingCacheOffSubtitle, l.streamingCacheOff, l.clearCache]),
-    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.appCache, [l.appCacheConfirm, l.clearCache]),
+    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.clearCache, [l.clearCacheHint, l.cacheCovers, l.appCache, l.streamingCache, l.cacheExports, l.clearAllCaches]),
 
     // ── Library ──
     SettingSearchEntry('Library', l.sectionLibrary, l.settingsPodcastTab, [l.settingsPodcastTabDesc]),

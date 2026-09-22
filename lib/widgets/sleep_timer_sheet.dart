@@ -3,7 +3,7 @@ import '../l10n/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../services/sleep_timer_service.dart';
 
-// 鈹€鈹€鈹€ SHARED SLEEP TIMER SHEET 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ═════════════════ SHARED SLEEP TIMER SHEET ═════════════════
 void showSleepTimerSheet(BuildContext context, Color accent) {
   showModalBottomSheet(
     context: context,
@@ -541,7 +541,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
               }),
           ]),
       const SizedBox(height: 8),
-      // Custom button 鈥?visually distinct, full-width below the presets
+      // Custom button — visually distinct, full-width below the presets
       _buildCustomButton(accent, cs, l),
       AnimatedSize(
         duration: const Duration(milliseconds: 200),
@@ -894,7 +894,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet> {
       Icon(Icons.podcasts_outlined,
           size: 40, color: accent.withValues(alpha: 0.5)),
       const SizedBox(height: 16),
-      // Stops at the end of the current episode (no counter 鈥?episodes only roll
+      // Stops at the end of the current episode (no counter — episodes only roll
       // forward when a queue mode is feeding the next one).
       SizedBox(
           width: double.infinity,

@@ -420,10 +420,20 @@ class _FinishedBooksThisYearSheetState
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
 
-  Widget _finishedBadge(bool isDownloaded) => Positioned(
-        left: 0,
-        right: 0,
-        bottom: 0,
-        child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: true),
+  Widget _finishedBadge(bool isDownloaded) => Positioned.fill(
+        child: Stack(children: [
+          const Positioned(
+            top: 4,
+            right: 4,
+            child: CoverFinishedBadge(),
+          ),
+          if (isDownloaded)
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: CoverStateBadges(isDownloaded: true),
+            ),
+        ]),
       );
 }

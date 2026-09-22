@@ -2062,18 +2062,75 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamingCacheCleared => '流式缓存已清除';
 
   @override
-  String get appCache => '应用数据缓存';
+  String get appCache => '进度缓存';
 
   @override
   String appCacheHint(String size) {
-    return '$size 书架、网格和阅读进度缓存。使用时会自动重新下载。';
+    return '$size 书架、网格、阅读进度和播放会话缓存。使用时会自动重新下载。';
   }
 
   @override
-  String get appCacheConfirm => '要删除所有书架、网格和阅读进度缓存吗？它们会在使用时自动重新下载。';
+  String get appCacheConfirm => '要删除所有书架、网格、阅读进度和播放会话缓存吗？它们会在使用时自动重新下载。';
 
   @override
-  String get appCacheCleared => '应用数据缓存已清除';
+  String get appCacheCleared => '进度缓存已清除';
+
+  @override
+  String get clearCacheHint => '封面、进度、流媒体和残留文件，可分别清理。';
+
+  @override
+  String get clearCacheSheetTitle => '清除缓存';
+
+  @override
+  String get clearCacheSheetSubtitle => '选择要清理的内容。之后使用时会自动重新生成。';
+
+  @override
+  String get cacheCovers => '封面缓存';
+
+  @override
+  String get cacheCoversHint => '已下载的书籍、系列、作者封面及桌面组件封面副本。';
+
+  @override
+  String get cacheAppDataHint => '书架、网格、阅读进度和播放会话缓存。';
+
+  @override
+  String get cacheStreamingHint => '最近流式播放的音频保存在本地，便于即时重播。';
+
+  @override
+  String get clearAllCaches => '全部清除';
+
+  @override
+  String get clearAllCachesConfirm => '要清除全部缓存吗？它们会在使用时自动重新生成。';
+
+  @override
+  String get cacheAllCleared => '全部缓存已清除';
+
+  @override
+  String get coverCacheCleared => '封面缓存已清除';
+
+  @override
+  String get cacheSystemCacheLabel => '系统缓存';
+
+  @override
+  String get cacheSystemDataLabel => '系统数据';
+
+  @override
+  String get cacheSystemStatsHint => '安卓系统针对本应用报告的数值。';
+
+  @override
+  String get cacheCodeCacheLabel => '代码缓存';
+
+  @override
+  String get cacheTilesSumLabel => '所列分类合计';
+
+  @override
+  String get cacheExports => '残留缓存';
+
+  @override
+  String get cacheExportsHint => '分享卡片、剪辑音频、转录文件、电子书文件、更新包等。';
+
+  @override
+  String get exportsCleared => '残留缓存已清除';
 
   @override
   String get sectionLibrary => '媒体库';
@@ -2634,8 +2691,8 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '将 $count 个已有下载移回内部存储？',
-      one: '将 1 个已有下载移回内部存储？',
+      other: '将 $count 个已有下载移回默认位置？',
+      one: '将 1 个已有下载移回默认位置？',
     );
     return '$_temp0';
   }
@@ -4059,6 +4116,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get showExplicitBadgeOffSubtitle => '关闭 - 隐藏敏感内容标记';
+
+  @override
+  String get finishedBadgeMode => '已完成标记';
+
+  @override
+  String get finishedBadgeModeSubtitle => '在封面显示已完成勾选：带文字、仅图标或关闭。';
+
+  @override
+  String get finishedBadgeModeText => '带文字';
+
+  @override
+  String get finishedBadgeModeIcon => '仅图标';
+
+  @override
+  String get finishedBadgeModeOff => '关闭';
 
   @override
   String get libraryFallback => '媒体库';
@@ -9238,5 +9310,31 @@ class AppLocalizationsZh extends AppLocalizations {
     String speed,
   ) {
     return '$seconds（$speed，对应 $adjusted）';
+  }
+
+  @override
+  String get playerErrorConnect => '连接不上服务器，请检查网络后重试';
+
+  @override
+  String get playerErrorNoAudio => '没有找到音频文件，服务器上可能已缺失这本书';
+
+  @override
+  String get playerErrorInit => '无法开始播放';
+
+  @override
+  String get playerErrorNotDownloadedOffline => '这本书还没下载，而且当前处于离线状态';
+
+  @override
+  String get playerErrorDownloadsMissing => '下载的文件不见了，请重新下载';
+
+  @override
+  String get playerErrorTranscodeStart => '无法开始转码播放';
+
+  @override
+  String get playerErrorTranscodeNoAudio => '转码后的会话里没有音频文件';
+
+  @override
+  String playerErrorGeneric(String error) {
+    return '播放失败：$error';
   }
 }

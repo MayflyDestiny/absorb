@@ -420,9 +420,9 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                 ? (coverUrl.startsWith('/')
                     ? Image.file(File(coverUrl), fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _placeholder(cs))
-                    : Image.network(coverUrl, fit: BoxFit.cover,
-                        headers: lib.mediaHeaders,
-                        errorBuilder: (_, __, ___) => _placeholder(cs)))
+                    : CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover,
+                        httpHeaders: lib.mediaHeaders,
+                        errorWidget: (_, __, ___) => _placeholder(cs)))
                 : _placeholder(cs),
           ),
         );
@@ -491,9 +491,14 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                                   ))
                             : _placeholder(cs),
                       ),
-                      if (isExplicit)
+                      if (isFinished)
                         Positioned(
                           top: 4, right: 4,
+                          child: CoverFinishedBadge(),
+                        ),
+                      if (isExplicit)
+                        Positioned(
+                          top: 4 + (isFinished ? 24 : 0), right: 4,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                             decoration: BoxDecoration(
@@ -513,10 +518,10 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                             valueColor: AlwaysStoppedAnimation(cs.primary),
                           ),
                         ),
-                      if (isFinished || isDownloaded)
+                      if (isDownloaded)
                         Positioned(
                           left: 0, right: 0, bottom: 0,
-                          child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
+                          child: CoverStateBadges(isDownloaded: isDownloaded),
                         ),
                     ]),
                   ),
@@ -631,9 +636,14 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                                 ))
                           : _placeholder(cs),
                     ),
-                    if (isExplicit)
+                    if (isFinished)
                       Positioned(
                         top: 4, right: 4,
+                        child: CoverFinishedBadge(),
+                      ),
+                    if (isExplicit)
+                      Positioned(
+                        top: 4 + (isFinished ? 24 : 0), right: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
@@ -653,10 +663,10 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                           valueColor: AlwaysStoppedAnimation(cs.primary),
                         ),
                       ),
-                    if (isFinished || isDownloaded)
+                    if (isDownloaded)
                       Positioned(
                         left: 0, right: 0, bottom: 0,
-                        child: CoverStateBadges(isDownloaded: isDownloaded, isFinished: isFinished),
+                        child: CoverStateBadges(isDownloaded: isDownloaded),
                       ),
                   ]),
                 ),
