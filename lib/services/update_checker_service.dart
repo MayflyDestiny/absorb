@@ -47,6 +47,23 @@ int? betaNumberFromReleaseNotes(String notes) {
   return m == null ? null : int.tryParse(m.group(1)!);
 }
 
+/// Outcome of an update check, telling callers apart:
+/// * [info] non-null — a newer version exists and can be offered;
+/// * [error] non-null — the server couldn't be queried (network, HTTP error);
+/// * both null — no newer version (or the check was skipped by cooldown/etc.).
+class UpdateCheckResult {
+  final UpdateInfo? info;
+  final String? error;
+
+  const UpdateCheckResult.update(this.info)
+      : error = null;
+  const UpdateCheckResult.failure(String this.error)
+      : info = null;
+  const UpdateCheckResult.none()
+      : info = null,
+        error = null;
+}
+
 class UpdateCheckerService {
   static const _repo = 'MayflyDestiny/absorb';
   static const _checkInterval = Duration(hours: 12);
@@ -72,10 +89,12 @@ class UpdateCheckerService {
     );
   }
 
-  /// Check for updates. Returns UpdateInfo if a newer version exists, null otherwise.
+  /// Check for updates. Returns an [UpdateCheckResult] telling the caller
+  /// apart an update (info non-null) from "no update" (all null) from a
+  /// failed check ([error] non-null).
   /// Respects a 12-hour cooldown between checks and skips dismissed versions.
   /// When [includePreReleases] is true, pre-release/alpha builds are also considered.
-  static Future<UpdateInfo?> check({bool force = false, bool includePreReleases = false}) async {
+  static Future<UpdateCheckResult> check({bool force = false, bool includePreReleases = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -83,7 +102,7 @@ class UpdateCheckerService {
       if (!force) {
         final lastCheck = prefs.getInt(_lastCheckKey) ?? 0;
         final elapsed = DateTime.now().millisecondsSinceEpoch - lastCheck;
-        if (elapsed < _checkInterval.inMilliseconds) return null;
+        if (elapsed < _checkInterval.inMilliseconds) return const UpdateCheckResult.none();
       }
 
       await prefs.setInt(_lastCheckKey, DateTime.now().millisecondsSinceEpoch);
@@ -96,16 +115,20 @@ class UpdateCheckerService {
           Uri.parse('https://api.github.com/repos/$_repo/releases?per_page=5'),
           headers: {'Accept': 'application/vnd.github.v3+json'},
         ).timeout(const Duration(seconds: 10));
-        if (response.statusCode != 200) return null;
+        if (response.statusCode != 200) {
+          return UpdateCheckResult.failure('HTTP ${response.statusCode}');
+        }
         final releases = jsonDecode(response.body) as List<dynamic>;
-        if (releases.isEmpty) return null;
+        if (releases.isEmpty) return const UpdateCheckResult.none();
         data = releases.first as Map<String, dynamic>;
       } else {
         final response = await http.get(
           Uri.parse('https://api.github.com/repos/$_repo/releases/latest'),
           headers: {'Accept': 'application/vnd.github.v3+json'},
         ).timeout(const Duration(seconds: 10));
-        if (response.statusCode != 200) return null;
+        if (response.statusCode != 200) {
+          return UpdateCheckResult.failure('HTTP ${response.statusCode}');
+        }
         data = jsonDecode(response.body) as Map<String, dynamic>;
       }
 
@@ -160,18 +183,27 @@ class UpdateCheckerService {
             : androidUpdatePackageLabel(selectedAsset),
       );
 
-      if (!info.hasUpdate) return null;
+      if (!info.hasUpdate) return const UpdateCheckResult.none();
 
       // Check if user dismissed this version
       if (!force) {
         final dismissed = prefs.getString(_dismissedKey);
-        if (dismissed == tagName) return null;
+        if (dismissed == tagName) return const UpdateCheckResult.none();
       }
 
-      return info;
+      return UpdateCheckResult.update(info);
+    } on TimeoutException {
+      debugPrint('[UpdateChecker] Timed out');
+      return const UpdateCheckResult.failure('timeout');
+    } on http.ClientException catch (e) {
+      debugPrint('[UpdateChecker] Network error: $e');
+      return UpdateCheckResult.failure(e.message);
+    } on FormatException catch (e) {
+      debugPrint('[UpdateChecker] Bad response: $e');
+      return const UpdateCheckResult.failure('bad response');
     } catch (e) {
       debugPrint('[UpdateChecker] Error: $e');
-      return null;
+      return UpdateCheckResult.failure('$e');
     }
   }
 

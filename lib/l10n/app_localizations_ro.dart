@@ -4316,6 +4316,9 @@ class AppLocalizationsRo extends AppLocalizations {
   String get onLatestVersion => 'You\'re on the latest version';
 
   @override
+  String get updateCheckFailed => 'Couldn\'t check for updates';
+
+  @override
   String get updateAvailable => 'Update available';
 
   @override
@@ -9543,6 +9546,73 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get historyDetailSleepTimer => 'sleep timer';
+
+  @override
+  String get historyDetailPlayAutoResumedInterruption =>
+      'Auto-resumed after interruption';
+
+  @override
+  String get historyDetailPlayPageKey => 'page key';
+
+  @override
+  String get historyDetailPlayReadAlongStopped => 'read along stopped';
+
+  @override
+  String get historyDetailPlayReadAlongReady => 'read along ready';
+
+  @override
+  String get historyDetailPauseOffline => 'offline';
+
+  @override
+  String get historyDetailPauseSpuriousBlocked => 'spurious completion blocked';
+
+  @override
+  String get historyDetailPauseIosPrematureBlocked =>
+      'iOS premature completion blocked';
+
+  @override
+  String get historyDetailPrevChapterDirect => 'prev chapter (direct)';
+
+  @override
+  String historyDetailPrevChapterDirectToIntroSkip(String position) {
+    return 'prev chapter (direct) to $position (intro skip)';
+  }
+
+  @override
+  String get historyDetailLocalHotSwap => 'local hot-swap';
+
+  @override
+  String get historyDetailLocalSession => 'local-session';
+
+  @override
+  String get historyDetailRefresh => 'refresh';
+
+  @override
+  String get historyDetailRecovery => 'recovery';
+
+  @override
+  String get historyDetailStallRecovery => 'stall recovery';
+
+  @override
+  String get historyDetailDeadSource => 'dead source';
+
+  @override
+  String get historyDetailDirectFile => 'direct-file';
+
+  @override
+  String get historyDetailBookFinished => 'book finished';
+
+  @override
+  String get historyDetailLocalBookFinished => 'local book finished';
+
+  @override
+  String get historyDetailPauseTimeout => 'pause timeout';
+
+  @override
+  String get historyDetailStop => 'stop';
+
+  @override
+  String get historyDetailSeekSleepRewindUndone => 'sleep rewind undone';
 
   @override
   String historyDetailRewindAtSpeed(

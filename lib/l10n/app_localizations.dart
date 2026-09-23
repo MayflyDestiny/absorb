@@ -7730,6 +7730,12 @@ abstract class AppLocalizations {
   /// **'You\'re on the latest version'**
   String get onLatestVersion;
 
+  /// No description provided for @updateCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check for updates'**
+  String get updateCheckFailed;
+
   /// No description provided for @updateAvailable.
   ///
   /// In en, this message translates to:
@@ -16442,6 +16448,132 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'sleep timer'**
   String get historyDetailSleepTimer;
+
+  /// No description provided for @historyDetailPlayAutoResumedInterruption.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-resumed after interruption'**
+  String get historyDetailPlayAutoResumedInterruption;
+
+  /// No description provided for @historyDetailPlayPageKey.
+  ///
+  /// In en, this message translates to:
+  /// **'page key'**
+  String get historyDetailPlayPageKey;
+
+  /// No description provided for @historyDetailPlayReadAlongStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'read along stopped'**
+  String get historyDetailPlayReadAlongStopped;
+
+  /// No description provided for @historyDetailPlayReadAlongReady.
+  ///
+  /// In en, this message translates to:
+  /// **'read along ready'**
+  String get historyDetailPlayReadAlongReady;
+
+  /// No description provided for @historyDetailPauseOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'offline'**
+  String get historyDetailPauseOffline;
+
+  /// No description provided for @historyDetailPauseSpuriousBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'spurious completion blocked'**
+  String get historyDetailPauseSpuriousBlocked;
+
+  /// No description provided for @historyDetailPauseIosPrematureBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'iOS premature completion blocked'**
+  String get historyDetailPauseIosPrematureBlocked;
+
+  /// No description provided for @historyDetailPrevChapterDirect.
+  ///
+  /// In en, this message translates to:
+  /// **'prev chapter (direct)'**
+  String get historyDetailPrevChapterDirect;
+
+  /// No description provided for @historyDetailPrevChapterDirectToIntroSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'prev chapter (direct) to {position} (intro skip)'**
+  String historyDetailPrevChapterDirectToIntroSkip(String position);
+
+  /// No description provided for @historyDetailLocalHotSwap.
+  ///
+  /// In en, this message translates to:
+  /// **'local hot-swap'**
+  String get historyDetailLocalHotSwap;
+
+  /// No description provided for @historyDetailLocalSession.
+  ///
+  /// In en, this message translates to:
+  /// **'local-session'**
+  String get historyDetailLocalSession;
+
+  /// No description provided for @historyDetailRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'refresh'**
+  String get historyDetailRefresh;
+
+  /// No description provided for @historyDetailRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'recovery'**
+  String get historyDetailRecovery;
+
+  /// No description provided for @historyDetailStallRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'stall recovery'**
+  String get historyDetailStallRecovery;
+
+  /// No description provided for @historyDetailDeadSource.
+  ///
+  /// In en, this message translates to:
+  /// **'dead source'**
+  String get historyDetailDeadSource;
+
+  /// No description provided for @historyDetailDirectFile.
+  ///
+  /// In en, this message translates to:
+  /// **'direct-file'**
+  String get historyDetailDirectFile;
+
+  /// No description provided for @historyDetailBookFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'book finished'**
+  String get historyDetailBookFinished;
+
+  /// No description provided for @historyDetailLocalBookFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'local book finished'**
+  String get historyDetailLocalBookFinished;
+
+  /// No description provided for @historyDetailPauseTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'pause timeout'**
+  String get historyDetailPauseTimeout;
+
+  /// No description provided for @historyDetailStop.
+  ///
+  /// In en, this message translates to:
+  /// **'stop'**
+  String get historyDetailStop;
+
+  /// No description provided for @historyDetailSeekSleepRewindUndone.
+  ///
+  /// In en, this message translates to:
+  /// **'sleep rewind undone'**
+  String get historyDetailSeekSleepRewindUndone;
 
   /// No description provided for @historyDetailRewindAtSpeed.
   ///

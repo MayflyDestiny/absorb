@@ -2146,6 +2146,7 @@
   "saveAbsorbBackup": "保存 Absorb 备份",
   "checkForUpdate": "检查更新",
   "onLatestVersion": "您已是最新版本",
+  "updateCheckFailed": "无法检查更新",
   "updateAvailable": "有可用更新",
   "preReleaseAvailable": "有预发布版本可用",
   "updateDialogContent": "有新的 Absorb {kind} 可用: {latest}\n\n您当前使用的是 {current}。",
@@ -3566,6 +3567,32 @@
   "historyDetailSnapToChapterStart": "回到本章开头",
   "historyDetailSessionStart": "会话开始",
   "historyDetailSleepTimer": "睡眠定时器",
+  "historyDetailPlayAutoResumedInterruption": "中断后自动恢复播放",
+  "historyDetailPlayPageKey": "翻页键",
+  "historyDetailPlayReadAlongStopped": "跟读已停止",
+  "historyDetailPlayReadAlongReady": "跟读已就绪",
+  "historyDetailPauseOffline": "离线暂停",
+  "historyDetailPauseSpuriousBlocked": "已拦截误报的播放完成",
+  "historyDetailPauseIosPrematureBlocked": "已拦截 iOS 提前结束误报",
+  "historyDetailPrevChapterDirect": "跳转到上一章（直跳）",
+  "historyDetailPrevChapterDirectToIntroSkip": "跳转到上一章（直跳）{position}（跳过片头）",
+  "@historyDetailPrevChapterDirectToIntroSkip": {
+    "placeholders": {
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailLocalHotSwap": "本地热切换",
+  "historyDetailLocalSession": "本地会话",
+  "historyDetailRefresh": "刷新",
+  "historyDetailRecovery": "恢复会话",
+  "historyDetailStallRecovery": "卡顿恢复",
+  "historyDetailDeadSource": "数据源失效",
+  "historyDetailDirectFile": "直接文件播放",
+  "historyDetailBookFinished": "本书已播完",
+  "historyDetailLocalBookFinished": "本地文件已播完",
+  "historyDetailPauseTimeout": "暂停超时",
+  "historyDetailStop": "停止",
+  "historyDetailSeekSleepRewindUndone": "撤销睡眠回退",
   "historyDetailRewindAtSpeed": "{base}（{speed}，对应 {adjusted}）",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {

@@ -2213,6 +2213,7 @@
   "saveAbsorbBackup": "Save Absorb backup",
   "checkForUpdate": "Check for update",
   "onLatestVersion": "You're on the latest version",
+  "updateCheckFailed": "Couldn't check for updates",
   "updateAvailable": "Update available",
   "preReleaseAvailable": "Pre-release available",
   "updateDialogContent": "A new {kind} of Absorb is available: {latest}\n\nYou are on {current}.",
@@ -5371,6 +5372,32 @@
   "historyDetailSnapToChapterStart": "snap to chapter start",
   "historyDetailSessionStart": "session start",
   "historyDetailSleepTimer": "sleep timer",
+  "historyDetailPlayAutoResumedInterruption": "Auto-resumed after interruption",
+  "historyDetailPlayPageKey": "page key",
+  "historyDetailPlayReadAlongStopped": "read along stopped",
+  "historyDetailPlayReadAlongReady": "read along ready",
+  "historyDetailPauseOffline": "offline",
+  "historyDetailPauseSpuriousBlocked": "spurious completion blocked",
+  "historyDetailPauseIosPrematureBlocked": "iOS premature completion blocked",
+  "historyDetailPrevChapterDirect": "prev chapter (direct)",
+  "historyDetailPrevChapterDirectToIntroSkip": "prev chapter (direct) to {position} (intro skip)",
+  "@historyDetailPrevChapterDirectToIntroSkip": {
+    "placeholders": {
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailLocalHotSwap": "local hot-swap",
+  "historyDetailLocalSession": "local-session",
+  "historyDetailRefresh": "refresh",
+  "historyDetailRecovery": "recovery",
+  "historyDetailStallRecovery": "stall recovery",
+  "historyDetailDeadSource": "dead source",
+  "historyDetailDirectFile": "direct-file",
+  "historyDetailBookFinished": "book finished",
+  "historyDetailLocalBookFinished": "local book finished",
+  "historyDetailPauseTimeout": "pause timeout",
+  "historyDetailStop": "stop",
+  "historyDetailSeekSleepRewindUndone": "sleep rewind undone",
   "historyDetailRewindAtSpeed": "{base} ({adjusted} at {speed})",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {

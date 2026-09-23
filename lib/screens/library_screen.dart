@@ -808,6 +808,14 @@ class LibraryScreenState extends State<LibraryScreen>
       final lib = context.read<LibraryProvider>();
       final api = context.read<AuthProvider>().apiService;
       if (api == null || lib.isOffline || lib.selectedLibraryId == null) return;
+      // The cached grid may have been persisted in a fully-scrolled state
+      // (_hasMore == false), which would make _loadPageMerge early-return and
+      // never revalidate. Reset pagination so the refresh re-fetches page 0
+      // and merges in place (identity-preserving), converging to server truth
+      // even when the socket is dead.
+      _page = 0;
+      _loadedCount = 0;
+      _hasMore = true;
       _loadPageMerge();
       _loadFilterData();
       _refreshLists();
@@ -1020,12 +1028,23 @@ class LibraryScreenState extends State<LibraryScreen>
         if (pageIndex == 0) {
           _mergeItems(freshItems, total);
         } else {
-          // Append subsequent pages
+          // Append subsequent pages. A repeated offset (see _loadPage) can
+          // deliver items we already own; dedupe by id so the cache never
+          // accumulates duplicates across cold starts.
+          final existingIds = _items
+              .map<String?>((e) => e['id'] as String?)
+              .whereType<String>()
+              .toSet();
+          final unique = <Map<String, dynamic>>[];
+          for (final r in freshItems) {
+            final id = r['id'] as String?;
+            if (id == null || existingIds.add(id)) unique.add(r);
+          }
           setState(() {
-            _items.addAll(freshItems);
+            _items.addAll(unique);
             _loadedCount += results.length;
             _page++;
-            _hasMore = results.length >= limit;
+            _hasMore = results.length >= limit && unique.length > 0;
             _isLoadingPage = false;
           });
           _writeItemsCache();
@@ -1072,6 +1091,7 @@ class LibraryScreenState extends State<LibraryScreen>
     for (final existing in _items) {
       final id = existing['id'] as String?;
       if (id != null && !seenIds.contains(id)) {
+        seenIds.add(id);
         merged.add(existing);
       }
     }
@@ -1473,7 +1493,13 @@ class LibraryScreenState extends State<LibraryScreen>
 
   /// How old a library cache entry may be before we fall back to a fresh
   /// network load instead of restoring it.
-  static const _libraryCacheTtl = Duration(minutes: 10);
+  ///
+  /// Long enough that a normal cold start almost always paints the cached
+  /// grid/chips/lists instantly (no spinner), relying on the ~1.5s post-restore
+  /// refresh ([_schedulePostRestoreRefresh] → [_loadPageMerge]) to quietly
+  /// converge to server truth. The merge preserves Map identity so the stale →
+  /// fresh swap never flickers.
+  static const _libraryCacheTtl = Duration(days: 7);
 
   DateTime? _lastItemsCacheWriteAt;
 
@@ -1495,6 +1521,9 @@ class LibraryScreenState extends State<LibraryScreen>
   /// Returns true when `_items` was populated (so the caller skips the eager
   /// network load this turn).
   Future<bool> _restoreItemsCache() async {
+    // Random sort's seed is (re)generated every session (see _restoreSortFilter),
+    // so a cached ordering is meaningless — always fetch a fresh shuffle.
+    if (_sort == LibrarySort.random) return false;
     if (_isLoadingPage || _items.isNotEmpty) return false;
     final cached = await JsonFileCache.readMap(
       _itemsCacheKey(),
@@ -1523,7 +1552,14 @@ class LibraryScreenState extends State<LibraryScreen>
       }
     }
     setState(() {
-      _items.addAll(items.whereType<Map<String, dynamic>>());
+      // Dedupe by id while restoring — earlier buggy sessions persisted grids
+      // that had grown duplicate copies of the last book on every cold start.
+      final seen = <String>{};
+      _items.clear();
+      for (final r in items.whereType<Map<String, dynamic>>()) {
+        final id = r['id'] as String?;
+        if (id == null || seen.add(id)) _items.add(r);
+      }
       _loadedCount = (cached['loadedCount'] as num?)?.toInt() ?? _items.length;
       _page = (cached['page'] as num?)?.toInt() ?? 0;
       _hasMore = (cached['hasMore'] as bool?) ?? false;
@@ -1800,8 +1836,13 @@ class LibraryScreenState extends State<LibraryScreen>
       if (result != null && mounted && gen == _loadGeneration) {
         final results = (result['results'] as List<dynamic>?) ?? [];
         final total = (result['total'] as int?) ?? 0;
+        final existingIds = _items
+            .map<String?>((e) => e['id'] as String?)
+            .whereType<String>()
+            .toSet();
         setState(() {
           _totalItems = total;
+          var added = 0;
           for (final r in results) {
             if (r is Map<String, dynamic>) {
               final id = r['id'] as String?;
@@ -1818,7 +1859,14 @@ class LibraryScreenState extends State<LibraryScreen>
                 );
               }
               if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
-              _items.add(r);
+              // A retried/aligned offset (pageIndex = loadedCount ~/ limit
+              // floors when loadedCount isn't a multiple of limit) can hand
+              // back items we already own. Dedupe by id so the cold-start
+              // cache can't grow duplicates every launch.
+              if (id == null || existingIds.add(id)) {
+                _items.add(r);
+                added++;
+              }
             }
           }
           _loadedCount += results.length;
@@ -1826,7 +1874,7 @@ class LibraryScreenState extends State<LibraryScreen>
           // Compare raw server results to page size, not filtered _items to total.
           // Client-side filters (e.g. hide-ebook-only) reduce _items below total,
           // which would leave _hasMore permanently true and the loader spinning.
-          _hasMore = results.length >= limit;
+          _hasMore = results.length >= limit && added > 0;
           // Alpha: memory next to the page count, for the dense-grid OOM
           // kills (no [CRASH] line, log just stops). rss is the whole
           // process; imgCache is Flutter's decoded-cover cache (count/MB, and

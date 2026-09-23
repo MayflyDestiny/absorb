@@ -4164,6 +4164,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onLatestVersion => '您已是最新版本';
 
   @override
+  String get updateCheckFailed => '无法检查更新';
+
+  @override
   String get updateAvailable => '有可用更新';
 
   @override
@@ -9265,6 +9268,71 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get historyDetailSleepTimer => '睡眠定时器';
+
+  @override
+  String get historyDetailPlayAutoResumedInterruption => '中断后自动恢复播放';
+
+  @override
+  String get historyDetailPlayPageKey => '翻页键';
+
+  @override
+  String get historyDetailPlayReadAlongStopped => '跟读已停止';
+
+  @override
+  String get historyDetailPlayReadAlongReady => '跟读已就绪';
+
+  @override
+  String get historyDetailPauseOffline => '离线暂停';
+
+  @override
+  String get historyDetailPauseSpuriousBlocked => '已拦截误报的播放完成';
+
+  @override
+  String get historyDetailPauseIosPrematureBlocked => '已拦截 iOS 提前结束误报';
+
+  @override
+  String get historyDetailPrevChapterDirect => '跳转到上一章（直跳）';
+
+  @override
+  String historyDetailPrevChapterDirectToIntroSkip(String position) {
+    return '跳转到上一章（直跳）$position（跳过片头）';
+  }
+
+  @override
+  String get historyDetailLocalHotSwap => '本地热切换';
+
+  @override
+  String get historyDetailLocalSession => '本地会话';
+
+  @override
+  String get historyDetailRefresh => '刷新';
+
+  @override
+  String get historyDetailRecovery => '恢复会话';
+
+  @override
+  String get historyDetailStallRecovery => '卡顿恢复';
+
+  @override
+  String get historyDetailDeadSource => '数据源失效';
+
+  @override
+  String get historyDetailDirectFile => '直接文件播放';
+
+  @override
+  String get historyDetailBookFinished => '本书已播完';
+
+  @override
+  String get historyDetailLocalBookFinished => '本地文件已播完';
+
+  @override
+  String get historyDetailPauseTimeout => '暂停超时';
+
+  @override
+  String get historyDetailStop => '停止';
+
+  @override
+  String get historyDetailSeekSleepRewindUndone => '撤销睡眠回退';
 
   @override
   String historyDetailRewindAtSpeed(

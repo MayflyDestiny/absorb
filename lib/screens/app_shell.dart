@@ -472,11 +472,11 @@ class _AppShellState extends State<AppShell>
   void _checkForUpdate() async {
     if (!_isGithubBuild) return;
     final includePreReleases = await PlayerSettings.getIncludePreReleases();
-    final info = await UpdateCheckerService.check(
+    final result = await UpdateCheckerService.check(
       includePreReleases: includePreReleases,
     );
-    if (info == null || !mounted) return;
-    await UpdateDialog.show(context, info);
+    if (result.error != null || result.info == null || !mounted) return;
+    await UpdateDialog.show(context, result.info!);
   }
 
   @override

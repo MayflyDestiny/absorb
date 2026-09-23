@@ -3043,6 +3043,25 @@ class AudioPlayerService extends ChangeNotifier {
     return (index: target, localOffset: localOffset);
   }
 
+  /// True when [absoluteSeconds] is still the LATEST seek intent — i.e. no
+  /// newer seek overwrote [_lastSeekTargetSeconds] while this seek awaited the
+  /// engine. A superseded seek must not re-push its stale (frequently the
+  /// LAST-chapter) title over the newer jump's, which is exactly what this
+  /// guard blocks.
+  ///
+  /// The comparison is EXACT equality, not a tolerance band: the target was
+  /// stored verbatim from [absoluteSeconds] with no float drift between the
+  /// store and this read, so equality is the honest predicate. A tolerance
+  /// (e.g. `< 1.0`) would re-admit precisely the sub-second superseded seeks
+  /// this guard exists to reject — two different-intent jumps whose targets
+  /// land under a second apart, e.g. across a chapter boundary, would be
+  /// misread as "the same intent" and the stale title could still re-push.
+  /// `null` means the target was already cleared by the catch-up path (seek
+  /// landed / intent consumed), which is always still-latest.
+  bool _seekStillLatest(double absoluteSeconds) =>
+      _lastSeekTargetSeconds == null ||
+      _lastSeekTargetSeconds == absoluteSeconds;
+
   /// Seek to an absolute book position, handling multi-file offset conversion.
   Future<void> _seekAbsolute(
     double absoluteSeconds, {
@@ -3051,6 +3070,15 @@ class AudioPlayerService extends ChangeNotifier {
     // relative skips, auto/sleep rewind, position adoption) must land exactly
     // where asked — a drag to a chapter's final second is NOT a chapter jump.
     bool chapterJump = false,
+    // Explicit chapter index to pin as the reported chapter after the seek.
+    // Used by chapter-navigation pre-jumps that land INSIDE the destination
+    // chapter (intro skip) where the nearest-start latch heuristic in
+    // [_latchChapterJumpTarget] cannot bind (the offset target is far from a
+    // chapter start). Without it the optimistically-updated track index + a
+    // stale stream position compose an inflated absolute position that can
+    // fall past the last chapter's end into the trailing-grace title during
+    // the engine's track switch.
+    int? pinChapterIndex,
   }) async {
     if (_player == null) return;
     // Any non-chapter-jump seek clears a stale latch; the position logic goes
@@ -3102,6 +3130,16 @@ class AudioPlayerService extends ChangeNotifier {
       await _player!.seek(
         Duration(milliseconds: (absoluteSeconds * 1000).round()),
       );
+      // Superseded-seek guard: a newer [skipToNextChapter] / prev press updates
+      // [_lastSeekTargetSeconds] (set just before THIS await) to a DIFFERENT
+      // target while we were awaiting the engine. When that awaits surfaces, a
+      // superseded seek's post-await pin would re-push the OLD (last-viewed =
+      // "last chapter") title over the newer jump - the every-chapter-is-a-file
+      // session-upgrade flash. Only the seek that is still the latest intent may
+      // latch its pin.
+      if (_seekStillLatest(absoluteSeconds)) {
+        if (pinChapterIndex != null) _pinChapterLatch(pinChapterIndex);
+      }
       notifyListeners();
       return;
     }
@@ -3130,8 +3168,19 @@ class AudioPlayerService extends ChangeNotifier {
     // Bind the reported chapter to the INTENDED chapter (not the metadata
     // mapping of the landed position, which near a drifted boundary reads the
     // previous file's chapter) so the notification/UI shows "chapter N" the
-    // moment the jump lands instead of flashing "N-1" first.
-    if (chapterJump) _latchChapterJumpTarget(absoluteSeconds);
+    // moment the jump lands instead of flashing "N-1" first. Same
+    // superseded-seek guard as the single-file branch above: only bind when
+    // THIS seek is still the latest intent — a newer jump overwriting
+    // [_lastSeekTargetSeconds] while this seek was awaiting must not re-push
+    // its stale (superseded, frequently last-chapter) title over the newer
+    // jump's.
+    if (_seekStillLatest(absoluteSeconds)) {
+      if (pinChapterIndex != null) {
+        _pinChapterLatch(pinChapterIndex);
+      } else if (chapterJump) {
+        _latchChapterJumpTarget(absoluteSeconds);
+      }
+    }
     notifyListeners();
     return;
   }
@@ -3169,16 +3218,28 @@ class AudioPlayerService extends ChangeNotifier {
       _chapterJumpLatchIndex = -1;
       return;
     }
-    final ch = _chapters[nearest] as Map<String, dynamic>;
+    _pinChapterLatch(nearest);
+  }
+
+  /// Pin a specific chapter index as the reported chapter; used by
+  /// chapter-navigation pre-jumps whose target is offset INSIDE the
+  /// destination chapter (intro skip) and by [_latchChapterJumpTarget] once
+  /// the nearest-start heuristic has decided which chapter was meant.
+  void _pinChapterLatch(int index) {
+    if (_chapters.isEmpty || index < 0 || index >= _chapters.length) {
+      _chapterJumpLatchIndex = -1;
+      return;
+    }
+    final ch = _chapters[index] as Map<String, dynamic>;
     final s = (ch['start'] as num?)?.toDouble() ?? 0;
     final e = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
-    _lastNotifiedChapterIndex = nearest;
+    _lastNotifiedChapterIndex = index;
     _currentChapterStart = s;
     _currentChapterEnd = e;
-    _chapterJumpLatchIndex = nearest;
+    _chapterJumpLatchIndex = index;
     final title = ch['title'] as String?;
     debugPrint(
-      '[Player] Chapter jump latch: idx=$nearest "$title" '
+      '[Player] Chapter jump latch: idx=$index "$title" '
       'start=${s.toStringAsFixed(1)}s end=${e.toStringAsFixed(1)}s',
     );
     if (_currentItemId != null) {
@@ -4907,8 +4968,10 @@ class AudioPlayerService extends ChangeNotifier {
     // `chapters` key from this blob, and without it a cold-restart start runs
     // with an empty chapter list (no switching) until the network copy of the
     // item lands.
-    final itemChapters =
-        _chaptersFromItem(item, splitEpisodeKey(progressKey).episodeId);
+    final itemChapters = _chaptersFromItem(
+      item,
+      splitEpisodeKey(progressKey).episodeId,
+    );
     return {
       'audioTracks': [
         for (var i = 0; i < tracks.length; i++)
@@ -4933,8 +4996,9 @@ class AudioPlayerService extends ChangeNotifier {
     final media = item['media'] as Map<String, dynamic>? ?? {};
     final chapters = media['chapters'] as List<dynamic>? ?? [];
     if (chapters.isNotEmpty || episodeId == null) return chapters;
-    for (final ep in ((media['episodes'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()) {
+    for (final ep
+        in ((media['episodes'] as List<dynamic>?) ?? const [])
+            .whereType<Map<String, dynamic>>()) {
       if (ep['id'] == episodeId) {
         return ep['chapters'] as List<dynamic>? ?? const [];
       }
@@ -5297,7 +5361,9 @@ class AudioPlayerService extends ChangeNotifier {
       // waiting instead: both legs carry their own hard budgets (item GET
       // 30s single attempt, /play 20s x2 inside a 40s deadline), so the race
       // is bounded and whichever lands first starts audio.
-      debugPrint('[Player] Hedge leash expired - waiting on the surviving legs');
+      debugPrint(
+        '[Player] Hedge leash expired - waiting on the surviving legs',
+      );
       winner = await race.future;
     }
 
@@ -8394,7 +8460,11 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player == null || _chapters.isEmpty) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
-    final posS = position.inMilliseconds / 1000.0;
+    // Resolve against the pending-start / active-seek target, NOT the raw
+    // stream position: every chapter class here is its own audio file, so a
+    // jump is a session upgrade during which `position` collapses to the stale
+    // local offset (~0s) and next-chapter resolution would scan from chapter 0.
+    final posS = chapterResolvePosSec;
     final target = ChapterLookup.nextSkipTarget(
       _chapters,
       posS,
@@ -8430,6 +8500,11 @@ class AudioPlayerService extends ChangeNotifier {
       // Snap to the file boundary when landing exactly on the chapter start;
       // an intro-skip pre-jump is offset into the chapter and stays precise.
       chapterJump: preJumpTarget == null,
+      // An intro-skip pre-jump lands INSIDE the destination chapter, so the
+      // nearest-start latch heuristic can't bind it and the stale track
+      // position would briefly resolve to the last chapter's title while the
+      // engine switches. Pin the intended chapter directly.
+      pinChapterIndex: preJumpTarget != null ? chapterIdx : null,
     );
     _logEvent(
       PlaybackEventType.seek,
@@ -8444,7 +8519,12 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player == null || _chapters.isEmpty) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
-    final posS = position.inMilliseconds / 1000.0;
+    // Same session-upgrade caveat as skipToNextChapter: every chapter is its
+    // own audio file, so a rewind is a session upgrade during which `position`
+    // collapses to the stale local offset (~0s). Reading it raw would resolve
+    // to chapter 0 and fall through to a seek(0) — "jumps to chapter one".
+    // Resolve against the pending-start / active-seek target instead.
+    final posS = chapterResolvePosSec;
     final directJump = await PlayerSettings.getPrevChapterDirectJump();
     if (directJump) {
       // Direct mode: always jump straight to the previous chapter. At the first
@@ -8468,6 +8548,7 @@ class AudioPlayerService extends ChangeNotifier {
         await _seekAbsolute(
           preJumpTarget ?? start,
           chapterJump: preJumpTarget == null,
+          pinChapterIndex: preJumpTarget != null ? i : null,
         );
         _logEvent(
           PlaybackEventType.seek,
@@ -8509,6 +8590,7 @@ class AudioPlayerService extends ChangeNotifier {
         await _seekAbsolute(
           preJumpTarget ?? start,
           chapterJump: preJumpTarget == null,
+          pinChapterIndex: preJumpTarget != null ? i : null,
         );
         _logEvent(
           PlaybackEventType.seek,
@@ -8790,8 +8872,8 @@ class AudioPlayerService extends ChangeNotifier {
     if (_chapters.isEmpty) return null;
     if (_chapterJumpLatchIndex >= 0 &&
         _chapterJumpLatchIndex < _chapters.length) {
-      final lEnd = (_chapters[_chapterJumpLatchIndex]['end'] as num?)
-              ?.toDouble() ??
+      final lEnd =
+          (_chapters[_chapterJumpLatchIndex]['end'] as num?)?.toDouble() ??
           _totalDuration;
       if (posSec < lEnd) return _chapterJumpLatchIndex;
       _chapterJumpLatchIndex = -1;

@@ -112,7 +112,7 @@ class PlaybackEvent {
         return l.historyEventResumed;
       case PlaybackEventType.pause:
         if (detail != null && detail!.isNotEmpty) {
-          return l.historyEventPausedDetail(detail!);
+          return l.historyEventPausedDetail(_localizePauseDetail(l, detail!));
         }
         return l.historyEventPaused;
       case PlaybackEventType.seek:
@@ -191,12 +191,40 @@ class PlaybackEvent {
 
   static String _localizePlayDetail(AppLocalizations l, String d) {
     if (d == 'Switched to local playback') return l.historyDetailSwitchedToLocal;
+    if (d == 'Auto-resumed after interruption') {
+      return l.historyDetailPlayAutoResumedInterruption;
+    }
+    if (d == 'page key') return l.historyDetailPlayPageKey;
+    if (d == 'read along stopped') return l.historyDetailPlayReadAlongStopped;
+    if (d == 'read along ready') return l.historyDetailPlayReadAlongReady;
+    return d;
+  }
+
+  static String _localizePauseDetail(AppLocalizations l, String d) {
+    if (d == 'offline') return l.historyDetailPauseOffline;
+    if (d == 'Spurious completion blocked') {
+      return l.historyDetailPauseSpuriousBlocked;
+    }
+    if (d == 'iOS premature completion blocked') {
+      return l.historyDetailPauseIosPrematureBlocked;
+    }
     return d;
   }
 
   static String _localizeSessionDetail(AppLocalizations l, String d) {
     if (d == 'stream') return l.historyDetailStream;
     if (d == 'stream hot-swap') return l.historyDetailStreamHotSwap;
+    if (d == 'local hot-swap') return l.historyDetailLocalHotSwap;
+    if (d == 'local-session') return l.historyDetailLocalSession;
+    if (d == 'refresh') return l.historyDetailRefresh;
+    if (d == 'recovery') return l.historyDetailRecovery;
+    if (d == 'stall recovery') return l.historyDetailStallRecovery;
+    if (d == 'dead source') return l.historyDetailDeadSource;
+    if (d == 'direct-file') return l.historyDetailDirectFile;
+    if (d == 'book finished') return l.historyDetailBookFinished;
+    if (d == 'local book finished') return l.historyDetailLocalBookFinished;
+    if (d == 'pause timeout') return l.historyDetailPauseTimeout;
+    if (d == 'stop') return l.historyDetailStop;
     return d;
   }
 
@@ -207,13 +235,28 @@ class PlaybackEvent {
     if (detail == 'skip chapter intro') return l.historyDetailSkipChapterIntro;
     if (detail == 'skip chapter outro') return l.historyDetailSkipChapterOutro;
     if (detail == 'skip to end') return l.historyDetailSkipToEnd;
+    if (detail == 'sleep rewind undone') {
+      return l.historyDetailSeekSleepRewindUndone;
+    }
+    if (detail == 'prev chapter (direct)') {
+      return l.historyDetailPrevChapterDirect;
+    }
     final m = RegExp(r'^(next|prev) chapter to ([\d.]+)s \(intro skip\)$')
         .firstMatch(detail);
     if (m != null) {
       final position = _localizedDuration(l, '${m.group(2)}s');
-      return m.group(1) == 'next'
-          ? l.historyDetailNextChapterToIntroSkip(position)
-          : l.historyDetailPrevChapterToIntroSkip(position);
+      if (m.group(1) == 'next') {
+        return l.historyDetailNextChapterToIntroSkip(position);
+      }
+      return l.historyDetailPrevChapterToIntroSkip(position);
+    }
+    final directM = RegExp(
+      r'^prev chapter \(direct\) to ([\d.]+)s \(intro skip\)$',
+    ).firstMatch(detail);
+    if (directM != null) {
+      return l.historyDetailPrevChapterDirectToIntroSkip(
+        _localizedDuration(l, '${directM.group(1)}s'),
+      );
     }
     return l.historyEventSeekedDetail(detail);
   }

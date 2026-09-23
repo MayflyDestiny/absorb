@@ -5381,37 +5381,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // ── Support the Dev ──
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          children: [
-                            Card(
-                              color: cs.surfaceContainerHigh,
-                              shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                              clipBehavior: Clip.antiAlias,
-                              child: ListTile(
-                          leading: Icon(Icons.coffee_rounded,
-                              color: Colors.amber.shade600),
-                                title: Text(l.supportTheDev),
-                          subtitle: Text(l.buyMeACoffee,
-                              style: tt.bodySmall
-                                  ?.copyWith(color: cs.onSurfaceVariant)),
-                          trailing: Icon(Icons.favorite_rounded,
-                              size: 18, color: Colors.amber.shade600),
-                                onTap: () => launchUrl(
-                                  Uri.parse(
-                                  'https://www.buymeacoffee.com/BarnabasApps'),
-                              mode: LaunchMode.externalApplication),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
                       // ── Backup and sync ──
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -5494,14 +5463,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 4),
                   Center(child: TextButton.icon(
                             onPressed: () async {
-                      final info = await UpdateCheckerService.check(force: true, includePreReleases: _includePreReleases);
+                      final result = await UpdateCheckerService.check(force: true, includePreReleases: _includePreReleases);
                               if (!mounted) return;
-                              if (info == null || !info.hasUpdate) {
+                              if (result.error != null) {
+                        showOverlayToast(context, l.updateCheckFailed,
+                            icon: Icons.error_outline_rounded);
+                                return;
+                              }
+                              if (result.info == null || !result.info!.hasUpdate) {
                         showOverlayToast(context, l.onLatestVersion,
                             icon: Icons.check_circle_outline_rounded);
                                 return;
                               }
-                              await UpdateDialog.show(context, info);
+                              await UpdateDialog.show(context, result.info!);
                             },
                     icon: const Icon(Icons.system_update_rounded, size: 16),
                             label: Text(l.checkForUpdate),
