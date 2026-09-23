@@ -166,6 +166,7 @@ class BookCard extends StatelessWidget {
       showBookDetailSheet(
         context,
         itemId,
+        initialItem: item,
         sourcePlaylistId: sourcePlaylistId,
         sourceCollectionId: sourceCollectionId,
         sourceCollectionName: sourceCollectionName,

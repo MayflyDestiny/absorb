@@ -64,9 +64,13 @@ import '../utils/share_origin.dart';
 /// the derived scheme per (brightness, cover) keeps repeat opens jank-free.
 final Map<String, ColorScheme> _coverSchemeCache = {};
 
+/// [initialItem] is the tile's library-item map: pass it so the detail sheet
+/// paints the known fields (title, cover, actions) instantly and refines the
+/// rest in the background, instead of spinning until the server round-trip.
 void showBookDetailSheet(
   BuildContext context,
   String itemId, {
+  Map<String, dynamic>? initialItem,
   String? sourcePlaylistId,
   String? sourceCollectionId,
   String? sourceCollectionName,
@@ -79,6 +83,7 @@ void showBookDetailSheet(
     builder: (ctx, sc) => _BookDetailSheetContent(
       itemId: itemId,
       scrollController: sc,
+      initialItem: initialItem,
       sourcePlaylistId: sourcePlaylistId,
       sourceCollectionId: sourceCollectionId,
       sourceCollectionName: sourceCollectionName,
@@ -193,7 +198,7 @@ class _BookDetailSheetContent extends StatefulWidget {
   @override State<_BookDetailSheetContent> createState() => _BookDetailSheetContentState();
 }
 
-class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
+class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with SingleTickerProviderStateMixin {
   Map<String, dynamic>? _item;
   Map<String, dynamic>? _rating;
   String? _asin;
@@ -219,9 +224,31 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   // persisted metadata predates the trimmed-libraryItem fix. Read-only
   // surfaces fall back to it; Save/Send still need the server's file entry.
   Map<String, dynamic>? _cachedEbookFallback;
+  // The main grid only needs local, fast reads: per-item settings plus a
+  // non-null item (the quick sheet seeds one from its tile instantly). The
+  // three eBook pills depend on the server's file entry, which can lag several
+  // seconds on an uncached book over a weak link — so they're deliberately
+  // kept OUT of this gate and appended to the grid's tail as keyed fade-ins
+  // (see _actionPillGrid), never holding the rest of the actions hostage.
+  bool _settingsDone = false;
+  bool get _pillsReady => _settingsDone && _item != null;
   ColorScheme? _rawCoverScheme;
+
+  void _markSettingsDone() {
+    _settingsDone = true;
+    if (mounted && _pillsReady) setState(() {});
+  }
   String? _coverSchemeUrl; // URL the current scheme was derived from
   Timer? _coverSchemeTimer;
+  // Cross-fades a new cover-derived scheme over the current one so the accent
+  // and background don't pop in harshly the moment the palette resolves.
+  late final AnimationController _schemeAnim =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+  late final Animation<double> _schemeCurve = CurvedAnimation(
+      parent: _schemeAnim, curve: Curves.easeInOutCubic)
+    ..addListener(() {
+      if (mounted) setState(() {});
+    });
 
   double get _displaySpeed {
     if (!_speedAdjustedTime) return 1.0;
@@ -235,7 +262,24 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     if (colorSourceNotifier.value == 'manual' && useColorEverywhereNotifier.value) {
       return manualColorScheme(manualSeedNotifier.value, Theme.of(context).brightness);
     }
-    return _rawCoverScheme;
+    final target = _rawCoverScheme;
+    if (target == null) return null;
+    final from = Theme.of(context).colorScheme;
+    if (!_schemeAnim.isAnimating) return target;
+    return ColorScheme.lerp(from, target, _schemeCurve.value);
+  }
+
+  /// Update the cover-derived scheme with a smooth cross-fade. Every resolution
+  /// fades in from the app's neutral color scheme (never from whatever tint was
+  /// shown before), so switching between books always starts from the theme
+  /// color instead of bleeding the previous book's palette into the fade.
+  void _applyCoverScheme(ColorScheme? target) {
+    if (target == null || !mounted) return;
+    if (!_schemeAnim.isAnimating && target == _coverScheme) return;
+    setState(() {
+      _rawCoverScheme = target;
+    });
+    _schemeAnim.forward(from: 0);
   }
 
   @override void initState() {
@@ -249,10 +293,20 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (mounted) _scheduleCoverScheme();
       });
     }
-    _loadItem();
+    // Full-detail load only feeds the trailing eBook pills after the quick sheet
+    // has settled, so deferring it past the cover-derive window keeps the open
+    // animation free of a heavy main-isolate JSON decode without postponing
+    // anything the user sees immediately. The main grid is not gated on it.
+    if (widget.quick) {
+      Future.delayed(_coverSchemeDeriveDelay, () {
+        if (mounted) _loadItem();
+      });
+    } else {
+      _loadItem();
+    }
     if (!widget.quick) _loadBookmarks();
     SocketService().addItemUpdatedListener(_onSocketItemUpdated);
-    _loadQuickSettings();
+    _loadQuickSettings().whenComplete(_markSettingsDone);
   }
 
   /// Lightweight per-item settings/state reads. Each result only paints
@@ -292,6 +346,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     _preview?.removeListener(_onPreviewChanged);
     _preview?.dispose();
     super.dispose();
+    _schemeAnim.dispose();
   }
 
   // Live-refresh when this item changes on the server (web UI edit, scan,
@@ -324,11 +379,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     // fetch below can spend tens of seconds on a weak link. Only the first
     // load seeds, so live item-update callbacks don't resurrect a stale
     // snapshot over the newer data they were triggered by.
-    // The quick sheet already painted its initialItem, so seeding again from
-    // the disk cache would just add a big main-isolate JSON decode during the
-    // open animation for no extra content (the server fetch below still
-    // refines it).
-    if (widget.quick) _seededFromCache = true;
+    // The quick sheet already painted its initialItem; this seed is deferred
+    // until after the open animation (see initState), so the disk-cache decode
+    // below won't land on a compositor frame, and the full item it yields also
+    // feeds the eBook pills.
     if (api != null && !_seededFromCache) {
       _seededFromCache = true;
       final cached = await api.getCachedLibraryItem(widget.itemId);
@@ -369,6 +423,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             setState(() { _item = finalItem; _isLoading = false; });
           }
           _scheduleCoverScheme();
+          // Server item is in: the eBook pills can fade in via the grid's
+          // trailing dynamic section on the rebuild this block triggers.
 
           // Fetch Audible rating
           final media = finalItem['media'] as Map<String, dynamic>? ?? {};
@@ -503,7 +559,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final cacheKey = '$brightness|$url';
     final cachedScheme = _coverSchemeCache[cacheKey];
     if (cachedScheme != null) {
-      setState(() => _rawCoverScheme = cachedScheme);
+      _applyCoverScheme(cachedScheme);
       return;
     }
     final ImageProvider provider;
@@ -523,17 +579,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       final scheme = ColorScheme.fromSeed(
           seedColor: seedColor, brightness: brightness);
       _coverSchemeCache[cacheKey] = scheme;
-      setState(() => _rawCoverScheme = scheme);
+      _applyCoverScheme(scheme);
     }).catchError((e) {
       debugPrint('[BookDetail] PaletteGenerator error after ${DateTime.now().difference(t0).inMilliseconds}ms: $e');
       if (!mounted) return;
-      setState(() {
-        _coverSchemeUrl = null;
-        _rawCoverScheme = ColorScheme.fromSeed(
-          seedColor: Theme.of(context).colorScheme.primary,
-          brightness: brightness,
-        );
-      });
+      setState(() => _coverSchemeUrl = null);
+      _applyCoverScheme(ColorScheme.fromSeed(
+        seedColor: Theme.of(context).colorScheme.primary,
+        brightness: brightness,
+      ));
     });
     } catch (e) {
       debugPrint('[BookDetail] _deriveCoverScheme failed (non-fatal): $e');
@@ -560,6 +614,42 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
 
+  /// Placeholder matching the detail sheet's header + primary actions + pill
+  /// grid, so an uncached first open (no [initialItem] available, e.g. search
+  /// results) paints a calm silhouette instead of a bare spinner, then
+  /// cross-fades into the loaded content via the AnimatedSwitcher in build.
+  Widget _detailLoadingSkeleton(ColorScheme cs, TextTheme tt) {
+    final base = cs.surfaceContainerHighest.withValues(alpha: 0.55);
+    Widget block(double w, double h, {double r = 6}) => Container(
+          width: w, height: h,
+          decoration: BoxDecoration(color: base, borderRadius: BorderRadius.circular(r)));
+    final width = MediaQuery.of(context).size.width;
+    return SingleChildScrollView(
+      key: const ValueKey('loading'),
+      controller: widget.scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 24 + MediaQuery.of(context).viewPadding.bottom),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          block(56, 56, r: 10),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            block(width * 0.55, 18),
+            const SizedBox(height: 8),
+            block(width * 0.32, 14),
+          ])),
+        ]),
+        const SizedBox(height: 18),
+        block(width - 40, 44, r: 12),
+        const SizedBox(height: 10),
+        block(width - 40, 40, r: 12),
+        const SizedBox(height: 18),
+        Wrap(spacing: 10, runSpacing: 10,
+          children: List.generate(6, (i) => block((width - 40 - 20) / 3, 80, r: 16))),
+      ]),
+    );
+  }
+
   @override Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
@@ -584,29 +674,29 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         // spinner. Accent colors fall back to the default scheme until the
         // palette resolves. Loading/failed states are wrapped in a scrollable
         // so drag-to-dismiss works even before content arrives.
-        _isLoading
-            ? SingleChildScrollView(
-                controller: widget.scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.85,
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface.withValues(alpha: 0.24))),
-                ),
-              )
-            : _item == null
-                ? SingleChildScrollView(
-                    controller: widget.scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.85,
-                      child: Center(child: Text(l.failedToLoad, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant))),
-                    ),
-                  )
-                : AnimatedOpacity(
-                    opacity: 1.0, duration: const Duration(milliseconds: 300),
-                    child: widget.quick
-                        ? _buildQuickContent(context, cs, tt, l)
-                        : _buildContent(context, cs, tt, l)),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child: _isLoading
+              ? _detailLoadingSkeleton(cs, tt)
+              : _item == null
+                  ? SingleChildScrollView(
+                      key: const ValueKey('failed'),
+                      controller: widget.scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.85,
+                        child: Center(child: Text(l.failedToLoad, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant))),
+                      ),
+                    )
+                  : AnimatedOpacity(
+                      key: const ValueKey('content'),
+                      opacity: 1.0, duration: const Duration(milliseconds: 300),
+                      child: widget.quick
+                          ? _buildQuickContent(context, cs, tt, l)
+                          : _buildContent(context, cs, tt, l)),
+        ),
       ]),
     );
   }
@@ -1133,6 +1223,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final oldDur = (oldMedia?['duration'] as num?)?.toDouble() ?? 0;
     final newDur = (newMedia?['duration'] as num?)?.toDouble() ?? 0;
     if ((oldDur - newDur).abs() > 0.5) return false;
+    // A flip in whether an eBook is attached changes the grid's eBook pills
+    // (read / save-to-device / send-to-reader), which are visible UI — don't
+    // let this guard swallow that.
+    if ((resolveEbookFile(_item) != null) != (resolveEbookFile(newItem) != null)) {
+      return false;
+    }
     // isFinished lives on the progress object in the library, not the media
     // metadata, so it's deliberately absent here — progress changes are already
     // replayed through LibraryProvider notifications during playback.
@@ -1251,8 +1347,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         final cellH = (cols == 2 ? 72.0 : 80.0) * textScale.clamp(1.0, 1.7) + 8;
         final pills = <Widget>[];
         void add(IconData icon, String label, VoidCallback onTap, {Color? tint}) {
-          pills.add(SizedBox(width: cellW, height: cellH,
-            child: _quickPill(cs, tt, icon, label, () { dismiss(); onTap(); }, tint: tint)));
+          final cell = SizedBox(width: cellW, height: cellH,
+            child: _quickPill(cs, tt, icon, label, () { dismiss(); onTap(); }, tint: tint));
+          pills.add(cell);
         }
         add(onAbsorbing ? Icons.remove_circle_outline_rounded : Icons.add_circle_outline_rounded,
           onAbsorbing ? Wording.of(context).removeFromAbsorbing : Wording.of(context).addToAbsorbing, () async {
@@ -1288,19 +1385,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         }
         if (!lib.isOffline && !lib.isPodcastLibrary && auth.isAdmin) {
           add(Icons.collections_bookmark_rounded, l.addToCollection, () => CollectionPickerSheet.show(context, widget.itemId));
-        }
-        if (ebookFile != null && canReadEbook(ebookFile)) {
-          add(Icons.menu_book_rounded, l.readEbook, () => _openEbookReader(context, auth, ebookFile, title));
-        }
-        // Save/Send push the file elsewhere, which needs the server's own file
-        // entry (with ino) - the cache-synthesized fallback can't serve them.
-        final serverEbookFile = resolveEbookFile(_item);
-        if (serverEbookFile != null) {
-          add(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
-            l.ebookSaveToDevice, () => _saveEbook(context, auth, serverEbookFile, title));
-        }
-        if (serverEbookFile != null && auth.ereaderDevices.isNotEmpty) {
-          add(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
         }
         if (progress > 0 || isFinished) {
           add(Icons.restart_alt_rounded, l.resetProgress, () => _resetProgress(context, auth, duration));
@@ -1343,14 +1427,71 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             }
           });
         }
-        // The full item (with ebookFile) loads after the sheet is already open,
-        // which inserts the eBook pills mid-grid. Animate the size change so they
-        // ease in instead of snapping the layout.
+        // eBook pills depend on the full item (server call or disk cache),
+        // which lands after the sheet opens on an uncached book over a weak
+        // link — so they're deliberately NOT part of the `_pillsReady` gate.
+        // Rendered here as a trailing, keyed fade-in, they append to the grid
+        // without shoving settled neighbours around; the AnimatedSize below
+        // eases the height change. Keyed by label so only newly-appearing
+        // entries animate on re-layout.
+        final serverEbookFile = resolveEbookFile(_item);
+        void addDynamic(IconData icon, String label, VoidCallback onTap, {Color? tint}) {
+          pills.add(TweenAnimationBuilder<double>(
+            key: ValueKey('ebook-pill-$label'),
+            tween: Tween(begin: 0.0, end: 1.0),
+            // Generous on purpose: these pills appear seconds after the grid in
+            // an uncached, slow-network open — a short fade reads as a pop.
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic,
+            child: SizedBox(width: cellW, height: cellH,
+              child: _quickPill(cs, tt, icon, label, () { dismiss(); onTap(); }, tint: tint)),
+            builder: (_, value, child) => Opacity(
+              opacity: value,
+              child: Transform.translate(
+                  offset: Offset(0, 10 * (1 - value)), child: child)),
+          ));
+        }
+        if (ebookFile != null && canReadEbook(ebookFile)) {
+          addDynamic(Icons.menu_book_rounded, l.readEbook, () => _openEbookReader(context, auth, ebookFile, title));
+        }
+        // Save/Send push the file elsewhere, which needs the server's own file
+        // entry (with ino) - the cache-synthesized fallback can't serve them.
+        if (serverEbookFile != null) {
+          addDynamic(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
+            l.ebookSaveToDevice, () => _saveEbook(context, auth, serverEbookFile, title));
+        }
+        if (serverEbookFile != null && auth.ereaderDevices.isNotEmpty) {
+          addDynamic(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
+        }
+        // The main grid is gated on `_pillsReady` (local, fast reads only):
+        // a skeleton holds the height briefly, then the grid cross-fades in.
+        final skeleton = Wrap(
+          key: const ValueKey('pill-skeleton'),
+          spacing: gap,
+          runSpacing: gap,
+          children: List.generate(cols * 2, (i) => Container(
+            width: cellW,
+            height: cellH,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(16),
+            ),
+          )),
+        );
         return AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          // Slower than the pill fade so the grid height change (a trailing
+          // row appearing on a slow open) trails the pills instead of snapping.
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
-          child: Wrap(spacing: gap, runSpacing: gap, children: pills),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: _pillsReady
+                ? Wrap(key: const ValueKey('pills'), spacing: gap, runSpacing: gap, children: pills)
+                : skeleton,
+          ),
         );
       }),
       ]);
