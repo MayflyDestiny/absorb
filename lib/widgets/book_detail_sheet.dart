@@ -57,6 +57,13 @@ import '../utils/share_origin.dart';
 
 // ─── BOOK DETAIL BOTTOM SHEET ───────────────────────────────
 
+/// Palette derivation decodes the full-res cover and quantizes it — a few
+/// hundred ms of main-thread work. Running it while the sheet's open animation
+/// plays stalls the opening frames and flashes a different background into the
+/// still-running animation; deferring it until the sheet settles and caching
+/// the derived scheme per (brightness, cover) keeps repeat opens jank-free.
+final Map<String, ColorScheme> _coverSchemeCache = {};
+
 void showBookDetailSheet(
   BuildContext context,
   String itemId, {
@@ -214,6 +221,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Map<String, dynamic>? _cachedEbookFallback;
   ColorScheme? _rawCoverScheme;
   String? _coverSchemeUrl; // URL the current scheme was derived from
+  Timer? _coverSchemeTimer;
 
   double get _displaySpeed {
     if (!_speedAdjustedTime) return 1.0;
@@ -238,26 +246,41 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       _item = widget.initialItem;
       _isLoading = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _deriveCoverScheme();
+        if (mounted) _scheduleCoverScheme();
       });
     }
     _loadItem();
-    _loadBookmarks();
+    if (!widget.quick) _loadBookmarks();
     SocketService().addItemUpdatedListener(_onSocketItemUpdated);
-    PlayerSettings.getRectangleCovers().then((v) { if (mounted) setState(() => _squareCovers = !v); });
-    PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
-    PlayerSettings.getSpeedAdjustedTime().then((v) { if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v); });
-    PlayerSettings.getBookSpeed(widget.itemId).then((s) async {
-      final speed = s ?? await PlayerSettings.getDefaultSpeed();
-      if (mounted && speed != _savedSpeed) setState(() => _savedSpeed = speed);
-    });
-    ScopedPrefs.getStringList('saved_ebooks').then((list) {
-      if (mounted && list.contains(widget.itemId)) {
-        setState(() => _ebookSaved = true);
-      }
-    });
-    cachedEbookFileFor(widget.itemId).then((f) {
-      if (mounted && f != null) setState(() => _cachedEbookFallback = f);
+    _loadQuickSettings();
+  }
+
+  /// Lightweight per-item settings/state reads. Each result only paints
+  /// secondary UI (rectangle covers, Goodreads button, speed label, saved
+  /// indicators), so they're batched into a single [Future.wait] and one
+  /// setState instead of six staggered full-sheet rebuilds during the sheet's
+  /// open animation.
+  Future<void> _loadQuickSettings() async {
+    final results = await Future.wait<Object?>([
+      PlayerSettings.getRectangleCovers().then<bool>((v) => v),
+      PlayerSettings.getShowGoodreadsButton().then<bool>((v) => v),
+      PlayerSettings.getSpeedAdjustedTime().then<bool>((v) => v),
+      PlayerSettings.getBookSpeed(widget.itemId).then<double?>((v) => v),
+      ScopedPrefs.getStringList('saved_ebooks')
+          .then<bool>((list) => list.contains(widget.itemId)),
+      PlayerSettings.getDefaultSpeed().then<double?>((v) => v),
+      cachedEbookFileFor(widget.itemId).then<Map<String, dynamic>?>((v) => v),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _squareCovers = !(results[0] as bool);
+      _showGoodreads = results[1] as bool;
+      _speedAdjustedTime = results[2] as bool;
+      _savedSpeed = (results[3] as num?)?.toDouble() ??
+          (results[5] as num?)?.toDouble() ??
+          1.0;
+      _ebookSaved = results[4] as bool;
+      _cachedEbookFallback = results[6] as Map<String, dynamic>?;
     });
   }
 
@@ -265,6 +288,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   void dispose() {
     SocketService().removeItemUpdatedListener(_onSocketItemUpdated);
     _liveRefreshDebounce?.cancel();
+    _coverSchemeTimer?.cancel();
     _preview?.removeListener(_onPreviewChanged);
     _preview?.dispose();
     super.dispose();
@@ -300,6 +324,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     // fetch below can spend tens of seconds on a weak link. Only the first
     // load seeds, so live item-update callbacks don't resurrect a stale
     // snapshot over the newer data they were triggered by.
+    // The quick sheet already painted its initialItem, so seeding again from
+    // the disk cache would just add a big main-isolate JSON decode during the
+    // open animation for no extra content (the server fetch below still
+    // refines it).
+    if (widget.quick) _seededFromCache = true;
     if (api != null && !_seededFromCache) {
       _seededFromCache = true;
       final cached = await api.getCachedLibraryItem(widget.itemId);
@@ -312,7 +341,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           _hasLocalOverride = override != null;
           _isLoading = false;
         });
-        _deriveCoverScheme();
+        _scheduleCoverScheme();
       }
     }
 
@@ -331,8 +360,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             _hasLocalOverride = true;
           }
 
-          setState(() { _item = finalItem; _isLoading = false; });
-          _deriveCoverScheme();
+          // Refreshing overrides shouldn't force a full-sheet rebuild while
+          // the sheet is still animating in/out: if nothing visible changed,
+          // keep the fresh data without a rebuild so the animation stays at 60fps.
+          if (_visuallySameItem(finalItem)) {
+            _item = finalItem;
+          } else {
+            setState(() { _item = finalItem; _isLoading = false; });
+          }
+          _scheduleCoverScheme();
 
           // Fetch Audible rating
           final media = finalItem['media'] as Map<String, dynamic>? ?? {};
@@ -390,7 +426,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         final localItem = session['libraryItem'] as Map<String, dynamic>?;
         if (localItem != null && mounted) {
           setState(() { _item = localItem; _isLoading = false; });
-          _deriveCoverScheme();
+          _scheduleCoverScheme();
           return;
         }
         // Build a synthetic item from session-level fields (mediaMetadata,
@@ -408,7 +444,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             };
             _isLoading = false;
           });
-          _deriveCoverScheme();
+          _scheduleCoverScheme();
           return;
         }
       } catch (_) {}
@@ -427,11 +463,24 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         };
         _isLoading = false;
       });
-      _deriveCoverScheme();
+      _scheduleCoverScheme();
       return;
     }
 
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  /// Palette generation happens on the main isolate; running it while the
+  /// sheet's slide-up animation is playing stalls the opening frames and flips
+  /// the cover-derived background mid-animation. Wait for the animation to
+  /// settle, then derive (or reuse the cached scheme for this cover).
+  static const _coverSchemeDeriveDelay = Duration(milliseconds: 450);
+
+  void _scheduleCoverScheme() {
+    _coverSchemeTimer?.cancel();
+    _coverSchemeTimer = Timer(_coverSchemeDeriveDelay, () {
+      if (mounted) _deriveCoverScheme();
+    });
   }
 
   void _deriveCoverScheme() {
@@ -448,6 +497,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
     _coverSchemeUrl = url;
     final brightness = Theme.of(context).brightness;
+    // Cached across sheet opens: the palette decode is expensive and the cover
+    // rarely changes, so repeat visits reuse the derived scheme without
+    // touching the image again.
+    final cacheKey = '$brightness|$url';
+    final cachedScheme = _coverSchemeCache[cacheKey];
+    if (cachedScheme != null) {
+      setState(() => _rawCoverScheme = cachedScheme);
+      return;
+    }
     final ImageProvider provider;
     if (url.startsWith('/')) {
       provider = FileImage(File(url));
@@ -462,8 +520,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       debugPrint('[BookDetail] PaletteGenerator ok in ${DateTime.now().difference(t0).inMilliseconds}ms');
       final seedColor = accentFromCoverPalette(palette);
       if (seedColor == null || !mounted) return;
-      setState(() => _rawCoverScheme = ColorScheme.fromSeed(
-        seedColor: seedColor, brightness: brightness));
+      final scheme = ColorScheme.fromSeed(
+          seedColor: seedColor, brightness: brightness);
+      _coverSchemeCache[cacheKey] = scheme;
+      setState(() => _rawCoverScheme = scheme);
     }).catchError((e) {
       debugPrint('[BookDetail] PaletteGenerator error after ${DateTime.now().difference(t0).inMilliseconds}ms: $e');
       if (!mounted) return;
@@ -1046,6 +1106,37 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           ),
         )],
       ]);
+  }
+
+  /// True when [newItem] would paint identically to [_item] (same title, author,
+  /// cover art, duration). Used to skip a full-sheet rebuild when the server
+  /// fetch returns data that doesn't change anything the user can see — the
+  /// rebuild would otherwise land right in the middle of the sheet's open/close
+  /// animation and drop a frame.
+  bool _visuallySameItem(Map<String, dynamic>? newItem) {
+    if (_item == null || newItem == null) return false;
+    String? pick(Map<String, dynamic>? m, List<String> keys) {
+      for (final k in keys) {
+        final v = m?[k];
+        if (v is String && v.isNotEmpty) return v;
+      }
+      return null;
+    }
+    final oldMedia = _item!['media'] as Map<String, dynamic>?;
+    final newMedia = newItem['media'] as Map<String, dynamic>?;
+    final oldMeta = oldMedia?['metadata'] as Map<String, dynamic>?;
+    final newMeta = newMedia?['metadata'] as Map<String, dynamic>?;
+    if (pick(oldMeta, ['title']) != pick(newMeta, ['title'])) return false;
+    if (pick(oldMeta, ['authorName']) != pick(newMeta, ['authorName'])) return false;
+    if (pick(oldMedia, ['coverPath']) != pick(newMedia, ['coverPath'])) return false;
+    if (pick(oldMedia, ['cover']) != pick(newMedia, ['cover'])) return false;
+    final oldDur = (oldMedia?['duration'] as num?)?.toDouble() ?? 0;
+    final newDur = (newMedia?['duration'] as num?)?.toDouble() ?? 0;
+    if ((oldDur - newDur).abs() > 0.5) return false;
+    // isFinished lives on the progress object in the library, not the media
+    // metadata, so it's deliberately absent here — progress changes are already
+    // replayed through LibraryProvider notifications during playback.
+    return true;
   }
 
   // ─── QUICK ACTIONS (long-press) ─────────────────────────────
