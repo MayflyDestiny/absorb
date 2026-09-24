@@ -399,6 +399,11 @@ const String audiobooksSubdir = 'audiobooks';
 /// Sub-folder where "export ebook" copies land under the same download root.
 const String ebooksSubdir = 'ebooks';
 
+/// Hidden folder every Absorb marker lives in, one per storage area, so the
+/// metadata is gathered in a single obvious place: `<root>/audiobooks/.absorb/`
+/// mirrors the real book tree and `<root>/ebooks/.absorb/` mirrors the copies.
+const String absorbMetaDir = '.absorb';
+
 /// Pref flag that the one-time relocation of pre-`audiobooks/` downloads ran.
 const String _downloadLayoutV2Key = 'download_layout_v2';
 
@@ -792,6 +797,9 @@ class DownloadService extends ChangeNotifier {
         'treeUri': treeUri,
         'targetDir': targetDir,
         if (marker != null) 'marker': marker,
+        if (marker != null)
+          'markerSubfolder': nestedName.replaceFirst(
+              '$audiobooksSubdir/', '$audiobooksSubdir/$absorbMetaDir/'),
       });
       final newPaths = treeUri != null
           ? (res?['fileUris'] as List?)?.map((e) => e as String).toList()
@@ -866,6 +874,19 @@ class DownloadService extends ChangeNotifier {
       }
     }
     await prefs.setBool(_downloadLayoutV2Key, true);
+
+    // One-time: move markers still sitting inside book folders (produced by the
+    // old layout) into the hidden `audiobooks/.absorb/...` mirror so every
+    // marker shares the same place as the ebook metadata.
+    final safUri = _customDownloadUri;
+    if (safUri != null && safUri.isNotEmpty) {
+      try {
+        await _storageChannel.invokeMethod<num>('migrateMarkers', {'treeUri': safUri});
+      } catch (e) {
+        debugPrint('[Download] legacy marker migration failed: $e');
+      }
+    }
+
     if (moved > 0) {
       await _save();
       notifyListeners();
@@ -937,6 +958,8 @@ class DownloadService extends ChangeNotifier {
         'subfolder': nested,
         'treeUri': uri,
         'marker': marker,
+        'markerSubfolder': nested.replaceFirst(
+            '$audiobooksSubdir/', '$audiobooksSubdir/$absorbMetaDir/'),
       });
       final newPaths =
           (res?['fileUris'] as List?)?.map((e) => e as String).toList();
@@ -2802,7 +2825,7 @@ class DownloadService extends ChangeNotifier {
   /// can recognize the book without opening any audio bytes.
   Future<({String dirUri, List<String> fileUris})?> _moveBookToSaf(
       String treeUri, String subfolder, List<String> filenames, List<String> tempPaths,
-      [String? markerJson]) async {
+      [String? markerJson, String? markerSubfolder]) async {
     try {
       final res = await _storageChannel.invokeMethod<Map>('moveBookToSaf', {
         'treeUri': treeUri,
@@ -2810,6 +2833,7 @@ class DownloadService extends ChangeNotifier {
         'filenames': filenames,
         'tempPaths': tempPaths,
         if (markerJson != null) 'marker': markerJson,
+        if (markerSubfolder != null) 'markerSubfolder': markerSubfolder,
       });
       final dirUri = res?['dirUri'] as String?;
       final fileUris = (res?['fileUris'] as List?)?.map((e) => e as String).toList();
@@ -2909,6 +2933,39 @@ class DownloadService extends ChangeNotifier {
     await ScopedPrefs.setString(_savedEbookRefsKey, jsonEncode(refs));
   }
 
+  /// Whether the exported copy for [itemId] still exists on disk. SAF
+  /// content:// URIs are probed through the native side (Dart can't stat them);
+  /// when existence can't be determined the copy is treated as present so we
+  /// never wrongly drop a real export. Returns false when nothing was recorded.
+  Future<bool> savedEbookCopyExists(String itemId) async {
+    final ref = await savedEbookRef(itemId);
+    if (ref == null) return false;
+    for (final r in [ref.uri, ref.meta]) {
+      if (r == null || r.isEmpty) continue;
+      if (!isContentUri(r)) {
+        try {
+          if (!File(r).existsSync()) return false;
+        } catch (_) {
+          return false;
+        }
+      } else if (!await _safUriExists(r)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _safUriExists(String uri) async {
+    try {
+      final res = await _storageChannel
+          .invokeMethod<Map>('checkSafFiles', {'uris': [uri]})
+          .timeout(const Duration(seconds: 8));
+      return res == null || res[uri] == true;
+    } catch (e) {
+      return true; // conservative when the probe itself fails
+    }
+  }
+
   /// Delete a saved ebook copy ([ref] is a content:// URI or a real file path)
   /// that [saveEbookCopyToSaf] or the manual save dialog produced earlier.
   /// Returns whether the file existed and was removed.
@@ -2964,8 +3021,14 @@ class DownloadService extends ChangeNotifier {
         'coverUrl': p.coverUrl,
         'session': _compactMarkerSession(p.slimSessionJson),
       }));
+      // The marker no longer rides inside the book folder: it goes to the
+      // sibling hidden mirror `audiobooks/.absorb/<Author>/<Title>` so all
+      // markers share one layout with the ebook metadata.
+      final markerSubfolder = p.safSubfolder?.replaceFirst(
+          '$audiobooksSubdir/', '$audiobooksSubdir/$absorbMetaDir/');
       final moved = await _moveBookToSaf(
-          p.safTreeUri!, p.safSubfolder ?? '', filenames, localPaths, marker);
+          p.safTreeUri!, p.safSubfolder ?? '', filenames, localPaths, marker,
+          markerSubfolder);
       if (moved != null) {
         finalPaths = moved.fileUris;
         finalDirPath = moved.dirUri;

@@ -54,10 +54,15 @@ String currentUpdateVersion({
 }
 
 int compareUpdateVersions(String a, String b) {
-  final (aSem, _) = _parseVersion(a);
-  final (bSem, _) = _parseVersion(b);
+  final (aSem, aBuild) = _parseVersion(a);
+  final (bSem, bBuild) = _parseVersion(b);
   for (int i = 0; i < 3; i++) {
     if (aSem[i] != bSem[i]) return aSem[i] - bSem[i];
+  }
+  if (aBuild != null || bBuild != null) {
+    final aB = aBuild ?? 0;
+    final bB = bBuild ?? 0;
+    if (aB != bB) return aB - bB;
   }
   return 0;
 }
