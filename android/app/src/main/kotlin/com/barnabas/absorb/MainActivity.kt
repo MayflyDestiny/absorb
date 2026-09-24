@@ -43,9 +43,16 @@ class MainActivity : AudioServiceActivity() {
     // opening any audio bytes.
     companion object {
         private const val ABSORB_MARKER = ".absorb"
+        private const val AUDIOBOOKS_SUBDIR = "audiobooks"
         private const val EBOOKS_SUBDIR = "ebooks"
-        private const val EBOOK_META_SUBDIR = ".absorb-ebook"
-        private const val EBOOK_META_SUFFIX = ".absorb-ebook"
+        // Every marker lives in a hidden `.absorb` folder per storage area:
+        // `audiobooks/.absorb/<Author>/<Title>` mirrors the real audio tree and
+        // `ebooks/.absorb/<name>.absorb` accompanies each exported copy. The
+        // legacy ebook locations below are still scanned after an upgrade.
+        private const val ABSORB_META_DIR = ".absorb"
+        private const val EBOOK_META_SUFFIX = ".absorb"
+        private const val OLD_EBOOK_META_SUBDIR = ".absorb-ebook"
+        private const val OLD_EBOOK_META_SUFFIX = ".absorb-ebook"
     }
 
     // Ebook reader: volume keys turn pages while watching is on. The keys are
@@ -230,6 +237,7 @@ class MainActivity : AudioServiceActivity() {
                     }
                     "moveBookToSaf" -> handleMoveBookToSaf(call, result)
                     "migrateBook" -> handleMigrateBook(call, result)
+                    "migrateMarkers" -> handleMigrateMarkers(call, result)
                     "scanSafDirectory" -> handleScanSafDirectory(call, result)
                     "checkSafFiles" -> handleCheckSafFiles(call, result)
                     "saveEbookToSaf" -> handleSaveEbookToSaf(call, result)
@@ -359,6 +367,7 @@ class MainActivity : AudioServiceActivity() {
     private fun handleMoveBookToSaf(call: MethodCall, result: MethodChannel.Result) {
         val treeUri = call.argument<String>("treeUri")
         val subfolder = call.argument<String>("subfolder") ?: ""
+        val markerSubfolder = call.argument<String>("markerSubfolder")
         val filenames = call.argument<List<String>>("filenames")
         val tempPaths = call.argument<List<String>>("tempPaths")
         val marker = call.argument<String>("marker")
@@ -400,10 +409,21 @@ class MainActivity : AudioServiceActivity() {
                 // mid-way failure leaves the internal download intact to fall back on.
                 temps.forEach { it.delete() }
                 // Identification marker so a folder scan can tell who owns these
-                // files. Best-effort: a read-only / stale marker never blocks a move.
+                // files. Best-effort: a read-only / stale marker never blocks a
+                // move. Markers live in the hidden `audiobooks/.absorb/...`
+                // mirror folder (sibling of the book tree), not inside the book
+                // directory, so every marker shares one layout with ebooks.
                 if (!marker.isNullOrBlank()) {
-                    dir.findFile(ABSORB_MARKER)?.delete()
-                    val m = dir.createFile("application/octet-stream", ABSORB_MARKER)
+                    // Create the destination chain in the granted tree.
+                    var mdir = tree
+                    for (segment in (markerSubfolder ?: subfolder).split('/').filter { it.isNotBlank() }) {
+                        val existing = mdir.findFile(segment)
+                        mdir = if (existing != null && existing.isDirectory) existing
+                            else (mdir.createDirectory(segment)
+                                ?: throw IllegalStateException("Could not create folder: $segment"))
+                    }
+                    mdir.findFile(ABSORB_MARKER)?.delete()
+                    val m = mdir.createFile("application/octet-stream", ABSORB_MARKER)
                     m?.let { doc ->
                         contentResolver.openOutputStream(doc.uri)?.use { it.write(marker!!.toByteArray()) }
                     }
@@ -430,6 +450,7 @@ class MainActivity : AudioServiceActivity() {
         val treeUri = call.argument<String>("treeUri") // SAF destination
         val targetDir = call.argument<String>("targetDir") // internal destination
         val marker = call.argument<String>("marker")
+        val markerSubfolder = call.argument<String>("markerSubfolder")
         if (sources == null || filenames == null || sources.isEmpty() || sources.size != filenames.size) {
             result.error("MIGRATE_ARGS", "Invalid arguments", null)
             return
@@ -448,9 +469,11 @@ class MainActivity : AudioServiceActivity() {
                 // internal directory.
                 var safDir: DocumentFile? = null
                 var intDir: File? = null
+                var markerRoot: DocumentFile? = null
                 if (treeUri != null) {
                     val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
                         ?: throw IllegalStateException("Download folder not accessible")
+                    markerRoot = tree
                     var dir = tree
                     for (segment in subfolder.split('/').filter { it.isNotBlank() }) {
                         val existing = dir.findFile(segment)
@@ -510,11 +533,20 @@ class MainActivity : AudioServiceActivity() {
                 }
                 dirUri = safDir?.uri?.toString()
                 dirPath = intDir?.absolutePath
-                // Write the identification marker into a SAF destination so a
-                // later scan still recognizes the book after migration.
-                if (safDir != null && !marker.isNullOrBlank()) {
-                    safDir.findFile(ABSORB_MARKER)?.delete()
-                    val m = safDir.createFile("application/octet-stream", ABSORB_MARKER)
+                // Write the identification marker into the hidden `audiobooks/.absorb/...`
+                // mirror of a SAF destination so a later scan still recognizes
+                // the book after migration. Falls back to the book folder when
+                // no mirror path was given.
+                if (markerRoot != null && safDir != null && !marker.isNullOrBlank()) {
+                    var mdir: DocumentFile = markerRoot
+                    for (segment in (markerSubfolder ?: subfolder).split('/').filter { it.isNotBlank() }) {
+                        val existing = mdir.findFile(segment)
+                        mdir = if (existing != null && existing.isDirectory) existing
+                            else (mdir.createDirectory(segment)
+                                ?: throw IllegalStateException("Could not create folder: $segment"))
+                    }
+                    mdir.findFile(ABSORB_MARKER)?.delete()
+                    val m = mdir.createFile("application/octet-stream", ABSORB_MARKER)
                     m?.let { doc ->
                         contentResolver.openOutputStream(doc.uri)?.use { it.write(marker!!.toByteArray()) }
                     }
@@ -553,80 +585,161 @@ class MainActivity : AudioServiceActivity() {
             try {
                 val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
                     ?: throw IllegalStateException("Download folder not accessible")
-                val audioExts = setOf(
+val audioExts = setOf(
                     "mp3", "m4a", "m4b", "m4p", "m4v", "flac", "aac",
                     "ogg", "oga", "opus", "wav", "amr", "mka")
                 val known = ArrayList<Map<String, Any?>>()
                 var unknownCount = 0
+                // Known book locations relative to the audiobooks root, learned
+                // from the hidden `.absorb` mirror so the real tree can skip
+                // them instead of counting their audio as unidentified.
+                val knownByRel = HashMap<String, Boolean>()
 
-                fun walk(dir: DocumentFile, depth: Int) {
-                    if (depth > 2) return
-                    for (child in dir.listFiles()) {
-                        if (!child.isDirectory) continue
-                        val marker = child.findFile(ABSORB_MARKER)
-                        if (marker != null && marker.isFile) {
-                            val content = try {
-                                contentResolver.openInputStream(marker.uri)
-                                    ?.use { it.readBytes().toString(Charsets.UTF_8) }
-                            } catch (e: Exception) { null }
-                            if (content != null && content.isNotBlank()) {
-                                val fileUris = ArrayList<String>()
-                                val fileNames = ArrayList<String>()
-                                for (f in child.listFiles()) {
-                                    if (!f.isFile || f.name == ABSORB_MARKER) continue
-                                    val ext = (f.name ?: "").substringAfterLast('.', "").lowercase()
-                                    if (audioExts.contains(ext)) {
-                                        fileUris.add(f.uri.toString())
-                                        fileNames.add(f.name ?: "")
-                                    }
-                                }
-                                known.add(mapOf(
-                                    "dirUri" to child.uri.toString(),
-                                    "marker" to content,
-                                    "fileUris" to fileUris,
-                                    "fileNames" to fileNames,
-                                ))
-                            } else {
-                                // Marker present but unreadable/corrupt: still an
-                                // Absorb book folder, but treat as unidentified.
-                                unknownCount++
-                            }
-                        } else {
-                            // No marker here: might be an Author dir holding book
-                            // subdirs, or an unidentified leaf. Recurse, then count
-                            // this folder as unidentified only if it holds audio.
-                            walk(child, depth + 1)
-                            var hasAudio = false
-                            for (f in child.listFiles()) {
-                                if (f.isFile) {
-                                    val ext = (f.name ?: "").substringAfterLast('.', "").lowercase()
-                                    if (audioExts.contains(ext)) { hasAudio = true; break }
-                                }
-                            }
-                            if (hasAudio) unknownCount++
+                val audioRoot = tree.findFile(AUDIOBOOKS_SUBDIR)
+                val hasAudioRoot = audioRoot != null && audioRoot.isDirectory
+
+                fun readMarker(dir: DocumentFile): String? = try {
+                    val m = dir.findFile(ABSORB_MARKER)
+                    if (m != null && m.isFile)
+                        contentResolver.openInputStream(m.uri)
+                            ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    else null
+                } catch (e: Exception) { null }
+
+                fun collectBookFiles(bookDir: DocumentFile): Pair<ArrayList<String>, ArrayList<String>> {
+                    val uris = ArrayList<String>()
+                    val names = ArrayList<String>()
+                    for (f in bookDir.listFiles()) {
+                        if (!f.isFile) continue
+                        val ext = (f.name ?: "").substringAfterLast('.', "").lowercase()
+                        if (audioExts.contains(ext)) {
+                            uris.add(f.uri.toString())
+                            names.add(f.name ?: "")
                         }
+                    }
+                    return uris to names
+                }
+
+                fun hasAudioIn(dir: DocumentFile): Boolean {
+                    for (f in dir.listFiles()) {
+                        if (f.isFile) {
+                            val ext = (f.name ?: "").substringAfterLast('.', "").lowercase()
+                            if (audioExts.contains(ext)) return true
+                        }
+                    }
+                    return false
+                }
+
+                fun addKnown(dirUri: String, content: String,
+                             fileUris: ArrayList<String>, fileNames: ArrayList<String>) {
+                    known.add(mapOf(
+                        "dirUri" to dirUri,
+                        "marker" to content,
+                        "fileUris" to fileUris,
+                        "fileNames" to fileNames,
+                    ))
+                }
+
+                // Pass 1: read the marker mirror `audiobooks/.absorb/<Author>/<Title>/`.
+                // Each marker there identifies the real book folder at the same
+                // relative path under the audiobooks root; stale entries whose
+                // book folder (or its audio) is gone are cleaned up best-effort.
+                if (hasAudioRoot) {
+                    val mirror = audioRoot!!.findFile(ABSORB_META_DIR)
+                    if (mirror != null && mirror.isDirectory) {
+                        fun readMirror(dir: DocumentFile, segs: List<String>) {
+                            for (child in dir.listFiles()) {
+                                if (!child.isDirectory) continue
+                                val marker = child.findFile(ABSORB_MARKER)
+                                if (marker != null && marker.isFile) {
+                                    val content = readMarker(child)
+                                    val relSegs = segs + (child.name ?: "")
+                                    var real: DocumentFile? = audioRoot
+                                    for (s in relSegs) {
+                                        real = real!!.findFile(s)
+                                        if (real == null) break
+                                    }
+                                    val bookDir = real
+                                    if (content.isNullOrBlank() || bookDir == null || !bookDir.isDirectory) {
+                                        try { marker.delete() } catch (_: Exception) {}
+                                        continue
+                                    }
+                                    val (fileUris, fileNames) = collectBookFiles(bookDir)
+                                    if (fileUris.isEmpty()) {
+                                        try { marker.delete() } catch (_: Exception) {}
+                                        continue
+                                    }
+                                    addKnown(bookDir.uri.toString(), content, fileUris, fileNames)
+                                    knownByRel[relSegs.joinToString("/")] = true
+                                } else if (segs.size < 1) {
+                                    readMirror(child, segs + (child.name ?: ""))
+                                }
+                            }
+                        }
+                        readMirror(mirror, emptyList())
                     }
                 }
 
-                walk(tree, 0)
+                // Pass 2: walk the real tree.
+                //  - `rel != null` while inside the audiobooks tree: books are
+                //    matched against the mirror, unmatched audio is unidentified.
+                //  - `rel == null` elsewhere keeps the legacy layout (marker
+                //    inside the book folder) recognized, with stale markers
+                //    (audio moved/deleted away) cleaned up.
+                fun walk(dir: DocumentFile, depth: Int, rel: String?) {
+                    if (depth > 2) return
+                    for (child in dir.listFiles()) {
+                        if (!child.isDirectory) continue
+                        val name = child.name ?: continue
+                        if (name == ABSORB_META_DIR || name == EBOOKS_SUBDIR) continue
+                        if (rel == null && name == AUDIOBOOKS_SUBDIR && hasAudioRoot) {
+                            walk(child, 1, "")
+                            continue
+                        }
+                        val childRel: String? = if (rel == null) null
+                            else if (rel.isEmpty()) name else "$rel/$name"
+                        if (childRel != null && knownByRel.containsKey(childRel)) continue
+                        // Legacy in-place marker inside the book folder.
+                        val marker = child.findFile(ABSORB_MARKER)
+                        if (marker != null && marker.isFile) {
+                            val content = readMarker(child)
+                            val (fileUris, fileNames) = collectBookFiles(child)
+                            if (!content.isNullOrBlank() && fileUris.isNotEmpty()) {
+                                addKnown(child.uri.toString(), content, fileUris, fileNames)
+                                if (childRel != null) knownByRel[childRel] = true
+                                continue
+                            }
+                            // Stale marker: audio moved away or marker unreadable.
+                            try { marker.delete() } catch (_: Exception) {}
+                            if (fileUris.isNotEmpty()) unknownCount++
+                            continue
+                        }
+                        walk(child, depth + 1, childRel)
+                        if (hasAudioIn(child)) unknownCount++
+                    }
+                }
+
+                walk(tree, 0, null)
                 runOnUiThread {
                     val ebookExports = ArrayList<Map<String, Any?>>()
                     // Recognize exported ebook copies in the `ebooks/` sibling
-                    // folder: each one carries a `<name>.absorb-ebook` metadata
-                    // file (itemId + title) written at export time, so a scan
-                    // after reinstall can restore the "exported" state.
+                    // folder: each one carries a `<name>.absorb` metadata file
+                    // (itemId + title) in the hidden `.absorb` subfolder, so a
+                    // scan after reinstall can restore the "exported" state.
+                    // The legacy `.absorb-ebook` folder/suffix is still scanned
+                    // so copies made before the layout unification survive.
                     try {
                         val ebooksDir = tree.findFile(EBOOKS_SUBDIR)
                         if (ebooksDir != null && ebooksDir.isDirectory) {
-                            val metaDir = ebooksDir.findFile(EBOOK_META_SUBDIR)
-                            if (metaDir != null && metaDir.isDirectory) {
+                            fun scanEbookMetaDir(metaDir: DocumentFile?, suffix: String,
+                                                 host: DocumentFile) {
+                                if (metaDir == null || !metaDir.isDirectory) return
                                 for (metaDoc in metaDir.listFiles()) {
                                     if (!metaDoc.isFile) continue
                                     val metaName = metaDoc.name ?: continue
-                                    if (!metaName.endsWith(EBOOK_META_SUFFIX)) continue
-                                    val baseName =
-                                        metaName.removeSuffix(EBOOK_META_SUFFIX)
-                                    val fileDoc = ebooksDir.findFile(baseName)
+                                    if (!metaName.endsWith(suffix)) continue
+                                    val baseName = metaName.removeSuffix(suffix)
+                                    val fileDoc = host.findFile(baseName)
                                     if (fileDoc == null || !fileDoc.isFile) continue
                                     val content = try {
                                         contentResolver.openInputStream(metaDoc.uri)
@@ -641,6 +754,10 @@ class MainActivity : AudioServiceActivity() {
                                     }
                                 }
                             }
+                            scanEbookMetaDir(ebooksDir.findFile(ABSORB_META_DIR),
+                                EBOOK_META_SUFFIX, ebooksDir)
+                            scanEbookMetaDir(ebooksDir.findFile(OLD_EBOOK_META_SUBDIR),
+                                OLD_EBOOK_META_SUFFIX, ebooksDir)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "ebook scan failed: ${e.message}", e)
@@ -688,12 +805,12 @@ class MainActivity : AudioServiceActivity() {
                 temp.delete()
                 var metaUri: String? = null
                 if (!meta.isNullOrBlank()) {
-                    // Metadata lives in a hidden `.absorb-ebook` subfolder (one
-                    // file per copy, named exactly like the book file) so the
-                    // public `ebooks/` folder only shows the user's copies.
-                    var metaDir = dir.findFile(EBOOK_META_SUBDIR)
+                    // Metadata lives in the hidden `.absorb` subfolder (one `<name>.absorb`
+                    // file per copy) so the public `ebooks/` folder only shows
+                    // the user's copies.
+                    var metaDir = dir.findFile(ABSORB_META_DIR)
                     if (metaDir == null || !metaDir.isDirectory) {
-                        metaDir = dir.createDirectory(EBOOK_META_SUBDIR)
+                        metaDir = dir.createDirectory(ABSORB_META_DIR)
                     }
                     metaDir?.let { md ->
                         val metaName = "$fileName$EBOOK_META_SUFFIX"
@@ -715,6 +832,76 @@ class MainActivity : AudioServiceActivity() {
                 runOnUiThread { result.error("SAF_SAVE_ERROR", e.message, null) }
             }
         }.start()
+    }
+
+    // One-time cleanup for downloads written before markers moved into the
+    // hidden mirror: `audiobooks/<Author>/<Title>/.absorb` is relocated to
+    // `audiobooks/.absorb/<Author>/<Title>/.absorb` (stale unreadable ones are
+    // dropped). Runs after the folder-scan flag flips on first launch.
+    private fun handleMigrateMarkers(call: MethodCall, result: MethodChannel.Result) {
+        val treeUri = call.argument<String>("treeUri")
+        if (treeUri == null) {
+            result.error("SAF_ARGS", "treeUri required", null)
+            return
+        }
+        Thread {
+            try {
+                val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
+                    ?: throw IllegalStateException("Download folder not accessible")
+                val audioRoot = tree.findFile(AUDIOBOOKS_SUBDIR)
+                if (audioRoot == null || !audioRoot.isDirectory) {
+                    runOnUiThread { result.success(0) }
+                    return@Thread
+                }
+                var mirror = audioRoot.findFile(ABSORB_META_DIR)
+                var moved = 0
+                for (author in audioRoot.listFiles()) {
+                    if (!author.isDirectory) continue
+                    val authorName = author.name ?: continue
+                    if (authorName == ABSORB_META_DIR) continue
+                    for (title in author.listFiles()) {
+                        if (!title.isDirectory) continue
+                        val titleName = title.name ?: continue
+                        if (titleName == ABSORB_META_DIR) continue
+                        val marker = title.findFile(ABSORB_MARKER)
+                        if (marker == null || !marker.isFile) continue
+                        val content = try {
+                            contentResolver.openInputStream(marker.uri)
+                                ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        } catch (e: Exception) { null }
+                        if (content.isNullOrBlank()) {
+                            try { marker.delete() } catch (_: Exception) {}
+                            continue
+                        }
+                        if (mirror == null) {
+                            mirror = audioRoot.createDirectory(ABSORB_META_DIR)
+                            if (mirror == null) continue
+                        }
+                        val mAuthor = ensureChildDir(mirror, authorName)
+                        val mTitle = ensureChildDir(mAuthor, titleName)
+                        mTitle.findFile(ABSORB_MARKER)?.delete()
+                        val m = mTitle.createFile("application/octet-stream", ABSORB_MARKER)
+                        m?.let { doc ->
+                            contentResolver.openOutputStream(doc.uri)?.use {
+                                it.write(content!!.toByteArray())
+                            }
+                        }
+                        try { marker.delete() } catch (_: Exception) {}
+                        moved++
+                    }
+                }
+                runOnUiThread { result.success(moved) }
+            } catch (e: Exception) {
+                Log.e(TAG, "migrateMarkers failed: ${e.message}", e)
+                runOnUiThread { result.error("SAF_MIGRATE_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    private fun ensureChildDir(parent: DocumentFile, name: String): DocumentFile {
+        val existing = parent.findFile(name)
+        return if (existing != null && existing.isDirectory) existing
+            else (parent.createDirectory(name) ?: parent)
     }
 
     // Batch existence check for SAF content URIs. The download registry cannot

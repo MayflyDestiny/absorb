@@ -36,7 +36,6 @@ import '../services/inflight_temp_writes.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/socket_service.dart';
-import '../services/scoped_prefs.dart';
 import '../main.dart' show rootNavigatorKey, colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 import '../screens/app_shell.dart';
 import '../screens/book_edit_screen.dart';
@@ -320,8 +319,9 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       PlayerSettings.getShowGoodreadsButton().then<bool>((v) => v),
       PlayerSettings.getSpeedAdjustedTime().then<bool>((v) => v),
       PlayerSettings.getBookSpeed(widget.itemId).then<double?>((v) => v),
-      ScopedPrefs.getStringList('saved_ebooks')
-          .then<bool>((list) => list.contains(widget.itemId)),
+      DownloadService()
+          .savedEbookCopyExists(widget.itemId)
+          .then<bool>((v) => v),
       PlayerSettings.getDefaultSpeed().then<double?>((v) => v),
       cachedEbookFileFor(widget.itemId).then<Map<String, dynamic>?>((v) => v),
     ]);
@@ -334,6 +334,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           (results[5] as num?)?.toDouble() ??
           1.0;
       _ebookSaved = results[4] as bool;
+      if (!_ebookSaved) {
+        // The copy was recorded but its file no longer exists (deleted outside
+        // the app) - drop the stale "exported" state so the button offers
+        // "export" again the next time this sheet opens.
+        unawaited(DownloadService().clearSavedEbook(widget.itemId));
+      }
       _cachedEbookFallback = results[6] as Map<String, dynamic>?;
     });
   }
