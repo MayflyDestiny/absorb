@@ -5603,6 +5603,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 4),
             Text(l.downloadLocationSheetSubtitle,
               style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 6),
+            Text(l.downloadLocationStructureNote,
+              style: tt.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant, fontStyle: FontStyle.italic)),
             const SizedBox(height: 20),
 
             // Current location display

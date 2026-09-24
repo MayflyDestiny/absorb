@@ -8370,14 +8370,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ebookOfflineFailed => '无法下载电子书';
 
   @override
-  String get ebookSaveToDevice => '保存到设备';
+  String get ebookSaveToDevice => '导出电子书';
 
   @override
-  String get ebookSaveToDeviceTitle => '保存到设备？';
+  String get ebookSaveToDeviceTitle => '导出电子书？';
 
   @override
   String get ebookSaveToDeviceBody =>
-      '这会在您的设备上某处（由您选择位置）保存一份电子书文件的副本。它不会让这本书在阅读器中离线可用 - 如需离线，请使用“下载”。';
+      '这会在您的下载位置下的 ebooks 文件夹中导出一份电子书文件副本。它不会让这本书在阅读器中离线可用 - 如需离线，请使用“下载”。';
+
+  @override
+  String ebookExportedToFolder(Object filename) {
+    return '已导出 $filename 到 ebooks 文件夹';
+  }
+
+  @override
+  String get ebookExportedLabel => '已导出电子书';
+
+  @override
+  String get ebookDeleteExportTitle => '删除导出的电子书？';
+
+  @override
+  String get ebookDeleteExportBody => '这会删除之前导出的电子书文件副本。此操作无法撤销。';
+
+  @override
+  String get ebookDeleteExportConfirm => '删除';
+
+  @override
+  String get ebookExportDeleted => '已删除导出的电子书副本';
+
+  @override
+  String get downloadLocationStructureNote =>
+      '下载的有声书存放在 audiobooks/ 文件夹，导出的电子书副本存放在 ebooks/ 文件夹。';
 
   @override
   String get readerFormatUnsupported => '阅读器暂不支持打开此电子书格式';

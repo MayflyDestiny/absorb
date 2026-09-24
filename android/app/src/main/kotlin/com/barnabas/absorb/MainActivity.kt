@@ -43,6 +43,9 @@ class MainActivity : AudioServiceActivity() {
     // opening any audio bytes.
     companion object {
         private const val ABSORB_MARKER = ".absorb"
+        private const val EBOOKS_SUBDIR = "ebooks"
+        private const val EBOOK_META_SUBDIR = ".absorb-ebook"
+        private const val EBOOK_META_SUFFIX = ".absorb-ebook"
     }
 
     // Ebook reader: volume keys turn pages while watching is on. The keys are
@@ -229,6 +232,7 @@ class MainActivity : AudioServiceActivity() {
                     "migrateBook" -> handleMigrateBook(call, result)
                     "scanSafDirectory" -> handleScanSafDirectory(call, result)
                     "checkSafFiles" -> handleCheckSafFiles(call, result)
+                    "saveEbookToSaf" -> handleSaveEbookToSaf(call, result)
                     else -> result.notImplemented()
                 }
             }
@@ -606,11 +610,109 @@ class MainActivity : AudioServiceActivity() {
 
                 walk(tree, 0)
                 runOnUiThread {
-                    result.success(mapOf("known" to known, "unknownCount" to unknownCount))
+                    val ebookExports = ArrayList<Map<String, Any?>>()
+                    // Recognize exported ebook copies in the `ebooks/` sibling
+                    // folder: each one carries a `<name>.absorb-ebook` metadata
+                    // file (itemId + title) written at export time, so a scan
+                    // after reinstall can restore the "exported" state.
+                    try {
+                        val ebooksDir = tree.findFile(EBOOKS_SUBDIR)
+                        if (ebooksDir != null && ebooksDir.isDirectory) {
+                            val metaDir = ebooksDir.findFile(EBOOK_META_SUBDIR)
+                            if (metaDir != null && metaDir.isDirectory) {
+                                for (metaDoc in metaDir.listFiles()) {
+                                    if (!metaDoc.isFile) continue
+                                    val metaName = metaDoc.name ?: continue
+                                    if (!metaName.endsWith(EBOOK_META_SUFFIX)) continue
+                                    val baseName =
+                                        metaName.removeSuffix(EBOOK_META_SUFFIX)
+                                    val fileDoc = ebooksDir.findFile(baseName)
+                                    if (fileDoc == null || !fileDoc.isFile) continue
+                                    val content = try {
+                                        contentResolver.openInputStream(metaDoc.uri)
+                                            ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                                    } catch (e: Exception) { null }
+                                    if (content != null && content.isNotBlank()) {
+                                        ebookExports.add(mapOf(
+                                            "fileUri" to fileDoc.uri.toString(),
+                                            "metaUri" to metaDoc.uri.toString(),
+                                            "meta" to content,
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "ebook scan failed: ${e.message}", e)
+                    }
+                    result.success(mapOf("known" to known, "unknownCount" to unknownCount,
+                        "ebooks" to ebookExports))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "scanSafDirectory failed: ${e.message}", e)
                 runOnUiThread { result.error("SCAN_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Write an exported ebook copy (plus a tiny `<name>.absorb-ebook` metadata
+    // file) into the `ebooks` subfolder of the granted SAF tree. The metadata
+    // lets a later folder scan restore the "exported" state after a reinstall.
+    // Runs off the main thread, like the other SAF helpers.
+    private fun handleSaveEbookToSaf(call: MethodCall, result: MethodChannel.Result) {
+        val treeUri = call.argument<String>("treeUri")
+        val fileName = call.argument<String>("fileName")
+        val tempPath = call.argument<String>("tempPath")
+        val meta = call.argument<String>("meta")
+        if (treeUri == null || fileName == null || tempPath == null) {
+            result.error("SAF_ARGS", "Invalid arguments", null)
+            return
+        }
+        Thread {
+            try {
+                val tree = DocumentFile.fromTreeUri(applicationContext, Uri.parse(treeUri))
+                    ?: throw IllegalStateException("Download folder not accessible")
+                val temp = File(tempPath)
+                if (!temp.exists()) throw IllegalStateException("Missing ebook file: $tempPath")
+                var dir = tree.findFile(EBOOKS_SUBDIR)
+                if (dir == null || !dir.isDirectory) {
+                    dir = tree.createDirectory(EBOOKS_SUBDIR)
+                        ?: throw IllegalStateException("Could not create folder: $EBOOKS_SUBDIR")
+                }
+                dir.findFile(fileName)?.delete()
+                val doc = dir.createFile("application/octet-stream", fileName)
+                    ?: throw IllegalStateException("Could not create file: $fileName")
+                contentResolver.openOutputStream(doc.uri)?.use { output ->
+                    FileInputStream(temp).use { input -> input.copyTo(output, 64 * 1024) }
+                } ?: throw IllegalStateException("Could not write: $fileName")
+                temp.delete()
+                var metaUri: String? = null
+                if (!meta.isNullOrBlank()) {
+                    // Metadata lives in a hidden `.absorb-ebook` subfolder (one
+                    // file per copy, named exactly like the book file) so the
+                    // public `ebooks/` folder only shows the user's copies.
+                    var metaDir = dir.findFile(EBOOK_META_SUBDIR)
+                    if (metaDir == null || !metaDir.isDirectory) {
+                        metaDir = dir.createDirectory(EBOOK_META_SUBDIR)
+                    }
+                    metaDir?.let { md ->
+                        val metaName = "$fileName$EBOOK_META_SUFFIX"
+                        md.findFile(metaName)?.delete()
+                        val m = md.createFile("application/octet-stream", metaName)
+                        m?.let { metaDoc ->
+                            contentResolver.openOutputStream(metaDoc.uri)?.use {
+                                it.write(meta!!.toByteArray())
+                            }
+                            metaUri = metaDoc.uri.toString()
+                        }
+                    }
+                }
+                runOnUiThread {
+                    result.success(mapOf("fileUri" to doc.uri.toString(), "metaUri" to metaUri))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "saveEbookToSaf failed: ${e.message}", e)
+                runOnUiThread { result.error("SAF_SAVE_ERROR", e.message, null) }
             }
         }.start()
     }

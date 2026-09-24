@@ -8732,14 +8732,39 @@ class AppLocalizationsDe extends AppLocalizations {
       'Das eBook konnte nicht heruntergeladen werden';
 
   @override
-  String get ebookSaveToDevice => 'Auf Gerät speichern';
+  String get ebookSaveToDevice => 'E-Book exportieren';
 
   @override
-  String get ebookSaveToDeviceTitle => 'Auf Gerät speichern?';
+  String get ebookSaveToDeviceTitle => 'E-Book exportieren?';
 
   @override
   String get ebookSaveToDeviceBody =>
-      'Dies speichert eine Kopie der eBook-Datei auf deinem Gerät (du bestimmst das Verzeichnis). Das Buch wird nicht im offline Reader verfügbar sein - verwende dafür den Download.';
+      'Dies exportiert eine Kopie der eBook-Datei in den ebooks-Ordner deines Download-Orts. Das Buch wird nicht im offline Reader verfügbar sein - verwende dafür den Download.';
+
+  @override
+  String ebookExportedToFolder(Object filename) {
+    return '$filename in den ebooks-Ordner exportiert';
+  }
+
+  @override
+  String get ebookExportedLabel => 'E-Book exportiert';
+
+  @override
+  String get ebookDeleteExportTitle => 'Exportiertes E-Book löschen?';
+
+  @override
+  String get ebookDeleteExportBody =>
+      'Dies löscht die zuvor exportierte Kopie der eBook-Datei. Dieser Vorgang kann nicht rückgängig gemacht werden.';
+
+  @override
+  String get ebookDeleteExportConfirm => 'Löschen';
+
+  @override
+  String get ebookExportDeleted => 'Exportierte eBook-Kopie gelöscht';
+
+  @override
+  String get downloadLocationStructureNote =>
+      'Heruntergeladene Hörbücher liegen im Ordner audiobooks/ ; exportierte eBook-Kopien im Ordner ebooks/.';
 
   @override
   String get readerFormatUnsupported =>

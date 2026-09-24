@@ -16,6 +16,7 @@ import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'ebook_cache.dart';
 import 'offline_source.dart';
+import 'scoped_prefs.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error, paused }
 
@@ -390,6 +391,27 @@ String _sanitizePath(String name) {
   return s;
 }
 
+/// Sub-folder every audiobook download nests into (sibling of [ebooksSubdir]),
+/// so the download root stays tidy: `root/audiobooks/<Author>/<Title>` for
+/// books and `root/ebooks/<file>` for exported ebook copies.
+const String audiobooksSubdir = 'audiobooks';
+
+/// Sub-folder where "export ebook" copies land under the same download root.
+const String ebooksSubdir = 'ebooks';
+
+/// Pref flag that the one-time relocation of pre-`audiobooks/` downloads ran.
+const String _downloadLayoutV2Key = 'download_layout_v2';
+
+/// Build the nested destination for an audiobook download / migration:
+/// `audiobooks/<Author>/<Title>` (or `audiobooks/<Title>` without an author),
+/// matching how download roots / SAF trees organize books.
+String _nestedAudioDir(String? author, String title) {
+  final inner = (author != null && author.isNotEmpty)
+      ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
+      : _sanitizePath(title);
+  return '$audiobooksSubdir/$inner';
+}
+
 /// Check whether [dirUri] (a SAF document URI for a nested folder) lies inside
 /// the tree granted by [treeUri]. Both share the same authority and the
 /// decoded document id either equals the tree id or starts with it plus a
@@ -677,8 +699,39 @@ class DownloadService extends ChangeNotifier {
       await _save();
       notifyListeners();
     }
+
+    // Restore ebook exports: metadata written at export time (`ebooks/` sibling
+    // of the audiobooks) lets a scan after reinstall bring back the "exported"
+    // state and the delete entry, even though the audio scan ignores ebooks.
+    final ebookCount = await _restoreEbookExports(res?['ebooks']);
     final unknown = (res?['unknownCount'] as num?)?.toInt() ?? 0;
-    return (recognized: recognized, unknown: unknown);
+    return (recognized: recognized + ebookCount, unknown: unknown);
+  }
+
+  /// Rebuild `saved_ebooks` + `saved_ebook_refs` from scanned `ebooks/` entries
+  /// (each item: `fileUri`, `metaUri`, `meta` JSON containing the itemId).
+  /// Returns how many copies were (re)registered.
+  Future<int> _restoreEbookExports(dynamic rawEbooks) async {
+    final entries = (rawEbooks as List<dynamic>?) ?? const <dynamic>[];
+    var restored = 0;
+    for (final entry in entries.cast<Map>()) {
+      final meta = entry['meta'] as String?;
+      final fileUri = entry['fileUri'] as String?;
+      final metaUri = entry['metaUri'] as String?;
+      if (meta == null || meta.isEmpty || fileUri == null || fileUri.isEmpty) {
+        continue;
+      }
+      try {
+        final m = jsonDecode(meta) as Map<String, dynamic>;
+        final itemId = m['itemId'] as String?;
+        if (itemId == null || itemId.isEmpty) continue;
+        await recordSavedEbook(itemId, fileUri, metaUri);
+        restored++;
+      } catch (e) {
+        debugPrint('[Download] ebook scan entry failed: $e');
+      }
+    }
+    return restored;
   }
 
   Future<bool> _migrateOneDownload(DownloadInfo info, String? treeUri) async {
@@ -696,9 +749,7 @@ class DownloadService extends ChangeNotifier {
 
     // Nested target folder, using the same layout the downloader produces.
     final title = info.title ?? info.itemId;
-    final nestedName = (info.author != null && info.author!.isNotEmpty)
-        ? '${_sanitizePath(info.author!)}/${_sanitizePath(title)}'
-        : _sanitizePath(title);
+    final nestedName = _nestedAudioDir(info.author, title);
 
     // Filename fallbacks. Internal paths keep their basename; the native side
     // prefers the real display name from content URIs, so these only matter if
@@ -770,6 +821,144 @@ class DownloadService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[Download] migrate "$title" failed: $e');
+      return false;
+    }
+  }
+
+  /// Background maintenance after startup: run before [validateDownloads] so
+  /// a relocation can never be mistaken for a missing-file cleanup.
+  Future<void> _postInitMaintenance() async {
+    await relayoutExistingBooks();
+    await validateDownloads();
+  }
+
+  /// One-time housekeeping after the `audiobooks/` layout landed: relocate
+  /// books still sitting in the flat layout (download root/<Author>/<Title>,
+  /// for both SAF trees and internal storage) into
+  /// `root/audiobooks/<Author>/<Title>`. Runs in the background once per
+  /// install; a book that is playing right now is left where it is (still fully
+  /// usable) because moving its files live would break playback.
+  Future<void> relayoutExistingBooks() async {
+    if (_downloads.isEmpty) {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_downloadLayoutV2Key, true);
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_downloadLayoutV2Key) ?? false) return;
+    final playingId = AudioPlayerService().currentItemId;
+    var moved = 0;
+    final items = _downloads.values
+        .where((d) => d.status == DownloadStatus.downloaded)
+        .toList();
+    for (final info in items) {
+      final dir = info.localDirPath;
+      if (dir == null || dir.isEmpty) continue;
+      if (dir.contains('/$audiobooksSubdir/')) continue;
+      if (info.itemId == playingId) continue;
+      try {
+        final ok = isContentUri(dir)
+            ? await _relayoutSafBook(info)
+            : await _relayoutInternalBook(info);
+        if (ok) moved++;
+      } catch (e) {
+        debugPrint('[Download] relayout "${info.title}" failed: $e');
+      }
+    }
+    await prefs.setBool(_downloadLayoutV2Key, true);
+    if (moved > 0) {
+      await _save();
+      notifyListeners();
+    }
+  }
+
+  /// Move an internal-storage book from `<base>/<Author>/<Title>` (the flat
+  /// layout) into `<base>/audiobooks/<Author>/<Title>` and update its registry
+  /// entry. Returns false when the source isn't under the standard root.
+  Future<bool> _relayoutInternalBook(DownloadInfo info) async {
+    final base = await downloadBasePath;
+    final src = info.localDirPath!;
+    if (!src.startsWith(base)) return false;
+    final dstPath =
+        '$base/${_nestedAudioDir(info.author, info.title ?? info.itemId)}';
+    if (src == dstPath) return true;
+    final srcDir = Directory(src);
+    if (!srcDir.existsSync()) return false;
+    final dstDir = Directory(dstPath);
+    if (dstDir.existsSync()) dstDir.deleteSync(recursive: true);
+    await dstDir.parent.create(recursive: true);
+    srcDir.rename(dstPath);
+    final newPaths = <String>[];
+    for (final p in info.localPaths) {
+      newPaths.add(
+          p.startsWith(base) ? '$dstPath/${p.split(RegExp(r'[\\/]')).last}' : p);
+    }
+    _downloads[info.itemId] = DownloadInfo(
+      itemId: info.itemId,
+      status: DownloadStatus.downloaded,
+      localPaths: newPaths,
+      sessionData: info.sessionData,
+      title: info.title,
+      author: info.author,
+      coverUrl: info.coverUrl,
+      localCoverPath: info.localCoverPath,
+      localDirPath: dstPath,
+      libraryId: info.libraryId,
+    );
+    return true;
+  }
+
+  /// Move a SAF-stored book from `<tree>/<Author>/<Title>` into
+  /// `<tree>/audiobooks/<Author>/<Title>` via the native migrate helper (copy
+  /// to the nested folder, then delete the old files), carrying the marker so
+  /// a later folder scan still recognizes it.
+  Future<bool> _relayoutSafBook(DownloadInfo info) async {
+    final uri = _customDownloadUri;
+    if (uri == null || uri.isEmpty) return false;
+    final sources = info.localPaths;
+    if (sources.isEmpty) return false;
+    final nested = _nestedAudioDir(info.author, info.title ?? info.itemId);
+    final filenames = <String>[];
+    for (var i = 0; i < sources.length; i++) {
+      filenames.add(_migrationFallbackName(info, i));
+    }
+    final marker = _encodeMarker(jsonEncode({
+      'itemId': info.itemId,
+      'title': info.title ?? info.itemId,
+      'author': info.author,
+      'libraryId': info.libraryId,
+      'coverUrl': info.coverUrl,
+      'session': _compactMarkerSession(info.sessionData),
+    }));
+    try {
+      final res = await _storageChannel.invokeMethod<Map>('migrateBook', {
+        'sources': sources,
+        'filenames': filenames,
+        'subfolder': nested,
+        'treeUri': uri,
+        'marker': marker,
+      });
+      final newPaths =
+          (res?['fileUris'] as List?)?.map((e) => e as String).toList();
+      final newDir = res?['dirUri'] as String?;
+      if (newPaths == null || newPaths.length != sources.length || newDir == null) {
+        return false;
+      }
+      _downloads[info.itemId] = DownloadInfo(
+        itemId: info.itemId,
+        status: DownloadStatus.downloaded,
+        localPaths: newPaths,
+        sessionData: info.sessionData,
+        title: info.title,
+        author: info.author,
+        coverUrl: info.coverUrl,
+        localCoverPath: info.localCoverPath,
+        localDirPath: newDir,
+        libraryId: info.libraryId,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Download] relayout SAF "${info.title}" failed: $e');
       return false;
     }
   }
@@ -1102,8 +1291,10 @@ class DownloadService extends ChangeNotifier {
 
     notifyListeners();
 
-    // Validate files and clean up orphans in background after startup
-    validateDownloads();
+    // Background maintenance after startup: relocate pre-`audiobooks/`
+    // downloads first (so validation never races a live file move), then
+    // validate files and clean up orphans.
+    unawaited(_postInitMaintenance());
   }
 
   void _startReconciler() {
@@ -2086,9 +2277,7 @@ class DownloadService extends ChangeNotifier {
       // is moved into the user's chosen folder under "Author/Title" on
       // completion (a direct SAF write can't nest subfolders). iOS downloads
       // into the app group container.
-      final nestedName = (author != null && author.isNotEmpty)
-          ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
-          : _sanitizePath(title);
+      final nestedName = _nestedAudioDir(author, title);
       // iOS downloads into the app group container; Android into the
       // app-specific external files dir
       // (/storage/emulated/0/Android/data/<pkg>/files/downloads), which needs
@@ -2631,6 +2820,110 @@ class DownloadService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Download] moveBookToSaf failed: $e');
       return null;
+    }
+  }
+
+  /// Export a standalone copy of a local file ([tempPath], its name is
+  /// [fileName]) into the `ebooks` subfolder of the user's custom SAF download
+  /// location — the sibling of where audiobooks land plain. Also writes a tiny
+  /// `<fileName>.absorb-ebook` metadata file (carrying [metaJson]) so a later
+  /// folder scan after reinstall can restore the "exported" state and its
+  /// delete entry. Returns the file + metadata content URIs, or null when
+  /// there's no custom location or the write failed (the caller can then fall
+  /// back to the manual save dialog). The temp file is deleted by the native
+  /// side once the copy lands.
+  Future<({String fileUri, String? metaUri})?> saveEbookCopyToSaf(
+      String tempPath, String fileName, String metaJson) async {
+    final uri = _customDownloadUri;
+    if (uri == null || uri.isEmpty) return null;
+    try {
+      final res = await _storageChannel.invokeMethod<Map>('saveEbookToSaf', {
+        'treeUri': uri,
+        'fileName': fileName,
+        'tempPath': tempPath,
+        'meta': metaJson,
+      });
+      final fileUri = res?['fileUri'] as String?;
+      if (fileUri == null || fileUri.isEmpty) return null;
+      return (fileUri: fileUri, metaUri: res?['metaUri'] as String?);
+    } catch (e) {
+      debugPrint('[Download] saveEbookToSaf failed: $e');
+      return null;
+    }
+  }
+
+  static const _savedEbookRefsKey = 'saved_ebook_refs';
+
+  /// Persist that [itemId] has an exported copy at [fileUri] (an optional
+  /// `<name>.absorb-ebook` metadata URI is stored too so it can be deleted
+  /// together). Shared with the folder-scan restore path.
+  Future<void> recordSavedEbook(String itemId, String fileUri,
+      [String? metaUri]) async {
+    final saved = await ScopedPrefs.getStringList('saved_ebooks');
+    if (!saved.contains(itemId)) {
+      saved.add(itemId);
+      await ScopedPrefs.setStringList('saved_ebooks', saved);
+    }
+    await _writeEbookRefs((refs) {
+      refs[itemId] = jsonEncode({
+        'uri': fileUri,
+        if (metaUri != null && metaUri.isNotEmpty) 'meta': metaUri,
+      });
+    });
+  }
+
+  /// Resolve the saved-ebook refs for [itemId]. Returns null when not exported.
+  /// Tolerates the legacy plain-`uri` format written before meta refs existed.
+  Future<({String? uri, String? meta})?> savedEbookRef(String itemId) async {
+    final refsRaw = await ScopedPrefs.getString(_savedEbookRefsKey);
+    if (refsRaw == null || refsRaw.isEmpty) return null;
+    try {
+      final refs = (jsonDecode(refsRaw) as Map).cast<String, dynamic>();
+      final v = refs[itemId] as String?;
+      if (v == null) return null;
+      if (!v.trimLeft().startsWith('{')) return (uri: v, meta: null);
+      final m = jsonDecode(v) as Map<String, dynamic>;
+      return (uri: m['uri'] as String?, meta: m['meta'] as String?);
+    } catch (e) {
+      debugPrint('[Download] savedEbookRef failed: $e');
+      return null;
+    }
+  }
+
+  /// Drop the exported-copy state for [itemId] (called after the copy files
+  /// were deleted). Leaves the actual files to the caller.
+  Future<void> clearSavedEbook(String itemId) async {
+    final saved = await ScopedPrefs.getStringList('saved_ebooks');
+    saved.remove(itemId);
+    await ScopedPrefs.setStringList('saved_ebooks', saved);
+    await _writeEbookRefs((refs) => refs.remove(itemId));
+  }
+
+  Future<void> _writeEbookRefs(
+      void Function(Map<String, dynamic> refs) mutate) async {
+    final raw = await ScopedPrefs.getString(_savedEbookRefsKey);
+    final refs = raw == null || raw.isEmpty
+        ? <String, dynamic>{}
+        : (jsonDecode(raw) as Map).cast<String, dynamic>();
+    mutate(refs);
+    await ScopedPrefs.setString(_savedEbookRefsKey, jsonEncode(refs));
+  }
+
+  /// Delete a saved ebook copy ([ref] is a content:// URI or a real file path)
+  /// that [saveEbookCopyToSaf] or the manual save dialog produced earlier.
+  /// Returns whether the file existed and was removed.
+  Future<bool> deleteBookFileAt(String ref) async {
+    try {
+      if (isContentUri(ref)) {
+        return await FileDownloader().uri.deleteFile(Uri.parse(ref));
+      }
+      final f = File(ref);
+      if (!f.existsSync()) return false;
+      f.deleteSync();
+      return true;
+    } catch (e) {
+      debugPrint('[Download] deleting saved ebook copy failed: $e');
+      return false;
     }
   }
 

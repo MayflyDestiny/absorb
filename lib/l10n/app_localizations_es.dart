@@ -8614,14 +8614,39 @@ class AppLocalizationsEs extends AppLocalizations {
   String get ebookOfflineFailed => 'Couldn\'t download the ebook';
 
   @override
-  String get ebookSaveToDevice => 'Save to device';
+  String get ebookSaveToDevice => 'Export ebook';
 
   @override
-  String get ebookSaveToDeviceTitle => 'Save to device?';
+  String get ebookSaveToDeviceTitle => 'Export ebook?';
 
   @override
   String get ebookSaveToDeviceBody =>
-      'This saves a copy of the ebook file somewhere on your device (you pick where). It won\'t make the book available offline in the reader - use Download for that.';
+      'This exports a copy of the ebook file to the ebooks folder inside your download location. It won\'t make the book available offline in the reader - use Download for that.';
+
+  @override
+  String ebookExportedToFolder(Object filename) {
+    return 'Exported $filename to the ebooks folder';
+  }
+
+  @override
+  String get ebookExportedLabel => 'Ebook exported';
+
+  @override
+  String get ebookDeleteExportTitle => 'Delete exported ebook?';
+
+  @override
+  String get ebookDeleteExportBody =>
+      'This deletes the copy of the ebook file you exported earlier. This can\'t be undone.';
+
+  @override
+  String get ebookDeleteExportConfirm => 'Delete';
+
+  @override
+  String get ebookExportDeleted => 'Deleted the exported ebook copy';
+
+  @override
+  String get downloadLocationStructureNote =>
+      'Downloaded audiobooks go in an audiobooks/ folder; exported ebook copies go in ebooks/.';
 
   @override
   String get readerFormatUnsupported =>

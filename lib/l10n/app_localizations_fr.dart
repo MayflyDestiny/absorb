@@ -8670,14 +8670,39 @@ class AppLocalizationsFr extends AppLocalizations {
   String get ebookOfflineFailed => 'Couldn\'t download the ebook';
 
   @override
-  String get ebookSaveToDevice => 'Enregistrer sur l’appareil';
+  String get ebookSaveToDevice => 'Exporter l\'e-book';
 
   @override
-  String get ebookSaveToDeviceTitle => 'Enregistrer sur l\'appareil ?';
+  String get ebookSaveToDeviceTitle => 'Exporter l\'e-book ?';
 
   @override
   String get ebookSaveToDeviceBody =>
-      'Cela enregistre une copie du fichier ebook quelque part sur votre appareil (vous choisissez où). Il ne rendra pas le livre disponible hors ligne dans le lecteur - utilisez Download pour cela.';
+      'Cela exporte une copie du fichier ebook dans le dossier ebooks de votre emplacement de téléchargement. Le livre ne sera pas disponible hors ligne dans le lecteur - utilisez Download pour cela.';
+
+  @override
+  String ebookExportedToFolder(Object filename) {
+    return '$filename exporté dans le dossier ebooks';
+  }
+
+  @override
+  String get ebookExportedLabel => 'E-book exporté';
+
+  @override
+  String get ebookDeleteExportTitle => 'Supprimer l\'e-book exporté ?';
+
+  @override
+  String get ebookDeleteExportBody =>
+      'Cela supprime la copie du fichier e-book que vous avez exportée précédemment. Cette action est irréversible.';
+
+  @override
+  String get ebookDeleteExportConfirm => 'Supprimer';
+
+  @override
+  String get ebookExportDeleted => 'Copie de l\'e-book exportée supprimée';
+
+  @override
+  String get downloadLocationStructureNote =>
+      'Les livres téléchargés rejoignent le dossier audiobooks/ ; les copies d\'e-book exportées vont dans ebooks/.';
 
   @override
   String get readerFormatUnsupported =>

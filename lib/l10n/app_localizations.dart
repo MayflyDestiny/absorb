@@ -14832,20 +14832,62 @@ abstract class AppLocalizations {
   /// No description provided for @ebookSaveToDevice.
   ///
   /// In en, this message translates to:
-  /// **'Save to device'**
+  /// **'Export ebook'**
   String get ebookSaveToDevice;
 
   /// No description provided for @ebookSaveToDeviceTitle.
   ///
   /// In en, this message translates to:
-  /// **'Save to device?'**
+  /// **'Export ebook?'**
   String get ebookSaveToDeviceTitle;
 
   /// No description provided for @ebookSaveToDeviceBody.
   ///
   /// In en, this message translates to:
-  /// **'This saves a copy of the ebook file somewhere on your device (you pick where). It won\'t make the book available offline in the reader - use Download for that.'**
+  /// **'This exports a copy of the ebook file to the ebooks folder inside your download location. It won\'t make the book available offline in the reader - use Download for that.'**
   String get ebookSaveToDeviceBody;
+
+  /// No description provided for @ebookExportedToFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported {filename} to the ebooks folder'**
+  String ebookExportedToFolder(Object filename);
+
+  /// No description provided for @ebookExportedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Ebook exported'**
+  String get ebookExportedLabel;
+
+  /// No description provided for @ebookDeleteExportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete exported ebook?'**
+  String get ebookDeleteExportTitle;
+
+  /// No description provided for @ebookDeleteExportBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes the copy of the ebook file you exported earlier. This can\'t be undone.'**
+  String get ebookDeleteExportBody;
+
+  /// No description provided for @ebookDeleteExportConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get ebookDeleteExportConfirm;
+
+  /// No description provided for @ebookExportDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted the exported ebook copy'**
+  String get ebookExportDeleted;
+
+  /// No description provided for @downloadLocationStructureNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded audiobooks go in an audiobooks/ folder; exported ebook copies go in ebooks/.'**
+  String get downloadLocationStructureNote;
 
   /// No description provided for @readerFormatUnsupported.
   ///

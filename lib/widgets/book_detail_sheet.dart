@@ -860,9 +860,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         // Ebook-only but not readable in-app (CBR) - can't open it, so the
         // primary action exports the file to the device instead.
         SizedBox(height: 52, child: FilledButton.icon(
-          onPressed: () => _saveEbook(context, auth, ebookFile, title),
+          onPressed: () => _ebookSaved
+              ? _deleteEbookExport(context)
+              : _saveEbook(context, auth, ebookFile, title),
           icon: Icon(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded, size: 24),
-          label: Text(l.ebookSaveToDevice,
+          label: Text(_ebookSaved ? l.ebookExportedLabel : l.ebookSaveToDevice,
             style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
           style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
         ))
@@ -1457,8 +1459,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         // Save/Send push the file elsewhere, which needs the server's own file
         // entry (with ino) - the cache-synthesized fallback can't serve them.
         if (serverEbookFile != null) {
-          addDynamic(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
-            l.ebookSaveToDevice, () => _saveEbook(context, auth, serverEbookFile, title));
+          addDynamic(
+              _ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded,
+              _ebookSaved ? l.ebookExportedLabel : l.ebookSaveToDevice,
+              () => _ebookSaved
+                  ? _deleteEbookExport(context)
+                  : _saveEbook(context, auth, serverEbookFile, title));
         }
         if (serverEbookFile != null && auth.ereaderDevices.isNotEmpty) {
           addDynamic(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
@@ -2155,9 +2161,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   Future<void> _saveEbook(BuildContext context, AuthProvider auth, Map<String, dynamic> ebookFile, String bookTitle) async {
     if (_ebookSaving) return;
     final l = AppLocalizations.of(context)!;
+    final dl = DownloadService();
 
-    // Clarify this exports a copy elsewhere on the device and is NOT the same as
-    // the offline Download, which is a common point of confusion.
+    // Always confirm the export before writing. With a custom download folder
+    // set (Android SAF) the copy lands straight in its "ebooks" subfolder; the
+    // prompt keeps the download/export distinction explicit either way.
+    final hasSafExportFolder =
+        dl.customDownloadUri != null && dl.customDownloadUri!.isNotEmpty;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2189,13 +2200,29 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         return;
       }
 
-      final ebookName = ebookFile['metadata']?['filename'] as String? ?? ebookFile['name'] as String? ?? 'book.epub';
-      final ext = ebookName.contains('.') ? ebookName.substring(ebookName.lastIndexOf('.')) : '.epub';
-      final safeTitle = bookTitle.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+      final ebookName = ebookFile['metadata']?['filename'] as String? ?? ebookFile['name'] as String? ?? '';
+      final ext = ebookName.contains('.')
+          ? ebookName.substring(ebookName.lastIndexOf('.'))
+          : '.epub';
+
+      // Prefer the original server-side filename for the exported copy; fall
+      // back to the book title (kept intact for non-ASCII scripts) when it's
+      // missing. The legacy ASCII-only '\w' scrub would strip CJK titles to
+      // nothing and produce a bare ".epub".
+      final rawName = ebookName.trim();
+      final exportName = rawName.isNotEmpty &&
+              !rawName.contains('/') && !rawName.contains('\\')
+          ? rawName
+          : (() {
+              final cleanTitle = bookTitle
+                  .replaceAll(RegExp(r'[^\p{L}\p{N}\s\-_]', unicode: true), '')
+                  .trim();
+              return cleanTitle.isEmpty ? 'book.epub' : '$cleanTitle$ext';
+            })();
 
       // Download to cache first (reuse if already cached)
       final cacheDir = await getTemporaryDirectory();
-      final cachedFile = File('${cacheDir.path}/$safeTitle$ext');
+      final cachedFile = File('${cacheDir.path}/$exportName');
 
       if (!cachedFile.existsSync()) {
         final cleanBase = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
@@ -2263,29 +2290,53 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         }
       }
 
-      final bytes = await cachedFile.readAsBytes();
-
-      // Open system save dialog so user can choose the location
-      final savedPath = await FilePicker.platform.saveFile(
-        dialogTitle: l.saveEbook,
-        fileName: '$safeTitle$ext',
-        bytes: Uint8List.fromList(bytes),
-      );
+      // With a custom download location the file lands in its "ebooks"
+      // subfolder (sibling of where audiobooks download) without further
+      // prompting; fall back to the manual dialog when that fails or when
+      // there is no stable parent folder to write to.
+      String? savedPath;
+      String? savedMetaUri;
+      if (hasSafExportFolder) {
+        final moved = await dl.saveEbookCopyToSaf(
+          cachedFile.path,
+          exportName,
+          jsonEncode({'itemId': widget.itemId, 'title': bookTitle}),
+        );
+        if (moved != null) {
+          savedPath = moved.fileUri;
+          savedMetaUri = moved.metaUri;
+        } else {
+          final bytes = await cachedFile.readAsBytes();
+          savedPath = await FilePicker.platform.saveFile(
+            dialogTitle: l.saveEbook,
+            fileName: exportName,
+            bytes: Uint8List.fromList(bytes),
+          );
+        }
+      } else {
+        final bytes = await cachedFile.readAsBytes();
+        savedPath = await FilePicker.platform.saveFile(
+          dialogTitle: l.saveEbook,
+          fileName: exportName,
+          bytes: Uint8List.fromList(bytes),
+        );
+      }
 
       if (savedPath == null) return; // user cancelled
 
-      // Track that this ebook has been saved
-      final saved = await ScopedPrefs.getStringList('saved_ebooks');
-      if (!saved.contains(widget.itemId)) {
-        saved.add(widget.itemId);
-        await ScopedPrefs.setStringList('saved_ebooks', saved);
-      }
+      // Track that this ebook has been saved and where the copy landed
+      // (content:// URI or file path) so the "exported" button can offer a
+      // delete with a real target. The optional `<name>.absorb-ebook` metadata
+      // URI is stored too, so it's removed together with the copy.
+      await dl.recordSavedEbook(widget.itemId, savedPath, savedMetaUri);
       if (mounted) setState(() => _ebookSaved = true);
 
       if (mounted) {
         showOverlayToast(
           context,
-          l.ebookSaved('$safeTitle$ext'),
+          hasSafExportFolder
+              ? l.ebookExportedToFolder(exportName)
+              : l.ebookSaved(exportName),
           icon: Icons.download_done_rounded,
         );
       }
@@ -2300,6 +2351,51 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       }
     } finally {
       if (mounted) setState(() => _ebookSaving = false);
+    }
+  }
+
+  /// Remove the exported ebook copy for this book and flip the button back to
+  /// "export". Always confirmed by the user first; a missing/stale reference
+  /// (e.g. old records from before refs were stored) just clears the state.
+  Future<void> _deleteEbookExport(BuildContext context) async {
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.ebookDeleteExportTitle),
+        content: Text(l.ebookDeleteExportBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.ebookDeleteExportConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final ref = await DownloadService().savedEbookRef(widget.itemId);
+    if (ref != null) {
+      if (ref.uri != null && ref.uri!.isNotEmpty) {
+        await DownloadService().deleteBookFileAt(ref.uri!);
+      }
+      if (ref.meta != null && ref.meta!.isNotEmpty) {
+        await DownloadService().deleteBookFileAt(ref.meta!);
+      }
+    }
+    await DownloadService().clearSavedEbook(widget.itemId);
+
+    if (mounted) {
+      setState(() => _ebookSaved = false);
+      showOverlayToast(context, l.ebookExportDeleted,
+          icon: Icons.delete_outline_rounded);
     }
   }
 
