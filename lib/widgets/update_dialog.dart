@@ -22,7 +22,7 @@ class UpdateDialog {
     final latest = withBeta(info.latestVersion, info.latestBetaNumber);
     final current =
         withBeta(info.currentVersion, betaNumberFor(info.currentVersion));
-    final go = await showDialog<bool>(
+    final go = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(info.isPreRelease ? l.preReleaseAvailable : l.updateAvailable),
@@ -45,19 +45,31 @@ class UpdateDialog {
           TextButton(
             onPressed: () {
               UpdateCheckerService.dismiss(info.latestVersion);
-              Navigator.pop(ctx, false);
+              Navigator.pop(ctx, null);
             },
             child: Text(l.later),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'browser'),
+            child: Text(l.downloadInBrowser),
+          ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(ctx, 'download'),
             child: Text(l.downloadButton),
           ),
         ],
       ),
     );
-    if (go != true || !context.mounted) return;
-    await _runInstall(context, info);
+    if (!context.mounted) return;
+    switch (go) {
+      case 'download':
+        await _runInstall(context, info);
+      case 'browser':
+        await launchUrl(
+          Uri.parse(info.downloadUrl),
+          mode: LaunchMode.externalApplication,
+        );
+    }
   }
 
   static Future<void> _runInstall(BuildContext context, UpdateInfo info) async {

@@ -7769,8 +7769,62 @@ abstract class AppLocalizations {
   /// No description provided for @downloadButton.
   ///
   /// In en, this message translates to:
-  /// **'Download'**
+  /// **'Direct download'**
   String get downloadButton;
+
+  /// No description provided for @downloadInBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Browser download'**
+  String get downloadInBrowser;
+
+  /// No description provided for @githubProxyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'GitHub Acceleration Proxy'**
+  String get githubProxyTitle;
+
+  /// No description provided for @githubProxySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Route update downloads through a mirror for faster, more reliable downloads where GitHub is slow.'**
+  String get githubProxySubtitle;
+
+  /// No description provided for @githubProxyEnabledLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable proxy'**
+  String get githubProxyEnabledLabel;
+
+  /// No description provided for @githubProxyUrlLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy URL'**
+  String get githubProxyUrlLabel;
+
+  /// No description provided for @githubProxyUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://gh-proxy.org'**
+  String get githubProxyUrlHint;
+
+  /// No description provided for @githubProxyReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get githubProxyReset;
+
+  /// No description provided for @githubProxyResetDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Proxy URL reset to default'**
+  String get githubProxyResetDone;
+
+  /// No description provided for @customizeSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize layout'**
+  String get customizeSettings;
 
   /// No description provided for @updateDownloading.
   ///

@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'inflight_temp_writes.dart';
+import 'player_settings.dart';
 import 'update_policy.dart';
 
 class UpdateInfo {
@@ -161,9 +162,10 @@ class UpdateCheckerService {
         supportedAbis: supportedAbis,
       );
       final currentVersion = await currentInstalledVersion();
-      final downloadUrl = selectedAsset?.downloadUrl ??
+      final rawDownloadUrl = selectedAsset?.downloadUrl ??
           data['html_url'] as String? ??
           '';
+      final downloadUrl = await PlayerSettings.githubProxyFor(rawDownloadUrl);
       if (selectedAsset != null) {
         debugPrint(
           '[UpdateChecker] Selected ${selectedAsset.name} for '
@@ -274,6 +276,10 @@ class ApkUpdater {
     _activeClient = null;
   }
 
+  static const int _chunkSize = 8 * 1024 * 1024;
+  static const int _maxConcurrentChunks = 4;
+  static const int _maxChunks = 8;
+
   static Future<File> _download(
     UpdateInfo info,
     void Function(int, int) onProgress,
@@ -287,14 +293,157 @@ class ApkUpdater {
     _activeClient = client;
     registerInFlightWrite(file.path);
     try {
-      final request = http.Request('GET', Uri.parse(info.downloadUrl));
-      final response = await client.send(request);
-      if (response.statusCode != 200) {
+      final total = await _probeTotal(client, info.downloadUrl);
+      if (total != null && total > 0) {
+        if (await _chunkedDownload(client, file, info.downloadUrl, total, onProgress)) {
+          return file;
+        }
+      }
+      await _singleStreamDownload(client, file, info.downloadUrl, onProgress);
+      return file;
+    } on _CancelledException {
+      rethrow;
+    } catch (e) {
+      if (_activeClient != client) throw const _CancelledException();
+      rethrow;
+    } finally {
+      unregisterInFlightWrite(file.path);
+      if (_activeClient == client) _activeClient = null;
+      client.close();
+    }
+  }
+
+  static Future<int?> _probeTotal(http.Client client, String url) async {
+    try {
+      final request = http.Request('GET', Uri.parse(url));
+      request.headers['Range'] = 'bytes=0-0';
+      final response = await client.send(request).timeout(const Duration(seconds: 30));
+      if (response.statusCode != 206) return null;
+      await response.stream.drain<void>();
+      final contentRange = response.headers['content-range'];
+      if (contentRange == null) return null;
+      final slash = contentRange.lastIndexOf('/');
+      return int.tryParse(slash < 0 ? '' : contentRange.substring(slash + 1));
+    } on TimeoutException {
+      return null;
+    } on http.ClientException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _partPath(File file, int index) => '${file.path}.part$index';
+  static String _chunkMetaPath(File file) => '${file.path}.part.meta';
+
+  static Future<void> _clearParts(File file) async {
+    final base = file.path;
+    await for (final entry in file.parent.list()) {
+      if (entry is File && entry.path.startsWith('$base.part')) {
+        try {
+          await entry.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  static Future<List<int>?> _readChunkMeta(File file, int total, int chunkCount) async {
+    final meta = File(_chunkMetaPath(file));
+    if (!await meta.exists()) return null;
+    try {
+      final saved = jsonDecode(await meta.readAsString());
+      if (saved['total'] != total || saved['chunks'] != chunkCount) return null;
+      final list = saved['progress'] as List<dynamic>?;
+      if (list == null || list.length != chunkCount) return null;
+      return list.map((e) => (e as num).toInt()).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _saveChunkMeta(
+    File file,
+    int total,
+    int chunkCount,
+    List<int> progress,
+  ) async {
+    final meta = File(_chunkMetaPath(file));
+    await meta.writeAsString(jsonEncode({
+      'total': total,
+      'chunks': chunkCount,
+      'progress': progress,
+    }));
+  }
+
+  static Future<bool> _chunkedDownload(
+    http.Client client,
+    File file,
+    String url,
+    int total,
+    void Function(int, int) onProgress,
+  ) async {
+    final chunkCount = (total / _chunkSize).ceil().clamp(1, _maxChunks).toInt();
+    final chunkSize = (total / chunkCount).ceil();
+    final lastSize = total - (chunkCount - 1) * chunkSize;
+    final sizes = List<int>.generate(
+      chunkCount,
+      (i) => i == chunkCount - 1 ? lastSize : chunkSize,
+    );
+
+    final savedProgress = await _readChunkMeta(file, total, chunkCount);
+    if (savedProgress == null) {
+      await _clearParts(file);
+    }
+    var progress = savedProgress ?? List<int>.filled(chunkCount, 0);
+
+    for (var i = 0; i < chunkCount; i++) {
+      final part = File(_partPath(file, i));
+      if (progress[i] < sizes[i]) {
+        progress[i] = 0;
+        try {
+          if (await part.exists()) await part.delete();
+        } catch (_) {}
+      } else {
+        final ok = await part.exists() && await part.length() == sizes[i];
+        if (!ok) {
+          progress[i] = 0;
+          try {
+            if (await part.exists()) await part.delete();
+          } catch (_) {}
+        }
+      }
+    }
+
+    final remaining = <int>[
+      for (var i = 0; i < chunkCount; i++)
+        if (progress[i] < sizes[i]) i,
+    ];
+
+    var lastReport = DateTime.now();
+    Future<void> reportProgress({required bool force}) async {
+      if (!force && DateTime.now().difference(lastReport).inMilliseconds < 200) {
+        return;
+      }
+      lastReport = DateTime.now();
+      var sum = 0;
+      for (var i = 0; i < chunkCount; i++) {
+        sum += progress[i];
+      }
+      onProgress(sum.clamp(0, total), total);
+    }
+
+    Future<void> downloadChunk(int i) async {
+      final start = i * chunkSize;
+      final end = (i == chunkCount - 1 ? total : (i + 1) * chunkSize) - 1;
+      final part = File(_partPath(file, i));
+      if (await part.exists()) await part.delete();
+      final request = http.Request('GET', Uri.parse(url));
+      request.headers['Range'] = 'bytes=$start-$end';
+      final response = await client.send(request).timeout(const Duration(seconds: 60));
+      if (response.statusCode != 206) {
         throw HttpException('HTTP ${response.statusCode}');
       }
-      final total = response.contentLength ?? 0;
-      var received = 0;
-      final sink = file.openWrite();
+      final sink = part.openWrite();
       try {
         await for (final chunk in response.stream) {
           if (_activeClient != client) {
@@ -302,18 +451,68 @@ class ApkUpdater {
             throw const _CancelledException();
           }
           sink.add(chunk);
-          received += chunk.length;
-          onProgress(received, total);
+          progress[i] += chunk.length;
+          await reportProgress(force: false);
         }
         await sink.flush();
       } finally {
         await sink.close();
       }
-      return file;
+      if (await part.length() != sizes[i]) {
+        throw HttpException('Short chunk ${i + 1}/$chunkCount');
+      }
+      progress[i] = sizes[i];
+      await _saveChunkMeta(file, total, chunkCount, progress);
+      await reportProgress(force: true);
+    }
+
+    while (remaining.isNotEmpty) {
+      final batch = remaining.take(_maxConcurrentChunks).toList();
+      remaining.removeRange(0, batch.length);
+      await Future.wait(batch.map(downloadChunk));
+    }
+
+    final merged = file.openWrite();
+    try {
+      for (var i = 0; i < chunkCount; i++) {
+        merged.add(await File(_partPath(file, i)).readAsBytes());
+      }
+      await merged.flush();
     } finally {
-      unregisterInFlightWrite(file.path);
-      if (_activeClient == client) _activeClient = null;
-      client.close();
+      await merged.close();
+    }
+    await _clearParts(file);
+    await reportProgress(force: true);
+    return true;
+  }
+
+  static Future<void> _singleStreamDownload(
+    http.Client client,
+    File file,
+    String url,
+    void Function(int, int) onProgress,
+  ) async {
+    final request = http.Request('GET', Uri.parse(url));
+    final response = await client.send(request);
+    if (response.statusCode != 200) {
+      throw HttpException('HTTP ${response.statusCode}');
+    }
+    final total = response.contentLength ?? 0;
+    var received = 0;
+    final sink = file.openWrite();
+    try {
+      await for (final chunk in response.stream) {
+        if (_activeClient != client) {
+          await sink.close();
+          throw const _CancelledException();
+        }
+        sink.add(chunk);
+        received += chunk.length;
+        onProgress(received, total);
+      }
+      await sink.flush();
+    } finally {
+      await sink.close();
     }
   }
 }

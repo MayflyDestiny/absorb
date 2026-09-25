@@ -4336,7 +4336,35 @@ class AppLocalizationsJa extends AppLocalizations {
   String get updateKindVersion => 'version';
 
   @override
-  String get downloadButton => 'Download';
+  String get downloadButton => 'Direct download';
+
+  @override
+  String get downloadInBrowser => 'Browser download';
+
+  @override
+  String get githubProxyTitle => 'GitHub Acceleration Proxy';
+
+  @override
+  String get githubProxySubtitle =>
+      'Route update downloads through a mirror for faster, more reliable downloads where GitHub is slow.';
+
+  @override
+  String get githubProxyEnabledLabel => 'Enable proxy';
+
+  @override
+  String get githubProxyUrlLabel => 'Proxy URL';
+
+  @override
+  String get githubProxyUrlHint => 'https://gh-proxy.org';
+
+  @override
+  String get githubProxyReset => 'Reset';
+
+  @override
+  String get githubProxyResetDone => 'Proxy URL reset to default';
+
+  @override
+  String get customizeSettings => 'Customize layout';
 
   @override
   String get updateDownloading => 'Downloading update...';

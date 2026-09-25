@@ -1270,6 +1270,24 @@ class PlayerSettings {
     await prefs.setBool('includePreReleases', value);
   }
 
+  // ── GitHub 加速代理 ──
+
+  static const defaultGithubProxyUrl = 'https://gh-proxy.org';
+
+  static Future<bool> getGithubProxyEnabled() => _get('githubProxyEnabled', false);
+  static Future<void> setGithubProxyEnabled(bool value) => _set('githubProxyEnabled', value, notify: true);
+
+  static Future<String> getGithubProxyUrl() => _get('githubProxyUrl', defaultGithubProxyUrl);
+  static Future<void> setGithubProxyUrl(String value) => _set('githubProxyUrl', value, notify: true);
+
+  static Future<String> githubProxyFor(String url) async {
+    if (!await getGithubProxyEnabled()) return url;
+    final proxy = (await getGithubProxyUrl()).trim();
+    if (proxy.isEmpty || url.isEmpty) return url;
+    final base = proxy.replaceFirst(RegExp(r'/+$'), '');
+    return '$base/$url';
+  }
+
   // ── Local server ──
 
   static Future<bool> getLocalServerEnabled() => _get('localServerEnabled', false);
@@ -1277,6 +1295,56 @@ class PlayerSettings {
 
   static Future<String> getLocalServerUrl() => _get('localServerUrl', '');
   static Future<void> setLocalServerUrl(String value) => _set('localServerUrl', value);
+
+  // ── Settings layout (order & visibility) ──
+
+  static const settingsSectionOrderKey = 'settingsSectionOrder';
+  static const settingsHiddenSectionsKey = 'settingsHiddenSections';
+
+  static const defaultSettingsSectionOrder = <String>[
+    'Playback',
+    'Appearance',
+    'Customize Stats',
+    'Absorbing Cards',
+    'Media Controls',
+    'Sleep Timer',
+    'Downloads & Storage',
+    'Library',
+    'Permissions',
+    'Issues & Support',
+    'Advanced',
+  ];
+
+  static Future<List<String>> getSettingsSectionOrder() async {
+    final raw = await _get(settingsSectionOrderKey, '');
+    if (raw.trim().isNotEmpty) {
+      final arr = raw
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (arr.isNotEmpty) return arr;
+    }
+    return List.of(defaultSettingsSectionOrder);
+  }
+
+  static Future<void> setSettingsSectionOrder(List<String> order) =>
+      _set(settingsSectionOrderKey, order.join(','), notify: true);
+
+  static Future<List<String>> getSettingsHiddenSections() async {
+    final raw = await _get(settingsHiddenSectionsKey, '');
+    if (raw.trim().isNotEmpty) {
+      return raw
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
+  }
+
+  static Future<void> setSettingsHiddenSections(List<String> hidden) =>
+      _set(settingsHiddenSectionsKey, hidden.join(','), notify: true);
 
   // ── Card button order ──
 

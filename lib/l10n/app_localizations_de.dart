@@ -4392,7 +4392,35 @@ class AppLocalizationsDe extends AppLocalizations {
   String get updateKindVersion => 'Version';
 
   @override
-  String get downloadButton => 'Herunterladen';
+  String get downloadButton => 'Direkt herunterladen';
+
+  @override
+  String get downloadInBrowser => 'Im Browser herunterladen';
+
+  @override
+  String get githubProxyTitle => 'GitHub-Beschleunigungsproxy';
+
+  @override
+  String get githubProxySubtitle =>
+      'Leitet Update-Downloads über einen Mirror, um Downloads in Regionen mit langsamem GitHub zu beschleunigen.';
+
+  @override
+  String get githubProxyEnabledLabel => 'Proxy aktivieren';
+
+  @override
+  String get githubProxyUrlLabel => 'Proxy-URL';
+
+  @override
+  String get githubProxyUrlHint => 'https://gh-proxy.org';
+
+  @override
+  String get githubProxyReset => 'Zurücksetzen';
+
+  @override
+  String get githubProxyResetDone => 'Proxy-URL auf Standard zurückgesetzt';
+
+  @override
+  String get customizeSettings => 'Layout anpassen';
 
   @override
   String get updateDownloading => 'Update wird heruntergeladen...';

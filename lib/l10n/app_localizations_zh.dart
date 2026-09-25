@@ -4184,7 +4184,34 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateKindVersion => '版本';
 
   @override
-  String get downloadButton => '下载';
+  String get downloadButton => '直接下载';
+
+  @override
+  String get downloadInBrowser => '浏览器下载';
+
+  @override
+  String get githubProxyTitle => 'GitHub 加速代理';
+
+  @override
+  String get githubProxySubtitle => '将更新下载通过镜像代理转发，在 GitHub 访问缓慢的地区可明显提速';
+
+  @override
+  String get githubProxyEnabledLabel => '启用代理';
+
+  @override
+  String get githubProxyUrlLabel => '代理地址';
+
+  @override
+  String get githubProxyUrlHint => 'https://gh-proxy.org';
+
+  @override
+  String get githubProxyReset => '重置';
+
+  @override
+  String get githubProxyResetDone => '代理地址已重置为默认';
+
+  @override
+  String get customizeSettings => '自定义布局';
 
   @override
   String get updateDownloading => '正在下载更新...';
