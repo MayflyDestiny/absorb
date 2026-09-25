@@ -2238,6 +2238,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get sectionPermissions => 'Permissions';
 
   @override
+  String get sectionPermissionsSubtitle =>
+      'Notification and battery optimization permissions';
+
+  @override
   String get notifications => 'Notifications';
 
   @override
@@ -2259,6 +2263,10 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get sectionIssuesAndSupport => 'Issues & Support';
+
+  @override
+  String get sectionIssuesAndSupportSubtitle =>
+      'Usage tips, bug reports, and logging';
 
   @override
   String get bugsAndFeatureRequests => 'Bugs & Feature Requests';
@@ -2321,7 +2329,7 @@ class AppLocalizationsEs extends AppLocalizations {
       'This can\'t be undone. Send them first if you might want them.';
 
   @override
-  String get sectionAdvanced => 'Advanced';
+  String get sectionAdvanced => 'Advanced settings';
 
   @override
   String get localServer => 'Local server';
@@ -7156,6 +7164,53 @@ class AppLocalizationsEs extends AppLocalizations {
   String get authUnexpectedServerResponse => 'Unexpected server response';
 
   @override
+  String authServerError(int status) {
+    return 'The server returned an unexpected response (HTTP $status)';
+  }
+
+  @override
+  String get authLoginBlocked =>
+      'Login request blocked by a firewall (WAF). Check your server\'s firewall configuration.';
+
+  @override
+  String get authRateLimited => 'Too many login attempts. Try again shortly.';
+
+  @override
+  String get authServerTemporarilyDown =>
+      'Server temporarily unavailable. Try again later.';
+
+  @override
+  String get authLoginEndpointMissing =>
+      'No login endpoint at this path - check the URL.';
+
+  @override
+  String get authTimeout => 'Connection timed out - server response too slow.';
+
+  @override
+  String get authDnsError =>
+      'Could not resolve the server domain (DNS). Check the address.';
+
+  @override
+  String get authTlsError =>
+      'TLS handshake failed. Self-signed certs: enable Trust all certificates.';
+
+  @override
+  String get authConnectionRefused =>
+      'Connection refused - nothing is listening there.';
+
+  @override
+  String get authConnectionReset =>
+      'Connection reset - a proxy or firewall is blocking the app.';
+
+  @override
+  String get authHttp2Error =>
+      'Server closed the connection early - proxy may only support HTTP/2.';
+
+  @override
+  String get authNetworkError =>
+      'Network request failed. Check your connection and retry.';
+
+  @override
   String get authSsoUnexpectedResponse => 'SSO returned an unexpected response';
 
   @override
@@ -7163,6 +7218,14 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get authSwitchedToRemoteServer => 'Switched to remote server';
+
+  @override
+  String get offlineReasonNetworkLost =>
+      'Network connection lost - switched to offline mode';
+
+  @override
+  String get offlineReasonServerUnreachable =>
+      'Cannot reach server - switched to offline mode';
 
   @override
   String get lpDeletedFinishedDownload => 'Deleted finished download';

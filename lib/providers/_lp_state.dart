@@ -106,6 +106,7 @@ mixin _StateMixin on ChangeNotifier {
   bool _deviceHasConnectivity = true;
   bool _isReconnecting = false;
   Timer? _serverPingTimer;
+  Duration _offlinePingInterval = const Duration(seconds: 20);
   Timer? _healthCheckTimer;
   int _healthCheckMisses = 0;
   int _connectivityPingMisses = 0;

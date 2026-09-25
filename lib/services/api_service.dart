@@ -1,14 +1,63 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'auth_tokens.dart';
+import 'app_log.dart';
 import 'json_file_cache.dart';
 import '../models/auth_session.dart';
 import '../utils/server_url.dart';
+
+/// Why a login request failed, classified from the HTTP status code / response
+/// / exception so callers can show a precise, localized message instead of a
+/// single generic "check your server address and credentials".
+enum ApiLoginFailure {
+  /// Wrong username/password (HTTP 401).
+  unauthorized,
+
+  /// Login was blocked by a WAF / bot challenge such as Cloudflare (403).
+  blocked,
+
+  /// Request throttled (429).
+  rateLimited,
+
+  /// Server or in-between proxy returned 5xx.
+  temporarilyDown,
+
+  /// No login endpoint at that path (404/405) - proxy likely not forwarding it.
+  endpointMissing,
+
+  /// Malformed request (400/422).
+  badRequest,
+
+  /// Some other non-200 HTTP status.
+  otherHttp,
+
+  /// Request timed out.
+  timeout,
+
+  /// DNS lookup failed.
+  dns,
+
+  /// TLS/SSL handshake or certificate failure.
+  tls,
+
+  /// Nothing is listening at that address/port.
+  connectionRefused,
+
+  /// Connection reset / terminated (proxy or firewall interference).
+  connectionReset,
+
+  /// Connection closed early / HTTP/2 or protocol mismatch.
+  http2,
+
+  /// Any other socket/parse-level failure.
+  otherNetwork,
+}
 
 /// Outcome of a local-session upsert. [serverTooOld] flags a 404/501 (the
 /// server predates /api/session/local) so the caller can fall back to the
@@ -403,7 +452,7 @@ class ApiService {
       return send(shared)
           .timeout(timeout)
           .then((r) {
-            lastServerAnswerAt = DateTime.now();
+            _noteServerAnswer(r.statusCode);
             return r;
           });
     }
@@ -422,17 +471,36 @@ class ApiService {
         )
         .whenComplete(client.close)
         .then((r) {
-          lastServerAnswerAt = DateTime.now();
+          _noteServerAnswer(r.statusCode);
           return r;
         });
   }
 
-  /// Loggable token identity: length plus the signature tail, enough to tell
-  /// token A from token B across a log without exposing the credential.
+  /// Record that the server answered a real request, for weak-link offline
+  /// detection. Any status below 500 proves the origin answered (4xx in
+  /// particular comes from the real server behind any proxy); a 5xx is usually
+  /// emitted by the proxy/origin itself while it is down (502/522/530 from
+  /// Cloudflare, 5xx from a restarting ABS), so it must NOT keep the library
+  /// "online" - otherwise a sustained outage with 5xx responses would neuter
+  /// the offline flip and the app would just keep retrying forever.
+  static void _noteServerAnswer(int statusCode) {
+    if (statusCode < 500) lastServerAnswerAt = DateTime.now();
+  }
+
+  /// Loggable token identity: length plus a short digest, enough to tell
+  /// token A from token B across a log without exposing any credential bytes.
   static String tokenFp(String? token) {
     if (token == null || token.isEmpty) return 'none';
-    final tail = token.length <= 8 ? token : token.substring(token.length - 8);
-    return '${token.length}:$tail';
+    final digest = _sha256Fp(token);
+    return '${token.length}:$digest';
+  }
+
+  /// First 8 hex chars of the token's SHA-256 — no reversible credential
+  /// material reaches the log.
+  static String _sha256Fp(String s) {
+    final bytes = List<int>.from(s.codeUnits);
+    final hash = sha256.convert(bytes).toString();
+    return hash.substring(0, 8);
   }
 
   Future<bool> _adoptPersistedTokens() async {
@@ -925,8 +993,46 @@ class ApiService {
     return response;
   }
 
-  /// Login and return the full response JSON (contains user, token, etc.) and HTTP status code.
-  static Future<(Map<String, dynamic>?, int)> login({
+  /// Classify a non-200 login HTTP response into a precise failure reason.
+  static ApiLoginFailure _classifyHttpLoginFailure(http.Response response) {
+    final statusCode = response.statusCode;
+    if (statusCode == 401) return ApiLoginFailure.unauthorized;
+    if (statusCode == 403) return ApiLoginFailure.blocked;
+    if (statusCode == 429) return ApiLoginFailure.rateLimited;
+    if (statusCode == 404 || statusCode == 405) return ApiLoginFailure.endpointMissing;
+    if (statusCode == 400 || statusCode == 422) return ApiLoginFailure.badRequest;
+    if (statusCode >= 500) return ApiLoginFailure.temporarilyDown;
+    return ApiLoginFailure.otherHttp;
+  }
+
+  /// Classify a network-level login exception (socket, TLS, timeout). The http
+  /// package flattens socket and TLS errors into ClientException, so we match
+  /// on message text the same way [_describePingError] does.
+  static ApiLoginFailure _classifyNetworkFailure(Object error) {
+    if (error is TimeoutException) return ApiLoginFailure.timeout;
+    final lower = error.toString().toLowerCase();
+    if (lower.contains('failed host lookup') || lower.contains('nodename nor servname')) {
+      return ApiLoginFailure.dns;
+    }
+    if (lower.contains('handshake') || lower.contains('certificate') || lower.contains('tls')) {
+      return ApiLoginFailure.tls;
+    }
+    if (lower.contains('connection refused')) return ApiLoginFailure.connectionRefused;
+    if (lower.contains('connection closed before full header') ||
+        lower.contains('http/2') ||
+        lower.contains('protocol error')) {
+      return ApiLoginFailure.http2;
+    }
+    if (lower.contains('connection reset') || lower.contains('connection terminated')) {
+      return ApiLoginFailure.connectionReset;
+    }
+    return ApiLoginFailure.otherNetwork;
+  }
+
+  /// Login and return the full response JSON (contains user, token, etc.), the
+  /// HTTP status code, and a classified [ApiLoginFailure] so callers can show
+  /// precise, localized error messages.
+  static Future<({Map<String, dynamic>? data, int statusCode, ApiLoginFailure? failure})> login({
     required String serverUrl,
     required String username,
     required String password,
@@ -949,11 +1055,19 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        return (jsonDecode(response.body) as Map<String, dynamic>, 200);
+        return (
+          data: jsonDecode(response.body) as Map<String, dynamic>,
+          statusCode: 200,
+          failure: null,
+        );
       }
-      return (null, response.statusCode);
+      return (
+        data: null,
+        statusCode: response.statusCode,
+        failure: _classifyHttpLoginFailure(response),
+      );
     } catch (e) {
-      return (null, 0);
+      return (data: null, statusCode: 0, failure: _classifyNetworkFailure(e));
     }
   }
 
@@ -961,7 +1075,7 @@ class ApiService {
   /// HTTP status code. API keys are sent as a Bearer token, same as JWT/legacy
   /// tokens, so successful validation lets us reuse the legacy-token path
   /// (no refresh, persists like any other session).
-  static Future<(Map<String, dynamic>?, int)> loginWithApiKey({
+  static Future<({Map<String, dynamic>? data, int statusCode, ApiLoginFailure? failure})> loginWithApiKey({
     required String serverUrl,
     required String apiKey,
     Map<String, String> customHeaders = const {},
@@ -976,11 +1090,19 @@ class ApiService {
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        return (jsonDecode(response.body) as Map<String, dynamic>, 200);
+        return (
+          data: jsonDecode(response.body) as Map<String, dynamic>,
+          statusCode: 200,
+          failure: null,
+        );
       }
-      return (null, response.statusCode);
-    } catch (_) {
-      return (null, 0);
+      return (
+        data: null,
+        statusCode: response.statusCode,
+        failure: _classifyHttpLoginFailure(response),
+      );
+    } catch (e) {
+      return (data: null, statusCode: 0, failure: _classifyNetworkFailure(e));
     }
   }
 
@@ -2090,11 +2212,18 @@ class ApiService {
         debugPrint('[ABS] Audio tracks: ${tracks?.length ?? 0}');
         if (tracks != null && tracks.isNotEmpty) {
           final firstTrack = tracks.first as Map<String, dynamic>;
-          debugPrint('[ABS] First track contentUrl: ${firstTrack['contentUrl']}');
+          // contentUrl paths can carry the session-id credential; keep it
+          // verbose-only (compiled out of release logs).
+          verboseLog('[ABS] First track contentUrl: ${firstTrack['contentUrl']}');
         }
         return data;
       } else {
-        debugPrint('[ABS] Play session failed: ${response.body}');
+        // Body can carry server/pod details; keep it verbose-only (compiled out
+        // of release) and truncated so user/device data never reaches shipped logs.
+        final failedBody = response.body;
+        verboseLog(
+          '[ABS] Play session failed: ${failedBody.length > 500 ? failedBody.substring(0, 500) : failedBody}',
+        );
       }
     } catch (e) {
       debugPrint('[ABS] Play session error: $e');
@@ -2472,7 +2601,7 @@ class ApiService {
       final resp = await _authPatch(url,
         body: body,
         timeout: const Duration(seconds: 10));
-      debugPrint('[API] updateProgress response: ${resp.statusCode} ${resp.body}');
+      debugPrint('[API] updateProgress response: ${resp.statusCode}');
       noteLocalProgressPush(itemId);
     } catch (e) {
       debugPrint('[API] updateProgress error: $e');
@@ -2507,7 +2636,7 @@ class ApiService {
         headers: _headers,
         body: body,
       ).timeout(const Duration(seconds: 10));
-      debugPrint('[API] updateEbookProgress response: ${resp.statusCode} ${resp.body}');
+      debugPrint('[API] updateEbookProgress response: ${resp.statusCode}');
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
       debugPrint('[API] updateEbookProgress error: $e');

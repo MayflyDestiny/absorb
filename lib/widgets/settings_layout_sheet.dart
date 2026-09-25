@@ -80,6 +80,10 @@ IconData settingsSectionIcon(String id) {
       return Icons.support_agent_rounded;
     case 'Advanced':
       return Icons.tune_rounded;
+    case 'Backup & Sync':
+      return Icons.cloud_sync_rounded;
+    case 'All Bookmarks':
+      return Icons.bookmarks_rounded;
     default:
       return Icons.tune_rounded;
   }
@@ -109,6 +113,10 @@ String settingsSectionTitle(String id, AppLocalizations l) {
       return l.sectionIssuesAndSupport;
     case 'Advanced':
       return l.sectionAdvanced;
+    case 'Backup & Sync':
+      return l.backupAndSync;
+    case 'All Bookmarks':
+      return l.allBookmarks;
     default:
       return id;
   }

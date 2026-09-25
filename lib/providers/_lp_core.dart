@@ -218,11 +218,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           }
         }
         if (name != null && name.isNotEmpty) {
-          debugPrint('[AutoDL] Resolved $id -> $kind "$name"');
+          basicLog('[AutoDL] Resolved $id -> $kind "$name"');
           _rememberRollingDownloadSource(id, name: name, kind: kind);
           resolvedAny = true;
         } else {
-          debugPrint(
+          verboseLog(
               '[AutoDL] Unresolved $id (stored kind: ${_rollingDownloadSourceNames[id]?['kind'] ?? 'none'}) - no playlist/collection/series/item answered');
         }
       }
@@ -407,7 +407,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
   }
 
-  void setNetworkOffline(bool offline) {
+  void setNetworkOffline(bool offline, {String? reason}) {
     final wasOffline = _networkOffline;
     if (!offline) _connectivityPingMisses = 0;
     _networkOffline = offline;
@@ -424,6 +424,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (_deviceHasConnectivity && !_manualOffline) {
         _startServerPingTimer();
       }
+      _toastOfflineReason(reason);
     } else if (!offline && wasOffline && !_manualOffline) {
       _stopServerPingTimer();
       _startHealthCheckTimer();
@@ -454,6 +455,26 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       AndroidAutoService().refresh(force: true);
       CarPlayService().refreshTemplates();
     }
+  }
+
+  /// Show a short toast explaining why the app dropped offline, so a silent
+  /// flip into the offline view doesn't look like a crash. [reason] is
+  /// 'network' when the device lost connectivity entirely and anything else
+  /// when the server stopped answering.
+  void _toastOfflineReason(String? reason) {
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return;
+    final l = AppLocalizations.of(navigator.context);
+    final message = reason == 'network'
+        ? (l?.offlineReasonNetworkLost ??
+            'Network connection lost - switched to offline mode')
+        : (l?.offlineReasonServerUnreachable ??
+            'Cannot reach server - switched to offline mode');
+    showNavigatorOverlayToast(
+      navigator,
+      message,
+      icon: Icons.cloud_off_outlined,
+    );
   }
 
   void _buildOfflineSections() {
@@ -1160,7 +1181,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (!_deviceHasConnectivity) {
         _stopServerPingTimer();
         _stopLocalProbeTimer();
-        setNetworkOffline(true);
+        setNetworkOffline(true, reason: 'network');
       } else if (_networkOffline && !_manualOffline) {
         _auth?.checkLocalServer().then((_) {
           if (_auth?.serverReachable == true || _auth?.useLocalServer == true) {
@@ -1189,7 +1210,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           if (latest.contains(ConnectivityResult.none)) {
             _stopServerPingTimer();
             _stopLocalProbeTimer();
-            setNetworkOffline(true);
+            setNetworkOffline(true, reason: 'network');
           }
           // If connectivity actually returned during the window, the
           // "connected" listen() branch below runs the standard recovery
@@ -1258,41 +1279,75 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     return remoteUrl;
   }
 
+  // Offline-recovery probing: starts fast (every 20s) so a drop that comes right
+  // back is caught quickly, then backs off by doubling the interval (cap 60s)
+  // while the link stays down — a flaky network that never returns otherwise
+  // wakes the radio 3×/min forever. Any reachable answer (or going online
+  // elsewhere) resets the cadence to 20s immediately.
+  static const _offlinePingBase = Duration(seconds: 20);
+  static const _offlinePingMax = Duration(seconds: 60);
+
   void _startServerPingTimer() {
     _serverPingTimer?.cancel();
     if (_isBackgrounded || _readerQuiet || PlayerSettings.einkMode) return;
     final serverUrl = _auth?.serverUrl;
     if (serverUrl == null) return;
     debugPrint('[Library] Starting server ping timer');
-    _serverPingTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
-      if (!_networkOffline || _manualOffline) {
-        _stopServerPingTimer();
-        return;
-      }
-      final auth = _auth;
-      if (auth != null && auth.localServerEnabled && auth.localServerUrl.isNotEmpty) {
-        final localReachable = await ApiService.pingServer(
-          auth.localServerUrl,
-          customHeaders: auth.customHeaders,
-        ).timeout(const Duration(seconds: 6), onTimeout: () => false);
-        if (localReachable) {
-          debugPrint('[Library] Local server ping succeeded — going online');
-          await auth.checkLocalServer();
-          _stopServerPingTimer();
-          setNetworkOffline(false);
-          return;
-        }
-      }
-      final reachable = await ApiService.pingServer(
-        serverUrl,
-        customHeaders: _auth?.customHeaders ?? {},
-      );
-      if (reachable) {
-        debugPrint('[Library] Server ping succeeded — going online');
+    _offlinePingInterval = _offlinePingBase;
+    _scheduleServerPing();
+  }
+
+  void _scheduleServerPing() {
+    if (_serverPingTimer != null) return;
+    if (_isBackgrounded || _readerQuiet || PlayerSettings.einkMode) return;
+    _serverPingTimer = Timer(_offlinePingInterval, _runServerPing);
+  }
+
+  Future<void> _runServerPing() async {
+    _serverPingTimer = null;
+    if (!_networkOffline || _manualOffline) {
+      _stopServerPingTimer();
+      return;
+    }
+    final auth = _auth;
+    if (auth != null && auth.localServerEnabled && auth.localServerUrl.isNotEmpty) {
+      final localReachable = await ApiService.pingServer(
+        auth.localServerUrl,
+        customHeaders: auth.customHeaders,
+      ).timeout(const Duration(seconds: 6), onTimeout: () => false);
+      if (localReachable) {
+        verboseLog('[Library] Local server ping succeeded — going online');
+        await auth.checkLocalServer();
+        _offlinePingInterval = _offlinePingBase;
         _stopServerPingTimer();
         setNetworkOffline(false);
+        return;
       }
-    });
+    }
+    final serverUrl = auth?.serverUrl;
+    if (serverUrl == null) {
+      _scheduleServerPing();
+      return;
+    }
+    final reachable = await ApiService.pingServer(
+      serverUrl,
+      customHeaders: auth?.customHeaders ?? {},
+    );
+    if (reachable) {
+      verboseLog('[Library] Server ping succeeded — going online');
+      _offlinePingInterval = _offlinePingBase;
+      _stopServerPingTimer();
+      setNetworkOffline(false);
+    } else {
+      // Link still down: halve the polling frequency (20s → 40s → 60s) while
+      // keeping a presence check alive, without waking the radio every 20s
+      // forever.
+      final next = _offlinePingInterval * 2;
+      _offlinePingInterval = next > _offlinePingMax ? _offlinePingMax : next;
+      verboseLog('[Library] Server ping failed — backoff to '
+          '${_offlinePingInterval.inSeconds}s');
+      _scheduleServerPing();
+    }
   }
 
   void _stopServerPingTimer() {
@@ -1380,20 +1435,20 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       } else {
         _localProbeFailures++;
         if (_localProbeFailures >= _localProbeFailuresToFlip) {
-          debugPrint('[Library] Local probe failed ${_localProbeFailures}x — switching to remote (${probe.detail})');
+          verboseLog('[Library] Local probe failed ${_localProbeFailures}x — switching to remote (${probe.detail})');
           auth.clearLocalOverride();
           _localProbeFailures = 0;
         } else {
-          debugPrint('[Library] Local probe miss $_localProbeFailures/$_localProbeFailuresToFlip (${probe.detail})');
+          verboseLog('[Library] Local probe miss $_localProbeFailures/$_localProbeFailuresToFlip (${probe.detail})');
         }
       }
     } else if (reachable) {
-      debugPrint('[Library] Local probe succeeded — switching to local');
+      verboseLog('[Library] Local probe succeeded — switching to local');
       await auth.checkLocalServer();
       _localLastReachableAt = DateTime.now();
       _localProbeFailures = 0;
     } else {
-      debugPrint('[Library] Local probe miss while on remote (${probe.detail})');
+      verboseLog('[Library] Local probe miss while on remote (${probe.detail})');
     }
   }
 
@@ -1407,7 +1462,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   void _startHealthCheckTimer() {
     _healthCheckTimer?.cancel();
     if (_isBackgrounded || _readerQuiet || PlayerSettings.einkMode) return;
-    debugPrint('[Library] Health check timer started (60s ping while online)');
+    verboseLog('[Library] Health check timer started (60s ping while online)');
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
       if (_networkOffline || _manualOffline || !_deviceHasConnectivity) return;
       if ((_auth?.activeServerUrl ?? _auth?.serverUrl ?? '').isEmpty) return;
@@ -1427,7 +1482,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         if (_healthCheckMisses >= 2) {
           debugPrint('[Library] Health check failed twice — server unreachable, going offline');
           _healthCheckMisses = 0;
-          setNetworkOffline(true);
+          setNetworkOffline(true, reason: 'server');
         }
       } else {
         _healthCheckMisses = 0;
@@ -1710,10 +1765,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       return;
     }
     debugPrint('[Library] Network error — going offline');
-    _networkOffline = true;
-    _buildOfflineSections();
-    notifyListeners();
-    if (_deviceHasConnectivity && !_manualOffline) _startServerPingTimer();
+    setNetworkOffline(true, reason: 'server');
   }
 
   // ── Socket event handlers ──
@@ -2872,7 +2924,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     if (newEpisodes.isNotEmpty) {
-      debugPrint('[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
+      verboseLog('[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
       int queued = 0;
 
       // Per-show choice of where the new episode lands in the absorbing queue.
@@ -2990,7 +3042,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
               freshEpIds,
             ));
           } else {
-            debugPrint('[Subscription] $itemId download deferred - leaving '
+            verboseLog('[Subscription] $itemId download deferred - leaving '
                 '${freshEpIds.length} episode(s) unseen so the next check retries');
           }
         }
@@ -3340,7 +3392,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             activeSourceEnabled: _rollingDownloadSeries.contains(activeId),
           );
       if (queueOwnsWindow) {
-        debugPrint(
+        verboseLog(
             '[QueueDL] ${source.kind} ${source.id}: active queue already covers this window');
         continue;
       }
@@ -3350,7 +3402,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         keyOf: self._playlistItemKey,
       );
       if (window.isEmpty) continue;
-      debugPrint(
+      verboseLog(
           '[QueueDL] ${source.kind} ${source.id}: ${source.items.length} items, window=${window.length} from $playingKey');
       await _downloadQueueWindow(
         items: window,
@@ -3462,11 +3514,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final planGeneration = ++_queueDownloadPlanGeneration;
       final api = _api;
       if (api == null) {
-        debugPrint('[QueueDL] stop at entry: no api (key=$playingKey)');
+        verboseLog('[QueueDL] stop at entry: no api (key=$playingKey)');
         return;
       }
       if (isOffline) {
-        debugPrint('[QueueDL] stop at entry: offline (key=$playingKey)');
+        verboseLog('[QueueDL] stop at entry: offline (key=$playingKey)');
         return;
       }
       final accountGeneration = self._accountLoadGeneration;
@@ -3503,11 +3555,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       bool stop(String stage) {
         final reason = staleReason();
         if (reason == null) return false;
-        debugPrint('[QueueDL] stop at $stage: $reason (key=$playingKey)');
+        verboseLog('[QueueDL] stop at $stage: $reason (key=$playingKey)');
         return true;
       }
 
-      debugPrint('[QueueDL] check start key=$playingKey');
+      verboseLog('[QueueDL] check start key=$playingKey');
       if (stop('start')) return;
       final isPodcastKey = playingKey.length > 36;
       final bookMode = await PlayerSettings.getBookQueueMode();
@@ -3518,7 +3570,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (stop('read merge setting')) return;
       final queueMode = isPodcastKey ? podcastMode : bookMode;
       if (queueMode == 'off') {
-        debugPrint(
+        verboseLog(
             '[QueueDL] stop: queue mode is off (isPodcastKey=$isPodcastKey book=$bookMode podcast=$podcastMode)');
         return;
       }
@@ -3528,7 +3580,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
               ? await PlayerSettings.getQueueCollectionId()
               : null;
       if (stop('read queue source')) return;
-      debugPrint(
+      verboseLog(
           '[QueueDL] mode=$queueMode sourceId=$queueSourceId merged=$merged');
 
       final autoDownloadSourceId =
@@ -3544,14 +3596,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             _rollingDownloadSeries.contains(autoDownloadSourceId),
       );
       if (!enabled) {
-        debugPrint(
+        verboseLog(
             '[QueueDL] stop: auto-download disabled (mode=$queueMode global=$globalAutoDownload autoSourceId=$autoDownloadSourceId perSource=${autoDownloadSourceId != null && _rollingDownloadSeries.contains(autoDownloadSourceId)})');
         return;
       }
       if (stop('resolve enabled')) return;
       final count = await PlayerSettings.getRollingDownloadCount();
       if (count <= 0) {
-        debugPrint('[QueueDL] stop: keep-next count is $count');
+        verboseLog('[QueueDL] stop: keep-next count is $count');
         return;
       }
       if (stop('read keep-next count')) return;
@@ -3567,7 +3619,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         final connectivity = await Connectivity().checkConnectivity();
         if (stop('check connectivity')) return;
         if (!connectivity.contains(ConnectivityResult.wifi)) {
-          debugPrint(
+          verboseLog(
               '[QueueDL] stop: wifi-only downloads on, not on wifi ($connectivity)');
           return;
         }
@@ -3632,12 +3684,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         isStale: isStale,
       );
       if (items.isEmpty) {
-        debugPrint(
+        verboseLog(
             '[QueueDL] stop: queue tail is empty (mode=$queueMode sourceId=$queueSourceId key=$playingKey) - the window starts at the playing item, so this means it was not found in the queue');
         return;
       }
       if (!await settingsStillMatch()) {
-        debugPrint(
+        verboseLog(
             '[QueueDL] stop: settings changed while planning (${items.length} items found)');
         return;
       }
@@ -3688,16 +3740,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         return downloads.isDownloaded(key) || downloads.isDownloading(key);
       },
     );
-    debugPrint(
+    verboseLog(
         '[QueueDL] plan ($logLabel): ${items.length} in window, keep-next=$count, ${pendingItems.length} need downloading -> ${pendingItems.map(keyOf).join(', ')}');
     if (pendingItems.isEmpty) {
-      debugPrint(
+      verboseLog(
           '[QueueDL] nothing to do ($logLabel) - the next $count are already downloaded or finished');
     }
 
     for (final item in pendingItems) {
       if (isStale()) {
-        debugPrint('[QueueDL] stop during download loop ($logLabel)');
+        verboseLog('[QueueDL] stop during download loop ($logLabel)');
         return;
       }
       final libraryItemId = item['libraryItemId'] as String? ?? '';
@@ -3769,7 +3821,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> _catchUpQueueAutoDownloads() async {
     final itemId = AudioPlayerService().currentItemId;
     if (itemId == null) {
-      debugPrint(
+      verboseLog(
           '[QueueDL] stop: nothing is playing, so there is no queue position to download from');
       _queueDownloadPlanGeneration++;
       return;

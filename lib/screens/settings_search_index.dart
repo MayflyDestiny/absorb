@@ -123,21 +123,19 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySkipBack, const []),
     SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySkipForward, const []),
 
-    // ── Permissions ──
-    SettingSearchEntry('Permissions', l.sectionPermissions, l.notifications, [l.notificationsSubtitle]),
+    // ── Permissions (inside Advanced sheet) ──
+    SettingSearchEntry('Advanced', l.sectionPermissions, l.notifications, [l.notificationsSubtitle]),
     if (Platform.isAndroid) ...[
-      SettingSearchEntry('Permissions', l.sectionPermissions, l.settingsEpisodeNotifs, [l.settingsEpisodeNotifsDesc]),
-      SettingSearchEntry('Permissions', l.sectionPermissions, l.unrestrictedBattery, [l.unrestrictedBatterySubtitle]),
+      SettingSearchEntry('Advanced', l.sectionPermissions, l.settingsEpisodeNotifs, [l.settingsEpisodeNotifsDesc]),
+      SettingSearchEntry('Advanced', l.sectionPermissions, l.unrestrictedBattery, [l.unrestrictedBatterySubtitle]),
     ],
 
-    // ── Issues & Support ──
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.showTipsAgain, [l.showTipsAgainSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.joinDiscord, [l.joinDiscordSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.contact, [l.contactSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.sendLogs, [l.sendLogsSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.clearLogs, const []),
+    // ── Issues & Support (inside Advanced sheet) ──
+    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.showTipsAgain, [l.showTipsAgainSubtitle]),
+    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
+    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
+    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.sendLogs, [l.sendLogsSubtitle]),
+    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.clearLogs, const []),
 
     // ── Advanced ──
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.navHoldSettingTitle, [l.navHoldSettingSubtitle]),

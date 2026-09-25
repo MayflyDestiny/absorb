@@ -156,7 +156,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginServerHint => 'my.server.com';
 
   @override
-  String get loginServerHelper => '也支持 IP:端口 格式（例如 192.168.1.5:13378）';
+  String get loginServerHelper =>
+      'IP 默认端口 13378；自定义端口请直接在地址后加 :端口（如 192.168.1.5:3000）';
 
   @override
   String get loginCouldNotReachServer => '无法连接到服务器';
@@ -2157,6 +2158,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sectionPermissions => '权限';
 
   @override
+  String get sectionPermissionsSubtitle => '通知与电池优化权限';
+
+  @override
   String get notifications => '通知';
 
   @override
@@ -2176,6 +2180,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sectionIssuesAndSupport => '问题与支持';
+
+  @override
+  String get sectionIssuesAndSupportSubtitle => '使用提示、问题反馈与日志';
 
   @override
   String get bugsAndFeatureRequests => '错误报告与功能请求';
@@ -2234,7 +2241,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get clearLogsContent => '此操作无法撤销。如果之后可能需要，请先发送日志。';
 
   @override
-  String get sectionAdvanced => '高级';
+  String get sectionAdvanced => '高级设置';
 
   @override
   String get localServer => '本地服务器';
@@ -6960,6 +6967,44 @@ class AppLocalizationsZh extends AppLocalizations {
   String get authUnexpectedServerResponse => '服务器返回了意外响应';
 
   @override
+  String authServerError(int status) {
+    return '服务器返回意外响应（HTTP $status）';
+  }
+
+  @override
+  String get authLoginBlocked => '登录请求被防火墙（WAF）拦截，请检查您服务器的防火墙配置。';
+
+  @override
+  String get authRateLimited => '登录请求过于频繁被限流，请稍后重试。';
+
+  @override
+  String get authServerTemporarilyDown => '服务器暂时不可用，请稍后重试。';
+
+  @override
+  String get authLoginEndpointMissing => '该路径没有登录接口，请检查 URL。';
+
+  @override
+  String get authTimeout => '连接超时：服务器响应过慢。';
+
+  @override
+  String get authDnsError => '无法解析服务器域名（DNS），请检查地址。';
+
+  @override
+  String get authTlsError => 'TLS 握手失败。自签名证书请开启「信任所有证书」，否则可能被代理拦截。';
+
+  @override
+  String get authConnectionRefused => '连接被拒绝：该地址或端口没有服务在监听。';
+
+  @override
+  String get authConnectionReset => '连接被重置：通常是代理或防火墙拦截了 App。';
+
+  @override
+  String get authHttp2Error => '服务器提前关闭连接，代理可能只支持 HTTP/2。';
+
+  @override
+  String get authNetworkError => '网络请求失败，请检查网络后重试。';
+
+  @override
   String get authSsoUnexpectedResponse => 'SSO 返回了意外响应';
 
   @override
@@ -6967,6 +7012,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get authSwitchedToRemoteServer => '已切换到远程服务器';
+
+  @override
+  String get offlineReasonNetworkLost => '网络连接已断开，已切换到离线模式';
+
+  @override
+  String get offlineReasonServerUnreachable => '无法连接服务器，已切换到离线模式';
 
   @override
   String get lpDeletedFinishedDownload => '已删除已完成的下载';

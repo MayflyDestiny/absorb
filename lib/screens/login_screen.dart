@@ -225,27 +225,20 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
-    // IP literals use the ABS LAN convention: HTTP + port 13378 unless the
-    // user typed an explicit port (or hand-picked the protocol). Explicit
-    // ports and domain records keep what was typed (https/http stay on their
-    // implicit 443/80).
+    // Bare IP literals use the ABS LAN convention: HTTP + port 13378. The port
+    // is NOT written back into the field (so it stays freely editable) — it is
+    // added implicitly when the effective URL is built (see _buildServerUrl).
+    // Domains keep the scheme's implicit port (https 443 / http 80); an
+    // explicit ":port" typed into the field always wins.
     final hostPart = text.split(RegExp(r'[\/?#]')).first;
-    if (_isIpWithoutPort(hostPart)) {
-      if (!_skipAutoProtocol && _protocol != 'http://') {
-        setState(() => _protocol = 'http://');
-      }
-      final withPort = '$hostPart:13378${text.substring(hostPart.length)}';
-      if (withPort != raw) {
-        // Rewriting re-enters this listener with the port in place; the IP
-        // branch is then a no-op and the validation below runs once.
-        _serverController.text = withPort;
-      }
-      return;
+    if (_isIpWithoutPort(hostPart) &&
+        !_skipAutoProtocol &&
+        _protocol != 'http://') {
+      setState(() => _protocol = 'http://');
     }
 
     // Only invalidate if the server text actually changed from what we validated
-    final cleanUrl = text.replaceAll(RegExp(r'^https?://'), '');
-    final fullUrl = '$_protocol$cleanUrl';
+    final fullUrl = _buildServerUrl(text);
     if (fullUrl != _lastValidatedServer) {
       setState(() {
         _serverValid = false;
@@ -265,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   /// True when [host] is an IP literal with no port suffix - IPv4, a bracketed
-  /// IPv6, or a compressed bare IPv6 (contains `::`).
+/// IPv6, or a compressed bare IPv6 (contains `::`).
   bool _isIpWithoutPort(String host) {
     if (RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(host)) return true;
     if (RegExp(r'^\[[0-9a-fA-F:]+\]$').hasMatch(host)) return true;
@@ -273,6 +266,26 @@ class _LoginScreenState extends State<LoginScreen>
       return true;
     }
     return false;
+  }
+
+  /// Effective URL for the address typed into the field. Bare IP literals pick
+  /// up the ABS LAN default port 13378; domains keep the scheme's implicit
+  /// port (https 443 / http 80). An explicit ":port" in the field always wins,
+  /// and any "/path?query" suffix is preserved.
+  String _buildServerUrl(String input) {
+    var hostPort = input
+        .trim()
+        .replaceFirst(RegExp(r'^https?://', caseSensitive: false), '');
+    final splitIdx = hostPort.indexOf(RegExp(r'[\/?#]'));
+    var suffix = '';
+    if (splitIdx >= 0) {
+      suffix = hostPort.substring(splitIdx);
+      hostPort = hostPort.substring(0, splitIdx);
+    }
+    if (_isIpWithoutPort(hostPort) && !RegExp(r':\d+$').hasMatch(hostPort)) {
+      hostPort = '$hostPort:13378';
+    }
+    return '$_protocol$hostPort$suffix';
   }
 
   Map<String, String> _collectHeaders() {
@@ -289,8 +302,7 @@ class _LoginScreenState extends State<LoginScreen>
     final text = _serverController.text.trim();
     if (text.isEmpty) return;
 
-    final cleanUrl = text.replaceAll(RegExp(r'^https?://'), '');
-    final fullUrl = '$_protocol$cleanUrl';
+    final fullUrl = _buildServerUrl(text);
 
     try {
       final headers = _collectHeaders();
@@ -357,20 +369,19 @@ class _LoginScreenState extends State<LoginScreen>
 
     final auth = context.read<AuthProvider>();
     final serverText = _serverController.text.trim();
-    final cleanUrl = serverText.replaceAll(RegExp(r'^https?://'), '');
-    final fullUrl = '$_protocol$cleanUrl';
+    final serverUrl = _buildServerUrl(serverText);
 
     final headers = _collectHeaders();
 
     final success = apiKey.isNotEmpty
         ? await auth.loginWithApiKey(
-            serverUrl: fullUrl,
+            serverUrl: serverUrl,
             apiKey: apiKey,
             customHeaders: headers,
             l: AppLocalizations.of(context),
           )
         : await auth.login(
-            serverUrl: fullUrl,
+serverUrl: serverUrl,
             username: _usernameController.text.trim(),
             password: _passwordController.text,
             customHeaders: headers,
@@ -404,8 +415,7 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     final serverText = _serverController.text.trim();
-    final cleanUrl = serverText.replaceAll(RegExp(r'^https?://'), '');
-    final fullUrl = '$_protocol$cleanUrl';
+    final fullUrl = _buildServerUrl(serverText);
 
     final headers = _collectHeaders();
     final oidc = OidcService();

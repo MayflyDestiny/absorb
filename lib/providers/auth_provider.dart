@@ -708,23 +708,21 @@ class AuthProvider extends ChangeNotifier {
     }
 
     // Attempt login
-    final (result, statusCode) = await ApiService.login(
+    final login = await ApiService.login(
       serverUrl: url,
       username: username,
       password: password,
       customHeaders: customHeaders,
     );
 
-    if (result == null) {
-      _errorMessage = statusCode == 401
-          ? (l?.authInvalidUsernameOrPassword ?? 'Invalid username or password')
-          : (l?.authLoginFailedDetail ??
-                'Login failed - check your server address and credentials');
+    if (login.data == null) {
+      _errorMessage = _loginFailureMessage(login.failure, login.statusCode, l);
       return false;
     }
+    final data = login.data!;
 
     // Extract user info
-    final user = result['user'] as Map<String, dynamic>?;
+    final user = data['user'] as Map<String, dynamic>?;
     if (user == null) {
       _errorMessage =
           l?.authUnexpectedServerResponse ?? 'Unexpected server response';
@@ -734,7 +732,7 @@ class AuthProvider extends ChangeNotifier {
     _serverUrl = url;
     // Prefer the JWTs returned inside user by current servers, while accepting
     // the top-level shape and legacy token used by older servers.
-    final tokens = AuthTokens.fromResponse(result);
+    final tokens = AuthTokens.fromResponse(data);
     if (tokens.token == null) {
       _errorMessage =
           l?.authUnexpectedServerResponse ?? 'Unexpected server response';
@@ -743,11 +741,11 @@ class AuthProvider extends ChangeNotifier {
     _isLegacyToken = tokens.isLegacy;
     _accessToken = tokens.token;
     _refreshToken = tokens.refreshToken;
-    debugPrint('[Auth] Login response keys: ${result.keys.toList()}');
-    final serverSettings = result['serverSettings'];
+    debugPrint('[Auth] Login response keys: ${data.keys.toList()}');
+    final serverSettings = data['serverSettings'];
     debugPrint('[Auth] Server version='
         '${serverSettings is Map ? serverSettings['version'] : null} '
-        'source=${result['Source']}');
+        'source=${data['Source']}');
     debugPrint('[Auth] Login user keys: ${user.keys.toList()}');
     debugPrint(
       '[Auth] accessToken=${tokens.accessToken != null}, refreshToken=${tokens.refreshToken != null}, legacyToken=${tokens.legacyToken != null}, isLegacy=$_isLegacyToken',
@@ -757,18 +755,18 @@ class AuthProvider extends ChangeNotifier {
     );
     _username = user['username'] as String?;
     _userId = user['id'] as String?;
-    _defaultLibraryId = result['userDefaultLibraryId'] as String?;
+    _defaultLibraryId = data['userDefaultLibraryId'] as String?;
     _userJson = user;
-    _serverSettings = result['serverSettings'] as Map<String, dynamic>?;
+    _serverSettings = data['serverSettings'] as Map<String, dynamic>?;
     _customHeaders = customHeaders;
     // Ereader devices come at the top level of the login response.
-    final devicesRaw = result['ereaderDevices'] as List<dynamic>?;
+    final devicesRaw = data['ereaderDevices'] as List<dynamic>?;
     _ereaderDevices = devicesRaw?.cast<Map<String, dynamic>>() ?? const [];
     await _persistEreaderDevices();
 
     // Try to get version from login response first, fall back to /status
     final loginVersion =
-        result['serverVersion'] as String? ??
+        data['serverVersion'] as String? ??
         (_serverSettings?['version'] as String?);
     if (loginVersion != null && loginVersion.isNotEmpty) {
       _serverVersion = loginVersion;
@@ -827,6 +825,43 @@ class AuthProvider extends ChangeNotifier {
     return true;
   }
 
+  /// Map a classified [ApiLoginFailure] to a precise, localized error message.
+  /// Falls back to the app's locale when an [AppLocalizations] is available,
+  /// otherwise to English.
+  String _loginFailureMessage(ApiLoginFailure? failure, int statusCode, AppLocalizations? l) {
+    switch (failure) {
+      case ApiLoginFailure.unauthorized:
+        return l?.authInvalidUsernameOrPassword ?? 'Invalid username or password';
+      case ApiLoginFailure.blocked:
+        return l?.authLoginBlocked ?? 'Login was blocked by a firewall in front of the server.';
+      case ApiLoginFailure.rateLimited:
+        return l?.authRateLimited ?? 'Too many login attempts - try again in a moment.';
+      case ApiLoginFailure.temporarilyDown:
+        return l?.authServerTemporarilyDown ?? 'The server is temporarily unavailable. Try again later.';
+      case ApiLoginFailure.endpointMissing:
+        return l?.authLoginEndpointMissing ?? 'The server has no login endpoint at this address/path.';
+      case ApiLoginFailure.badRequest:
+      case ApiLoginFailure.otherHttp:
+        return l?.authServerError(statusCode) ?? 'The server returned an unexpected response (HTTP $statusCode)';
+      case ApiLoginFailure.timeout:
+        return l?.authTimeout ?? 'Connection timed out - the server is slow or the connection is being dropped.';
+      case ApiLoginFailure.dns:
+        return l?.authDnsError ?? 'Could not resolve the server domain (DNS).';
+      case ApiLoginFailure.tls:
+        return l?.authTlsError ?? 'Secure connection (TLS) failed.';
+      case ApiLoginFailure.connectionRefused:
+        return l?.authConnectionRefused ?? 'Connection refused - nothing is listening at that address or port.';
+      case ApiLoginFailure.connectionReset:
+        return l?.authConnectionReset ?? 'The connection was reset, usually by a proxy or firewall.';
+      case ApiLoginFailure.http2:
+        return l?.authHttp2Error ?? 'The server closed the connection early (HTTP/2 or proxy issue).';
+      case ApiLoginFailure.otherNetwork:
+        return l?.authNetworkError ?? 'The network request failed. Check your connection and try again.';
+      case null:
+        return l?.authLoginFailedDetail ?? 'Login failed - check your server address and credentials';
+    }
+  }
+
   /// Login with an admin-generated API key. Skips `/login` entirely - the key
   /// is just a bearer token. Treated as a legacy token (no refresh) since API
   /// keys don't expire and don't have a refresh-token counterpart.
@@ -850,17 +885,23 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
 
-    final (user, statusCode) = await ApiService.loginWithApiKey(
+    final login = await ApiService.loginWithApiKey(
       serverUrl: url,
       apiKey: apiKey,
       customHeaders: customHeaders,
     );
 
-    if (user == null) {
-      _errorMessage = statusCode == 401
+    if (login.data == null) {
+      _errorMessage = login.failure == ApiLoginFailure.unauthorized
           ? (l?.authInvalidApiKey ?? 'Invalid API key')
-          : (l?.authLoginFailedDetail ??
-                'Login failed - check your server address and API key');
+          : _loginFailureMessage(login.failure, login.statusCode, l);
+      return false;
+    }
+
+    final user = login.data!['user'] as Map<String, dynamic>?;
+    if (user == null) {
+      _errorMessage =
+          l?.authUnexpectedServerResponse ?? 'Unexpected server response';
       return false;
     }
 

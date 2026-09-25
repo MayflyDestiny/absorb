@@ -1310,9 +1310,9 @@ class PlayerSettings {
     'Sleep Timer',
     'Downloads & Storage',
     'Library',
-    'Permissions',
-    'Issues & Support',
     'Advanced',
+    'Backup & Sync',
+    'All Bookmarks',
   ];
 
   static Future<List<String>> getSettingsSectionOrder() async {

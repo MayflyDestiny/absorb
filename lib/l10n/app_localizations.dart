@@ -415,7 +415,7 @@ abstract class AppLocalizations {
   /// No description provided for @loginServerHelper.
   ///
   /// In en, this message translates to:
-  /// **'IP:port works too (e.g. 192.168.1.5:13378)'**
+  /// **'IP defaults to port 13378; add :port after the address for a custom port (e.g. 192.168.1.5:3000)'**
   String get loginServerHelper;
 
   /// No description provided for @loginCouldNotReachServer.
@@ -4126,6 +4126,12 @@ abstract class AppLocalizations {
   /// **'Permissions'**
   String get sectionPermissions;
 
+  /// No description provided for @sectionPermissionsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification and battery optimization permissions'**
+  String get sectionPermissionsSubtitle;
+
   /// No description provided for @notifications.
   ///
   /// In en, this message translates to:
@@ -4167,6 +4173,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Issues & Support'**
   String get sectionIssuesAndSupport;
+
+  /// No description provided for @sectionIssuesAndSupportSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage tips, bug reports, and logging'**
+  String get sectionIssuesAndSupportSubtitle;
 
   /// No description provided for @bugsAndFeatureRequests.
   ///
@@ -4279,7 +4291,7 @@ abstract class AppLocalizations {
   /// No description provided for @sectionAdvanced.
   ///
   /// In en, this message translates to:
-  /// **'Advanced'**
+  /// **'Advanced settings'**
   String get sectionAdvanced;
 
   /// No description provided for @localServer.
@@ -12273,6 +12285,78 @@ abstract class AppLocalizations {
   /// **'Unexpected server response'**
   String get authUnexpectedServerResponse;
 
+  /// No description provided for @authServerError.
+  ///
+  /// In en, this message translates to:
+  /// **'The server returned an unexpected response (HTTP {status})'**
+  String authServerError(int status);
+
+  /// No description provided for @authLoginBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Login request blocked by a firewall (WAF). Check your server\'s firewall configuration.'**
+  String get authLoginBlocked;
+
+  /// No description provided for @authRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many login attempts. Try again shortly.'**
+  String get authRateLimited;
+
+  /// No description provided for @authServerTemporarilyDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Server temporarily unavailable. Try again later.'**
+  String get authServerTemporarilyDown;
+
+  /// No description provided for @authLoginEndpointMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'No login endpoint at this path - check the URL.'**
+  String get authLoginEndpointMissing;
+
+  /// No description provided for @authTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection timed out - server response too slow.'**
+  String get authTimeout;
+
+  /// No description provided for @authDnsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not resolve the server domain (DNS). Check the address.'**
+  String get authDnsError;
+
+  /// No description provided for @authTlsError.
+  ///
+  /// In en, this message translates to:
+  /// **'TLS handshake failed. Self-signed certs: enable Trust all certificates.'**
+  String get authTlsError;
+
+  /// No description provided for @authConnectionRefused.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection refused - nothing is listening there.'**
+  String get authConnectionRefused;
+
+  /// No description provided for @authConnectionReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection reset - a proxy or firewall is blocking the app.'**
+  String get authConnectionReset;
+
+  /// No description provided for @authHttp2Error.
+  ///
+  /// In en, this message translates to:
+  /// **'Server closed the connection early - proxy may only support HTTP/2.'**
+  String get authHttp2Error;
+
+  /// No description provided for @authNetworkError.
+  ///
+  /// In en, this message translates to:
+  /// **'Network request failed. Check your connection and retry.'**
+  String get authNetworkError;
+
   /// No description provided for @authSsoUnexpectedResponse.
   ///
   /// In en, this message translates to:
@@ -12290,6 +12374,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Switched to remote server'**
   String get authSwitchedToRemoteServer;
+
+  /// No description provided for @offlineReasonNetworkLost.
+  ///
+  /// In en, this message translates to:
+  /// **'Network connection lost - switched to offline mode'**
+  String get offlineReasonNetworkLost;
+
+  /// No description provided for @offlineReasonServerUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot reach server - switched to offline mode'**
+  String get offlineReasonServerUnreachable;
 
   /// No description provided for @lpDeletedFinishedDownload.
   ///

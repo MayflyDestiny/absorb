@@ -85,12 +85,15 @@ class LogService {
   }
 
   void _interceptedDebugPrint(String? message, {int? wrapWidth}) {
-    _originalDebugPrint?.call(message, wrapWidth: wrapWidth);
-    if (_logFile != null && message != null) {
+    // Sanitize before forwarding to logcat: _originalDebugPrint writes straight
+    // to the platform logcat which is NOT guarded by the file-sink sanitizer
+    // below, so without this step tokens/URLs would leak raw in release builds.
+    final sanitizedMessage = message == null ? null : _sanitize(message);
+    _originalDebugPrint?.call(sanitizedMessage, wrapWidth: wrapWidth);
+    if (_logFile != null && sanitizedMessage != null) {
       final ts = DateTime.now().toIso8601String();
-      final sanitized = _sanitize(message);
       _logFile!.writeAsStringSync(
-        '[$ts] $sanitized\n',
+        '[$ts] $sanitizedMessage\n',
         mode: FileMode.append,
       );
       _maybeRotate();
@@ -185,15 +188,34 @@ class LogService {
     caseSensitive: false,
   );
 
-  /// Sanitize a single log message: mask URLs, sensitive query params, and
-  /// bare key=value pairs that look like credentials.
+  /// Sanitize a single log message: mask URLs, sensitive query params,
+  /// tokens (JWT / header / ref, incl. "Bearer xxx"), and bare key=value
+  /// pairs that look like credentials.
   static String _sanitize(String message) {
     var result = _sanitizeUrls(message);
     // Mask standalone sensitive key=value pairs not inside URLs
     // (e.g. "token=abc123" in non-URL context)
     result = result.replaceAllMapped(
-      RegExp(r'(token|secret|password|authorization|bearer|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+', caseSensitive: false),
+      RegExp(r'(token|secret|password|authorization|bearer|\w*refresh|\w*access|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+', caseSensitive: false),
       (m) => '${m.group(1)}=***',
+    );
+    // Mask bare JWTs / opaque tokens that sit in prose, not key=value pairs
+    // (three dot-separated base64url segments; also Bearer<space>token).
+    result = result.replaceAllMapped(
+      RegExp(r'(?:(?<=Bearer\s)|\b)([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{8,})'),
+      (_) => '[token-redacted]',
+    );
+    result = result.replaceAllMapped(
+      RegExp(r'Bearer [A-Za-z0-9_\-.]{12,}', caseSensitive: false),
+      (_) => '[bearer-redacted]',
+    );
+    // Mask absolute local filesystem paths (app/data dirs on each platform)
+    // that leak the device layout; keep the basename for debuggability.
+    // Anchored so an `http://` host's `p:` can't be mistaken for a drive.
+    result = result.replaceAllMapped(
+      RegExp(r'(?<![A-Za-z0-9])(?:/data|/storage|/home|/var|/private|/Users|'
+          r'[A-Za-z]:)(?:[/\\][^,\s\]\)"<>]+)+'),
+      (m) => '[local-path ${m.group(0)!.split(RegExp(r'[/\\]')).last}]',
     );
     return result;
   }

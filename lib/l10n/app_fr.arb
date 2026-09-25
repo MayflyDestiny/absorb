@@ -48,7 +48,7 @@
   "loginConnectToServer": "Se connecter au serveur",
   "loginServerAddress": "Adresse du serveur",
   "loginServerHint": "mon.serveur.fr",
-  "loginServerHelper": "IP + port (ex : 192.168.1.5:13378)",
+  "loginServerHelper": "IP : port 13378 par défaut ; ajoutez :port après l'adresse pour un port personnalisé (ex. 192.168.1.5:3000)",
   "loginCouldNotReachServer": "Impossible de se connecter au serveur",
   "loginAdvanced": "Avancé",
   "loginCustomHttpHeaders": "Entêtes HTTP personnalisés",
@@ -1060,6 +1060,7 @@
   "showGoodreadsOnSubtitle": "La fiche de détail du livre affiche un lien vers Goodreads",
   "showGoodreadsOffSubtitle": "Désactivé - Bouton « Goodreads» masqué",
   "sectionPermissions": "Permissions",
+  "sectionPermissionsSubtitle": "Notifications et optimisation de la batterie",
   "notifications": "Notifications",
   "notificationsSubtitle": "Pour l'avancement des téléchargements et le contrôle de lecture",
   "notificationsAlreadyEnabled": "Notifications déjà activées",
@@ -1067,6 +1068,7 @@
   "unrestrictedBatterySubtitle": "Évite qu'Android arrête la lecture en arrière-plan",
   "batteryAlreadyUnrestricted": "L'usage de la batterie n'est pas limité",
   "sectionIssuesAndSupport": "Problèmes et assistance",
+  "sectionIssuesAndSupportSubtitle": "Astuces, signalements et journaux",
   "bugsAndFeatureRequests": "Bugs et demandes de fonctionnalités",
   "bugsAndFeatureRequestsSubtitle": "Ouvrir un ticket sur GitHub",
   "joinDiscord": "Rejoindre le serveur Discord",
@@ -1091,7 +1093,7 @@
   "clearLogs": "Vider les journaux",
   "logsCleared": "Journaux effacés",
   "clearLogsQuestion": "Vider les journaux ?",
-  "sectionAdvanced": "Avancé",
+  "sectionAdvanced": "Paramètres avancés",
   "localServer": "Serveur local",
   "localServerInfoTitle": "Serveur local",
   "localServerInfoContent": "Si vous faites tourner votre serveur Audiobookshelf chez vous, vous pouvez définir ici une URL locale/LAN. Absorb basculera automatiquement sur cette connexion locale, plus rapide, lorsqu’il détecte que vous êtes sur votre réseau domestique, et reviendra à votre URL distante quand vous êtes ailleurs.",
@@ -2760,6 +2762,27 @@
   "cardEdgeProgressHalfSpeed": "Vitesse /2",
   "authInvalidApiKey": "Clé API invalide",
   "authLoginFailedDetail": "Échec de la connexion - vérifiez l'adresse du serveur et vos identifiants",
+  "authServerError": "Réponse inattendue du serveur (HTTP {status})",
+  "@authServerError": {
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "authLoginBlocked": "Requête de connexion bloquée par un pare-feu (WAF). Vérifiez la configuration du pare-feu de votre serveur.",
+  "authRateLimited": "Trop de tentatives de connexion. Réessayez dans un instant.",
+  "authServerTemporarilyDown": "Serveur temporairement indisponible. Réessayez plus tard.",
+  "authLoginEndpointMissing": "Pas d'endpoint de connexion à ce chemin - vérifiez l'URL.",
+  "authTimeout": "Délai dépassé - le serveur répond trop lentement.",
+  "authDnsError": "Impossible de résoudre le domaine (DNS). Vérifiez l'adresse.",
+  "authTlsError": "Échec de la poignée de main TLS. Certificat auto-signé : activez « Trust all certificates ».",
+  "authConnectionRefused": "Connexion refusée - aucun service n'écoute là.",
+  "authConnectionReset": "Connexion réinitialisée - un proxy ou pare-feu bloque l'app.",
+  "authHttp2Error": "Le serveur a fermé la connexion - le proxy ne parle peut-être que HTTP/2.",
+  "authNetworkError": "Échec de la requête réseau. Vérifiez la connexion et réessayez.",
+  "offlineReasonNetworkLost": "Connexion réseau perdue - passage en mode hors ligne",
+  "offlineReasonServerUnreachable": "Serveur injoignable - passage en mode hors ligne",
   "lpDeletedFinishedDownload": "Téléchargement achevé supprimé",
   "lpSubscribedPodcastDownloading": "{showTitle}: {count, plural, =1{1 nouvel épisode en cours de téléchargement} other{{count} nouveaux épisodes en cours de téléchargement}}",
   "@lpSubscribedPodcastDownloading": {

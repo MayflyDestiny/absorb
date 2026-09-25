@@ -1653,6 +1653,50 @@ class AudioPlayerService extends ChangeNotifier {
   // GH #278: a half-downloaded book otherwise clamped every resume back to the
   // file's end (50% of the book) and saved that over the user's real progress.
   double? _shortLocalDurationSec;
+  // In a 1:1 layout (one audio file per chapter) the current chapter is simply
+  // the current track index — no position math, so a track flip can update the
+  // title the instant it happens. For partial downloads this holds the
+  // full-book chapter index of each downloaded track (local index -> chapter
+  // index). Empty = not a 1:1 layout (time-based lookup stays in charge).
+  List<int> _localTrackChapterIdx = const [];
+
+  /// Chapter index meant by [track] when the layout is 1:1 (one file per
+  /// chapter): partial downloads via the persisted map, full books by identity
+  /// (track i == chapter i). Returns null when the mapping is unknown so the
+  /// position-based path stays in charge.
+  int? _chapterIndexForTrack(int track) {
+    if (track < 0) return null;
+    if (_localTrackChapterIdx.isNotEmpty) {
+      return track < _localTrackChapterIdx.length
+          ? _localTrackChapterIdx[track]
+          : null;
+    }
+    // Full-book identity: only when every chapter has its own file.
+    if (_chapters.isNotEmpty &&
+        _trackStartOffsets.length - 1 == _chapters.length &&
+        track < _chapters.length) {
+      return track;
+    }
+    return null;
+  }
+
+  /// In a 1:1 layout one downloaded file maps to exactly one chapter. Loads the
+  /// local-track -> chapter-index map persisted by the downloader so an
+  /// auto-advance can pin the correct chapter title the moment the track flips
+  /// (time-based lookup would lag behind the position stream at the boundary).
+  /// Leaves the map empty (fall back to position math) for non-1:1 or legacy
+  /// sessions.
+  void _applyTrackToChapterFromSession(Map<String, dynamic> session) {
+    _localTrackChapterIdx = const [];
+    if (session['tracksAreChapters'] != true) return;
+    final dl = session['downloadedChapters'] as List<dynamic>?;
+    if (dl == null || dl.isEmpty) return;
+    _localTrackChapterIdx = [
+      for (final e in dl)
+        (e is num) ? e.toInt() : (int.tryParse('$e') ?? 0),
+    ];
+    debugPrint('[Player] 1:1 local->chapter map: $_localTrackChapterIdx');
+  }
   // Ignore small encoder/container rounding when comparing decoded vs metadata.
   static const double _kLocalTruncationMarginSec = 60.0;
   // When seeking a multi-file book, chapter boundaries and file boundaries are
@@ -2977,6 +3021,41 @@ class AudioPlayerService extends ChangeNotifier {
             debugPrint(
               '[Player] Track index advance: $_currentTrackIndex -> $clamped',
             );
+            // 1:1 layout (one file per chapter): a track flip IS a chapter
+            // flip. Pin the new chapter now so the throttled position tick
+            // can't briefly flash the old title while the position stream
+            // catches up to the flipped track. Don't override a jump that
+            // already reserved a different chapter, and stand down while a
+            // seek is still in flight: before the engine switches, the index
+            // stream can re-report the PRE-seek (often the LAST) track, which
+            // would pin that chapter over the jump target that the seek will
+            // latch once it lands.
+            final mappedChapter = _chapterIndexForTrack(clamped);
+            if (mappedChapter != null &&
+                mappedChapter != _lastNotifiedChapterIndex &&
+                _currentItemId != null &&
+                _lastSeekTargetSeconds == null &&
+                (_chapterJumpLatchIndex < 0 ||
+                    _chapterJumpLatchIndex == mappedChapter)) {
+              final ch = _chapters[mappedChapter] as Map<String, dynamic>;
+              _chapterJumpLatchIndex = mappedChapter;
+              _lastNotifiedChapterIndex = mappedChapter;
+              _currentChapterStart = (ch['start'] as num?)?.toDouble() ?? 0;
+              _currentChapterEnd =
+                  (ch['end'] as num?)?.toDouble() ?? _totalDuration;
+              _pushMediaItem(
+                _currentItemId!,
+                _currentTitle ?? '',
+                _currentAuthor ?? '',
+                _currentCoverUrl,
+                _totalDuration,
+                chapter: ch['title'] as String?,
+              );
+              if (_notifChapterMode) _handler?.refreshPlaybackState();
+              debugPrint(
+                '[Player] 1:1 pinned chapter $mappedChapter on track advance',
+              );
+            }
           }
           _currentTrackIndex = clamped;
         }
@@ -4394,6 +4473,7 @@ class AudioPlayerService extends ChangeNotifier {
         absoluteStarts = (session['trackStartOffsets'] as List<dynamic>?)
             ?.map((e) => (e as num).toDouble())
             .toList();
+        _applyTrackToChapterFromSession(session);
       } catch (_) {}
     }
 
@@ -4659,6 +4739,7 @@ class AudioPlayerService extends ChangeNotifier {
         absoluteStarts = (session['trackStartOffsets'] as List<dynamic>?)
             ?.map((e) => (e as num).toDouble())
             .toList();
+        _applyTrackToChapterFromSession(session);
         // Fall back to the cached session duration when the caller didn't have
         // one (e.g. podcast cold-start from Android Auto pushes dur=0). Replaces
         // the old /play-response duration fallback now that local plays skip it.
@@ -6416,6 +6497,7 @@ class AudioPlayerService extends ChangeNotifier {
     _trackStartOffsets = [];
     _trackDurations = [];
     _currentTrackIndex = 0;
+    _localTrackChapterIdx = const [];
     _lastNotifiedChapterIndex = -1;
     _chapterJumpLatchIndex = -1;
     _lastSeekTargetSeconds = null;
@@ -6857,6 +6939,16 @@ class AudioPlayerService extends ChangeNotifier {
           double chapterStart = 0;
           double chapterEnd = _totalDuration;
 
+          // Resolve against the load-aware position, NOT the raw stream tick:
+          // while a seek awaits its engine switch, [_currentTrackIndex] already
+          // points at the TARGET track but [_player.position] still reports the
+          // OLD track's offset, so the composed absolute seconds sit at the
+          // book's tail — mapping to the LAST chapter until the switch lands.
+          // On a slow link that tail can persist for a while, surfacing as a
+          // lingering "last chapter" title (the UI card already avoids this via
+          // chapterResolvePosSec; mirror it here).
+          final resolveSec = chapterResolvePosSec;
+
           // Chapter-jump latch: after a jump the engine can sit a hair before
           // the intended chapter's metadata start (metadata vs per-file
           // timeline drift); position lookup could otherwise demote the title
@@ -6870,7 +6962,7 @@ class AudioPlayerService extends ChangeNotifier {
                 (_chapters[_chapterJumpLatchIndex]['end'] as num?)
                     ?.toDouble() ??
                 _totalDuration;
-            if (posSec < lEnd) {
+            if (resolveSec < lEnd) {
               chapterIdx = _chapterJumpLatchIndex;
             } else {
               _chapterJumpLatchIndex = -1;
@@ -6884,7 +6976,7 @@ class AudioPlayerService extends ChangeNotifier {
                 _chapters[_lastNotifiedChapterIndex] as Map<String, dynamic>;
             final s = (ch['start'] as num?)?.toDouble() ?? 0;
             final e = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
-            if (posSec >= s && posSec < e) {
+            if (resolveSec >= s && resolveSec < e) {
               chapterIdx = _lastNotifiedChapterIndex;
               chapterTitle = ch['title'] as String?;
               chapterStart = s;
@@ -6898,7 +6990,7 @@ class AudioPlayerService extends ChangeNotifier {
               final ch = _chapters[i] as Map<String, dynamic>;
               final start = (ch['start'] as num?)?.toDouble() ?? 0;
               final end = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
-              if (posSec >= start && posSec < end) {
+              if (resolveSec >= start && resolveSec < end) {
                 chapterIdx = i;
                 chapterTitle = ch['title'] as String?;
                 chapterStart = start;
@@ -6912,7 +7004,7 @@ class AudioPlayerService extends ChangeNotifier {
           if (chapterIdx < 0) {
             final g = ChapterLookup.indexAtWithGrace(
               _chapters,
-              posSec,
+              resolveSec,
               _totalDuration,
             );
             if (g != null) {

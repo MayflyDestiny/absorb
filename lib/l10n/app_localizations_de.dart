@@ -162,7 +162,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get loginServerHelper =>
-      'IP:Port funktioniert auch (z. B. 192.168.1.5:13378)';
+      'IP nutzt standardmäßig Port 13378; für einen eigenen Port :Port an die Adresse anhängen (z. B. 192.168.1.5:3000)';
 
   @override
   String get loginCouldNotReachServer => 'Server nicht erreichbar';
@@ -2262,6 +2262,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get sectionPermissions => 'Berechtigungen';
 
   @override
+  String get sectionPermissionsSubtitle =>
+      'Berechtigungen für Benachrichtigungen und Akkunutzung';
+
+  @override
   String get notifications => 'Benachrichtigungen';
 
   @override
@@ -2285,6 +2289,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get sectionIssuesAndSupport => 'Probleme & Support';
+
+  @override
+  String get sectionIssuesAndSupportSubtitle =>
+      'Tipps, Fehlermeldungen und Protokolle';
 
   @override
   String get bugsAndFeatureRequests => 'Bugs & Feature-Wünsche';
@@ -2347,7 +2355,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'This can\'t be undone. Send them first if you might want them.';
 
   @override
-  String get sectionAdvanced => 'Erweitert';
+  String get sectionAdvanced => 'Erweiterte Einstellungen';
 
   @override
   String get localServer => 'Lokaler Server';
@@ -7251,6 +7259,54 @@ class AppLocalizationsDe extends AppLocalizations {
   String get authUnexpectedServerResponse => 'Unerwartete Server-Antwort';
 
   @override
+  String authServerError(int status) {
+    return 'Unerwartete Server-Antwort (HTTP $status)';
+  }
+
+  @override
+  String get authLoginBlocked =>
+      'Login-Anfrage von einer Firewall (WAF) blockiert. Überprüfen Sie die Firewall-Konfiguration Ihres Servers.';
+
+  @override
+  String get authRateLimited =>
+      'Zu viele Anmeldeversuche. Gleich erneut versuchen.';
+
+  @override
+  String get authServerTemporarilyDown =>
+      'Server vorübergehend nicht erreichbar. Später erneut versuchen.';
+
+  @override
+  String get authLoginEndpointMissing =>
+      'Kein Login-Endpunkt unter diesem Pfad - URL prüfen.';
+
+  @override
+  String get authTimeout => 'Zeitüberschreitung - Server antwortet zu langsam.';
+
+  @override
+  String get authDnsError =>
+      'Server-Domain nicht auflösbar (DNS). Adresse prüfen.';
+
+  @override
+  String get authTlsError =>
+      'TLS-Handshake fehlgeschlagen. Bei selbstsigniertem Zertifikat „Trust all certificates“ aktivieren.';
+
+  @override
+  String get authConnectionRefused =>
+      'Verbindung abgelehnt - dort lauscht kein Dienst.';
+
+  @override
+  String get authConnectionReset =>
+      'Verbindung zurückgesetzt - Proxy oder Firewall blockiert die App.';
+
+  @override
+  String get authHttp2Error =>
+      'Server hat Verbindung früh geschlossen - Proxy spricht evtl. nur HTTP/2.';
+
+  @override
+  String get authNetworkError =>
+      'Netzwerkfehler. Verbindung prüfen und erneut versuchen.';
+
+  @override
   String get authSsoUnexpectedResponse =>
       'SSO hat eine unerwartete Antwort zurückgegeben';
 
@@ -7259,6 +7315,14 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get authSwitchedToRemoteServer => 'Zu Remote-Server gewechselt';
+
+  @override
+  String get offlineReasonNetworkLost =>
+      'Netzwerkverbindung getrennt - in den Offline-Modus gewechselt';
+
+  @override
+  String get offlineReasonServerUnreachable =>
+      'Server nicht erreichbar - in den Offline-Modus gewechselt';
 
   @override
   String get lpDeletedFinishedDownload => 'Beendeten Download gelöscht';
