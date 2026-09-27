@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import 'api_service.dart';
+import 'app_log.dart';
 import 'audio_player_service.dart';
 import 'chapter_lookup.dart';
 import 'progress_sync_service.dart';
@@ -124,7 +125,7 @@ class ChromecastService extends ChangeNotifier {
     try {
       await _castServiceChannel.invokeMethod(active ? 'start' : 'stop');
     } catch (e) {
-      debugPrint('[Cast] setForegroundService($active) error: $e');
+      basicLog('[Cast] setForegroundService($active) error: $e');
     }
   }
 
@@ -141,10 +142,10 @@ class ChromecastService extends ChangeNotifier {
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
-    debugPrint('[Cast] >>> init() called');
+    verboseLog('[Cast] >>> init() called');
     try {
       const appId = GoogleCastDiscoveryCriteria.kDefaultApplicationId;
-      debugPrint('[Cast] Using appId: $appId');
+      verboseLog('[Cast] Using appId: $appId');
       final GoogleCastOptions options;
       if (Platform.isIOS) {
         options = IOSGoogleCastOptions(
@@ -154,9 +155,9 @@ class ChromecastService extends ChangeNotifier {
         options = GoogleCastOptionsAndroid(appId: appId);
       }
       GoogleCastContext.instance.setSharedInstanceWithOptions(options);
-      debugPrint('[Cast] Context initialized OK');
+      verboseLog('[Cast] Context initialized OK');
     } catch (e, st) {
-      debugPrint('[Cast] Init error: $e\n$st');
+      basicLog('[Cast] Init error: $e\n$st');
       _initialized = false;
       return;
     }
@@ -164,32 +165,32 @@ class ChromecastService extends ChangeNotifier {
 
     try {
       await GoogleCastDiscoveryManager.instance.startDiscovery();
-      debugPrint('[Cast] Discovery started');
+      verboseLog('[Cast] Discovery started');
     } catch (e) {
-      debugPrint('[Cast] Discovery start error: $e');
+      basicLog('[Cast] Discovery start error: $e');
     }
   }
 
   // ── Session ──
 
   void _listenToSessionChanges() {
-    debugPrint('[Cast] >>> _listenToSessionChanges() subscribing');
+    verboseLog('[Cast] >>> _listenToSessionChanges() subscribing');
     _sessionSub?.cancel();
     _sessionSub = GoogleCastSessionManager.instance.currentSessionStream.listen(
       (session) {
         final state = GoogleCastSessionManager.instance.connectionState;
-        debugPrint('[Cast] SESSION EVENT — connectionState: $state, session: ${session?.device?.friendlyName ?? "null"}');
+        verboseLog('[Cast] SESSION EVENT — connectionState: $state, session: ${session?.device?.friendlyName ?? "null"}');
         if (state == GoogleCastConnectState.connected) {
           // Cancel any pending disconnect wipe - we're back before the grace expired.
           if (_disconnectDebounceTimer?.isActive ?? false) {
-            debugPrint('[Cast] Reconnected within grace period - cancelling disconnect wipe');
+            verboseLog('[Cast] Reconnected within grace period - cancelling disconnect wipe');
             _disconnectDebounceTimer?.cancel();
             _disconnectDebounceTimer = null;
           }
           // Whether this arrived via the SDK's own resumption or our backstop
           // retry, we're back - stop retrying.
           if (_reconnecting) {
-            debugPrint('[Cast] Reconnect backstop succeeded');
+            verboseLog('[Cast] Reconnect backstop succeeded');
             _reconnecting = false;
             _reconnectTimer?.cancel();
             _reconnectTimer = null;
@@ -198,7 +199,7 @@ class ChromecastService extends ChangeNotifier {
           _connectionState = CastConnectionState.connected;
           _connectedDeviceName = session?.device?.friendlyName;
           _lastConnectedDevice = session?.device ?? _lastConnectedDevice;
-          debugPrint('[Cast] ✓ CONNECTED to: $_connectedDeviceName');
+          verboseLog('[Cast] ✓ CONNECTED to: $_connectedDeviceName');
           _listenToMediaStatus();
           _listenToPosition();
           _updateVolumeFromSession();
@@ -209,31 +210,31 @@ class ChromecastService extends ChangeNotifier {
           }
           if (_pendingSleepPause) {
             _pendingSleepPause = false;
-            debugPrint('[Cast] Applying the sleep-timer pause that was waiting on reconnect');
+            verboseLog('[Cast] Applying the sleep-timer pause that was waiting on reconnect');
             unawaited(pause());
           }
         } else if (state == GoogleCastConnectState.disconnected) {
-          debugPrint('[Cast] ✗ DISCONNECTED (scheduling grace ${_disconnectGrace.inSeconds}s before deciding to reconnect or wipe)');
+          verboseLog('[Cast] ✗ DISCONNECTED (scheduling grace ${_disconnectGrace.inSeconds}s before deciding to reconnect or wipe)');
           // Debounce: transient wifi/session blips can emit disconnected then
           // reconnect shortly after. Only act if it sticks.
           _disconnectDebounceTimer?.cancel();
           _disconnectDebounceTimer = Timer(_disconnectGrace, () {
-            debugPrint('[Cast] Disconnect grace expired');
+            verboseLog('[Cast] Disconnect grace expired');
             _beginReconnectOrWipe();
           });
           // Reflect "connecting" in the UI so controls aren't fully dead but
           // also aren't claiming a live connection.
           _connectionState = CastConnectionState.connecting;
         } else {
-          debugPrint('[Cast] ~ CONNECTING...');
+          verboseLog('[Cast] ~ CONNECTING...');
           _connectionState = CastConnectionState.connecting;
         }
         notifyListeners();
       },
-      onError: (e) => debugPrint('[Cast] Session stream ERROR: $e'),
-      onDone: () => debugPrint('[Cast] Session stream DONE (closed)'),
+      onError: (e) => basicLog('[Cast] Session stream ERROR: $e'),
+      onDone: () => verboseLog('[Cast] Session stream DONE (closed)'),
     );
-    debugPrint('[Cast] Session stream subscription active');
+    verboseLog('[Cast] Session stream subscription active');
   }
 
   static const _reconnectMaxAttempts = 3;
@@ -251,7 +252,7 @@ class ChromecastService extends ChangeNotifier {
       _onDisconnected();
       return;
     }
-    debugPrint('[Cast] Attempting backstop reconnect to ${device.friendlyName} before giving up');
+    verboseLog('[Cast] Attempting backstop reconnect to ${device.friendlyName} before giving up');
     _reconnecting = true;
     _reconnectAttempts = 0;
     notifyListeners();
@@ -273,14 +274,14 @@ class ChromecastService extends ChangeNotifier {
       return;
     }
     if (_reconnectAttempts >= _reconnectMaxAttempts) {
-      debugPrint('[Cast] Reconnect backstop exhausted after $_reconnectAttempts attempts - giving up');
+      basicLog('[Cast] Reconnect backstop exhausted after $_reconnectAttempts attempts - giving up');
       _reconnecting = false;
       _onDisconnected();
       return;
     }
     _reconnectAttempts++;
     final delay = _reconnectBaseDelay * (1 << (_reconnectAttempts - 1));
-    debugPrint('[Cast] Reconnect backstop attempt $_reconnectAttempts/$_reconnectMaxAttempts in ${delay.inSeconds}s');
+    verboseLog('[Cast] Reconnect backstop attempt $_reconnectAttempts/$_reconnectMaxAttempts in ${delay.inSeconds}s');
     _reconnectTimer = Timer(delay, () async {
       if (!_reconnecting || isConnected) return;
       try {
@@ -294,10 +295,10 @@ class ChromecastService extends ChangeNotifier {
       } catch (_) {}
       if (!_reconnecting) return;
       try {
-        debugPrint('[Cast] Reconnect backstop: connecting to ${device.friendlyName}');
+        verboseLog('[Cast] Reconnect backstop: connecting to ${device.friendlyName}');
         await GoogleCastSessionManager.instance.startSessionWithDevice(device);
       } catch (e) {
-        debugPrint('[Cast] Reconnect backstop attempt failed: $e');
+        basicLog('[Cast] Reconnect backstop attempt failed: $e');
       }
       _tryReconnect(device);
     });
@@ -313,11 +314,11 @@ class ChromecastService extends ChangeNotifier {
       return;
     }
     if (_reconnecting) {
-      debugPrint('[Cast] Sleep timer fired mid-reconnect - will pause once reconnected');
+      verboseLog('[Cast] Sleep timer fired mid-reconnect - will pause once reconnected');
       _pendingSleepPause = true;
       return;
     }
-    debugPrint('[Cast] Sleep timer fired with no live or recovering cast session - nothing to pause');
+    verboseLog('[Cast] Sleep timer fired with no live or recovering cast session - nothing to pause');
   }
 
   void _onDisconnected() {
@@ -355,15 +356,15 @@ class ChromecastService extends ChangeNotifier {
     try {
       final status = GoogleCastRemoteMediaClient.instance.mediaStatus;
       if (status == null) {
-        debugPrint('[Cast] Rehydrate: no remote media status available');
+        verboseLog('[Cast] Rehydrate: no remote media status available');
         return;
       }
       final info = status.mediaInformation;
       if (info == null) {
-        debugPrint('[Cast] Rehydrate: no mediaInformation on status');
+        verboseLog('[Cast] Rehydrate: no mediaInformation on status');
         return;
       }
-      debugPrint('[Cast] Rehydrate: remote playerState=${status.playerState}, contentId=${info.contentId}');
+      verboseLog('[Cast] Rehydrate: remote playerState=${status.playerState}, contentId=${info.contentId}');
       // We can't fully reconstruct itemId / chapters from the cast payload
       // alone, but we can at least surface title/author/duration so the UI
       // doesn't look dead. The sync timer and completion logic stay dormant
@@ -385,7 +386,7 @@ class ChromecastService extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      debugPrint('[Cast] Rehydrate error: $e');
+      basicLog('[Cast] Rehydrate error: $e');
     }
   }
 
@@ -401,7 +402,7 @@ class ChromecastService extends ChangeNotifier {
         final qItems = GoogleCastRemoteMediaClient.instance.queueItems;
         final idx = qItems.indexWhere((it) => it.itemId == status!.currentItemId);
         if (idx >= 0 && idx != _queueTrackIdx && idx < qOffsets.length - 1) {
-          debugPrint('[Cast] Queue track changed: $_queueTrackIdx -> $idx');
+          verboseLog('[Cast] Queue track changed: $_queueTrackIdx -> $idx');
           _queueTrackIdx = idx;
         }
       }
@@ -411,7 +412,7 @@ class ChromecastService extends ChangeNotifier {
       if (status == null) {
         target = CastPlaybackState.idle;
       } else {
-        debugPrint('[Cast] Media status: ${status.playerState}');
+        verboseLog('[Cast] Media status: ${status.playerState}');
         switch (status.playerState) {
           case CastMediaPlayerState.playing: target = CastPlaybackState.playing; break;
           case CastMediaPlayerState.paused: target = CastPlaybackState.paused; break;
@@ -423,7 +424,7 @@ class ChromecastService extends ChangeNotifier {
 
       // Any non-idle event means we're still live - cancel any pending idle wipe.
       if (target != CastPlaybackState.idle && (_idleDebounceTimer?.isActive ?? false)) {
-        debugPrint('[Cast] Idle grace cancelled - received $target');
+        verboseLog('[Cast] Idle grace cancelled - received $target');
         _idleDebounceTimer?.cancel();
         _idleDebounceTimer = null;
       }
@@ -445,9 +446,9 @@ class ChromecastService extends ChangeNotifier {
           // logic below will handle it.
           _playbackState = CastPlaybackState.idle;
         } else if (!(_idleDebounceTimer?.isActive ?? false)) {
-          debugPrint('[Cast] Idle during active cast (pos=${pos.toStringAsFixed(1)}s/${_castingDuration.toStringAsFixed(1)}s) - debouncing ${_idleGrace.inSeconds}s');
+          verboseLog('[Cast] Idle during active cast (pos=${pos.toStringAsFixed(1)}s/${_castingDuration.toStringAsFixed(1)}s) - debouncing ${_idleGrace.inSeconds}s');
           _idleDebounceTimer = Timer(_idleGrace, () {
-            debugPrint('[Cast] Idle grace expired - applying idle state');
+            verboseLog('[Cast] Idle grace expired - applying idle state');
             _playbackState = CastPlaybackState.idle;
         
             _onPlaybackStateChangedCallback?.call(false);
@@ -486,10 +487,10 @@ class ChromecastService extends ChangeNotifier {
 
       notifyListeners();
     }, onError: (e) {
-      debugPrint('[Cast] mediaStatusStream error - re-subscribing: $e');
+      basicLog('[Cast] mediaStatusStream error - re-subscribing: $e');
       _listenToMediaStatus();
     }, onDone: () {
-      debugPrint('[Cast] mediaStatusStream completed - re-subscribing');
+      verboseLog('[Cast] mediaStatusStream completed - re-subscribing');
       if (isConnected) _listenToMediaStatus();
     });
   }
@@ -513,10 +514,10 @@ class ChromecastService extends ChangeNotifier {
         }
       }
     }, onError: (e) {
-      debugPrint('[Cast] positionStream error - re-subscribing: $e');
+      basicLog('[Cast] positionStream error - re-subscribing: $e');
       _listenToPosition();
     }, onDone: () {
-      debugPrint('[Cast] positionStream completed - re-subscribing');
+      verboseLog('[Cast] positionStream completed - re-subscribing');
       if (isConnected) _listenToPosition();
     });
     _syncTimer?.cancel();
@@ -548,16 +549,16 @@ class ChromecastService extends ChangeNotifier {
       GoogleCastDiscoveryManager.instance.devicesStream;
 
   Future<void> connectToDevice(GoogleCastDevice device) async {
-    debugPrint('[Cast] >>> connectToDevice() — ${device.friendlyName}');
-    debugPrint('[Cast] Current connectionState before connect: $_connectionState');
+    verboseLog('[Cast] >>> connectToDevice() — ${device.friendlyName}');
+    verboseLog('[Cast] Current connectionState before connect: $_connectionState');
     _connectionState = CastConnectionState.connecting;
     notifyListeners();
     try {
-      debugPrint('[Cast] Calling startSessionWithDevice...');
+      verboseLog('[Cast] Calling startSessionWithDevice...');
       await GoogleCastSessionManager.instance.startSessionWithDevice(device);
-      debugPrint('[Cast] startSessionWithDevice returned (awaited)');
+      verboseLog('[Cast] startSessionWithDevice returned (awaited)');
     } catch (e, st) {
-      debugPrint('[Cast] Connect error: $e\n$st');
+      basicLog('[Cast] Connect error: $e\n$st');
       _connectionState = CastConnectionState.disconnected;
       notifyListeners();
     }
@@ -581,7 +582,7 @@ class ChromecastService extends ChangeNotifier {
     await _setForegroundService(false);
     try {
       await GoogleCastSessionManager.instance.endSessionAndStopCasting();
-    } catch (e) { debugPrint('[Cast] Disconnect error: $e'); }
+    } catch (e) { basicLog('[Cast] Disconnect error: $e'); }
   }
 
   // ── Media Loading ──
@@ -593,16 +594,16 @@ class ChromecastService extends ChangeNotifier {
     required List<dynamic> chapters, double startTime = 0,
     String? episodeId,
   }) async {
-    debugPrint('[Cast] >>> castItem() — "$title" (id: $itemId)');
-    debugPrint('[Cast] isConnected=$isConnected, connectionState=$_connectionState');
+    verboseLog('[Cast] >>> castItem() — "$title" (id: $itemId)');
+    verboseLog('[Cast] isConnected=$isConnected, connectionState=$_connectionState');
     if (!isConnected) {
-      debugPrint('[Cast] NOT CONNECTED — aborting castItem');
+      basicLog('[Cast] NOT CONNECTED — aborting castItem');
       return false;
     }
 
     final localPlayer = AudioPlayerService();
     if (localPlayer.hasBook) {
-      debugPrint('[Cast] Stopping local player');
+      verboseLog('[Cast] Stopping local player');
       // Keep a sleep timer armed on local playback running - it should track
       // the cast session that's about to start, not vanish on the handoff.
       await localPlayer.stop(keepSleepTimer: true);
@@ -620,22 +621,22 @@ class ChromecastService extends ChangeNotifier {
     notifyListeners();
 
     final localPos = await _progressSync.getSavedPosition(itemId);
-    debugPrint('[Cast] Local saved position: $localPos');
+    verboseLog('[Cast] Local saved position: $localPos');
     if (localPos > 0 && startTime == 0) startTime = localPos;
 
     try {
-      debugPrint('[Cast] Starting playback session with server... (episodeId: $episodeId)');
+      verboseLog('[Cast] Starting playback session with server... (episodeId: $episodeId)');
       final sessionData = episodeId != null
           ? await api.startEpisodePlaybackSession(itemId, episodeId)
           : await api.startPlaybackSession(itemId);
       if (sessionData == null) {
-        debugPrint('[Cast] Server returned null session — aborting');
+        basicLog('[Cast] Server returned null session — aborting');
         _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
       }
-      debugPrint('[Cast] Got session data, keys: ${sessionData.keys.toList()}');
+      verboseLog('[Cast] Got session data, keys: ${sessionData.keys.toList()}');
 
       final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
-      debugPrint('[Cast] Server position: $serverPos');
+      verboseLog('[Cast] Server position: $serverPos');
       if (serverPos > 0) {
         final localData = await _progressSync.getLocal(itemId);
         final lt = (localData?['timestamp'] as num?)?.toInt() ?? 0;
@@ -648,13 +649,13 @@ class ChromecastService extends ChangeNotifier {
       final serverDuration = (sessionData['duration'] as num?)?.toDouble() ?? 0;
       if (_castingDuration <= 0 && serverDuration > 0) {
         _castingDuration = serverDuration;
-        debugPrint('[Cast] Updated duration from server: ${serverDuration}s');
+        verboseLog('[Cast] Updated duration from server: ${serverDuration}s');
       }
 
       final audioTracks = sessionData['audioTracks'] as List<dynamic>?;
-      debugPrint('[Cast] Audio tracks count: ${audioTracks?.length ?? 0}');
+      verboseLog('[Cast] Audio tracks count: ${audioTracks?.length ?? 0}');
       if (audioTracks == null || audioTracks.isEmpty) {
-        debugPrint('[Cast] No audio tracks — aborting');
+        basicLog('[Cast] No audio tracks — aborting');
         _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
       }
 
@@ -670,13 +671,13 @@ class ChromecastService extends ChangeNotifier {
       final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
       _castSpeed = speed;
 
-      debugPrint('[Cast] Starting from position: ${startTime}s, speed: ${speed}x');
+      verboseLog('[Cast] Starting from position: ${startTime}s, speed: ${speed}x');
       bool loaded;
       if (audioTracks.length == 1) {
-        debugPrint('[Cast] Single track mode');
+        verboseLog('[Cast] Single track mode');
         loaded = await _loadSingleTrack(api, audioTracks.first, title, author, coverUrl, totalDuration, startTime);
       } else {
-        debugPrint('[Cast] Multi-track queue mode (${audioTracks.length} tracks)');
+        verboseLog('[Cast] Multi-track queue mode (${audioTracks.length} tracks)');
         loaded = await _loadMultiTrackQueue(api, audioTracks, title, author, coverUrl, totalDuration, chapters, startTime);
       }
 
@@ -685,9 +686,9 @@ class ChromecastService extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 300));
         try {
           await GoogleCastRemoteMediaClient.instance.setPlaybackRate(speed);
-          debugPrint('[Cast] Applied book speed: ${speed}x');
+          verboseLog('[Cast] Applied book speed: ${speed}x');
         } catch (e) {
-          debugPrint('[Cast] setPlaybackRate error: $e');
+          basicLog('[Cast] setPlaybackRate error: $e');
         }
       }
       if (!loaded) {
@@ -696,7 +697,7 @@ class ChromecastService extends ChangeNotifier {
       }
       return loaded;
     } catch (e, st) {
-      debugPrint('[Cast] castItem error: $e\n$st');
+      basicLog('[Cast] castItem error: $e\n$st');
       await _setForegroundService(false);
       _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
     }
@@ -711,7 +712,7 @@ class ChromecastService extends ChangeNotifier {
       trackIndex: (m['index'] as num?)?.toInt(),
       playMethod: _castPlayMethod,
     );
-    debugPrint('[Cast] Loading single track URL: $fullUrl');
+    verboseLog('[Cast] Loading single track URL: $fullUrl');
     final subtitle = _buildSubtitle(author, startTime);
     try {
       await GoogleCastRemoteMediaClient.instance.loadMedia(
@@ -730,12 +731,12 @@ class ChromecastService extends ChangeNotifier {
         autoPlay: true,
         playPosition: Duration(milliseconds: (startTime * 1000).round()),
       );
-      debugPrint('[Cast] ✓ loadMedia completed');
+      verboseLog('[Cast] ✓ loadMedia completed');
       _queueOffsets = null;
       _castPosition = Duration(milliseconds: (startTime * 1000).round());
       return true;
     } catch (e, st) {
-      debugPrint('[Cast] loadMedia error: $e\n$st');
+      basicLog('[Cast] loadMedia error: $e\n$st');
       _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
     }
   }
@@ -758,7 +759,7 @@ class ChromecastService extends ChangeNotifier {
       }
     }
 
-    debugPrint('[Cast] Multi-track: startTime=$startTime, track=$startIdx, localStart=$localStart');
+    verboseLog('[Cast] Multi-track: startTime=$startTime, track=$startIdx, localStart=$localStart');
     try {
       final items = <GoogleCastQueueItem>[];
       for (int i = 0; i < tracks.length; i++) {
@@ -769,7 +770,7 @@ class ChromecastService extends ChangeNotifier {
           trackIndex: (m['index'] as num?)?.toInt(),
           playMethod: _castPlayMethod,
         );
-        debugPrint('[Cast] Track $i URL: $fullUrl');
+        verboseLog('[Cast] Track $i URL: $fullUrl');
         items.add(GoogleCastQueueItem(
           mediaInformation: GoogleCastMediaInformation(
             contentId: fullUrl,
@@ -784,7 +785,7 @@ class ChromecastService extends ChangeNotifier {
           ),
         ));
       }
-      debugPrint('[Cast] Calling queueLoadItems with ${items.length} items (start track $startIdx at ${localStart.toStringAsFixed(1)}s)...');
+      verboseLog('[Cast] Calling queueLoadItems with ${items.length} items (start track $startIdx at ${localStart.toStringAsFixed(1)}s)...');
       try {
         await GoogleCastRemoteMediaClient.instance.queueLoadItems(
           items,
@@ -793,13 +794,13 @@ class ChromecastService extends ChangeNotifier {
             playPosition: Duration(milliseconds: (localStart * 1000).round()),
           ),
         );
-        debugPrint('[Cast] ✓ queueLoadItems completed');
+        verboseLog('[Cast] ✓ queueLoadItems completed');
         _queueOffsets = offsets;
         _queueTrackIdx = startIdx;
         _castPosition = Duration(milliseconds: (startTime * 1000).round());
         return true;
       } catch (queueErr) {
-        debugPrint('[Cast] queueLoadItems failed, falling back to single-track loadMedia: $queueErr');
+        basicLog('[Cast] queueLoadItems failed, falling back to single-track loadMedia: $queueErr');
       }
 
       // Fallback: load the correct track via loadMedia instead of queue
@@ -813,7 +814,7 @@ class ChromecastService extends ChangeNotifier {
       _castPosition = Duration(milliseconds: (startTime * 1000).round());
       return true;
     } catch (e, st) {
-      debugPrint('[Cast] Cast load error: $e\n$st');
+      basicLog('[Cast] Cast load error: $e\n$st');
       _playbackState = CastPlaybackState.idle; notifyListeners(); return false;
     }
   }
@@ -829,7 +830,7 @@ class ChromecastService extends ChangeNotifier {
       playMethod: _castPlayMethod,
     );
     final trackDur = (m['duration'] as num?)?.toDouble() ?? totalDuration;
-    debugPrint('[Cast] Fallback: loading track $trackIdx/${tracks.length} at ${localStart}s');
+    verboseLog('[Cast] Fallback: loading track $trackIdx/${tracks.length} at ${localStart}s');
     await GoogleCastRemoteMediaClient.instance.loadMedia(
       GoogleCastMediaInformation(
         contentId: fallbackUrl,
@@ -846,7 +847,7 @@ class ChromecastService extends ChangeNotifier {
       autoPlay: true,
       playPosition: Duration(milliseconds: (localStart * 1000).round()),
     );
-    debugPrint('[Cast] ✓ Fallback loadMedia completed (track $trackIdx)');
+    verboseLog('[Cast] ✓ Fallback loadMedia completed (track $trackIdx)');
   }
 
   /// Auto-advance to next track when in fallback single-track mode
@@ -856,7 +857,7 @@ class ChromecastService extends ChangeNotifier {
     if (nextIdx >= _fallbackTracks!.length) return; // last track — real completion
     _isAdvancingTrack = true;
     _fallbackTrackIdx = nextIdx;
-    debugPrint('[Cast] Auto-advancing to track $nextIdx/${_fallbackTracks!.length}');
+    verboseLog('[Cast] Auto-advancing to track $nextIdx/${_fallbackTracks!.length}');
     try {
       await _loadFallbackTrack(
         _api!, _fallbackTracks!, _fallbackOffsets!, nextIdx, 0,
@@ -871,7 +872,7 @@ class ChromecastService extends ChangeNotifier {
         } catch (_) {}
       }
     } catch (e) {
-      debugPrint('[Cast] Auto-advance error: $e');
+      basicLog('[Cast] Auto-advance error: $e');
     }
     _isAdvancingTrack = false;
   }
@@ -926,7 +927,7 @@ class ChromecastService extends ChangeNotifier {
     try {
       GoogleCastSessionManager.instance.setDeviceVolume(value);
     } catch (e) {
-      debugPrint('[Cast] setDeviceVolume error: $e');
+      basicLog('[Cast] setDeviceVolume error: $e');
     }
   }
 
@@ -961,7 +962,7 @@ class ChromecastService extends ChangeNotifier {
       _castPosition = position;
       notifyListeners();
     } catch (e) {
-      debugPrint('[Cast] seekTo error: $e');
+      basicLog('[Cast] seekTo error: $e');
     }
   }
 
@@ -980,7 +981,7 @@ class ChromecastService extends ChangeNotifier {
       final qItems = GoogleCastRemoteMediaClient.instance.queueItems;
       final itemId = idx < qItems.length ? qItems[idx].itemId : null;
       if (itemId != null) {
-        debugPrint('[Cast] Queue seek: track $_queueTrackIdx -> $idx at ${local.inSeconds}s');
+        verboseLog('[Cast] Queue seek: track $_queueTrackIdx -> $idx at ${local.inSeconds}s');
         await GoogleCastRemoteMediaClient.instance.queueJumpToItemWithId(itemId);
         _queueTrackIdx = idx;
         // The jump starts the item from its beginning; give the receiver a
@@ -991,7 +992,7 @@ class ChromecastService extends ChangeNotifier {
         }
         return;
       }
-      debugPrint('[Cast] Queue seek: receiver has no itemId for track $idx, seeking within current track');
+      verboseLog('[Cast] Queue seek: receiver has no itemId for track $idx, seeking within current track');
     }
     await GoogleCastRemoteMediaClient.instance.seek(GoogleCastMediaSeekOption(position: local));
   }
@@ -1013,7 +1014,7 @@ class ChromecastService extends ChangeNotifier {
     }
     final api = _api;
     if (api == null) return;
-    debugPrint('[Cast] Fallback seek: track $_fallbackTrackIdx -> $idx at ${localS.toStringAsFixed(1)}s');
+    verboseLog('[Cast] Fallback seek: track $_fallbackTrackIdx -> $idx at ${localS.toStringAsFixed(1)}s');
     _fallbackTrackIdx = idx;
     await _loadFallbackTrack(api, _fallbackTracks!, offsets, idx, localS,
         _castingTitle ?? '', _castingAuthor ?? '', _castingCoverUrl, _castingDuration);
@@ -1036,9 +1037,9 @@ class ChromecastService extends ChangeNotifier {
     if (!isConnected) return;
     try {
       await GoogleCastRemoteMediaClient.instance.setPlaybackRate(speed);
-      debugPrint('[Cast] Speed set to ${speed}x');
+      verboseLog('[Cast] Speed set to ${speed}x');
     } catch (e) {
-      debugPrint('[Cast] setPlaybackRate error (may not be supported): $e');
+      basicLog('[Cast] setPlaybackRate error (may not be supported): $e');
     }
     notifyListeners();
   }
@@ -1077,7 +1078,7 @@ class ChromecastService extends ChangeNotifier {
     final itemId = _castingItemId;
     final episodeId = _castingEpisodeId;
     final duration = _castingDuration;
-    debugPrint('[Cast] Book complete: $_castingTitle');
+    verboseLog('[Cast] Book complete: $_castingTitle');
 
     // Mark as finished on the server
     if (itemId != null && _api != null) {
@@ -1092,9 +1093,9 @@ class ChromecastService extends ChangeNotifier {
         } else {
           await _api!.markFinished(itemId, duration);
         }
-        debugPrint('[Cast] Marked as finished on server');
+        verboseLog('[Cast] Marked as finished on server');
       } catch (e) {
-        debugPrint('[Cast] Failed to mark finished: $e');
+        basicLog('[Cast] Failed to mark finished: $e');
       }
     }
 
@@ -1151,7 +1152,7 @@ class ChromecastService extends ChangeNotifier {
       _lastSyncTime = now;
 
       if (_playbackSessionId != null) {
-        debugPrint('[CastSync] ct=${ct.toStringAsFixed(1)}s timeListened=${elapsed}s sid=${_playbackSessionId!.substring(0, 8)}...');
+        verboseLog('[CastSync] ct=${ct.toStringAsFixed(1)}s timeListened=${elapsed}s sid=${_playbackSessionId!.substring(0, 8)}...');
         // Sync via playback session so timeListened is tracked in stats
         await _api!.syncPlaybackSession(
           _playbackSessionId!,
@@ -1167,7 +1168,7 @@ class ChromecastService extends ChangeNotifier {
         await _api!.updateProgress(progressId, currentTime: ct, duration: _castingDuration);
       }
     } catch (e) {
-      debugPrint('[Cast] Server sync error: $e');
+      basicLog('[Cast] Server sync error: $e');
     }
   }
 

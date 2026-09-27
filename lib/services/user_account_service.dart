@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/server_url.dart';
 import 'api_service.dart';
+import 'app_log.dart';
 import 'auth_tokens.dart';
 
 /// Represents a saved user account (server + credentials).
@@ -115,13 +115,13 @@ class UserAccountService {
                 ))
             .toList();
       } catch (e) {
-        debugPrint('[UserAccount] Failed to load accounts: $e');
+        basicLog('[UserAccount] Failed to load accounts: $e');
       }
     }
 
     // Load active scope
     _activeScopeKey = prefs.getString(_activeKey);
-    debugPrint('[UserAccount] Loaded ${_accounts.length} accounts, active=$_activeScopeKey');
+    verboseLog('[UserAccount] Loaded ${_accounts.length} accounts, active=$_activeScopeKey');
   }
 
   /// Save or update an account after login. Sets it as active.
@@ -132,7 +132,7 @@ class UserAccountService {
     _accounts.insert(0, account); // Most recent first
     _activeScopeKey = account.scopeKey;
     await _persist();
-    debugPrint('[UserAccount] Saved & activated: ${account.username}@${account.serverUrl}');
+    verboseLog('[UserAccount] Saved & activated: ${account.username}@${account.serverUrl}');
   }
 
   /// Switch to a different saved account. Returns the account or null if not found.
@@ -144,7 +144,7 @@ class UserAccountService {
     if (account.token.isEmpty) return null;
     _activeScopeKey = account.scopeKey;
     _persistActiveKey();
-    debugPrint('[UserAccount] Switched to: ${account.username}@${account.serverUrl}');
+    verboseLog('[UserAccount] Switched to: ${account.username}@${account.serverUrl}');
     return account;
   }
 
@@ -156,7 +156,7 @@ class UserAccountService {
         (a) => a.serverUrl == serverUrl && a.username == username);
     if (_accounts.length < before) {
       await _persist();
-      debugPrint('[UserAccount] Removed: $username@$serverUrl');
+      verboseLog('[UserAccount] Removed: $username@$serverUrl');
       return true;
     }
     return false;
@@ -213,7 +213,7 @@ class UserAccountService {
     if (activeServer == null ||
         normalizeServerUrl(activeServer) != normalizeServerUrl(serverUrl) ||
         activeUsername != username) {
-      debugPrint(
+      basicLog(
         '[Accounts] Not persisting rotated tokens: active session is '
         '${activeServer == null ? "(none)" : "$activeUsername@$activeServer"}, '
         'rotation was for $username@$serverUrl',
@@ -223,7 +223,7 @@ class UserAccountService {
     // Half a pair is worse than none: keep the old, still-valid pair rather
     // than pairing a fresh access token with a spent refresh token.
     if (refreshToken == null && prefs.getString('refresh_token') != null) {
-      debugPrint(
+      basicLog(
         '[Accounts] Not persisting rotated tokens: response carried no refresh '
         'token and storage already holds one - refusing to store half a pair',
       );
@@ -243,7 +243,7 @@ class UserAccountService {
     final storedRefresh = prefs.getString('refresh_token');
     if (storedAccess != accessToken ||
         (refreshToken != null && storedRefresh != refreshToken)) {
-      debugPrint(
+      basicLog(
         '[Accounts] Rotated tokens did NOT survive the write: '
         'wrote access=${ApiService.tokenFp(accessToken)} '
         'refresh=${ApiService.tokenFp(refreshToken)}, '
@@ -347,7 +347,7 @@ class UserAccountService {
       _activeScopeKey = newScope;
     }
     await _persist();
-    debugPrint(
+    verboseLog(
         '[UserAccount] Updated server URL for $username: $oldServerUrl -> $newServerUrl');
     return true;
   }
@@ -389,7 +389,7 @@ class UserAccountService {
         moved++;
       }
     }
-    debugPrint(
+    verboseLog(
         '[UserAccount] Migrated $moved scoped key(s): $oldScope -> $newScope');
   }
 

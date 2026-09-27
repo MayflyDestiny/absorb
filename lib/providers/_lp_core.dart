@@ -1853,7 +1853,15 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         if (serverTime != null &&
             newUpd > prevUpd &&
             !player.isPlaying &&
-            !ChromecastService().isCasting) {
+            !ChromecastService().isCasting &&
+            // Never adopt the socket echo of OUR OWN recent progress PATCH:
+            // it carries exactly what this device already saved, so adopting
+            // it back can only roll the paused player onto a stale point -
+            // e.g. a chapter flip made while paused is bounced straight back
+            // to the pause position a moment later (the "next chapter doesn't
+            // switch" / wrong-title flash family). Genuine other-device
+            // updates still qualify - [_lastLocalProgressKey] is ours alone.
+            !ApiService.wasRecentLocalProgressPush(key)) {
           // "Newer than the last server value we saw" is not "newer than
           // where this phone got to": after an hour offline the server still
           // holds the position from before the outage, and adopting it drags

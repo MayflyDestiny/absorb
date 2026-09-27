@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'inflight_temp_writes.dart';
+import 'app_log.dart';
 import 'player_settings.dart';
 import 'update_policy.dart';
 
@@ -80,7 +81,7 @@ class UpdateCheckerService {
         baseBuildNumber =
             await _updateChannel.invokeMethod<int>('getBaseBuildNumber');
       } catch (error) {
-        debugPrint('[UpdateChecker] Base build lookup failed: $error');
+        basicLog('[UpdateChecker] Base build lookup failed: $error');
       }
     }
     return currentUpdateVersion(
@@ -154,7 +155,7 @@ class UpdateCheckerService {
           supportedAbis =
               (await DeviceInfoPlugin().androidInfo).supportedAbis;
         } catch (error) {
-          debugPrint('[UpdateChecker] ABI detection failed: $error');
+          basicLog('[UpdateChecker] ABI detection failed: $error');
         }
       }
       final selectedAsset = selectAndroidUpdateAsset(
@@ -167,7 +168,7 @@ class UpdateCheckerService {
           '';
       final downloadUrl = await PlayerSettings.githubProxyFor(rawDownloadUrl);
       if (selectedAsset != null) {
-        debugPrint(
+        verboseLog(
           '[UpdateChecker] Selected ${selectedAsset.name} for '
           '${supportedAbis.join(', ')}',
         );
@@ -195,16 +196,16 @@ class UpdateCheckerService {
 
       return UpdateCheckResult.update(info);
     } on TimeoutException {
-      debugPrint('[UpdateChecker] Timed out');
+      basicLog('[UpdateChecker] Timed out');
       return const UpdateCheckResult.failure('timeout');
     } on http.ClientException catch (e) {
-      debugPrint('[UpdateChecker] Network error: $e');
+      basicLog('[UpdateChecker] Network error: $e');
       return UpdateCheckResult.failure(e.message);
     } on FormatException catch (e) {
-      debugPrint('[UpdateChecker] Bad response: $e');
+      basicLog('[UpdateChecker] Bad response: $e');
       return const UpdateCheckResult.failure('bad response');
     } catch (e) {
-      debugPrint('[UpdateChecker] Error: $e');
+      basicLog('[UpdateChecker] Error: $e');
       return UpdateCheckResult.failure('$e');
     }
   }
@@ -258,13 +259,13 @@ class ApkUpdater {
     } on _CancelledException {
       return const ApkInstallResult(ApkInstallStatus.cancelled);
     } catch (e) {
-      debugPrint('[ApkUpdater] Download failed: $e');
+      basicLog('[ApkUpdater] Download failed: $e');
       return ApkInstallResult(ApkInstallStatus.downloadFailed, e.toString());
     }
 
     final result = await OpenFilex.open(file.path, type: 'application/vnd.android.package-archive');
     if (result.type != ResultType.done) {
-      debugPrint('[ApkUpdater] OpenFilex failed: ${result.type} ${result.message}');
+      basicLog('[ApkUpdater] OpenFilex failed: ${result.type} ${result.message}');
       return ApkInstallResult(ApkInstallStatus.launchFailed, result.message);
     }
     return const ApkInstallResult(ApkInstallStatus.ok);

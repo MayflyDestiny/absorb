@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/download_service.dart';
+import '../utils/settle_frames.dart';
 import 'overlay_toast.dart';
 
 /// One-time first-run prompt that guides new users to pick a public download
@@ -29,6 +30,11 @@ class DownloadLocationPrompt {
     if (!await dl.shouldShowFirstRunLocationPrompt()) return;
     // Mark seen immediately so a dismissed/rejected picker never re-prompts.
     await dl.markFirstRunLocationPromptSeen();
+    if (!context.mounted) return;
+    // Same reason as the welcome sheet: this used to appear the instant the
+    // previous dialog closed, so both overlays landed back to back while the
+    // first screen's covers were still decoding.
+    await waitForFramesSettled();
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,

@@ -6,8 +6,41 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
+import '../services/download_service.dart';
 import '../utils/series_id.dart';
 import 'absorbing_shared.dart';
+
+/// True when [live] and [previous] hold the same indices.
+bool _sameIndices(Set<int> live, Iterable<int> previous) =>
+    live.length == previous.length && live.every(previous.contains);
+
+/// Chrome shared by both chapter sheets: rounded panel, accent-tinted top
+/// hairline, drag handle.
+class _SheetFrame extends StatelessWidget {
+  final Color accent;
+  final double height;
+  final List<Widget> children;
+
+  const _SheetFrame({required this.accent, required this.height, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sheetColor = Theme.of(context).bottomSheetTheme.backgroundColor ?? cs.surface;
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: sheetColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1))),
+      child: Column(children: [
+        Padding(padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Container(width: 40, height: 4, decoration: BoxDecoration(
+              color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+        ...children,
+      ]));
+  }
+}
 
 /// Outcome of the batch chapter download panel.
 class ChapterDownloadSheetResult {
@@ -20,8 +53,8 @@ class ChapterDownloadSheetResult {
 /// Batch chapter download panel opened from the More menu.
 ///
 /// Chapters are shown one page at a time ([pageSize] = 100 rows). Each row can
-/// be selected individually; the top-right "选集" button jumps between pages and
-/// the "全选" button toggles the whole current page (a small dot shows whether
+/// be selected individually; the top-right "閫夐泦" button jumps between pages and
+/// the "鍏ㄩ€? button toggles the whole current page (a small dot shows whether
 /// the current page is fully selected). Chapters in [downloadedChapters] are
 /// greyed out with a downloaded marker and cannot be re-picked. Returns a
 /// [ChapterDownloadSheetResult], or null when dismissed.
@@ -30,6 +63,7 @@ Future<ChapterDownloadSheetResult?> showChapterDownloadSheet(
   required Color accent,
   required String title,
   required List<dynamic> chapters,
+  String downloadKey = '',
   double displaySpeed = 1.0,
   Set<int> downloadedChapters = const <int>{},
 }) {
@@ -43,6 +77,7 @@ Future<ChapterDownloadSheetResult?> showChapterDownloadSheet(
       accent: accent,
       title: title,
       chapters: chapters,
+      downloadKey: downloadKey,
       displaySpeed: displaySpeed,
       downloadedChapters: downloadedChapters,
     ),
@@ -53,6 +88,7 @@ class _ChapterDownloadSheet extends StatefulWidget {
   final Color accent;
   final String title;
   final List<dynamic> chapters;
+  final String downloadKey;
   final double displaySpeed;
   final Set<int> downloadedChapters;
 
@@ -60,6 +96,7 @@ class _ChapterDownloadSheet extends StatefulWidget {
     required this.accent,
     required this.title,
     required this.chapters,
+    this.downloadKey = '',
     this.displaySpeed = 1.0,
     this.downloadedChapters = const <int>{},
   });
@@ -72,11 +109,42 @@ class _ChapterDownloadSheetState extends State<_ChapterDownloadSheet> {
   static const int _pageSize = 100;
   final Set<int> _selected = {};
   int _page = 0;
+  late Set<int> _downloaded = widget.downloadedChapters;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.downloadKey.isNotEmpty) {
+      DownloadService().addListener(_onSavedChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.downloadKey.isNotEmpty) {
+      DownloadService().removeListener(_onSavedChanged);
+    }
+    super.dispose();
+  }
+
+  // DownloadService ticks ~4x/s while a book is in flight, so dedupe before
+  // rebuilding: a page of rows must not re-render several times a second for
+  // a progress tick that changed no chapter.
+  void _onSavedChanged() {
+    if (!mounted) return;
+    final live = DownloadService()
+        .downloadedChapterIndicesCached(widget.downloadKey, widget.chapters);
+    if (_sameIndices(live, _downloaded)) return;
+    setState(() {
+      _downloaded = live;
+      _selected.removeWhere(live.contains);
+    });
+  }
 
   int get _count => widget.chapters.length;
   int get _selectedCount => _selected.length;
 
-  bool _isDownloaded(int index) => widget.downloadedChapters.contains(index);
+  bool _isDownloaded(int index) => _downloaded.contains(index);
 
   int get _pageStart => _page * _pageSize;
   int get _pageEnd =>
@@ -175,18 +243,8 @@ class _ChapterDownloadSheetState extends State<_ChapterDownloadSheet> {
     final l = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final sheetColor = Theme.of(context).bottomSheetTheme.backgroundColor ?? cs.surface;
     final height = MediaQuery.of(context).size.height * 0.75;
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: sheetColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: widget.accent.withValues(alpha: 0.2), width: 1)),
-      ),
-      child: Column(children: [
-        Padding(padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Container(width: 40, height: 4, decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+    return _SheetFrame(accent: widget.accent, height: height, children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
@@ -318,16 +376,13 @@ class _ChapterDownloadSheetState extends State<_ChapterDownloadSheet> {
             ),
           ]),
         )),
-      ]),
-    );
+      ]);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Downloaded-chapters viewer: list what's already saved on a book and let
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?// Downloaded-chapters viewer: list what's already saved on a book and let
 // the user add more chapters or remove the whole download.
-// ═══════════════════════════════════════════════════════════════
-
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 /// Outcome of the downloaded-chapters viewer panel.
 class DownloadedChaptersViewResult {
   /// Chapters the user picked to download on top (empty when they only
@@ -345,11 +400,13 @@ class DownloadedChaptersViewResult {
 
 /// Bottom sheet listing the already-downloaded chapters of a book
 /// ([downloadedChapters] are indices into [chapters]). Tap a listed chapter to
-/// jump/play it; use "选择" for selecting chapters to remove (single or batch
-/// — every row also offers a one-tap remove). "添加更多章节" opens the picker
+/// jump/play it; use "閫夋嫨" for selecting chapters to remove (single or batch
+/// 鈥?every row also offers a one-tap remove). "娣诲姞鏇村绔犺妭" opens the picker
 /// ([showChapterDownloadSheet], already-saved rows greyed out). [onRemoveChapters]
 /// receives the chapter indices to delete and returns how many were removed.
 /// Returns the [DownloadedChaptersViewResult] or null when dismissed.
+/// [downloadKey] is the storage key (itemId, or "itemId-episodeId" for podcast
+/// episodes) used to re-read live download state while the sheet is open.
 Future<DownloadedChaptersViewResult?> showDownloadedChaptersSheet(
   BuildContext context, {
   required String itemId,
@@ -358,6 +415,7 @@ Future<DownloadedChaptersViewResult?> showDownloadedChaptersSheet(
   required List<dynamic> chapters,
   required List<int> downloadedChapters,
   required Future<int> Function(List<int> chapterIndices) onRemoveChapters,
+  String downloadKey = '',
   double displaySpeed = 1.0,
 }) {
   if (downloadedChapters.isEmpty) return Future.value(null);
@@ -373,6 +431,7 @@ Future<DownloadedChaptersViewResult?> showDownloadedChaptersSheet(
       chapters: chapters,
       downloadedChapters: downloadedChapters,
       onRemoveChapters: onRemoveChapters,
+      downloadKey: downloadKey,
       displaySpeed: displaySpeed,
     ),
   );
@@ -385,6 +444,7 @@ class _DownloadedChaptersSheet extends StatefulWidget {
   final List<dynamic> chapters;
   final List<int> downloadedChapters;
   final Future<int> Function(List<int> chapterIndices) onRemoveChapters;
+  final String downloadKey;
   final double displaySpeed;
 
   const _DownloadedChaptersSheet({
@@ -394,6 +454,7 @@ class _DownloadedChaptersSheet extends StatefulWidget {
     required this.chapters,
     required this.downloadedChapters,
     required this.onRemoveChapters,
+    this.downloadKey = '',
     this.displaySpeed = 1.0,
   });
 
@@ -410,8 +471,30 @@ class _DownloadedChaptersSheetState extends State<_DownloadedChaptersSheet> {
 
   @override
   void initState() {
-    super.initState();
     _saved = List.of(widget.downloadedChapters);
+    super.initState();
+    if (widget.downloadKey.isNotEmpty) {
+      DownloadService().addListener(_onSavedChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.downloadKey.isNotEmpty) {
+      DownloadService().removeListener(_onSavedChanged);
+    }
+    super.dispose();
+  }
+
+  void _onSavedChanged() {
+    if (!mounted) return;
+    final live = DownloadService()
+        .downloadedChapterIndicesCached(widget.downloadKey, widget.chapters);
+    if (_sameIndices(live, _saved)) return;
+    setState(() {
+      _saved = live.toList()..sort();
+      _selected.removeWhere((i) => !live.contains(i));
+    });
   }
 
   Future<void> _addMore() async {
@@ -420,6 +503,7 @@ class _DownloadedChaptersSheetState extends State<_DownloadedChaptersSheet> {
       accent: widget.accent,
       title: widget.title,
       chapters: widget.chapters,
+      downloadKey: widget.downloadKey,
       displaySpeed: widget.displaySpeed,
       downloadedChapters: _saved.toSet(),
     );
@@ -555,27 +639,10 @@ class _DownloadedChaptersSheetState extends State<_DownloadedChaptersSheet> {
     final l = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final sheetColor =
-        Theme.of(context).bottomSheetTheme.backgroundColor ?? cs.surface;
     final height = MediaQuery.of(context).size.height * 0.6;
     final saved = _saved.length;
     final total = widget.chapters.length;
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: sheetColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: widget.accent.withValues(alpha: 0.2), width: 1)),
-      ),
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: 0.24),
-                borderRadius: BorderRadius.circular(2))),
-        ),
+    return _SheetFrame(accent: widget.accent, height: height, children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
@@ -694,7 +761,6 @@ class _DownloadedChaptersSheetState extends State<_DownloadedChaptersSheet> {
                   textAlign: TextAlign.center,
                   style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
         )),
-      ]),
-    );
+      ]);
   }
 }

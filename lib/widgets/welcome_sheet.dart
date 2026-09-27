@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
+import '../utils/settle_frames.dart';
 
 /// Shows a one-time welcome dialog explaining the Absorb terminology and a
 /// couple of essential gestures. Kept short on purpose - the previous version
@@ -18,8 +19,11 @@ class WelcomeSheet {
     if (prefs.getBool(_prefKey) == true) return;
     await prefs.setBool(_prefKey, true);
     if (!context.mounted) return;
-    // Small delay so the app finishes its initial layout first
-    await Future.delayed(const Duration(milliseconds: 800));
+    // Hold the dialog until the shell has actually drawn rather than guessing
+    // with a fixed delay. On a first install the cover cache is empty and the
+    // `showDialog` overlay forces a full-screen repaint; landing that in the
+    // middle of the decode burst is what read as a stutter.
+    await waitForFramesSettled();
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,

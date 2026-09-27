@@ -22,12 +22,14 @@ class DownloadsScreen extends StatefulWidget {
 class _DownloadsScreenState extends State<DownloadsScreen> {
   bool _loading = true;
   List<DownloadInfo> _items = [];
+  Set<String> _itemIds = <String>{};
   Map<String, int> _fileSizes = {};
   Map<String, DateTime> _downloadedTimes = {};
   Map<String, bool> _isPodcast = {};
   bool _selecting = false;
   final Set<String> _selected = {};
   bool _mergeLibraries = false;
+  bool _metadataRefreshScheduled = false;
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   _DownloadSort _sort = _DownloadSort.recent;
@@ -62,13 +64,84 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     if (mounted) {
       setState(() {
         _items = items;
+        _itemIds = {for (final item in items) item.itemId};
         _fileSizes = sizes;
         _downloadedTimes = times;
         _isPodcast = pods;
         _mergeLibraries = merge;
         _loading = false;
       });
+      // A download that finished after the snapshot above ticked while
+      // [_loading] was still set, so it was dropped with no second tick coming.
+      // Re-check now the gate is open; both sides are the same set, so this
+      // settles after one extra pass.
+      _maybeRefreshMetadata(DownloadService());
     }
+  }
+
+  /// Queues an update when the completed set changes, so rows that finished
+  /// after the first load get real sort keys instead of zeros. Runs on every
+  /// DownloadService tick (~4x/s), so it stays cheap and never setStates here.
+  void _maybeRefreshMetadata(DownloadService ds) {
+    if (_metadataRefreshScheduled || _loading) return;
+    final liveIds = ds.downloadedItemIds;
+    if (liveIds.length == _itemIds.length && liveIds.containsAll(_itemIds)) {
+      return;
+    }
+    _metadataRefreshScheduled = true;
+    Future.microtask(() {
+      if (!mounted) {
+        _metadataRefreshScheduled = false;
+        return;
+      }
+      _addFinishedItems(DownloadService());
+    });
+  }
+
+  /// Adds rows for newly finished downloads WITHOUT the full
+  /// [DownloadService.validateDownloads] walk: completing a download can only
+  /// add to the set, and a finished row's size/time/podcast can't change since.
+  ///
+  /// If a row we already show is missing from the live set, a file was deleted
+  /// externally or an item was deleted, and only `validateDownloads` can tell
+  /// that apart from a partial file, so that case takes the slow [_load] path.
+  void _addFinishedItems(DownloadService ds) {
+    final items = ds.downloadedItems;
+    final added = <DownloadInfo>[];
+    var kept = 0;
+    for (final item in items) {
+      if (_itemIds.contains(item.itemId)) {
+        kept++;
+      } else {
+        added.add(item);
+      }
+    }
+    // Counting survivors rather than comparing lengths also catches a delete
+    // that landed in the same tick as a fresh completion, which would leave the
+    // length unchanged.
+    if (kept != _items.length) {
+      // Release the flag before the slow path: keeping it set would stall every
+      // later tick until the reload lands, and validateDownloads() coalesces
+      // any duplicate reload anyway.
+      _metadataRefreshScheduled = false;
+      _load();
+      return;
+    }
+    if (added.isEmpty) {
+      _metadataRefreshScheduled = false;
+      return;
+    }
+    setState(() {
+      _items = [..._items, ...added];
+      for (final item in added) {
+        _itemIds.add(item.itemId);
+        _fileSizes[item.itemId] = ds.getItemFileSize(item.itemId);
+        final t = _latestFileTime(item);
+        if (t != null) _downloadedTimes[item.itemId] = t;
+        _isPodcast[item.itemId] = _sessionIsPodcast(item.sessionData);
+      }
+    });
+    _metadataRefreshScheduled = false;
   }
 
   /// The newest local file timestamp of [info] - a reasonable stand-in for when
@@ -482,6 +555,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         listenable: DownloadService(),
                         builder: (ctx, _) {
                           final ds = DownloadService();
+                          _maybeRefreshMetadata(ds);
                           final lib = context.watch<LibraryProvider>();
                           final activeLibId = lib.selectedLibraryId;
                           final shouldFilter =

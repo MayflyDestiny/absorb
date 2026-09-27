@@ -40,6 +40,7 @@ mixin _StateMixin on ChangeNotifier {
   int _sectionsFetchMisses = 0;
 
   Future<void>? _personalizedInFlight;
+  Future<void>? _librariesInFlight;
   Future<void>? _progressShelvesInFlight;
   Future<void>? _refreshProgressInFlight;
   DateTime? _lastProgressShelvesFetchAt;

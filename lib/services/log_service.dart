@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../build_info.dart';
 import 'api_service.dart';
+import 'app_log.dart';
 
 class LogService {
   static final LogService _instance = LogService._();
@@ -20,6 +21,14 @@ class LogService {
   static const _rotateCheckInterval = 500; // check every N writes
   static const _createdAtKey = 'log_created_at';
 
+  // Compiled once: every logged line runs these, and building a RegExp per
+  // call is pure overhead on the hottest path in the app.
+  static final _reUrl = RegExp(r'https?://[^\s\]"]+');
+  static final _reBearer = RegExp(r'Bearer [A-Za-z0-9_\-.]{12,}', caseSensitive: false);
+  static final _reKeyValue = RegExp(r'(token|secret|password|authorization|bearer|\w*refresh|\w*access|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+', caseSensitive: false);
+  static final _reJwt = RegExp(r'(?:(?<=Bearer\s)|\b)([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{8,})');
+  static final _reLocalPath = RegExp(r'(?<![A-Za-z0-9])(?:/data|/storage|/home|/var|/private|/Users|[A-Za-z]:)(?:[/\\][^,\s\]\)"<>]+)+');
+
   File? _logFile;
   bool _enabled = false;
   DebugPrintCallback? _originalDebugPrint;
@@ -27,9 +36,23 @@ class LogService {
 
   bool get enabled => _enabled;
 
-  /// Call once at startup. If [loggingEnabled] is true, sets up the log file
-  /// and overrides [debugPrint] to capture all output.
+  /// Call once at startup. Always overrides [debugPrint] so the platform
+  /// logcat is sanitized and (in release builds) filtered down to [basicLog]
+  /// lines. If [loggingEnabled] is true it additionally captures all sanitized
+  /// output to a rotating log file for sharing.
   Future<void> init(bool loggingEnabled) async {
+    // Override debugPrint globally no matter what: it must run before any
+    // other service logs, so distribution releases never spew verbose
+    // diagnostics into logcat and never leak unsanitized URLs/tokens.
+    //
+    // Idempotence guard: re-entering here would capture our own interceptor as
+    // [_originalDebugPrint] and every later log line would recurse until the
+    // stack blew.
+    if (!identical(debugPrint, _interceptedDebugPrint)) {
+      _originalDebugPrint = debugPrint;
+      debugPrint = _interceptedDebugPrint;
+    }
+
     _enabled = loggingEnabled;
     if (!_enabled) return;
 
@@ -78,26 +101,29 @@ class LogService {
       '\n=== Session started $now (App Version: ${versionWithBeta(ApiService.appVersionFull)}) ===\n',
       mode: FileMode.append,
     );
-
-    // Override debugPrint globally
-    _originalDebugPrint = debugPrint;
-    debugPrint = _interceptedDebugPrint;
   }
 
   void _interceptedDebugPrint(String? message, {int? wrapWidth}) {
-    // Sanitize before forwarding to logcat: _originalDebugPrint writes straight
-    // to the platform logcat which is NOT guarded by the file-sink sanitizer
-    // below, so without this step tokens/URLs would leak raw in release builds.
-    final sanitizedMessage = message == null ? null : _sanitize(message);
-    _originalDebugPrint?.call(sanitizedMessage, wrapWidth: wrapWidth);
-    if (_logFile != null && sanitizedMessage != null) {
-      final ts = DateTime.now().toIso8601String();
-      _logFile!.writeAsStringSync(
-        '[$ts] $sanitizedMessage\n',
-        mode: FileMode.append,
-      );
-      _maybeRotate();
+    // Decide before sanitizing: `debugPrint(null)` is a bare newline, not an
+    // error, and folding it into `pass` swallowed it in EVERY build. Deciding
+    // early also skips ~5 regex passes over lines a release is about to drop.
+    final pass = verboseDiagnostics ||
+        (message != null && message.startsWith('[L]'));
+    final toFile = _logFile != null && message != null;
+    if (!pass && !toFile) return;
+    // Once per line, however many sinks take it: the logcat forward is
+    // unguarded, so raw tokens/URLs would leak there.
+    final sanitized = message == null ? null : _sanitize(message);
+    if (pass) {
+      _originalDebugPrint?.call(sanitized, wrapWidth: wrapWidth);
     }
+    if (!toFile) return;
+    final ts = DateTime.now().toIso8601String();
+    _logFile!.writeAsStringSync(
+      '[$ts] $sanitized\n',
+      mode: FileMode.append,
+    );
+    _maybeRotate();
   }
 
   /// Write a log entry directly (for error handlers that bypass debugPrint).
@@ -193,31 +219,22 @@ class LogService {
   /// pairs that look like credentials.
   static String _sanitize(String message) {
     var result = _sanitizeUrls(message);
-    // Mask standalone sensitive key=value pairs not inside URLs
-    // (e.g. "token=abc123" in non-URL context)
-    result = result.replaceAllMapped(
-      RegExp(r'(token|secret|password|authorization|bearer|\w*refresh|\w*access|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+', caseSensitive: false),
-      (m) => '${m.group(1)}=***',
-    );
-    // Mask bare JWTs / opaque tokens that sit in prose, not key=value pairs
-    // (three dot-separated base64url segments; also Bearer<space>token).
-    result = result.replaceAllMapped(
-      RegExp(r'(?:(?<=Bearer\s)|\b)([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{8,})'),
-      (_) => '[token-redacted]',
-    );
-    result = result.replaceAllMapped(
-      RegExp(r'Bearer [A-Za-z0-9_\-.]{12,}', caseSensitive: false),
-      (_) => '[bearer-redacted]',
-    );
-    // Mask absolute local filesystem paths (app/data dirs on each platform)
-    // that leak the device layout; keep the basename for debuggability.
-    // Anchored so an `http://` host's `p:` can't be mistaken for a drive.
-    result = result.replaceAllMapped(
-      RegExp(r'(?<![A-Za-z0-9])(?:/data|/storage|/home|/var|/private|/Users|'
-          r'[A-Za-z]:)(?:[/\\][^,\s\]\)"<>]+)+'),
-      (m) => '[local-path ${m.group(0)!.split(RegExp(r'[/\\]')).last}]',
-    );
-    return result;
+    // Standalone key=value credentials outside a URL, e.g. "token=abc123".
+    result = result.replaceAllMapped(_reKeyValue, (m) => '${m.group(1)}=***');
+    // Opaque tokens in prose: three dot-separated base64url segments, plus
+    // "Bearer xxx".
+    result = result.replaceAllMapped(_reJwt, (_) => '[token-redacted]');
+    result = result.replaceAllMapped(_reBearer, (_) => '[bearer-redacted]');
+    // Absolute local paths, keeping the basename for debuggability. Anchored
+    // so an `http://` host's `p:` can't be mistaken for a drive.
+    return result.replaceAllMapped(_reLocalPath, (m) {
+      // Basename without split(): the pattern guarantees a separator, so
+      // scanning back avoids allocating every segment just to keep the tail.
+      final p = m.group(0)!;
+      final fwd = p.lastIndexOf('/');
+      final cut = fwd > p.lastIndexOf('\\') ? fwd : p.lastIndexOf('\\');
+      return '[local-path ${p.substring(cut + 1)}]';
+    });
   }
 
   /// Sanitize URLs in log content, replacing server hosts with a connection
@@ -227,8 +244,7 @@ class LogService {
     // Collect unique hostnames found in URLs so we can scrub bare references too
     final foundHosts = <String>{};
 
-    final urlPattern = RegExp(r'https?://[^\s\]"]+');
-    var result = content.replaceAllMapped(urlPattern, (match) {
+    var result = content.replaceAllMapped(_reUrl, (match) {
       final url = match.group(0)!;
       try {
         final uri = Uri.parse(url);

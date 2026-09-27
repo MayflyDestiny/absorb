@@ -149,41 +149,53 @@ class _CarModeScreenState extends State<CarModeScreen>
     return url != null && url.startsWith('/');
   }
 
-  String _currentChapterTitle() {
+  /// The chapter the UI should be showing, or null when there's none.
+  ///
+  /// Latch-aware (same source as the lock screen): while a jump is settling the
+  /// raw stream position sits in the previous chapter's tail, which would show
+  /// the PREVIOUS chapter at ~100% until the stream crosses the target's
+  /// metadata start. The latch is only trusted when it points into THIS list —
+  /// a re-fetched chapter list can be shorter than the player's.
+  ///
+  // Latch first: mid-jump the engine still reports the previous file's offset,
+  // which would show the PREVIOUS chapter at ~100%. Title and bar both read
+  // this, so they can't end up labelling different chapters.
+  Map<String, dynamic>? _activeChapter() {
     final chapters = widget.player.chapters;
-    if (chapters.isEmpty) return '';
-    final pos = widget.player.position.inSeconds.toDouble();
+    if (chapters.isEmpty) return null;
+    final latch = widget.player.currentChapterIndex;
+    if (latch != null && latch < chapters.length) {
+      return chapters[latch] as Map<String, dynamic>;
+    }
+    final pos = widget.player.chapterResolvePosSec;
     for (final ch in chapters) {
       final start = (ch['start'] as num?)?.toDouble() ?? 0;
       final end = (ch['end'] as num?)?.toDouble() ?? 0;
-      if (pos >= start && pos < end) {
-        return ch['title'] as String? ?? '';
-      }
+      if (pos >= start && pos < end) return ch as Map<String, dynamic>;
     }
-    return '';
+    return null;
   }
 
+  String _chapterTitle(Map<String, dynamic>? ch) => ch?['title'] as String? ?? '';
+
   /// Returns (chapterProgress, chapterElapsed, chapterRemaining)
-  (double, Duration, Duration) _chapterProgress() {
-    final chapters = widget.player.chapters;
-    if (chapters.isEmpty) return (0, Duration.zero, Duration.zero);
-    final pos = widget.player.position.inSeconds.toDouble();
-    final speed = _speedAdjustedTime ? widget.player.speed : 1.0;
-    for (final ch in chapters) {
-      final start = (ch['start'] as num?)?.toDouble() ?? 0;
-      final end = (ch['end'] as num?)?.toDouble() ?? 0;
-      if (pos >= start && pos < end) {
-        final chLen = end - start;
-        final chPos = pos - start;
-        final progress = chLen > 0 ? (chPos / chLen).clamp(0.0, 1.0) : 0.0;
-        return (
-          progress,
-          Duration(seconds: (chPos / speed).round()),
-          Duration(seconds: ((chLen - chPos) / speed).round()),
-        );
-      }
-    }
-    return (0, Duration.zero, Duration.zero);
+  (double, Duration, Duration) _chapterProgress(Map<String, dynamic>? ch) {
+    if (ch == null) return (0, Duration.zero, Duration.zero);
+    final pos = widget.player.chapterResolvePosSec;
+    final start = (ch['start'] as num?)?.toDouble() ?? 0;
+    final end = (ch['end'] as num?)?.toDouble() ?? 0;
+    final chLen = end > start ? end - start : 0.0;
+    // Clamp so metadata drift can't push a label outside the chapter; the
+    // speed guard keeps the divisions finite (Duration.round throws on NaN).
+    final chPos = (pos - start).clamp(0.0, chLen);
+    final speed = _speedAdjustedTime && widget.player.speed > 0
+        ? widget.player.speed
+        : 1.0;
+    return (
+      chLen > 0 ? chPos / chLen : 0.0,
+      Duration(seconds: (chPos / speed).round()),
+      Duration(seconds: ((chLen - chPos) / speed).round()),
+    );
   }
 
   String _formatDuration(Duration d) {
@@ -197,6 +209,45 @@ class _CarModeScreenState extends State<CarModeScreen>
   String _formatRemaining(Duration remaining) {
     if (remaining.isNegative) return '0:00';
     return '-${_formatDuration(remaining)}';
+  }
+
+  // The book bar and the chapter bar are the same widget with a different
+  // value; [above] is what sits over the track (chapter title, or the gap the
+  // book bar needs).
+  Widget _timeProgress({
+    required double value,
+    required Duration elapsed,
+    required Duration remaining,
+    required double timeSize,
+    required double hPad,
+    required bool compact,
+    Widget? above,
+  }) {
+    final timeStyle = TextStyle(
+        color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: hPad),
+      child: Column(children: [
+        if (above != null) above,
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: compact ? 4 : 6,
+            backgroundColor: Colors.white12,
+            valueColor: const AlwaysStoppedAnimation(Colors.white70),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(_formatDuration(elapsed), style: timeStyle),
+            Text(_formatRemaining(remaining), style: timeStyle),
+          ],
+        ),
+      ]),
+    );
   }
 
   @override
@@ -265,31 +316,14 @@ class _CarModeScreenState extends State<CarModeScreen>
                       : 0.0;
                   final bookElapsed = Duration(milliseconds: (pos.inMilliseconds / speed).round());
                   final bookRemaining = Duration(milliseconds: ((total - pos).inMilliseconds / speed).round());
-
-                  return Padding(
-                    padding: EdgeInsets.symmetric(horizontal: hPad),
-                    child: Column(children: [
-                      SizedBox(height: compact ? 2 : 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: bookProgress,
-                          minHeight: compact ? 4 : 6,
-                          backgroundColor: Colors.white12,
-                          valueColor: const AlwaysStoppedAnimation(Colors.white70),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(_formatDuration(bookElapsed),
-                              style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
-                          Text(_formatRemaining(bookRemaining),
-                              style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ]),
+                  return _timeProgress(
+                    value: bookProgress,
+                    elapsed: bookElapsed,
+                    remaining: bookRemaining,
+                    timeSize: timeSize,
+                    hPad: hPad,
+                    compact: compact,
+                    above: SizedBox(height: compact ? 2 : 4),
                   );
                 },
               )
@@ -406,39 +440,29 @@ class _CarModeScreenState extends State<CarModeScreen>
               ? StreamBuilder<Duration>(
                   stream: player.positionStream,
                   builder: (context, snapshot) {
-                    final (chProgress, chElapsed, chRemaining) = _chapterProgress();
-                    final chapterTitle = _currentChapterTitle();
-
-                    return Padding(
-                      padding: EdgeInsets.symmetric(horizontal: hPad),
-                      child: Column(children: [
-                        if (chapterTitle.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(chapterTitle,
-                              style: TextStyle(color: Colors.white54, fontSize: compact ? 12.0 : 14.0, fontWeight: FontWeight.w600),
-                              textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: chProgress,
-                            minHeight: compact ? 4 : 6,
-                            backgroundColor: Colors.white12,
-                            valueColor: const AlwaysStoppedAnimation(Colors.white70),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(_formatDuration(chElapsed),
-                                style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
-                            Text(_formatRemaining(chRemaining),
-                                style: TextStyle(color: Colors.white54, fontSize: timeSize, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ]),
+                    // Resolved once: it's a linear scan when nothing is latched
+                    // and both the title and the bar need it.
+                    final active = _activeChapter();
+                    final (chProgress, chElapsed, chRemaining) =
+                        _chapterProgress(active);
+                    final chapterTitle = _chapterTitle(active);
+                    return _timeProgress(
+                      value: chProgress,
+                      elapsed: chElapsed,
+                      remaining: chRemaining,
+                      timeSize: timeSize,
+                      hPad: hPad,
+                      compact: compact,
+                      above: chapterTitle.isEmpty
+                          ? null
+                          : Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(chapterTitle,
+                                style: TextStyle(color: Colors.white54, fontSize: compact ? 12.0 : 14.0, fontWeight: FontWeight.w600),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            ),
                     );
                   },
                 )
@@ -502,7 +526,7 @@ class _CarModeScreenState extends State<CarModeScreen>
                     color: Colors.white54,
                     onPressed: player.hasBook ? () {
                       final pos = player.position.inMilliseconds / 1000.0;
-                      final chTitle = _currentChapterTitle();
+                      final chTitle = _chapterTitle(_activeChapter());
                       final itemId = player.currentEpisodeId != null
                           ? '${player.currentItemId}-${player.currentEpisodeId}'
                           : player.currentItemId;

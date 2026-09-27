@@ -10,9 +10,11 @@ import '../utils/series_id.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
+import '../services/chapter_lookup.dart';
 import '../services/download_service.dart';
 import '../services/chromecast_service.dart';
 import 'absorbing_shared.dart';
+import 'stable_cached_network_image.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
@@ -100,6 +102,13 @@ class _ExpandedCardState extends State<ExpandedCard> {
   // Filled by the full-item fetch below, same as the small card does.
   Map<String, dynamic>? _fetchedEbookFile;
   bool _isStarting = false;
+  // Server-side "this item changed" tick, and the in-flight guard for the
+  // re-read it triggers. Both mirror the small card's handling.
+  int? _lastSeenUpdatedAt;
+  bool _refetchingItem = false;
+  // Set when a server change lands mid-fetch, so the in-flight pass is followed
+  // by one more instead of swallowing the update.
+  bool _refetchQueued = false;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
 
@@ -197,9 +206,18 @@ class _ExpandedCardState extends State<ExpandedCard> {
     }
 
     final lib = context.read<LibraryProvider>();
-    return lib.getCoverUrl(_itemId, width: 1200);
+    return lib.getCoverUrl(_itemId, width: 800);
   }
   bool get _isLocalCover => _coverUrl != null && _coverUrl!.startsWith('/');
+
+  /// Token-stripped cache key so this card shares one disk entry with
+  /// absorbing_card instead of storing a second copy keyed by the raw URL
+  /// (which carries `?token=`, and changes whenever the token rotates).
+  String? _coverIdentity(String? coverUrl) {
+    if (coverUrl == null) return null;
+    if (coverUrl.startsWith('/')) return coverUrl;
+    return stableCoverCacheKey(coverUrl);
+  }
 
   @override
   void initState() {
@@ -217,6 +235,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     PlayerSettings.settingsChanged.addListener(_reloadButtonOrder);
     _reloadButtonOrder();
     _startChapterTracking();
+    _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
     _fetchChaptersIfNeeded();
     // Always derive the cover scheme (accent + gradient colors); only build the
     // blurred bitmap when the blurred background is actually in use.
@@ -474,6 +493,15 @@ class _ExpandedCardState extends State<ExpandedCard> {
     // from the (often minified) inline item, so the "Read" action works.
     final inlineEbook = _media['ebookFile'] as Map<String, dynamic>?;
     if (_chapters.isNotEmpty && inlineEbook != null) return;
+    await _refetchItem();
+  }
+
+  /// Re-fetches the full item and applies whatever is missing or stale.
+  ///
+  /// Split out of [_fetchChaptersIfNeeded] so a server-side chapter edit can
+  /// force a re-read even when the card already has chapters - the "only fill
+  /// the gaps" early-out otherwise kept the list stale until a cold start.
+  Future<void> _refetchItem({bool forceChapters = false}) async {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
@@ -483,7 +511,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
         // resolveEbookFile also covers supplementary-only books
         // (audiobooks-only libraries never set media.ebookFile).
-        if (inlineEbook == null) {
+        if (forceChapters || _fetchedEbookFile == null) {
           final ef = resolveEbookFile(fullItem);
           if (ef != null) setState(() => _fetchedEbookFile = ef);
         }
@@ -500,13 +528,45 @@ class _ExpandedCardState extends State<ExpandedCard> {
           }
         }
         if (chapters.isNotEmpty) {
+          // Adopt only a genuine change; most server updates are cover or
+          // progress metadata and must not disturb the player's chapter latch.
+          if (ChapterLookup.equivalent(_chapters, chapters)) return;
           setState(() => _fetchedChapters = chapters);
-          if (_isActive && widget.player.chapters.isEmpty) {
-            widget.player.updateChapters(chapters);
-          }
+          if (_isActive) widget.player.adoptServerChapters(chapters);
         }
       }
     } catch (_) {}
+  }
+
+  /// Re-fetch when the server reports this item changed (socket item_updated
+  /// bumps the provider's per-item tick). The full-screen now-playing card is
+  /// the one most likely to be open while chapters get edited on the ABS web
+  /// UI, and its inline entity never carries fresh chapters.
+  ///
+  /// Gated on the timestamp so a cover/progress update is acted on once, and
+  /// [_refetchingItem] keeps a burst of updates from stacking duplicate
+  /// requests. The re-read itself decides whether anything actually changed.
+  void _maybeRefetchOnServerChange(LibraryProvider lib) {
+    final ts = lib.itemUpdatedAt(_itemId);
+    if (ts == _lastSeenUpdatedAt) return;
+    _lastSeenUpdatedAt = ts;
+    if (_refetchingItem) {
+      // A request is already in flight for an older item state; follow it with
+      // one more pass rather than dropping the change that just arrived.
+      _refetchQueued = true;
+      return;
+    }
+    _refetchingItem = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        do {
+          _refetchQueued = false;
+          await _refetchItem(forceChapters: true);
+        } while (_refetchQueued && mounted);
+      } finally {
+        _refetchingItem = false;
+      }
+    });
   }
 
   void _onCoverLoaded(ImageProvider provider) {
@@ -619,6 +679,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
     final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
+    _maybeRefetchOnServerChange(lib);
     final mediaHeaders = lib.mediaHeaders;
     final progress = (_episodeId != null)
         ? lib.getEpisodeProgress(_itemId, _episodeId!)
@@ -838,13 +899,12 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                                       errorBuilder: (_, __, ___) => const SizedBox.shrink()),
                                                       enabled: !_rectangleCovers, child: Image.file(File(_coverUrl!), fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
                                                       errorBuilder: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
-                                                  : BlurPaddedCover(blurChild: CachedNetworkImage(imageUrl: _coverUrl!, fit: BoxFit.cover,
+                                                  : BlurPaddedCover(blurChild: StableCachedNetworkImage(imageUrl: _coverUrl!, cacheKey: _coverIdentity(_coverUrl!)!, fit: BoxFit.cover,
                                                         httpHeaders: mediaHeaders,
-                                                        useOldImageOnUrlChange: true,
                                                         errorWidget: (_, __, ___) => const SizedBox.shrink()),
-                                                      enabled: !_rectangleCovers, child: CachedNetworkImage(imageUrl: _coverUrl!, fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
+                                                      enabled: !_rectangleCovers, child: StableCachedNetworkImage(imageUrl: _coverUrl!, cacheKey: _coverIdentity(_coverUrl!)!,
+                                                        fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
                                                         httpHeaders: mediaHeaders,
-                                                        useOldImageOnUrlChange: true,
                                                         placeholder: (_, __) => CoverPlaceholder(title: _title, author: _author),
                                                         errorWidget: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
                                               : CoverPlaceholder(title: _title, author: _author))),
@@ -1138,6 +1198,14 @@ class _ExpandedCardState extends State<ExpandedCard> {
     if (_isCastingThis) {
       pos = cast.castPosition.inMilliseconds / 1000.0;
     } else if (_isActive) {
+      // Latch-aware index (same source as the lock screen): while a jump is
+      // settling the raw position sits in the previous chapter's tail (~0.3s
+      // metadata-vs-boundary drift), so a plain containment lookup would flash
+      // the PREVIOUS chapter at ~100%. Prefer the service's resolution of the
+      // jumped-to chapter; fall back to its load-aware position only when the
+      // service has no chapters of its own.
+      final idx = widget.player.currentChapterIndex;
+      if (idx != null && idx < chapters.length) return idx;
       // Use the player's load-aware chapter position so a slow next-episode
       // load resolves against the pending start instead of the stale
       // previous-book position (which map to the last chapter).

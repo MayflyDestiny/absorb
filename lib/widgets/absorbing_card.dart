@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
+import '../services/chapter_lookup.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
 import 'ebook_router.dart';
@@ -58,6 +59,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   // alive with a stable key, so without this it never picks up a server change.
   int? _lastSeenUpdatedAt;
   bool _refetchingItem = false;
+  // Set when a server change lands mid-fetch, so the in-flight pass is followed
+  // by one more instead of swallowing the update.
+  bool _refetchQueued = false;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
   ui.Image? _blurredCover; // Precached blurred background
@@ -268,7 +272,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     // Skip when the inline item already has both chapters and ebookFile
     final inlineEbook = _media['ebookFile'] as Map<String, dynamic>?;
     if (_chapters.isNotEmpty && inlineEbook != null) return;
-    // Fetch full item to fill in whatever's missing
+    await _refetchItem();
+  }
+
+  /// Re-fetches the full item and applies whatever the card was missing.
+  ///
+  /// Split out of [_fetchChaptersIfNeeded] so a server-side change can force a
+  /// re-read even when the card already has chapters: that "only fill the gaps"
+  /// early-out is what kept a chapter list edited on the ABS web UI stale until
+  /// the next cold start.
+  Future<void> _refetchItem({bool forceChapters = false}) async {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
@@ -276,14 +289,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       // Disk copy first: on a cold restart the network copy of the item can
       // take tens of seconds, while chapter switching on the active card
       // needs to unlock immediately. Only fetch when nothing was cached.
-      final fullItem = await api.getCachedLibraryItem(_itemId) ??
-          await api.getLibraryItem(_itemId);
+      final fullItem = forceChapters
+          ? await api.getLibraryItem(_itemId)
+          : await api.getCachedLibraryItem(_itemId) ??
+                await api.getLibraryItem(_itemId);
       if (fullItem != null && mounted) {
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
         // Cache ebookFile if the inline item didn't have it. resolveEbookFile
         // also covers supplementary-only books (audiobooks-only libraries
         // never set media.ebookFile).
-        if (inlineEbook == null) {
+        if (forceChapters || _fetchedEbookFile == null) {
           final ef = resolveEbookFile(fullItem);
           if (ef != null) setState(() => _fetchedEbookFile = ef);
         }
@@ -300,23 +315,32 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           }
         }
         if (chapters.isNotEmpty) {
+          // Adopt only a genuine change. Most server updates are cover or
+          // progress metadata; rebuilding the list (and re-deriving the player's
+          // current-chapter latch) for those would be needless churn.
+          if (ChapterLookup.equivalent(_chapters, chapters)) return;
           setState(() => _fetchedChapters = chapters);
-          // If this is the active item and player has no chapters, update them
-          if (_isActive && widget.player.chapters.isEmpty) {
-            widget.player.updateChapters(chapters);
-          }
+          // Keep the live player in step so the chapter list the sheet reads
+          // from player.chapters matches what the server now reports.
+          if (_isActive) widget.player.adoptServerChapters(chapters);
         }
       }
     } catch (_) {}
   }
 
   /// Re-fetch the full item when the server reports this book changed (socket
-  /// item_updated bumps the provider's per-item tick). Targets the case where
-  /// an ebook file is added while the app is open: the card's minified entity
-  /// never carries ebookFile and the one-time initState fetch found none, so
-  /// the "Read" action would stay disabled until a restart. Only fires while
-  /// the ebook is still missing, so ordinary cover/metadata updates don't
-  /// trigger needless fetches.
+  /// item_updated bumps the provider's per-item tick). Targets two cases where
+  /// the card's minified entity is stale for the whole app session:
+  ///
+  ///  - an ebook file is added while the app is open, so the "Read" action would
+  ///    otherwise stay disabled until a restart;
+  ///  - chapters are edited on the ABS web UI (the usual way for a Docker
+  ///    deployment), which the inline entity never picks up.
+  ///
+  /// Gated on the timestamp so ordinary cover/metadata updates are seen once
+  /// and the re-read decides for itself whether anything the card cares about
+  /// actually moved. [_refetchingItem] keeps a burst of updates from stacking
+  /// duplicate requests.
   void _maybeRefetchOnServerChange(LibraryProvider lib) {
     final ts = lib.itemUpdatedAt(_itemId);
     if (ts == _lastSeenUpdatedAt) return;
@@ -326,11 +350,22 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     // blurred background already re-derives itself on URL change in build).
     _coverProvider = null;
     _rawCoverScheme = null;
-    if (_ebookFile != null || _refetchingItem) return;
+    if (_refetchingItem) {
+      // A request is already in flight. It was issued for an older item state,
+      // so arrange one more pass rather than letting this update be dropped -
+      // otherwise the change that arrived mid-flight never gets picked up.
+      _refetchQueued = true;
+      return;
+    }
     _refetchingItem = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        await _fetchChaptersIfNeeded();
+        // Bypass the disk cache: a chapter edit is precisely the case where the
+        // cached copy is the stale one we're trying to replace.
+        do {
+          _refetchQueued = false;
+          await _refetchItem(forceChapters: true);
+        } while (_refetchQueued && mounted);
       } finally {
         _refetchingItem = false;
       }
@@ -1238,6 +1273,14 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (_isCastingThis) {
       pos = cast.castPosition.inMilliseconds / 1000.0;
     } else if (_isActive) {
+      // Latch-aware index (same source as the lock screen): while a jump is
+      // settling the raw position sits in the previous chapter's tail (~0.3s
+      // metadata-vs-boundary drift), so a plain containment lookup would flash
+      // the PREVIOUS chapter at ~100%. Prefer the service's resolution of the
+      // jumped-to chapter; fall back to its load-aware position only when the
+      // service has no chapters of its own.
+      final idx = widget.player.currentChapterIndex;
+      if (idx != null && idx < chapters.length) return idx;
       // Use the player's load-aware chapter position so a slow next-episode
       // load resolves against the pending start instead of the stale
       // previous-book position (which map to the last chapter).

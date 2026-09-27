@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show PlatformException;
 import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'dart:io' show HttpClient, HttpHeaders;
+import 'app_log.dart';
 
 /// Manages the OIDC/OAuth2 PKCE flow for audiobookshelf SSO login.
 class OidcService {
@@ -78,7 +78,7 @@ class OidcService {
         '&response_type=code'
         '&state=$_state';
 
-    debugPrint('[OIDC] Starting auth flow: $authUrl');
+    verboseLog('[OIDC] Starting auth flow: $authUrl');
 
     String? providerUrl;
     try {
@@ -98,7 +98,7 @@ class OidcService {
         final cookies = response.cookies;
         for (final cookie in cookies) {
           _rawCookies.add('${cookie.name}=${cookie.value}');
-          debugPrint('[OIDC] Captured cookie: ${cookie.name}');
+          verboseLog('[OIDC] Captured cookie: ${cookie.name}');
         }
         if (_rawCookies.isEmpty) {
           final rawSetCookie = response.headers[HttpHeaders.setCookieHeader];
@@ -106,7 +106,7 @@ class OidcService {
             for (final sc in rawSetCookie) {
               final nameValue = sc.split(';').first.trim();
               _rawCookies.add(nameValue);
-              debugPrint('[OIDC] Captured raw cookie: $nameValue');
+              verboseLog('[OIDC] Captured raw cookie: $nameValue');
             }
           }
         }
@@ -116,7 +116,7 @@ class OidcService {
           await response.drain<void>();
         } else {
           final body = await response.transform(utf8.decoder).join();
-          debugPrint('[OIDC] Unexpected status ${response.statusCode}: $body');
+          verboseLog('[OIDC] Unexpected status ${response.statusCode}: $body');
           // Truncate body to keep the snackbar readable.
           final preview = body.length > 200 ? '${body.substring(0, 200)}…' : body;
           _lastError = 'Server returned HTTP ${response.statusCode} from /auth/openid '
@@ -130,21 +130,21 @@ class OidcService {
     } on Exception catch (e, st) {
       // TLS, connection, timeout, DNS — all surface here. Keep the message
       // verbatim so users can paste it back when reporting issues.
-      debugPrint('[OIDC] Pre-flight error: $e\n$st');
+      verboseLog('[OIDC] Pre-flight error: $e\n$st');
       _lastError = 'Could not reach $_serverUrl/auth/openid: $e';
       _cleanup();
       return null;
     }
 
     if (providerUrl == null || providerUrl.isEmpty) {
-      debugPrint('[OIDC] Server did not return a redirect URL');
+      verboseLog('[OIDC] Server did not return a redirect URL');
       _lastError = 'Server accepted /auth/openid but did not return a Location '
           'header. Check that the OIDC provider is configured in ABS.';
       _cleanup();
       return null;
     }
 
-    debugPrint('[OIDC] Opening Custom Tab for: $providerUrl');
+    verboseLog('[OIDC] Opening Custom Tab for: $providerUrl');
 
     // Open the OIDC provider in an in-app browser tab. On Android this is a
     // Chrome Custom Tab; on iOS, ASWebAuthenticationSession. Both intercept
@@ -156,7 +156,7 @@ class OidcService {
         url: providerUrl,
         callbackUrlScheme: 'audiobookshelf',
       );
-      debugPrint('[OIDC] Custom Tab returned: $resultUrl');
+      verboseLog('[OIDC] Custom Tab returned: $resultUrl');
       return Uri.parse(resultUrl);
     } on PlatformException catch (e) {
       // Cancellation arrives as PlatformException. Both plugins use code
@@ -171,17 +171,17 @@ class OidcService {
           || msg.contains('canceled')
           || msg.contains('cancelled');
       if (isCancel) {
-        debugPrint('[OIDC] User cancelled the popup');
+        verboseLog('[OIDC] User cancelled the popup');
         _lastWasUserCancel = true;
       } else {
-        debugPrint('[OIDC] Auth session error: ${e.code} ${e.message}');
+        verboseLog('[OIDC] Auth session error: ${e.code} ${e.message}');
         _lastError = 'In-app browser failed: ${e.code}'
             '${e.message != null ? ' — ${e.message}' : ''}';
       }
       _cleanup();
       return null;
     } catch (e, st) {
-      debugPrint('[OIDC] Auth session unexpected error: $e\n$st');
+      verboseLog('[OIDC] Auth session unexpected error: $e\n$st');
       _lastError = 'In-app browser failed: $e';
       _cleanup();
       return null;
@@ -199,10 +199,10 @@ class OidcService {
     final code = uri.queryParameters['code'];
     final state = uri.queryParameters['state'];
 
-    debugPrint('[OIDC] Callback received: code=${code != null ? '***' : 'null'}, state=$state');
+    verboseLog('[OIDC] Callback received: code=${code != null ? '***' : 'null'}, state=$state');
 
     if (code == null || code.isEmpty) {
-      debugPrint('[OIDC] No code in callback');
+      verboseLog('[OIDC] No code in callback');
       _lastError = 'OIDC provider returned no authorization code. '
           'Check the provider logs for an "invalid redirect_uri" or '
           '"invalid client" error.';
@@ -211,14 +211,14 @@ class OidcService {
 
     // Verify state matches
     if (state != _state) {
-      debugPrint('[OIDC] State mismatch: expected=$_state, got=$state');
+      verboseLog('[OIDC] State mismatch: expected=$_state, got=$state');
       _lastError = 'OIDC state mismatch — possible session expiry or '
           'cross-tab interference. Try again.';
       return null;
     }
 
     if (_serverUrl == null || _codeVerifier == null) {
-      debugPrint('[OIDC] Missing server URL or code verifier');
+      verboseLog('[OIDC] Missing server URL or code verifier');
       _lastError = 'OIDC flow state was lost between popup and callback.';
       return null;
     }
@@ -229,8 +229,8 @@ class OidcService {
         '&code=${Uri.encodeComponent(code)}'
         '&code_verifier=${Uri.encodeComponent(_codeVerifier!)}';
 
-    debugPrint('[OIDC] Calling callback: $callbackUrl');
-    debugPrint('[OIDC] Sending ${_rawCookies.length} cookies');
+    verboseLog('[OIDC] Calling callback: $callbackUrl');
+    verboseLog('[OIDC] Sending ${_rawCookies.length} cookies');
 
     try {
       final client = HttpClient();
@@ -249,15 +249,15 @@ class OidcService {
         final response = await request.close();
         final body = await response.transform(utf8.decoder).join();
 
-        debugPrint('[OIDC] Callback response: ${response.statusCode}');
-        debugPrint('[OIDC] Callback body length: ${body.length}');
+        verboseLog('[OIDC] Callback response: ${response.statusCode}');
+        verboseLog('[OIDC] Callback body length: ${body.length}');
 
         if (response.statusCode == 200) {
           final data = jsonDecode(body) as Map<String, dynamic>;
           _cleanup();
           return data;
         } else {
-          debugPrint('[OIDC] Callback error: $body');
+          verboseLog('[OIDC] Callback error: $body');
           final preview = body.length > 200 ? '${body.substring(0, 200)}…' : body;
           _lastError = 'ABS callback returned HTTP ${response.statusCode}'
               '${preview.isNotEmpty ? ': $preview' : ''}';
@@ -267,7 +267,7 @@ class OidcService {
         client.close();
       }
     } catch (e) {
-      debugPrint('[OIDC] Callback exception: $e');
+      verboseLog('[OIDC] Callback exception: $e');
       _lastError = 'ABS callback request failed: $e';
       return null;
     }
@@ -295,7 +295,7 @@ class OidcService {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
-      debugPrint('[OIDC] Failed to fetch server status: $e');
+      verboseLog('[OIDC] Failed to fetch server status: $e');
     }
     return null;
   }

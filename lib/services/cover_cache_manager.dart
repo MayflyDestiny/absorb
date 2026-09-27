@@ -32,7 +32,12 @@ class CoverCacheManager extends CacheManager with ImageCacheManager {
             // every pass - evicting yesterday's keys than re-downloading them
             // next session. 1000 stays comfortably under a 30-day stale
             // period's worth of disk if covers keep their keys stable.
-            maxNrOfCacheObjects: 1000,
+            //
+            // Raised to 2000 because a book occupies up to FIVE entries - the
+            // widths 96/120/400/800/1200 are all separate cache keys - so 1000
+            // only held ~200 books' worth. Anything past that started evicting
+            // and re-downloading on the next cold start.
+            maxNrOfCacheObjects: 2000,
             fileService: _TimeoutHttpFileService(),
           ),
         );
@@ -75,8 +80,8 @@ class CoverCacheManager extends CacheManager with ImageCacheManager {
 class _TimeoutHttpFileService extends FileService {
   _TimeoutHttpFileService();
 
-  static const connectTimeout = Duration(seconds: 15);
-  static const readTimeout = Duration(seconds: 20);
+  static const connectTimeout = Duration(seconds: 8);
+  static const readTimeout = Duration(seconds: 10);
 
   @override
   Future<FileServiceResponse> get(String url,

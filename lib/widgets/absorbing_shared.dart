@@ -380,6 +380,7 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
         title: widget.title,
         chapters: widget.chapters,
         downloadedChapters: already,
+        downloadKey: widget.itemId,
         onRemoveChapters: (indices) =>
             _dl.deleteDownloadChapters(widget.itemId, widget.chapters, indices),
         displaySpeed: 1.0,
@@ -419,6 +420,7 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
             accent: widget.accent,
             title: widget.title,
             chapters: widget.chapters,
+            downloadKey: widget.itemId,
             downloadedChapters:
                 _dl.downloadedChapterIndicesCached(widget.itemId, widget.chapters));
         if (!context.mounted) return;

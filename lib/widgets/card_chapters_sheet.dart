@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
+import '../services/chapter_lookup.dart';
 import '../services/chromecast_service.dart';
 import '../utils/series_id.dart';
 import 'absorbing_shared.dart';
@@ -96,10 +97,18 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   final Map<int, GlobalKey> _rowKeys = {};
   final GlobalKey _listKey = GlobalKey();
 
+  /// The chapters being shown, held in state rather than read straight off
+  /// [widget.chapters] so a server-side chapter edit (the ABS web UI is the
+  /// usual editor for a Docker deployment) can land while the sheet is open.
+  /// Seeded from the widget and replaced only on a genuine change - see
+  /// [_onPlayerChanged].
+  late List<dynamic> _chapters = widget.chapters;
+
   @override
   void initState() {
     super.initState();
     _recomputeVisibleIndices();
+    widget.player.addListener(_onPlayerChanged);
     // Open the list at the currently-playing chapter so the selection badge
     // and the visible rows agree on what's "now". A single first-frame jumpTo
     // (uniform rows -> exact pixel math) lands straight on the right chapter;
@@ -112,9 +121,28 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
     });
   }
 
+  /// Picks up a chapter list the player adopted from the server.
+  ///
+  /// The player also calls notifyListeners for unrelated reasons, so the
+  /// comparison is what decides whether to rebuild - a cover update must not
+  /// re-render the list. The search filter is recomputed only when the chapter
+  /// count moved, since that is the only way a visible row's meaning changes.
+  void _onPlayerChanged() {
+    if (!mounted) return;
+    final live = widget.player.chapters;
+    if (ChapterLookup.equivalent(_chapters, live)) return;
+    final countChanged = live.length != _chapters.length;
+    setState(() {
+      _chapters = live;
+      // A changed count invalidates every stored index; titles-only edits keep
+      // the mapping valid and skip the O(n) filter rebuild.
+      if (countChanged) _recomputeVisibleIndices();
+    });
+  }
+
   int get _groupSize => 50;
 
-  /// Original indices into [widget.chapters] matching the current query (all of
+  /// Original indices into [_chapters] matching the current query (all of
   /// them when empty). Keeping the original index means a row's number and its
   /// "finished" tick stay tied to the real chapter, not the filtered position.
   /// Recomputed only when the query changes — rebuilding the whole list on
@@ -125,13 +153,12 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   void _recomputeVisibleIndices() {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) {
-      _visibleIndices = [for (int i = 0; i < widget.chapters.length; i++) i];
+      _visibleIndices = [for (int i = 0; i < _chapters.length; i++) i];
       return;
     }
     _visibleIndices = [
-      for (int i = 0; i < widget.chapters.length; i++)
-        if (((widget.chapters[i] as Map<String, dynamic>)['title'] as String? ??
-                '')
+      for (int i = 0; i < _chapters.length; i++)
+        if (((_chapters[i] as Map<String, dynamic>)['title'] as String? ?? '')
             .toLowerCase()
             .contains(q))
           i,
@@ -141,6 +168,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    widget.player.removeListener(_onPlayerChanged);
     super.dispose();
   }
 
@@ -214,7 +242,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   }
 
   void _openIndexSheet() {
-    final n = widget.chapters.length;
+    final n = _chapters.length;
     // Which group is actually on screen right now: derive it from the real
     // row positions so the highlighted range follows the list instead of
     // being stuck on the chapter the sheet originally opened at.
@@ -332,7 +360,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   }
 
   Widget _chapterTile(int idx, AppLocalizations l, ColorScheme cs) {
-    final ch = widget.chapters[idx] as Map<String, dynamic>;
+    final ch = _chapters[idx] as Map<String, dynamic>;
     final chTitle = ch['title'] as String? ?? l.chapterNumber(idx + 1);
     final start = (ch['start'] as num?)?.toDouble() ?? 0;
     final end = (ch['end'] as num?)?.toDouble() ?? 0;
@@ -342,7 +370,14 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         : (widget.player.currentItemId != null
               ? widget.player.position.inMilliseconds / 1000.0
               : 0.0);
-    final isCurrent = widget.isPlaybackActive && pos >= start && pos < end;
+    // Latch-aware "current" so a jump in progress highlights the jumped-to
+    // chapter instead of the previous chapter's tail (position containment
+    // would read that tail until the stream crosses the target's start).
+    final activeIdx = widget.isPlaybackActive && !widget.isCastingThis
+        ? widget.player.currentChapterIndex
+        : null;
+    final isCurrent = widget.isPlaybackActive &&
+        (activeIdx != null ? activeIdx == idx : pos >= start && pos < end);
     final isFinished = widget.isPlaybackActive && pos >= end;
     final pct = widget.totalDuration > 0
         ? (end / widget.totalDuration * 100).round()
@@ -414,11 +449,10 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         final alwaysConfirm =
             !await PlayerSettings.getConfirmEveryChapterJump();
         if (widget.isPlaybackActive && !alwaysConfirm) {
-          final seekDur = Duration(seconds: start.round());
           if (widget.isCastingThis) {
-            cast.seekTo(seekDur);
+            cast.seekTo(Duration(seconds: start.round()));
           } else {
-            widget.player.seekTo(seekDur, chapterJump: true);
+            widget.player.seekToChapterIndex(idx);
           }
           Navigator.pop(context);
           return;
@@ -439,11 +473,10 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         if (confirmed != true || !context.mounted) return;
         Navigator.pop(context); // Close chapter sheet first
         if (widget.isPlaybackActive) {
-          final seekDur = Duration(seconds: start.round());
           if (widget.isCastingThis) {
-            cast.seekTo(seekDur);
+            cast.seekTo(Duration(seconds: start.round()));
           } else {
-            widget.player.seekTo(seekDur, chapterJump: true);
+            widget.player.seekToChapterIndex(idx);
           }
           return;
         }
@@ -469,7 +502,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
                 ?.whereType<Map<String, dynamic>>()
                 .toList() ??
             [];
-        final chs = mediaChapters.isNotEmpty ? mediaChapters : widget.chapters;
+        final chs = mediaChapters.isNotEmpty ? mediaChapters : _chapters;
         await widget.player.playItem(
           api: api,
           itemId: widget.itemId!,
@@ -523,7 +556,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
               children: [
                 Expanded(
                   child: Text(
-                    l.chaptersCount(widget.chapters.length),
+                    l.chaptersCount(_chapters.length),
                     style: widget.tt.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),

@@ -379,7 +379,12 @@ class _AppShellState extends State<AppShell>
     // On-boarding runs serially so the dialogs never stack: welcome first,
     // then the (Android-only) download-location prompt once it's dismissed.
     _runOnboarding();
-    _checkForUpdate();
+    // Same reason as _deriveCoverScheme below: the release check is a network
+    // call that can raise its own dialog, and there is no reason for it to
+    // compete with the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkForUpdate();
+    });
 
     // Preheat provider data in background so Home/Library tabs have data
     // ready when user switches to them (avoids jank on first tab switch).

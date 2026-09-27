@@ -35,6 +35,7 @@ import 'services/carplay_service.dart';
 import 'services/chromecast_service.dart';
 import 'services/episode_notification_service.dart';
 import 'services/home_widget_service.dart';
+import 'services/app_log.dart';
 import 'services/log_service.dart';
 import 'services/quick_actions_service.dart';
 import 'services/setup_link_service.dart';
@@ -695,7 +696,7 @@ class _AuthGateState extends State<AuthGate> {
     } catch (_) {}
 
     final sw = Stopwatch()..start();
-    debugPrint('[Init] _initServices started');
+    verboseLog('[Init] _initServices started');
 
     // Initialize user account scope FIRST so all ScopedPrefs reads use the
     // correct scoped keys. Without this, settings read before init() would
@@ -756,32 +757,32 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     // Migrate old auto-play booleans → unified queueMode (one-time, no-op after first run)
-    debugPrint('[Init] migrateQueueMode... (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] migrateQueueMode... (${sw.elapsedMilliseconds}ms)');
     await PlayerSettings.migrateQueueMode();
     // Migrate unified queueMode → per-type book/podcast modes (one-time)
     await PlayerSettings.migrateBookPodcastQueueMode();
 
     // Generate persistent device ID for server identification
-    debugPrint('[Init] device ID... (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] device ID... (${sw.elapsedMilliseconds}ms)');
     await ApiService.initDeviceId();
 
     // Downloads must be loaded before the audio handler so getChildren()
     // can serve the Android Auto browse tree immediately.
-    debugPrint('[Init] DownloadService... (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] DownloadService... (${sw.elapsedMilliseconds}ms)');
     try {
       await DownloadService().init().timeout(const Duration(seconds: 8));
     } catch (e) {
-      debugPrint('[Init] DownloadService.init timed out or failed: $e');
+      basicLog('[Init] DownloadService.init timed out or failed: $e');
     }
-    debugPrint('[Init] DownloadService done (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] DownloadService done (${sw.elapsedMilliseconds}ms)');
 
     // Timeout guards against AudioService.init() hanging when Android killed
     // the app process but kept the MediaBrowserService alive.
-    debugPrint('[Init] AudioPlayerService... (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] AudioPlayerService... (${sw.elapsedMilliseconds}ms)');
     try {
       await AudioPlayerService.init().timeout(const Duration(seconds: 8));
     } catch (e) {
-      debugPrint('[Init] AudioPlayerService.init timed out or failed: $e');
+      basicLog('[Init] AudioPlayerService.init timed out or failed: $e');
     }
     // Route cold-start play() calls (headphones / lock screen tap before
     // the UI has bootstrapped the current item) through the existing
@@ -793,12 +794,12 @@ class _AuthGateState extends State<AuthGate> {
     // with the native core already playing - adopt that audio now rather than
     // leaving the lock screen blank until the next press.
     unawaited(AudioPlayerService().adoptBackgroundEngineIfRunning());
-    debugPrint('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
 
     try {
       await Permission.notification.request();
     } catch (e) {
-      debugPrint('[Init] Permission request failed: $e');
+      basicLog('[Init] Permission request failed: $e');
     }
 
     // Initialize Chromecast (Android only)
@@ -806,12 +807,12 @@ class _AuthGateState extends State<AuthGate> {
       try {
         await ChromecastService().init();
       } catch (e) {
-        debugPrint('[Init] Chromecast init failed: $e');
+        basicLog('[Init] Chromecast init failed: $e');
       }
     }
 
     // Initialize download tracker and progress sync
-    debugPrint('[Init] remaining services... (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] remaining services... (${sw.elapsedMilliseconds}ms)');
     try {
       await ProgressSyncService().init();
       // A killed stream can leave unsynced listening in the streaming buffer;
@@ -843,9 +844,9 @@ class _AuthGateState extends State<AuthGate> {
       // when the shortcut handler fires.
       await QuickActionsService().init();
     } catch (e) {
-      debugPrint('[Init] Service init failed: $e');
+      basicLog('[Init] Service init failed: $e');
     }
-    debugPrint('[Init] _initServices complete (${sw.elapsedMilliseconds}ms)');
+    verboseLog('[Init] _initServices complete (${sw.elapsedMilliseconds}ms)');
     _servicesReady = true;
     _tryHandleSetupLink();
   }

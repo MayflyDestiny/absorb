@@ -289,6 +289,28 @@ class LibraryProvider extends ChangeNotifier
       return;
     }
 
+    // Cold start races three callers: updateAuth's restore path, app_shell's
+    // post-frame preheat, and home_screen's `libraries.isEmpty` retry. Without
+    // this guard they each fire their own GET /api/libraries (the log showed
+    // two overlapping calls at the same millisecond, plus a third 300ms later).
+    final existing = _librariesInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+
+    final inFlight = _doLoadLibraries();
+    _librariesInFlight = inFlight;
+    try {
+      await inFlight;
+    } finally {
+      if (identical(_librariesInFlight, inFlight)) {
+        _librariesInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _doLoadLibraries() async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();

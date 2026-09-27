@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'server_address_field.dart';
 
 class ServerConnectionSettings {
   final String serverUrl;
@@ -30,8 +31,9 @@ class ServerConnectionEditor extends StatefulWidget {
 
 class _ServerConnectionEditorState extends State<ServerConnectionEditor> {
   late final TextEditingController _serverController;
+  final _serverFieldKey = GlobalKey<ServerAddressFieldState>();
   final List<(TextEditingController, TextEditingController)>
-  _headerControllers = [];
+      _headerControllers = [];
   late bool _headersExpanded;
 
   @override
@@ -87,7 +89,12 @@ class _ServerConnectionEditorState extends State<ServerConnectionEditor> {
   }
 
   void _save() {
-    final serverUrl = _serverController.text.trim();
+    if (_serverController.text.trim().isEmpty) return;
+    // Save the composed URL, not the raw field text, so the protocol picked in
+    // the dropdown and the implied LAN port (bare IP -> 13378) are persisted
+    // exactly as they were validated.
+    final serverUrl =
+        _serverFieldKey.currentState?.fullUrl ?? _serverController.text.trim();
     if (serverUrl.isEmpty) return;
     Navigator.pop(
       context,
@@ -120,17 +127,15 @@ class _ServerConnectionEditorState extends State<ServerConnectionEditor> {
                 ),
               ),
               const SizedBox(height: 14),
-              TextField(
-                key: const Key('server-connection-url'),
+              ServerAddressField(
+                key: _serverFieldKey,
+                fieldKey: const Key('server-connection-url'),
                 controller: _serverController,
+                // Saving is allowed either way, so no reachability verdict is
+                // shown and no probe is sent.
+                validate: false,
                 autofocus: true,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: l.editServerAddressField,
-                  hintText: 'https://example.com',
-                  border: const OutlineInputBorder(),
-                ),
+                textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               InkWell(

@@ -661,7 +661,7 @@ class DownloadService extends ChangeNotifier {
         'treeUri': treeUri,
       });
     } catch (e) {
-      debugPrint('[Download] scanSafDirectory failed: $e');
+      basicLog('[Download] scanSafDirectory failed: $e');
       return (recognized: 0, unknown: 0);
     }
     final known = (res?['known'] as List<dynamic>?) ?? const <dynamic>[];
@@ -702,7 +702,7 @@ class DownloadService extends ChangeNotifier {
         );
         recognized++;
       } catch (e) {
-        debugPrint('[Download] scan entry failed: $e');
+        basicLog('[Download] scan entry failed: $e');
       }
     }
     if (recognized > 0) {
@@ -738,7 +738,7 @@ class DownloadService extends ChangeNotifier {
         await recordSavedEbook(itemId, fileUri, metaUri);
         restored++;
       } catch (e) {
-        debugPrint('[Download] ebook scan entry failed: $e');
+        basicLog('[Download] ebook scan entry failed: $e');
       }
     }
     return restored;
@@ -813,7 +813,7 @@ class DownloadService extends ChangeNotifier {
           ? (res?['dirUri'] as String?)
           : (res?['dirPath'] as String?);
       if (newPaths == null || newPaths.length != sources.length || newDir == null) {
-        debugPrint('[Download] migrate "$title": result missing files, keeping source');
+        basicLog('[Download] migrate "$title": result missing files, keeping source');
         return false;
       }
 
@@ -830,10 +830,10 @@ class DownloadService extends ChangeNotifier {
         libraryId: info.libraryId,
       );
       await _save();
-      debugPrint('[Download] migrated "$title" (${sources.length} files)');
+      verboseLog('[Download] migrated "$title" (${sources.length} files)');
       return true;
     } catch (e) {
-      debugPrint('[Download] migrate "$title" failed: $e');
+      basicLog('[Download] migrate "$title" failed: $e');
       return false;
     }
   }
@@ -875,7 +875,7 @@ class DownloadService extends ChangeNotifier {
             : await _relayoutInternalBook(info);
         if (ok) moved++;
       } catch (e) {
-        debugPrint('[Download] relayout "${info.title}" failed: $e');
+        basicLog('[Download] relayout "${info.title}" failed: $e');
       }
     }
     await prefs.setBool(_downloadLayoutV2Key, true);
@@ -888,7 +888,7 @@ class DownloadService extends ChangeNotifier {
       try {
         await _storageChannel.invokeMethod<num>('migrateMarkers', {'treeUri': safUri});
       } catch (e) {
-        debugPrint('[Download] legacy marker migration failed: $e');
+        basicLog('[Download] legacy marker migration failed: $e');
       }
     }
 
@@ -986,7 +986,7 @@ class DownloadService extends ChangeNotifier {
       );
       return true;
     } catch (e) {
-      debugPrint('[Download] relayout SAF "${info.title}" failed: $e');
+      basicLog('[Download] relayout SAF "${info.title}" failed: $e');
       return false;
     }
   }
@@ -1090,7 +1090,7 @@ class DownloadService extends ChangeNotifier {
         {'path': path},
       );
     } catch (e) {
-      debugPrint('[Download] excludeFromBackup failed for $path: $e');
+      basicLog('[Download] excludeFromBackup failed for $path: $e');
     }
   }
 
@@ -1105,7 +1105,7 @@ class DownloadService extends ChangeNotifier {
       try {
         groupPath = await _widgetChannel.invokeMethod<String>('getGroupContainerPath');
       } catch (e) {
-        debugPrint('[Download] getGroupContainerPath failed: $e');
+        basicLog('[Download] getGroupContainerPath failed: $e');
         return null;
       }
       if (groupPath == null || groupPath.isEmpty) return null;
@@ -1116,7 +1116,7 @@ class DownloadService extends ChangeNotifier {
       try {
         dir.createSync(recursive: true);
       } catch (e) {
-        debugPrint('[Download] create app group audio dir failed: $e');
+        basicLog('[Download] create app group audio dir failed: $e');
         return null;
       }
     }
@@ -1134,7 +1134,7 @@ class DownloadService extends ChangeNotifier {
         };
       }
     } catch (e) {
-      debugPrint('[Download] getDeviceStorage error: $e');
+      basicLog('[Download] getDeviceStorage error: $e');
     }
     return null;
   }
@@ -1156,7 +1156,7 @@ class DownloadService extends ChangeNotifier {
         };
       }
     } catch (e) {
-      debugPrint('[Download] getStorageStats error: $e');
+      basicLog('[Download] getStorageStats error: $e');
     }
     return null;
   }
@@ -1225,6 +1225,15 @@ class DownloadService extends ChangeNotifier {
           .where((d) => d.status == DownloadStatus.downloaded)
           .toList();
 
+  /// Ids of the completed downloads, without materializing the
+  /// [DownloadInfo] list. Listeners fire ~4x/s while anything is in flight, so
+  /// callers that only need to detect a change in the completed set should use
+  /// this instead of allocating [downloadedItems] on every notification.
+  Set<String> get downloadedItemIds => {
+        for (final d in _downloads.values)
+          if (d.status == DownloadStatus.downloaded) d.itemId,
+      };
+
   /// Get actively downloading items (in progress right now).
   List<DownloadInfo> get activeDownloads =>
       _downloads.values
@@ -1272,18 +1281,18 @@ class DownloadService extends ChangeNotifier {
         for (final entry in map.entries) {
           final info =
               DownloadInfo.fromJson(entry.value as Map<String, dynamic>);
-          debugPrint('[Download] Loaded: ${entry.key} '
+          verboseLog('[Download] Loaded: ${entry.key} '
               'title="${info.title}" author="${info.author}" '
               'cover=${info.coverUrl != null ? "yes" : "null"} '
               'sessionData=${info.sessionData != null ? "${info.sessionData!.length} chars" : "null"}');
           if (info.status == DownloadStatus.downloaded) {
             _downloads[entry.key] = info;
           } else {
-            debugPrint('[Download] Skipping stale ${info.status} entry: ${entry.key}');
+            verboseLog('[Download] Skipping stale ${info.status} entry: ${entry.key}');
           }
         }
       } catch (e) {
-        debugPrint('[Download] Init error: $e');
+        basicLog('[Download] Init error: $e');
       }
     }
     // On iOS, remap paths when the app container UUID changes after updates
@@ -1368,13 +1377,13 @@ class DownloadService extends ChangeNotifier {
           if (s == null || !_terminal.contains(s)) allTerminal = false;
         }
         if (allComplete) {
-          debugPrint('[Download] Reconciler finalizing missed-complete $itemId');
+          verboseLog('[Download] Reconciler finalizing missed-complete $itemId');
           p.finalizing = true;
           await _finalizeSuccess(itemId);
           continue;
         }
         if (allTerminal) {
-          debugPrint('[Download] Reconciler failing stalled $itemId');
+          basicLog('[Download] Reconciler failing stalled $itemId');
           // Don't pre-set p.finalizing: _failBook bails when it's already
           // true, which turned this whole cleanup into a no-op AND made the
           // zombie immortal (reconciler and cancel both skip finalizing
@@ -1392,7 +1401,7 @@ class DownloadService extends ChangeNotifier {
       final silence = DateTime.now().difference(p.lastUpdate);
       if ((p.overallProgress == 0 && silence > const Duration(minutes: 3)) ||
           silence > const Duration(minutes: 10)) {
-        debugPrint('[Download] Reconciler failing stale $itemId '
+        basicLog('[Download] Reconciler failing stale $itemId '
             '(progress=${p.overallProgress}, silent ${silence.inMinutes}m)');
         await _failBook(itemId, cause: 'Interrupted download');
       }
@@ -1421,7 +1430,7 @@ class DownloadService extends ChangeNotifier {
           ),
         ]);
       } catch (e) {
-        debugPrint('[Download] androidConfig failed: $e');
+        basicLog('[Download] androidConfig failed: $e');
       }
     }
     final l = _l();
@@ -1512,7 +1521,7 @@ class DownloadService extends ChangeNotifier {
     }
 
     if (changed) {
-      debugPrint('[Download] Migrated iOS paths to current container');
+      verboseLog('[Download] Migrated iOS paths to current container');
       await _save();
     }
   }
@@ -1527,7 +1536,7 @@ class DownloadService extends ChangeNotifier {
 
     final groupBase = await _iosAppGroupAudioBase();
     if (groupBase == null) {
-      debugPrint('[Download] App group not available, skipping audio migration');
+      verboseLog('[Download] App group not available, skipping audio migration');
       return;
     }
     final appDir = await getApplicationDocumentsDirectory();
@@ -1580,7 +1589,7 @@ class DownloadService extends ChangeNotifier {
           needsUpdate = true;
           moved++;
         } catch (e) {
-          debugPrint('[Download] Audio migration failed for $oldPath: $e');
+          basicLog('[Download] Audio migration failed for $oldPath: $e');
           newPaths.add(oldPath);
           failed++;
         }
@@ -1605,7 +1614,7 @@ class DownloadService extends ChangeNotifier {
     }
 
     if (changed) {
-      debugPrint('[Download] App group audio migration: moved=$moved failed=$failed');
+      verboseLog('[Download] App group audio migration: moved=$moved failed=$failed');
       await _save();
       notifyListeners();
     }
@@ -1615,7 +1624,7 @@ class DownloadService extends ChangeNotifier {
     try {
       await _migrateIOSAudioToAppGroup();
     } catch (e) {
-      debugPrint('[Download] App group audio migration failed: $e');
+      basicLog('[Download] App group audio migration failed: $e');
     }
   }
 
@@ -1661,7 +1670,7 @@ class DownloadService extends ChangeNotifier {
       _legacyExternalIds.add(entry.key);
     }
     if (_legacyExternalIds.isNotEmpty) {
-      debugPrint('[Download] ${_legacyExternalIds.length} legacy external download(s) need re-download');
+      verboseLog('[Download] ${_legacyExternalIds.length} legacy external download(s) need re-download');
     }
   }
 
@@ -1772,7 +1781,7 @@ class DownloadService extends ChangeNotifier {
             // SAF probe failed (permission revoked etc.) - be conservative and
             // keep everything rather than wiping the registry.
             ok = false;
-            debugPrint('[Download] SAF existence probe incomplete: $e');
+            basicLog('[Download] SAF existence probe incomplete: $e');
           }
         }
       }
@@ -1808,7 +1817,7 @@ class DownloadService extends ChangeNotifier {
           }
         }
         if (!allExist) {
-          debugPrint('[Download] Files missing for ${entry.key}, removing');
+          verboseLog('[Download] Files missing for ${entry.key}, removing');
           _downloads.remove(entry.key);
           orphanIds.add(entry.key);
         }
@@ -1820,7 +1829,7 @@ class DownloadService extends ChangeNotifier {
         final basePath = await downloadBasePath;
         final internalBase = await _internalBasePath;
         for (final id in orphanIds) {
-          debugPrint('[Download] Cleaning up orphaned entry: $id');
+          verboseLog('[Download] Cleaning up orphaned entry: $id');
           try {
             final dir = Directory('$basePath/$id');
             if (await dir.exists()) await dir.delete(recursive: true);
@@ -1832,7 +1841,7 @@ class DownloadService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('[Download] Validation error: $e');
+      basicLog('[Download] Validation error: $e');
     }
   }
 
@@ -1867,10 +1876,10 @@ class DownloadService extends ChangeNotifier {
             author = metadata['authorName'] as String? ?? author;
             coverUrl = api.getCoverUrl(apiItemId, width: 1200);
             needsUpdate = true;
-            debugPrint('[Download] Enriched metadata for ${info.itemId}: $title');
+            verboseLog('[Download] Enriched metadata for ${info.itemId}: $title');
           }
         } catch (e) {
-          debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
+          basicLog('[Download] Enrich failed for ${info.itemId}: $e');
         }
       }
 
@@ -1904,11 +1913,11 @@ class DownloadService extends ChangeNotifier {
                     .evict(FileImage(coverFile));
                 localCoverPath = coverFile.path;
                 needsUpdate = true;
-                debugPrint('[Download] Cached cover for ${info.itemId} '
+                verboseLog('[Download] Cached cover for ${info.itemId} '
                     '(${resp.bodyBytes.length} bytes, evict=$evicted)');
               }
             } catch (e) {
-              debugPrint('[Download] Cover cache failed for ${info.itemId}: $e');
+              basicLog('[Download] Cover cache failed for ${info.itemId}: $e');
             }
           }
         }
@@ -1928,11 +1937,11 @@ class DownloadService extends ChangeNotifier {
               final coverFile = File(localCoverPath);
               await coverFile.writeAsBytes(resp.bodyBytes);
               PaintingBinding.instance.imageCache.evict(FileImage(coverFile));
-              debugPrint('[Download] Upgraded ${width}px cover for ${info.itemId} '
+              verboseLog('[Download] Upgraded ${width}px cover for ${info.itemId} '
                   '(${resp.bodyBytes.length} bytes)');
             }
           } catch (e) {
-            debugPrint('[Download] Cover upgrade failed for ${info.itemId}: $e');
+            basicLog('[Download] Cover upgrade failed for ${info.itemId}: $e');
           }
         }
       }
@@ -2040,16 +2049,16 @@ class DownloadService extends ChangeNotifier {
     try {
       await init().timeout(const Duration(seconds: 8));
     } on TimeoutException catch (e) {
-      debugPrint('[Download] Downloader initialization still in progress: $e');
+      verboseLog('[Download] Downloader initialization still in progress: $e');
       return 'Downloads are still starting. Please try again in a moment.';
     } catch (e) {
-      debugPrint('[Download] Downloader initialization failed: $e');
+      basicLog('[Download] Downloader initialization failed: $e');
       return 'Downloads could not start. Please try again.';
     }
     if (shouldStart?.call() == false) return null;
 
     if (automatic && _autoDownloadBlocked.contains(itemId)) {
-      debugPrint(
+      verboseLog(
           '[Download] skipped auto-download of "$title" ($itemId): the user deleted it. A manual download, or playing it with download-on-stream on, brings it back');
       return null;
     }
@@ -2091,7 +2100,7 @@ class DownloadService extends ChangeNotifier {
     // If at capacity, queue this one
     if (_activeDownloadIds.length >= maxConcurrent) {
       if (shouldStart?.call() == false) return null;
-      debugPrint('[Download] Queued "$title" ($itemId); slots ${_activeDownloadIds.length}/$maxConcurrent full, ${_queue.length} waiting');
+      verboseLog('[Download] Queued "$title" ($itemId); slots ${_activeDownloadIds.length}/$maxConcurrent full, ${_queue.length} waiting');
       _queue.add(_QueuedDownload(
         api: api,
         itemId: itemId,
@@ -2201,9 +2210,9 @@ class DownloadService extends ChangeNotifier {
     try {
       final f = await fetchEbookToCache(api, itemId, ebookFile, title);
       await _excludeFromBackup(f.path);
-      debugPrint('[Download] cached ebook for offline: $itemId');
+      verboseLog('[Download] cached ebook for offline: $itemId');
     } catch (e) {
-      debugPrint('[Download] ebook offline cache failed for $itemId: $e');
+      basicLog('[Download] ebook offline cache failed for $itemId: $e');
     }
   }
 
@@ -2243,7 +2252,7 @@ class DownloadService extends ChangeNotifier {
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
-    debugPrint('[Download] Starting "$title" ($itemId)');
+    verboseLog('[Download] Starting "$title" ($itemId)');
 
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
@@ -2321,7 +2330,7 @@ class DownloadService extends ChangeNotifier {
       bookDir = Directory('$basePath/$nestedName');
       if (!bookDir.existsSync()) bookDir.createSync(recursive: true);
       bookDirRef = bookDir.path;
-      debugPrint('[Download] "$title" location=${useSaf ? 'SAF' : 'default'} dir=${bookDir.path} tracks=${files.length}');
+      verboseLog('[Download] "$title" location=${useSaf ? 'SAF' : 'default'} dir=${bookDir.path} tracks=${files.length}');
 
       final localCoverPath = await _cacheCover(api, itemId, coverUrl);
 
@@ -2451,7 +2460,7 @@ class DownloadService extends ChangeNotifier {
         verboseLog('[Download] enqueue ${i + 1}/${files.length} ok=$ok file=${files[i].filename}');
         if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
       }
-      debugPrint('[Download] Enqueued ${files.length} task(s) for "$title"');
+      verboseLog('[Download] Enqueued ${files.length} task(s) for "$title"');
     } catch (e) {
       await _failBook(itemId,
           cause: e, bookDirRef: bookDirRef, title: title, author: author, coverUrl: coverUrl);
@@ -2674,11 +2683,11 @@ class DownloadService extends ChangeNotifier {
         if (!coverDir.existsSync()) coverDir.createSync(recursive: true);
         final coverFile = File('${coverDir.path}/cover.jpg');
         await coverFile.writeAsBytes(coverResp.bodyBytes);
-        debugPrint('[Download] Cached cover image: ${coverFile.path}');
+        verboseLog('[Download] Cached cover image: ${coverFile.path}');
         return coverFile.path;
       }
     } catch (e) {
-      debugPrint('[Download] Cover cache failed (non-fatal): $e');
+      basicLog('[Download] Cover cache failed (non-fatal): $e');
     }
     return null;
   }
@@ -2737,7 +2746,7 @@ class DownloadService extends ChangeNotifier {
     if (p == null) return;
     p.lastUpdate = DateTime.now();
     p.trackStatus[trackIndex] = status;
-    debugPrint(
+    verboseLog(
       '[Download] task $itemId #$trackIndex status=${status.name}'
       '${exception != null ? ' ex=$exception' : ''}'
       '${responseCode != null ? ' code=$responseCode' : ''}',
@@ -2893,7 +2902,7 @@ class DownloadService extends ChangeNotifier {
       }
       return (dirUri: dirUri, fileUris: fileUris);
     } catch (e) {
-      debugPrint('[Download] moveBookToSaf failed: $e');
+      basicLog('[Download] moveBookToSaf failed: $e');
       return null;
     }
   }
@@ -2922,7 +2931,7 @@ class DownloadService extends ChangeNotifier {
       if (fileUri == null || fileUri.isEmpty) return null;
       return (fileUri: fileUri, metaUri: res?['metaUri'] as String?);
     } catch (e) {
-      debugPrint('[Download] saveEbookToSaf failed: $e');
+      basicLog('[Download] saveEbookToSaf failed: $e');
       return null;
     }
   }
@@ -2960,7 +2969,7 @@ class DownloadService extends ChangeNotifier {
       final m = jsonDecode(v) as Map<String, dynamic>;
       return (uri: m['uri'] as String?, meta: m['meta'] as String?);
     } catch (e) {
-      debugPrint('[Download] savedEbookRef failed: $e');
+      basicLog('[Download] savedEbookRef failed: $e');
       return null;
     }
   }
@@ -3030,7 +3039,7 @@ class DownloadService extends ChangeNotifier {
       f.deleteSync();
       return true;
     } catch (e) {
-      debugPrint('[Download] deleting saved ebook copy failed: $e');
+      basicLog('[Download] deleting saved ebook copy failed: $e');
       return false;
     }
   }
@@ -3042,7 +3051,7 @@ class DownloadService extends ChangeNotifier {
     // Files always land in internal storage first.
     final localPaths = p.expectedPaths.where((path) => File(path).existsSync()).toList();
     if (localPaths.length != p.trackCount) {
-      debugPrint('[Download] Finalize "$itemId": only ${localPaths.length}/${p.trackCount} '
+      verboseLog('[Download] Finalize "$itemId": only ${localPaths.length}/${p.trackCount} '
           'files present, treating as failure');
       p.finalizing = false; // let _failBook proceed
       await _failBook(itemId, cause: 'Missing files after download');
@@ -3085,7 +3094,7 @@ class DownloadService extends ChangeNotifier {
         finalDirPath = moved.dirUri;
         await _cleanupBookDir(p.bookDir); // drop the now-empty internal temp dir
       } else {
-        debugPrint('[Download] SAF move failed for "$itemId", keeping internal copy');
+        basicLog('[Download] SAF move failed for "$itemId", keeping internal copy');
       }
     } else if (Platform.isIOS) {
       for (final path in localPaths) {
@@ -3130,7 +3139,7 @@ class DownloadService extends ChangeNotifier {
       }
     } catch (_) {}
 
-    debugPrint('[Download] Complete: ${p.title} (${localPaths.length} files)');
+    verboseLog('[Download] Complete: ${p.title} (${localPaths.length} files)');
     unawaited(_processQueue());
   }
 
@@ -3176,7 +3185,7 @@ class DownloadService extends ChangeNotifier {
     await _persistPending();
     await _deleteDbRecords(itemId, p?.trackCount ?? 0);
     _cancelledIds.remove(itemId);
-    debugPrint('[Download] Failed "$t": $msg (${cause ?? taskException?.description})');
+    basicLog('[Download] Failed "$t": $msg (${cause ?? taskException?.description})');
     notifyListeners();
     unawaited(_processQueue());
   }
@@ -3195,7 +3204,7 @@ class DownloadService extends ChangeNotifier {
     await _persistPending();
     await _deleteDbRecords(itemId, p?.trackCount ?? 0);
     _cancelledIds.remove(itemId);
-    debugPrint('[Download] Cancelled: ${p?.title ?? itemId}');
+    verboseLog('[Download] Cancelled: ${p?.title ?? itemId}');
     notifyListeners();
     unawaited(_processQueue());
   }
@@ -3213,7 +3222,7 @@ class DownloadService extends ChangeNotifier {
         try {
           await FlutterLocalNotificationsPlugin().cancel(id);
         } catch (e) {
-          debugPrint('[Download] dismiss group notification failed: $e');
+          basicLog('[Download] dismiss group notification failed: $e');
         }
       });
     }
@@ -3276,7 +3285,7 @@ class DownloadService extends ChangeNotifier {
         ),
       );
     } catch (e) {
-      debugPrint('[Download] progress notification failed: $e');
+      basicLog('[Download] progress notification failed: $e');
     }
   }
 
@@ -3378,7 +3387,7 @@ class DownloadService extends ChangeNotifier {
         );
       }
     } catch (e) {
-      debugPrint('[Download] loadPending error: $e');
+      basicLog('[Download] loadPending error: $e');
     }
   }
 
@@ -3493,7 +3502,7 @@ class DownloadService extends ChangeNotifier {
     bool byUser = false,
   }) async {
     if (byUser && _autoDownloadBlocked.add(itemId)) {
-      debugPrint(
+      verboseLog(
           '[Download] $itemId removed by the user - auto-download leaves it alone from now on');
       await _saveAutoDownloadBlocks();
     }
@@ -3566,11 +3575,11 @@ class DownloadService extends ChangeNotifier {
       if (coverFile.existsSync()) {
         final evicted = PaintingBinding.instance.imageCache
             .evict(FileImage(coverFile));
-        debugPrint('[Download] evict cover ${coverFile.path} -> $evicted');
+        verboseLog('[Download] evict cover ${coverFile.path} -> $evicted');
       }
       if (coverDir.existsSync()) coverDir.deleteSync(recursive: true);
     } catch (e) {
-      debugPrint('[Download] cover cleanup failed: $e');
+      basicLog('[Download] cover cleanup failed: $e');
     }
 
     // Drop the offline ebook copy too, if any.
@@ -3956,7 +3965,7 @@ class DownloadService extends ChangeNotifier {
           (src: src, paths: pathKey, saved: saved, total: chapters.length);
       return (saved: saved, total: chapters.length);
     } catch (e) {
-      debugPrint('[Download] chapterDownloadCounts failed for $itemId: $e');
+      basicLog('[Download] chapterDownloadCounts failed for $itemId: $e');
       return null;
     }
   }
@@ -4014,7 +4023,7 @@ class DownloadService extends ChangeNotifier {
           }
         }
       } catch (e) {
-        debugPrint(
+        basicLog(
             '[Download] downloadedChapterIndicesCached failed for $itemId: $e');
         result = downloadedChapterIndices(itemId, chapters);
       }

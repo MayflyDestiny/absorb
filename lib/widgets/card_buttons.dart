@@ -446,6 +446,7 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
           title: widget.title,
           chapters: widget.chapters,
           downloadedChapters: already.toList()..sort(),
+          downloadKey: widget._key,
           onRemoveChapters: (indices) =>
               dl.deleteDownloadChapters(widget._key, widget.chapters, indices),
           displaySpeed: 1.0,
@@ -1626,6 +1627,14 @@ class CardActionDelegate {
       final cast = ChromecastService();
       pos = cast.castPosition.inMilliseconds / 1000.0;
     } else if (isActive) {
+      // Latch-aware index (same source as the lock screen): while a jump is
+      // settling the raw position sits in the previous chapter's tail (~0.3s
+      // metadata-vs-boundary drift), so a plain containment lookup would flash
+      // the PREVIOUS chapter at ~100%. Prefer the service's resolution of the
+      // jumped-to chapter; fall back to the raw position only when the service
+      // has no chapters of its own.
+      final idx = player.currentChapterIndex;
+      if (idx != null && idx < chapters.length) return idx;
       final seekTarget = player.activeSeekTarget;
       pos = seekTarget ?? player.position.inMilliseconds / 1000.0;
     } else {
@@ -2345,6 +2354,7 @@ class CardActionDelegate {
         title: title,
         chapters: chapters,
         downloadedChapters: already,
+        downloadKey: dlKey,
         onRemoveChapters: (indices) =>
             dl.deleteDownloadChapters(dlKey, chapters, indices),
       );
@@ -2370,7 +2380,8 @@ class CardActionDelegate {
         final result = await showChapterDownloadSheet(ctx,
             accent: accent,
             title: title,
-            chapters: chapters);
+            chapters: chapters,
+            downloadKey: dlKey);
         if (!ctx.mounted) return;
         if (result == null || result.selectedIndices.isEmpty) return;
         // A dismissed chapter sheet returns null; treat that as a cancel

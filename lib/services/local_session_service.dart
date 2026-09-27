@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
+import 'app_log.dart';
 import 'progress_sync_service.dart';
 import 'scoped_prefs.dart';
 
@@ -144,7 +145,7 @@ class LocalSessionService {
   Future<void> init() async {
     await _loadActive();
     if (_active != null) {
-      debugPrint('[LocalSession] Recovering orphaned active session ${_active!['id']} into pending');
+      verboseLog('[LocalSession] Recovering orphaned active session ${_active!['id']} into pending');
       await _enqueue(_active!);
       _active = null;
       await _persistActive();
@@ -200,7 +201,7 @@ class LocalSessionService {
       'displayAuthor': displayAuthor,
     };
     await _persistActive();
-    debugPrint('[LocalSession] Began session ${_active!['id']} for $progressKey ($today)');
+    verboseLog('[LocalSession] Began session ${_active!['id']} for $progressKey ($today)');
   }
 
   /// Accrue [seconds] of listening at [currentTime]. Rolls over to a new
@@ -215,11 +216,11 @@ class LocalSessionService {
     if (seconds <= 0) return;
     await _loadActive();
     if (_active == null) {
-      debugPrint('[LocalSession] accrue with no active session — skipping');
+      verboseLog('[LocalSession] accrue with no active session — skipping');
       return;
     }
     if (_active!['progressKey'] != progressKey) {
-      debugPrint('[LocalSession] accrue key mismatch (${_active!['progressKey']} != $progressKey) — finalizing stale session');
+      verboseLog('[LocalSession] accrue key mismatch (${_active!['progressKey']} != $progressKey) — finalizing stale session');
       await finalizeActive();
       return;
     }
@@ -237,7 +238,7 @@ class LocalSessionService {
       // Day boundary: freeze the old session (verbatim timestamps) and start a
       // new one for today so listening is attributed to the correct day.
       final old = _active!;
-      debugPrint('[LocalSession] Day rollover: ${old['date']} -> $today (session ${old['id']})');
+      verboseLog('[LocalSession] Day rollover: ${old['date']} -> $today (session ${old['id']})');
       await _enqueue(old);
       _active = {
         'id': _uuid(),
@@ -282,18 +283,18 @@ class LocalSessionService {
     final result =
         await api.syncLocalSession(await _trustedPayload(api, _active!));
     if (result.serverTooOld) {
-      debugPrint('[LocalSession] Server lacks /api/session/local — falling back to /play');
+      basicLog('[LocalSession] Server lacks /api/session/local — falling back to /play');
       _localUnsupported = true;
       await _legacyFlush(api, _active!);
       return true;
     }
     final ct = (_active!['currentTime'] as num?)?.toDouble() ?? 0;
     if (!result.ok) {
-      debugPrint('[LocalSession] Push failed for ${_active!['id']} at ${ct.toStringAsFixed(0)}s');
+      basicLog('[LocalSession] Push failed for ${_active!['id']} at ${ct.toStringAsFixed(0)}s');
     } else if (_lastPushLogAt == null ||
         clock().difference(_lastPushLogAt!) >= const Duration(minutes: 5)) {
       _lastPushLogAt = clock();
-      debugPrint('[LocalSession] Pushed ${_active!['id']} at ${ct.toStringAsFixed(0)}s');
+      verboseLog('[LocalSession] Pushed ${_active!['id']} at ${ct.toStringAsFixed(0)}s');
     }
     return result.ok;
   }
@@ -346,9 +347,9 @@ class LocalSessionService {
       if (result.ok) {
         // Keep the active session live; only clear the finalized queue.
         await ScopedPrefs.setStringList(_kPending, []);
-        debugPrint('[LocalSession] Flushed ${combined.length} local session(s)');
+        verboseLog('[LocalSession] Flushed ${combined.length} local session(s)');
       } else if (result.serverTooOld) {
-        debugPrint('[LocalSession] Server lacks /api/session/local-all — falling back to /play');
+        basicLog('[LocalSession] Server lacks /api/session/local-all — falling back to /play');
         _localUnsupported = true;
         for (final s in combined) {
           await _legacyFlush(api, s);
@@ -382,7 +383,7 @@ class LocalSessionService {
         await api.closePlaybackSession(sid);
       }
     } catch (e) {
-      debugPrint('[LocalSession] legacy flush failed: $e');
+      basicLog('[LocalSession] legacy flush failed: $e');
     }
   }
 }

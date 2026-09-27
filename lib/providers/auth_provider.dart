@@ -19,6 +19,7 @@ import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import '../widgets/overlay_toast.dart';
 import '../utils/server_url.dart';
+import '../services/app_log.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _accessToken;
@@ -189,7 +190,7 @@ class AuthProvider extends ChangeNotifier {
         await prefs.setString('ereader_devices', jsonEncode(_ereaderDevices));
       }
     } catch (e) {
-      debugPrint('[Auth] _persistEreaderDevices error: $e');
+      basicLog('[Auth] _persistEreaderDevices error: $e');
     }
   }
 
@@ -201,7 +202,7 @@ class AuthProvider extends ChangeNotifier {
       final list = jsonDecode(raw) as List<dynamic>;
       _ereaderDevices = list.cast<Map<String, dynamic>>();
     } catch (e) {
-      debugPrint('[Auth] _restoreEreaderDevices error: $e');
+      basicLog('[Auth] _restoreEreaderDevices error: $e');
     }
   }
 
@@ -285,14 +286,14 @@ class AuthProvider extends ChangeNotifier {
     // These used to return silently, so a rotation that was never stored looked
     // identical in the log to one that was. Say which guard stopped it.
     if (!_isCurrentSession(sessionServer, sessionUsername)) {
-      debugPrint(
+      verboseLog(
         '[Auth] Dropping rotated tokens: they belong to '
         '$sessionUsername@$sessionServer, current session is $_username@$_serverUrl',
       );
       return false;
     }
     if (_accessToken == null) {
-      debugPrint('[Auth] Dropping rotated tokens: no access token in memory');
+      basicLog('[Auth] Dropping rotated tokens: no access token in memory');
       return false;
     }
     final refreshUnchanged =
@@ -312,13 +313,13 @@ class AuthProvider extends ChangeNotifier {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt(
             'token_saved_at', DateTime.now().millisecondsSinceEpoch);
-        debugPrint(
+        verboseLog(
           '[Auth] Rotated tokens persisted: '
           'access=${ApiService.tokenFp(_accessToken)} '
           'refresh=${ApiService.tokenFp(_refreshToken)}',
         );
       } else {
-        debugPrint(
+        verboseLog(
           '[Auth] ROTATION NOT PERSISTED: this session now holds a refresh '
           'token that only exists in memory - a restart will come back with a '
           'spent one (access=${ApiService.tokenFp(_accessToken)} '
@@ -326,7 +327,7 @@ class AuthProvider extends ChangeNotifier {
         );
       }
     } catch (e) {
-      debugPrint('[Auth] Failed to persist refreshed tokens: $e');
+      basicLog('[Auth] Failed to persist refreshed tokens: $e');
     }
     // Push new token to socket
     SocketService().updateToken(_accessToken!);
@@ -380,7 +381,7 @@ class AuthProvider extends ChangeNotifier {
     // Swallowing this is how a dead session turns into fifteen minutes of
     // silent 401s instead of one "please sign in again", so name the guard.
     if (!_isCurrentSession(sessionServer, sessionUsername)) {
-      debugPrint(
+      verboseLog(
         '[Auth] Ignoring auth-expired for $sessionUsername@$sessionServer: '
         'current session is $_username@$_serverUrl',
       );
@@ -388,7 +389,7 @@ class AuthProvider extends ChangeNotifier {
     }
     if (_accessToken == null || _authExpiryInProgress) return;
     _authExpiryInProgress = true;
-    debugPrint(
+    verboseLog(
       '[Auth] Token refresh failed, forcing re-login '
       '(access=${ApiService.tokenFp(_accessToken)} '
       'refresh=${ApiService.tokenFp(_refreshToken)})',
@@ -398,7 +399,7 @@ class AuthProvider extends ChangeNotifier {
       if (savedAt != null) {
         final age = Duration(
             milliseconds: DateTime.now().millisecondsSinceEpoch - savedAt);
-        debugPrint(
+        verboseLog(
             '[Auth] Expired session tokens were last persisted ${age.inHours}h ago');
       }
     }));
@@ -420,16 +421,16 @@ class AuthProvider extends ChangeNotifier {
   /// If the server is unreachable, still restore credentials so offline mode works.
   Future<void> tryRestoreSession() async {
     final sw = Stopwatch()..start();
-    debugPrint('[Auth] tryRestoreSession started');
+    verboseLog('[Auth] tryRestoreSession started');
     _isLoading = true;
     _startOnAbsorbingAfterAccountChange = false;
     _serverReachable = true;
     notifyListeners();
 
     try {
-      debugPrint('[Auth] getting SharedPreferences...');
+      verboseLog('[Auth] getting SharedPreferences...');
       final prefs = await SharedPreferences.getInstance();
-      debugPrint(
+      verboseLog(
         '[Auth] SharedPreferences loaded (${sw.elapsedMilliseconds}ms)',
       );
       final savedUrl = prefs.getString('server_url');
@@ -445,7 +446,7 @@ class AuthProvider extends ChangeNotifier {
       final tokenAge = tokenSavedAt == null
           ? 'unknown'
           : '${Duration(milliseconds: DateTime.now().millisecondsSinceEpoch - tokenSavedAt).inHours}h';
-      debugPrint(
+      verboseLog(
         '[Auth] saved credentials: url=${savedUrl != null}, token=${savedToken != null}, refreshToken=${savedRefreshToken != null} '
         '(access=${ApiService.tokenFp(savedToken)}, refresh=${ApiService.tokenFp(savedRefreshToken)}, saved $tokenAge ago)',
       );
@@ -467,7 +468,7 @@ class AuthProvider extends ChangeNotifier {
         _accessToken = savedToken;
         _refreshToken = savedRefreshToken;
         _isLegacyToken = savedRefreshToken == null;
-        debugPrint(
+        verboseLog(
           '[Auth] Restored token: ${savedToken.substring(0, savedToken.length.clamp(0, 20))}... (${savedToken.length} chars, isLegacy=$_isLegacyToken)',
         );
         _username = savedUsername;
@@ -508,7 +509,7 @@ class AuthProvider extends ChangeNotifier {
         var reachable = false;
         if (_localServerEnabled && _localServerUrl.isNotEmpty) {
           final connectivity = await Connectivity().checkConnectivity();
-          debugPrint(
+          verboseLog(
             '[Auth] Local server enabled, pinging local and remote together '
             '(net=${connectivity.map((c) => c.name).join(',')}) (${sw.elapsedMilliseconds}ms)',
           );
@@ -529,7 +530,7 @@ class AuthProvider extends ChangeNotifier {
             onTimeout: () => false,
           );
           if (localReachable) {
-            debugPrint(
+            verboseLog(
               '[Auth] Local server reachable - using local (${sw.elapsedMilliseconds}ms)',
             );
             _useLocalServer = true;
@@ -537,19 +538,19 @@ class AuthProvider extends ChangeNotifier {
           } else {
             unawaited(localPing.then(_adoptLateLocalAnswer));
             reachable = await remotePing;
-            debugPrint(
+            verboseLog(
               '[Auth] remote ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)',
             );
           }
         } else {
-          debugPrint(
+          verboseLog(
             '[Auth] pinging remote server... (${sw.elapsedMilliseconds}ms)',
           );
           reachable = await ApiService.pingServer(
             restoredUrl,
             customHeaders: _customHeaders,
           ).timeout(const Duration(seconds: 5), onTimeout: () => false);
-          debugPrint(
+          verboseLog(
             '[Auth] remote ping result: reachable=$reachable (${sw.elapsedMilliseconds}ms)',
           );
         }
@@ -558,7 +559,7 @@ class AuthProvider extends ChangeNotifier {
         // Fetch full user info (needed for isAdmin, permissions, etc.)
         if (reachable) {
           try {
-            debugPrint('[Auth] fetching /me... (${sw.elapsedMilliseconds}ms)');
+            verboseLog('[Auth] fetching /me... (${sw.elapsedMilliseconds}ms)');
             final api = _createSessionApi(
               baseUrl: activeServerUrl!,
               token: savedToken,
@@ -590,10 +591,10 @@ class AuthProvider extends ChangeNotifier {
                 _userJson = me;
                 _userId = me['id'] as String?;
               } else {
-                debugPrint('[Auth] /me returned null (token may be invalid)');
+                basicLog('[Auth] /me returned null (token may be invalid)');
               }
             }
-            debugPrint(
+            verboseLog(
               '[Auth] authorize/me done (${sw.elapsedMilliseconds}ms)',
             );
           } catch (_) {}
@@ -607,13 +608,13 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       // Restore failed — but if we already set credentials, keep them
-      debugPrint(
+      verboseLog(
         '[Auth] tryRestoreSession error: $e (${sw.elapsedMilliseconds}ms)',
       );
       _serverReachable = false;
     }
 
-    debugPrint(
+    verboseLog(
       '[Auth] tryRestoreSession done, isAuthenticated=$isAuthenticated (${sw.elapsedMilliseconds}ms)',
     );
     if (isAuthenticated) _pushSessionToWear();
@@ -669,13 +670,13 @@ class AuthProvider extends ChangeNotifier {
         }
       }
       if (_userJson != null) {
-        debugPrint(
+        verboseLog(
           '[Auth] Loaded user info on reconnect (type=${_userJson?['type']})',
         );
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('[Auth] _ensureUserInfo failed: $e');
+      basicLog('[Auth] _ensureUserInfo failed: $e');
     } finally {
       _ensuringUserInfo = false;
     }
@@ -741,16 +742,16 @@ class AuthProvider extends ChangeNotifier {
     _isLegacyToken = tokens.isLegacy;
     _accessToken = tokens.token;
     _refreshToken = tokens.refreshToken;
-    debugPrint('[Auth] Login response keys: ${data.keys.toList()}');
+    verboseLog('[Auth] Login response keys: ${data.keys.toList()}');
     final serverSettings = data['serverSettings'];
-    debugPrint('[Auth] Server version='
+    verboseLog('[Auth] Server version='
         '${serverSettings is Map ? serverSettings['version'] : null} '
         'source=${data['Source']}');
-    debugPrint('[Auth] Login user keys: ${user.keys.toList()}');
-    debugPrint(
+    verboseLog('[Auth] Login user keys: ${user.keys.toList()}');
+    verboseLog(
       '[Auth] accessToken=${tokens.accessToken != null}, refreshToken=${tokens.refreshToken != null}, legacyToken=${tokens.legacyToken != null}, isLegacy=$_isLegacyToken',
     );
-    debugPrint(
+    verboseLog(
       '[Auth] Token being used: ${_accessToken != null ? '${_accessToken!.substring(0, _accessToken!.length.clamp(0, 20))}... (${_accessToken!.length} chars)' : 'null'}',
     );
     _username = user['username'] as String?;
@@ -992,12 +993,12 @@ class AuthProvider extends ChangeNotifier {
     _isLegacyToken = tokens.isLegacy;
     _accessToken = tokens.token;
     _refreshToken = tokens.refreshToken;
-    debugPrint('[Auth] OIDC response keys: ${result.keys.toList()}');
-    debugPrint('[Auth] OIDC user keys: ${user.keys.toList()}');
-    debugPrint(
+    verboseLog('[Auth] OIDC response keys: ${result.keys.toList()}');
+    verboseLog('[Auth] OIDC user keys: ${user.keys.toList()}');
+    verboseLog(
       '[Auth] accessToken=${tokens.accessToken != null}, refreshToken=${tokens.refreshToken != null}, legacyToken=${tokens.legacyToken != null}, isLegacy=$_isLegacyToken',
     );
-    debugPrint(
+    verboseLog(
       '[Auth] Token being used: ${_accessToken != null ? '${_accessToken!.substring(0, _accessToken!.length.clamp(0, 20))}... (${_accessToken!.length} chars)' : 'null'}',
     );
     _username = user['username'] as String?;
@@ -1081,7 +1082,7 @@ class AuthProvider extends ChangeNotifier {
       await PlayerSettings.setLocalServerUrl(_localServerUrl);
     }
     if (_localServerEnabled) {
-      debugPrint(
+      verboseLog(
         '[Auth] Local server config loaded: enabled=$_localServerEnabled, url=${_localServerUrl.isNotEmpty ? "(set)" : "(empty)"}',
       );
     }
@@ -1106,7 +1107,7 @@ class AuthProvider extends ChangeNotifier {
           customHeaders: _customHeaders,
         ).timeout(const Duration(seconds: 2), onTimeout: () => false);
         if (localReachable) {
-          debugPrint('[Auth] Local server reachable - using local');
+          basicLog('[Auth] Local server reachable - using local');
           _useLocalServer = true;
         }
       }
@@ -1123,7 +1124,7 @@ class AuthProvider extends ChangeNotifier {
     }
     _useLocalServer = true;
     _serverReachable = true;
-    debugPrint('[Auth] Local server answered late - switching to local');
+    basicLog('[Auth] Local server answered late - switching to local');
     SocketService().switchServer(activeServerUrl!);
     notifyListeners();
   }
@@ -1145,7 +1146,7 @@ class AuthProvider extends ChangeNotifier {
       _useLocalServer = false;
     }
     if (_useLocalServer != wasLocal) {
-      debugPrint('[Auth] Local server switch: useLocal=$_useLocalServer');
+      basicLog('[Auth] Local server switch: useLocal=$_useLocalServer');
       SocketService().switchServer(activeServerUrl!);
       final ctx = rootNavigatorKey.currentContext;
       final l = ctx != null ? AppLocalizations.of(ctx) : null;
@@ -1162,7 +1163,7 @@ class AuthProvider extends ChangeNotifier {
   void clearLocalOverride() {
     if (!_useLocalServer) return;
     _useLocalServer = false;
-    debugPrint('[Auth] Cleared local server override, back to remote');
+    basicLog('[Auth] Cleared local server override, back to remote');
     if (_serverUrl != null) {
       SocketService().switchServer(_serverUrl!);
     }
@@ -1441,7 +1442,7 @@ class AuthProvider extends ChangeNotifier {
           customHeaders: _customHeaders,
         ).timeout(const Duration(seconds: 2), onTimeout: () => false);
         if (localReachable) {
-          debugPrint(
+          verboseLog(
             '[Auth] switchToAccount: local server reachable - using local',
           );
           _useLocalServer = true;

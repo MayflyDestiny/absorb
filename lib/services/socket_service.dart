@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'player_settings.dart';
+import 'app_log.dart';
 
 class SocketService {
   static const authorChangeEvents = <String>[
@@ -223,7 +224,7 @@ class SocketService {
   void _handleTaskStarted(dynamic data) {
     final task = normalizeSocketMap(data);
     if (task == null) return;
-    debugPrint('[Socket] Task started: ${task['action'] ?? task['id']}');
+    verboseLog('[Socket] Task started: ${task['action'] ?? task['id']}');
     _emitTaskStarted(task);
   }
 
@@ -235,7 +236,7 @@ class SocketService {
   void _handleTaskFinished(dynamic data) {
     final task = normalizeSocketMap(data);
     if (task == null) return;
-    debugPrint('[Socket] Task finished: ${task['action'] ?? task['id']}');
+    verboseLog('[Socket] Task finished: ${task['action'] ?? task['id']}');
     if (task['action'] == 'encode-m4b') onEncodeFinished?.call(task);
     _emitTaskFinished(task);
   }
@@ -330,7 +331,7 @@ class SocketService {
   void updateToken(String newToken) {
     _token = newToken;
     if (_socket?.connected == true) {
-      debugPrint('[Socket] Re-authenticating with refreshed token');
+      basicLog('[Socket] Re-authenticating with refreshed token');
       _socket!.emit('auth', _token);
     }
   }
@@ -346,7 +347,7 @@ class SocketService {
     // credentials so turning the mode off can reconnect, but stop short of
     // opening the connection. Progress still syncs over plain HTTP.
     if (PlayerSettings.einkMode) {
-      debugPrint('[Battery] Socket not opened (e-ink mode)');
+      verboseLog('[Battery] Socket not opened (e-ink mode)');
       return;
     }
 
@@ -356,18 +357,18 @@ class SocketService {
       // onConnect fires on initial connect AND every reconnect
       _socket!.onConnect((_) {
         _connectedAt = DateTime.now();
-        debugPrint('[Socket] Connected, sending auth');
+        verboseLog('[Socket] Connected, sending auth');
         _socket!.emit('auth', _token);
       });
 
       _socket!.on('init', (_) {
-        debugPrint('[Socket] Authenticated - user is online');
+        basicLog('[Socket] Authenticated - user is online');
         _syncServerLogSubscription();
         onAuthenticated?.call();
       });
 
       _socket!.on('auth_failed', (_) {
-        debugPrint('[Socket] Auth failed');
+        basicLog('[Socket] Auth failed');
         disconnect();
       });
 
@@ -383,19 +384,19 @@ class SocketService {
 
       // Library item changes
       _socket!.on('item_added', (data) {
-        debugPrint('[Socket] Item added');
+        verboseLog('[Socket] Item added');
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
         _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('item_updated', (data) {
-        debugPrint('[Socket] Item updated');
+        verboseLog('[Socket] Item updated');
         if (data is Map<String, dynamic>) onItemUpdated?.call(data);
         _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('item_removed', (data) {
-        debugPrint('[Socket] Item removed');
+        verboseLog('[Socket] Item removed');
         if (data is Map<String, dynamic>) {
           onItemRemoved?.call(data);
           _emitItemRemoved(data);
@@ -404,55 +405,55 @@ class SocketService {
       });
       // Bulk events the scanner emits in chunks while a scan runs
       _socket!.on('items_updated', (data) {
-        debugPrint('[Socket] Items updated (bulk)');
+        verboseLog('[Socket] Items updated (bulk)');
         _emitItemUpdated(data);
         _emitItemsChanged();
       });
       _socket!.on('items_added', (data) {
-        debugPrint('[Socket] Items added (bulk)');
+        verboseLog('[Socket] Items added (bulk)');
         _emitItemUpdated(data);
         _emitItemsChanged();
       });
 
       // Series changes
       _socket!.on('series_added', (_) {
-        debugPrint('[Socket] Series added');
+        verboseLog('[Socket] Series added');
         onSeriesUpdated?.call();
       });
       _socket!.on('series_updated', (_) {
-        debugPrint('[Socket] Series updated');
+        verboseLog('[Socket] Series updated');
         onSeriesUpdated?.call();
       });
       _socket!.on('series_removed', (_) {
-        debugPrint('[Socket] Series removed');
+        verboseLog('[Socket] Series removed');
         onSeriesUpdated?.call();
       });
 
       // Collection changes
       _socket!.on('collection_added', (_) {
-        debugPrint('[Socket] Collection added');
+        verboseLog('[Socket] Collection added');
         onCollectionUpdated?.call();
       });
       _socket!.on('collection_updated', (_) {
-        debugPrint('[Socket] Collection updated');
+        verboseLog('[Socket] Collection updated');
         onCollectionUpdated?.call();
       });
       _socket!.on('collection_removed', (_) {
-        debugPrint('[Socket] Collection removed');
+        verboseLog('[Socket] Collection removed');
         onCollectionUpdated?.call();
       });
 
       // Playlist changes (server emits these per-user)
       _socket!.on('playlist_added', (_) {
-        debugPrint('[Socket] Playlist added');
+        verboseLog('[Socket] Playlist added');
         onPlaylistUpdated?.call();
       });
       _socket!.on('playlist_updated', (_) {
-        debugPrint('[Socket] Playlist updated');
+        verboseLog('[Socket] Playlist updated');
         onPlaylistUpdated?.call();
       });
       _socket!.on('playlist_removed', (_) {
-        debugPrint('[Socket] Playlist removed');
+        verboseLog('[Socket] Playlist removed');
         onPlaylistUpdated?.call();
       });
 
@@ -461,7 +462,7 @@ class SocketService {
 
       // Current user updated
       _socket!.on('user_updated', (data) {
-        debugPrint('[Socket] User updated');
+        verboseLog('[Socket] User updated');
         if (data is Map<String, dynamic>) onUserUpdated?.call(data);
       });
 
@@ -479,7 +480,7 @@ class SocketService {
         if (data is! Map) return;
         final raw = data['ereaderDevices'] as List<dynamic>?;
         if (raw == null) return;
-        debugPrint('[Socket] ereader-devices-updated (${raw.length} devices)');
+        verboseLog('[Socket] ereader-devices-updated (${raw.length} devices)');
         onEreaderDevicesUpdated?.call(raw.cast<Map<String, dynamic>>());
       });
 
@@ -487,22 +488,22 @@ class SocketService {
         final duration = _connectedAt != null
             ? DateTime.now().difference(_connectedAt!).inSeconds
             : 0;
-        debugPrint('[Socket] Disconnected after ${duration}s (Reason: $reason)');
+        basicLog('[Socket] Disconnected after ${duration}s (Reason: $reason)');
         _connectedAt = null;
       });
 
       _socket!.onConnectError((err) {
-        debugPrint('[Socket] Connect error: $err');
+        basicLog('[Socket] Connect error: $err');
       });
 
       _socket!.on('reconnect_failed', (_) {
-        debugPrint('[Socket] Reconnection attempts exhausted — giving up');
+        basicLog('[Socket] Reconnection attempts exhausted — giving up');
         _socket?.dispose();
         _socket = null;
         onReconnectFailed?.call();
       });
     } catch (e) {
-      debugPrint('[Socket] Failed to connect: $e');
+      basicLog('[Socket] Failed to connect: $e');
       _socket = null;
       _token = null;
       _serverUrl = null;
@@ -532,7 +533,7 @@ class SocketService {
   /// cheaply reconnect later without re-wiring everything.
   void softDisconnect() {
     if (_socket == null) return;
-    debugPrint('[Battery] Socket DISCONNECTED (soft, battery saving)');
+    verboseLog('[Battery] Socket DISCONNECTED (soft, battery saving)');
     _socket!.dispose();
     _socket = null;
   }
@@ -541,7 +542,7 @@ class SocketService {
   /// Does a soft disconnect then reconnect with the new URL.
   void switchServer(String newUrl) {
     if (_serverUrl == newUrl) return;
-    debugPrint('[Socket] Switching server: $_serverUrl -> $newUrl');
+    basicLog('[Socket] Switching server: $_serverUrl -> $newUrl');
     _serverUrl = newUrl;
     if (_socket != null) {
       _socket!.dispose();
@@ -557,25 +558,25 @@ class SocketService {
     final url = _serverUrl;
     final token = _token;
     if (url == null || token == null) return;
-    debugPrint('[Battery] Socket RECONNECTED (soft)');
+    verboseLog('[Battery] Socket RECONNECTED (soft)');
 
     try {
       _socket = _createSocket(url);
 
       _socket!.onConnect((_) {
         _connectedAt = DateTime.now();
-        debugPrint('[Socket] Connected, sending auth');
+        verboseLog('[Socket] Connected, sending auth');
         _socket!.emit('auth', _token);
       });
 
       _socket!.on('init', (_) {
-        debugPrint('[Socket] Authenticated - user is online');
+        basicLog('[Socket] Authenticated - user is online');
         _syncServerLogSubscription();
         onAuthenticated?.call();
       });
 
       _socket!.on('auth_failed', (_) {
-        debugPrint('[Socket] Auth failed');
+        basicLog('[Socket] Auth failed');
         disconnect();
       });
 
@@ -647,22 +648,22 @@ class SocketService {
         final duration = _connectedAt != null
             ? DateTime.now().difference(_connectedAt!).inSeconds
             : 0;
-        debugPrint('[Socket] Disconnected after ${duration}s (Reason: $reason)');
+        basicLog('[Socket] Disconnected after ${duration}s (Reason: $reason)');
         _connectedAt = null;
       });
 
       _socket!.onConnectError((err) {
-        debugPrint('[Socket] Connect error: $err');
+        basicLog('[Socket] Connect error: $err');
       });
 
       _socket!.on('reconnect_failed', (_) {
-        debugPrint('[Socket] Reconnection attempts exhausted — giving up');
+        basicLog('[Socket] Reconnection attempts exhausted — giving up');
         _socket?.dispose();
         _socket = null;
         onReconnectFailed?.call();
       });
     } catch (e) {
-      debugPrint('[Socket] Failed to reconnect: $e');
+      basicLog('[Socket] Failed to reconnect: $e');
       _socket = null;
     }
   }
