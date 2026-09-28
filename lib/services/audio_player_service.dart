@@ -1596,11 +1596,21 @@ class AudioPlayerService extends ChangeNotifier {
   static const _pauseStopTimeout = Duration(minutes: 10);
   // A streamed book's cover isn't in the content-provider cache on first play,
   // so the notification's first art request races the on-demand fetch and the
-  // OS caches the empty result against the fixed cover URI. We re-push the
-  // MediaItem once with a cache-busting URI so the OS re-requests it after the
-  // cover has been fetched. Tracks the item already scheduled for this.
+  // OS caches the empty result against the fixed cover URI (loadThumbnail is a
+  // one-shot per-URI operation on Android Q+). We re-push the MediaItem with a
+  // cache-busting URI so the OS re-requests it after the cover has been
+  // fetched. Tracks the item already scheduled for this.
   String? _coverRepushItem;
   Timer? _coverRepushTimer;
+  int _coverRepushAttempt = 0;
+
+  // Widening gaps, one campaign per item (cleared in _clearState so replaying
+  // the same book gets a fresh one). A single 3s re-push was not enough: the
+  // CoverContentProvider's own connect/read timeout is 5s, so on a slow link
+  // the one chance could itself land inside that window, get negative-cached by
+  // the OS, and leave the notification permanently blank with no further
+  // attempt. Three attempts with 3s/8s/15s gaps cover the fetch comfortably.
+  static const _coverRepushDelays = <int>[3, 8, 15];
 
   void _beginAdvanceBuffering() {
     if (!Platform.isAndroid) return;
@@ -6476,17 +6486,30 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _scheduleStreamedCoverRepush(String itemId) {
+    _coverRepushAttempt = 0;
+    _scheduleNextStreamedCoverRepush(itemId);
+  }
+
+  void _scheduleNextStreamedCoverRepush(String itemId) {
     _coverRepushTimer?.cancel();
-    _coverRepushTimer = Timer(const Duration(seconds: 3), () {
+    _coverRepushTimer = null;
+    if (_coverRepushAttempt >= _coverRepushDelays.length) {
+      // Out of attempts. _coverRepushItem stays set so a later metadata push
+      // on this item doesn't restart the campaign; _clearState clears it so
+      // playing the book again tries afresh.
+      return;
+    }
+    final delay = _coverRepushDelays[_coverRepushAttempt++];
+    _coverRepushTimer = Timer(Duration(seconds: delay), () {
       // Only re-push if we're still on the same item.
       if (_currentItemId == null) return;
       if (_currentItemId != itemId && _mediaItemKey != itemId) return;
       final chapterTitle =
           _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
-          ? (_chapters[_lastNotifiedChapterIndex]
-                    as Map<String, dynamic>)['title']
-                as String?
-          : null;
+              ? (_chapters[_lastNotifiedChapterIndex]
+                        as Map<String, dynamic>)['title']
+                    as String?
+              : null;
       _pushMediaItem(
         itemId,
         _currentTitle ?? '',
@@ -6496,6 +6519,7 @@ class AudioPlayerService extends ChangeNotifier {
         chapter: chapterTitle,
         coverCacheBust: DateTime.now().millisecondsSinceEpoch,
       );
+      _scheduleNextStreamedCoverRepush(itemId);
     });
   }
 
@@ -6556,6 +6580,7 @@ class AudioPlayerService extends ChangeNotifier {
     _currentCoverUrl = null;
     _coverRepushTimer?.cancel();
     _coverRepushItem = null;
+    _coverRepushAttempt = 0;
     _playbackSessionId = null;
     _isOfflineMode = false;
     _localSessionMode = false;

@@ -160,10 +160,31 @@ class CoverContentProvider : ContentProvider() {
                 Log.w(TAG, "Cover fetch failed: HTTP $code for $itemId")
                 return code
             }
+            // Write to a sibling temp file and rename into place. Writing
+            // straight to outFile let a concurrent openFile() (or a system
+            // loadThumbnail retrying the same URI) read a half-written JPEG,
+            // which fails to decode and shows up as a blank notification cover.
+            val tmpFile = File(outFile.parentFile, "${outFile.name}.tmp")
+            tmpFile.delete()
             connection.inputStream.use { input ->
-                outFile.outputStream().use { output ->
+                tmpFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
+            }
+            if (tmpFile.length() <= 0) {
+                Log.w(TAG, "Cover fetch produced empty body for $itemId")
+                tmpFile.delete()
+                return 0
+            }
+            if (!tmpFile.renameTo(outFile)) {
+                // renameTo can fail if the destination is held open on some
+                // filesystems; fall back to a direct copy rather than leaving
+                // the item with no cover at all.
+                Log.w(TAG, "Atomic rename failed for $itemId, copying in place")
+                outFile.outputStream().use { output ->
+                    tmpFile.inputStream().use { input -> input.copyTo(output) }
+                }
+                tmpFile.delete()
             }
             return 200
         } finally {

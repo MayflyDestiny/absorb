@@ -477,14 +477,15 @@ class ApiService {
   }
 
   /// Record that the server answered a real request, for weak-link offline
-  /// detection. Any status below 500 proves the origin answered (4xx in
-  /// particular comes from the real server behind any proxy); a 5xx is usually
-  /// emitted by the proxy/origin itself while it is down (502/522/530 from
-  /// Cloudflare, 5xx from a restarting ABS), so it must NOT keep the library
-  /// "online" - otherwise a sustained outage with 5xx responses would neuter
-  /// the offline flip and the app would just keep retrying forever.
+  /// detection. Only responses below 400 prove the origin both answered AND
+  /// accepted our credentials - a 401 storm (dead/mismatched token) must not
+  /// keep the library "online", otherwise a server that answers nothing but
+  /// rejects every request would leave every shelf spinning forever with a
+  /// permanently green cloud icon. 5xx is emitted by the proxy/origin while it
+  /// is down (502/522/530 from Cloudflare, 5xx from a restarting ABS), so it
+  /// too must NOT keep the library online.
   static void _noteServerAnswer(int statusCode) {
-    if (statusCode < 500) lastServerAnswerAt = DateTime.now();
+    if (statusCode < 400) lastServerAnswerAt = DateTime.now();
   }
 
   /// Loggable token identity: length plus a short digest, enough to tell
@@ -1114,6 +1115,30 @@ class ApiService {
     try {
       final response = await http.get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Ping the server WITH the current token, hitting the authenticated
+  /// `/api/me` endpoint. Distinguishes "the server process is up" from "this
+  /// login can actually load anything": a dead/invalidated token returns 401
+  /// here, so the offline detector stops treating "server alive but every
+  /// content request 401s" as healthy (see LibraryStateMixin health check).
+  /// Only meaningful after login; pre-login screens keep using [pingServer].
+  static Future<bool> pingServerAuthenticated(
+    String serverUrl, {
+    required String apiKey,
+    Map<String, String> customHeaders = const {},
+  }) async {
+    final base = serverUrl.endsWith('/') ? serverUrl : '$serverUrl/';
+    final url = '${base}api/me';
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {...customHeaders, 'Authorization': 'Bearer $apiKey'},
+      ).timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
     } catch (_) {
       return false;

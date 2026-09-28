@@ -45,19 +45,23 @@ class StableCachedNetworkImage extends StatefulWidget {
 
 class _StableCachedNetworkImageState extends State<StableCachedNetworkImage> {
   late CachedNetworkImageProvider _currentProvider;
+  late String _currentUrl;
   CachedNetworkImageProvider? _targetProvider;
+  String? _targetUrl;
   bool _isPreloading = false;
 
   @override
   void initState() {
     super.initState();
     _currentProvider = _makeProvider(widget.cacheKey);
+    _currentUrl = widget.imageUrl;
   }
 
   @override
   void didUpdateWidget(StableCachedNetworkImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cacheKey != widget.cacheKey) {
+    if (oldWidget.cacheKey != widget.cacheKey ||
+        oldWidget.imageUrl != widget.imageUrl) {
       _preloadNewProvider();
     }
   }
@@ -66,11 +70,14 @@ class _StableCachedNetworkImageState extends State<StableCachedNetworkImage> {
     if (_isPreloading) return;
     _isPreloading = true;
 
-    _targetProvider = _makeProvider(widget.cacheKey);
+    final provider = _makeProvider(widget.cacheKey);
+    final url = widget.imageUrl;
+    _targetProvider = provider;
+    _targetUrl = url;
 
     try {
       final completer = Completer<void>();
-      final stream = _targetProvider!.resolve(const ImageConfiguration());
+      final stream = provider.resolve(const ImageConfiguration());
 
       late ImageStreamListener listener;
       listener = ImageStreamListener(
@@ -90,7 +97,9 @@ class _StableCachedNetworkImageState extends State<StableCachedNetworkImage> {
       if (mounted && _targetProvider != null) {
         setState(() {
           _currentProvider = _targetProvider!;
+          _currentUrl = _targetUrl!;
           _targetProvider = null;
+          _targetUrl = null;
         });
       }
     } catch (_) {
@@ -110,8 +119,12 @@ class _StableCachedNetworkImageState extends State<StableCachedNetworkImage> {
 
   @override
   Widget build(BuildContext context) {
+    // The provider and the URL must come from the SAME snapshot. Pairing the
+    // new imageUrl with the not-yet-swapped _currentProvider.cacheKey stored
+    // the new bytes under the old key - so the previous cover's entry got
+    // overwritten, and a failed fetch left the old entry holding nothing.
     return CachedNetworkImage(
-      imageUrl: widget.imageUrl,
+      imageUrl: _currentUrl,
       httpHeaders: widget.httpHeaders,
       cacheKey: _currentProvider.cacheKey,
       useOldImageOnUrlChange: true,

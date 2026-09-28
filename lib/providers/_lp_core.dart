@@ -1266,13 +1266,25 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (auth == null) return null;
     final activeUrl = auth.activeServerUrl ?? auth.serverUrl ?? '';
     if (activeUrl.isEmpty) return null;
-    final reachable = await ApiService.pingServer(activeUrl, customHeaders: auth.customHeaders)
-        .timeout(timeout, onTimeout: () => false);
+    final token = auth.token;
+    if (token == null || token.isEmpty) return null;
+    // Authenticated probe: `/ping` answers 200 even when the token is dead or
+    // the reverse proxy never forwards to the real backend, so an app that can
+    // only 401 everywhere would stay "online" forever. `/api/me` needs a valid
+    // token AND a live backend, so it sees those as unreachable.
+    final reachable = await ApiService.pingServerAuthenticated(
+      activeUrl,
+      apiKey: token,
+      customHeaders: auth.customHeaders,
+    ).timeout(timeout, onTimeout: () => false);
     if (reachable) return activeUrl;
     final remoteUrl = auth.serverUrl ?? '';
     if (remoteUrl.isEmpty || remoteUrl == activeUrl) return null;
-    final remoteReachable = await ApiService.pingServer(remoteUrl, customHeaders: auth.customHeaders)
-        .timeout(timeout, onTimeout: () => false);
+    final remoteReachable = await ApiService.pingServerAuthenticated(
+      remoteUrl,
+      apiKey: token,
+      customHeaders: auth.customHeaders,
+    ).timeout(timeout, onTimeout: () => false);
     if (!remoteReachable) return null;
     debugPrint('[Library] Local server unreachable but remote responds - switching to remote');
     auth.clearLocalOverride();
@@ -1310,9 +1322,19 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       return;
     }
     final auth = _auth;
-    if (auth != null && auth.localServerEnabled && auth.localServerUrl.isNotEmpty) {
-      final localReachable = await ApiService.pingServer(
+    if (auth == null) {
+      _scheduleServerPing();
+      return;
+    }
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      _scheduleServerPing();
+      return;
+    }
+    if (auth.localServerEnabled && auth.localServerUrl.isNotEmpty) {
+      final localReachable = await ApiService.pingServerAuthenticated(
         auth.localServerUrl,
+        apiKey: token,
         customHeaders: auth.customHeaders,
       ).timeout(const Duration(seconds: 6), onTimeout: () => false);
       if (localReachable) {
@@ -1324,14 +1346,15 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         return;
       }
     }
-    final serverUrl = auth?.serverUrl;
-    if (serverUrl == null) {
+    final serverUrl = auth.serverUrl;
+    if (serverUrl == null || serverUrl.isEmpty) {
       _scheduleServerPing();
       return;
     }
-    final reachable = await ApiService.pingServer(
+    final reachable = await ApiService.pingServerAuthenticated(
       serverUrl,
-      customHeaders: auth?.customHeaders ?? {},
+      apiKey: token,
+      customHeaders: auth.customHeaders,
     );
     if (reachable) {
       verboseLog('[Library] Server ping succeeded — going online');
