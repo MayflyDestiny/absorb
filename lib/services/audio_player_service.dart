@@ -1925,6 +1925,14 @@ class AudioPlayerService extends ChangeNotifier {
   bool _introSkippedThisEntry = false;
   bool _outroSkippedThisEntry = false;
 
+  /// Fast poll (120ms) run while playback is inside the outro window. The
+  /// shared position stream only evaluates the skip on a 500-1000ms cadence,
+  /// so the boundary crossing could be recognized up to ~1s late (a whole
+  /// period) depending on where the last tick landed - the outro jumped with
+  /// a bit of the tail still audible. Polling just those last few seconds
+  /// brings the worst case down to ~one poll interval.
+  Timer? _outroWatchTimer;
+
   /// Deliberate same-chapter rewind (prev button). [._skipEntryChapterIdx] and
   /// the skip flags live per-ITEM and get wiped by
   /// [_resetChapterSkipHandledIfNewItem] when the track swap re-keys the
@@ -6581,6 +6589,8 @@ class AudioPlayerService extends ChangeNotifier {
     _coverRepushTimer?.cancel();
     _coverRepushItem = null;
     _coverRepushAttempt = 0;
+    _outroWatchTimer?.cancel();
+    _outroWatchTimer = null;
     _playbackSessionId = null;
     _isOfflineMode = false;
     _localSessionMode = false;
@@ -8576,21 +8586,53 @@ class AudioPlayerService extends ChangeNotifier {
     if (chapterIndex < 0 || chapterIndex >= _chapters.length) return;
     final ch = _chapters[chapterIndex] as Map<String, dynamic>;
     final start = (ch['start'] as num?)?.toDouble() ?? 0;
-    await _forwardSeekToCast(Duration(milliseconds: (start * 1000).round()));
+    // Land DIRECTLY at the intro-skip point when enabled, instead of seeking
+    // to the chapter start and letting the post-landing position tick catch up.
+    // A raw chapter-start jump sets _lastUserSeekTime, which suppresses the
+    // auto-skip for 3s - so the listener heard the opening ~3s of every chapter
+    // before the skip yanked forward. Mirrors the prev/next pre-jump exactly.
+    final introTarget = await _crossChapterIntroSkipTarget(chapterIndex, start);
+    var target = introTarget ?? start;
+    // Chapter end for the repair clamp: explicit end, else next chapter start.
+    double chapterEnd = _totalDuration;
+    final endFromData = (ch['end'] as num?)?.toDouble();
+    final nextStart = chapterIndex + 1 < _chapters.length
+        ? ((_chapters[chapterIndex + 1] as Map)['start'] as num?)?.toDouble()
+        : null;
+    if (endFromData != null) {
+      chapterEnd = endFromData;
+    } else if (nextStart != null) {
+      chapterEnd = nextStart;
+    }
+    await _forwardSeekToCast(Duration(milliseconds: (target * 1000).round()));
     _resetStuckDetection();
     // Re-check after the cast await: the item can be swapped out while the
     // receiver round-trips. Same reason [seekTo] does.
     if (_player != null && !_player!.playing) _seekedWhilePaused = true;
     _lastUserSeekTime = DateTime.now();
     final from = position;
-    await _seekAbsolute(
-      start,
-      chapterJump: true,
-      pinChapterIndex: chapterIndex,
-    );
+    if (introTarget != null) {
+      // Intro-skip landing is offset INTO the chapter - stay precise, no file-
+      // boundary snap (matches the prev/next pre-jump).
+      await _seekAbsoluteAlignedRepair(
+        target,
+        clampMaxSec: chapterEnd - 1.0,
+        chapterJump: false,
+        pinChapterIndex: chapterIndex,
+      );
+    } else {
+      await _seekAbsolute(
+        target,
+        chapterJump: true,
+        pinChapterIndex: chapterIndex,
+      );
+    }
     _logEvent(
       PlaybackEventType.seek,
-      detail: 'chapter ${chapterIndex + 1}',
+      detail: introTarget != null &&
+              introTarget - start >= 0.5
+          ? 'chapter ${chapterIndex + 1} to ${introTarget.toStringAsFixed(1)}s (intro skip)'
+          : 'chapter ${chapterIndex + 1}',
       overridePosition: from.inMilliseconds / 1000.0,
     );
     notifyListeners();
@@ -8716,17 +8758,22 @@ class AudioPlayerService extends ChangeNotifier {
         target.seconds,
       );
     }
-    await _seekAbsolute(
-      preJumpTarget ?? target.seconds,
-      // Snap to the file boundary when landing exactly on the chapter start;
-      // an intro-skip pre-jump is offset into the chapter and stays precise.
-      chapterJump: preJumpTarget == null,
-      // An intro-skip pre-jump lands INSIDE the destination chapter, so the
-      // nearest-start latch heuristic can't bind it and the stale track
-      // position would briefly resolve to the last chapter's title while the
-      // engine switches. Pin the intended chapter directly.
-      pinChapterIndex: preJumpTarget != null ? chapterIdx : null,
-    );
+    if (preJumpTarget != null) {
+      await _seekAbsoluteAlignedRepair(
+        preJumpTarget,
+        clampMaxSec: preJumpTarget + 8.0,
+        chapterJump: false,
+        pinChapterIndex: chapterIdx,
+      );
+    } else {
+      await _seekAbsolute(
+        target.seconds,
+        // Snap to the file boundary when landing exactly on the chapter start;
+        // an intro-skip pre-jump is offset into the chapter and stays precise.
+        chapterJump: true,
+        pinChapterIndex: null,
+      );
+    }
     _logEvent(
       PlaybackEventType.seek,
       detail: preJumpTarget != null
@@ -8766,11 +8813,20 @@ class AudioPlayerService extends ChangeNotifier {
         // opening words aren't briefly played while the skip waits for the
         // first post-landing position tick before jumping.
         final preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
-        await _seekAbsolute(
-          preJumpTarget ?? start,
-          chapterJump: preJumpTarget == null,
-          pinChapterIndex: preJumpTarget != null ? i : null,
-        );
+        if (preJumpTarget != null) {
+          await _seekAbsoluteAlignedRepair(
+            preJumpTarget,
+            clampMaxSec: preJumpTarget + 8.0,
+            chapterJump: false,
+            pinChapterIndex: i,
+          );
+        } else {
+          await _seekAbsolute(
+            start,
+            chapterJump: true,
+            pinChapterIndex: null,
+          );
+        }
         _logEvent(
           PlaybackEventType.seek,
           detail: preJumpTarget != null
@@ -8808,11 +8864,20 @@ class AudioPlayerService extends ChangeNotifier {
         if (!disarmedSameChapter) {
           preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
         }
-        await _seekAbsolute(
-          preJumpTarget ?? start,
-          chapterJump: preJumpTarget == null,
-          pinChapterIndex: preJumpTarget != null ? i : null,
-        );
+        if (preJumpTarget != null) {
+          await _seekAbsoluteAlignedRepair(
+            preJumpTarget,
+            clampMaxSec: preJumpTarget + 8.0,
+            chapterJump: false,
+            pinChapterIndex: i,
+          );
+        } else {
+          await _seekAbsolute(
+            start,
+            chapterJump: true,
+            pinChapterIndex: null,
+          );
+        }
         _logEvent(
           PlaybackEventType.seek,
           detail: preJumpTarget != null
@@ -8897,6 +8962,60 @@ class AudioPlayerService extends ChangeNotifier {
     return target;
   }
 
+  /// Seek that verifies the actual landing and re-seeks forward when the
+  /// engine snapped to an earlier sync frame. Progressive audio (MP3/VBR over
+  /// HTTP, coarse Xing TOCs) aligns seeks to the sync frame at-or-before the
+  /// target, so an intro-skip jump to "chapterStart + introSkip" can land a
+  /// few seconds early and the user hears more of the intro than configured.
+  /// Each repair moves the request past the missed frame by the measured
+  /// shortfall plus a 1s margin, so the next landing is the earliest sync
+  /// frame AT or AFTER the true target (an overshoot of less than a frame is
+  /// the correct semantic for "skip all of the intro"). Forward-only - the
+  /// observed failure is always under-shooting, never over. Files with exact
+  /// seek maps (M4B/M4A) land on the first try: the shortfall is ~0 and no
+  /// repair runs, so those books get a single seek exactly as before.
+  ///
+  /// Only used by the chapter intro/outro skip path. Manual drags and precise
+  /// seeks keep calling [_seekAbsolute] with its exact-position semantics.
+  Future<void> _seekAbsoluteAlignedRepair(
+    double absoluteSeconds, {
+    required double clampMaxSec,
+    double tolerance = 0.6,
+    int maxPasses = 2,
+    bool chapterJump = false,
+    int? pinChapterIndex,
+  }) async {
+    var request = absoluteSeconds;
+    for (var pass = 0; pass <= maxPasses; pass++) {
+      await _seekAbsolute(
+        request,
+        chapterJump: chapterJump,
+        pinChapterIndex: pinChapterIndex,
+      );
+      // A multi-file session shift is still settling (or JustAudio returned
+      // early during loading): position isn't the landed sample yet, so never
+      // measure or repair against a garbage reading.
+      if (_player?.processingState != ProcessingState.ready) break;
+      final landed = position.inMilliseconds / 1000.0;
+      if ((landed - absoluteSeconds).abs() > 30.0) break;
+      final shortfall = request - landed;
+      // Good enough: landed within tolerance of THIS request, or already at-or-
+      // past the true target (a later pass's request grows, so the request-
+      // relative shortfall alone would keep repairing a correct landing).
+      if (shortfall <= tolerance || landed >= absoluteSeconds - tolerance) {
+        break;
+      }
+      final next = absoluteSeconds + shortfall + 1.0;
+      if (next >= clampMaxSec || clampMaxSec <= request) break;
+      request = next;
+      verboseLog(
+        '[ChapterSkip] Seek repair: intended ${absoluteSeconds.toStringAsFixed(1)}s '
+        'landed ${landed.toStringAsFixed(1)}s (short ${shortfall.toStringAsFixed(1)}s) '
+        '-> re-request ${request.toStringAsFixed(1)}s',
+      );
+    }
+  }
+
   /// Check and perform chapter intro/outro skip based on settings.
   /// Called on each position update when playing and chapters exist.
   ///
@@ -8906,6 +9025,31 @@ class AudioPlayerService extends ChangeNotifier {
   /// NOT re-fire the skip, so navigating to a chapter start isn't dragged
   /// forward again. A skip is only performed when the jump is meaningful
   /// (>= 1s), otherwise the window is just marked handled - never an empty seek.
+  /// Fast-poll (120ms) the outro window while playback sits in it. Re-runs
+  /// [_maybeSkipChapterIntroOutro] at a fine grain so the boundary crossing is
+  /// caught within ~one poll instead of a full position-stream period. The
+  /// checked condition inside [._maybeSkipChapterIntroOutro] stops and cancels
+  /// it once the jump fires or the watch leaves the window.
+  void _startOutroWatch() {
+    if (_outroWatchTimer != null) return;
+    _outroWatchTimer = Timer.periodic(
+      const Duration(milliseconds: 120),
+      (_) async {
+        if (_player?.playing != true) {
+          _stopOutroWatch();
+          return;
+        }
+        await _maybeSkipChapterIntroOutro(position.inMilliseconds / 1000.0);
+      },
+    );
+  }
+
+  void _stopOutroWatch() {
+    if (_outroWatchTimer == null) return;
+    _outroWatchTimer!.cancel();
+    _outroWatchTimer = null;
+  }
+
   Future<void> _maybeSkipChapterIntroOutro(double posSec) async {
     _resetChapterSkipHandledIfNewItem();
     final now = DateTime.now();
@@ -8988,7 +9132,10 @@ class AudioPlayerService extends ChangeNotifier {
         verboseLog(
           '[ChapterSkip] Skipping intro: pos=${posSec.toStringAsFixed(1)}s chapterStart=${chapterStart.toStringAsFixed(1)}s target=${target.toStringAsFixed(1)}s',
         );
-        await _seekAbsolute(target);
+        await _seekAbsoluteAlignedRepair(
+          target,
+          clampMaxSec: chapterEnd - 1.0,
+        );
         _logEvent(PlaybackEventType.seek, detail: 'skip chapter intro');
         return;
       } else {
@@ -8996,6 +9143,22 @@ class AudioPlayerService extends ChangeNotifier {
           '[ChapterSkip] Intro window too short to skip: chapter=${chapterStart.toStringAsFixed(1)}-${chapterEnd.toStringAsFixed(1)}s target=${target.toStringAsFixed(1)}s — suppressed for this entry',
         );
       }
+    }
+
+    // The shared position stream runs this whole function on a 500-1000ms
+    // cadence, so the outro boundary crossing could be recognized up to a full
+    // period late depending on where the last tick landed - the chapter tail
+    // would play ~1s too long whenever the phase was wrong. Once we get within
+    // a fast-poll margin of the window, spin a 120ms watch that re-runs this
+    // function until the crossing is caught, then it cancels itself.
+    final inOutroWatch = outroSkip > 0 &&
+        !_outroSkippedThisEntry &&
+        posSec < chapterEnd &&
+        chapterEnd - posSec < outroSkip + 1.5;
+    if (inOutroWatch) {
+      _startOutroWatch();
+    } else {
+      _stopOutroWatch();
     }
 
     // Skip outro (once per entry): within the outro window and not yet handled
@@ -9013,7 +9176,10 @@ class AudioPlayerService extends ChangeNotifier {
           verboseLog(
             '[ChapterSkip] Skipping outro: pos=${posSec.toStringAsFixed(1)}s chapterEnd=${chapterEnd.toStringAsFixed(1)}s nextChapterStart=${nextStart.toStringAsFixed(1)}s',
           );
-          await _seekAbsolute(nextStart);
+          await _seekAbsoluteAlignedRepair(
+            nextStart,
+            clampMaxSec: nextStart + 8.0,
+          );
           _logEvent(PlaybackEventType.seek, detail: 'skip chapter outro');
           return;
         }
