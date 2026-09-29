@@ -2337,6 +2337,55 @@ class CardActionDelegate {
     final dl = DownloadService();
     final dlKey = episodeId != null ? '$itemId-$episodeId' : itemId;
 
+    if (isActive && episodeId == null && chapters.isNotEmpty) {
+      // "正在收听" 的书：下载永远对准正在听的那一集。第5章在播 → 提示第5章，
+      // 跳到第6章再点 → 提示第6章，以此类推。当前章已保存 → 打开已下载列表
+      // （可管理/删除已保存的章节），而不是只弹一条“已下载”。
+      final ci = _currentChapterIndex.clamp(0, chapters.length - 1);
+      if (dl.isDownloaded(dlKey) &&
+          dl.downloadedChapterIndices(dlKey, chapters).contains(ci)) {
+        final already =
+            dl.downloadedChapterIndices(dlKey, chapters).toList()..sort();
+        final result = await showDownloadedChaptersSheet(
+          ctx,
+          itemId: itemId,
+          accent: accent,
+          title: title,
+          chapters: chapters,
+          downloadedChapters: already,
+          downloadKey: dlKey,
+          onRemoveChapters: (indices) =>
+              dl.deleteDownloadChapters(dlKey, chapters, indices),
+        );
+        if (!ctx.mounted || result == null) return;
+        if (result.removeDownload) {
+          showOverlayToast(ctx, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+          return;
+        }
+        if (result.selectedIndices.isEmpty) return;
+        await _startDownload(dlKey, result.selectedIndices);
+        return;
+      }
+      final currentTitle = (chapters[ci] as Map<String, dynamic>)['title']
+              as String? ??
+          title;
+      final ok = await confirmDownload(ctx, currentTitle);
+      if (!ok || !ctx.mounted) return;
+      await _startDownload(dlKey, [ci]);
+      return;
+    }
+    if (isActive && episodeId != null) {
+      // "正在收听" 的单集：整集直接下载（一集一个文件），先二次提醒。
+      if (dl.isDownloaded(dlKey)) {
+        showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
+        return;
+      }
+      final ok = await confirmDownload(ctx, title);
+      if (!ok || !ctx.mounted) return;
+      await _startDownload(dlKey, null);
+      return;
+    }
+
     if (dl.isDownloaded(dlKey)) {
       if (chapters.isEmpty) {
         showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);

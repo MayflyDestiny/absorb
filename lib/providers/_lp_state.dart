@@ -304,7 +304,15 @@ mixin _StateMixin on ChangeNotifier {
   // watching the tick.
   void registerUpdatedAt(String id, int ts) {
     final cur = _itemUpdatedAt[id];
-    if (cur == null || ts > cur) _itemUpdatedAt[id] = ts;
+    if (cur == null || ts > cur) {
+      _itemUpdatedAt[id] = ts;
+      // The batch callers (personalized / recent / library loads) only notify
+      // when "something changed", so a cold-start ts registration can land with
+      // NO rebuild - the absorbing card keeps painting the stale server-nots
+      // (no ts) URL, which many servers answer with a default/blank cover.
+      // Notify here so any watcher picks up the ts flip and re-resolves.
+      notifyListeners();
+    }
   }
   /// Per-item "last changed on the server" tick, bumped on every socket
   /// item_updated. Widgets watch this to re-fetch when an item changes (e.g. an
@@ -398,33 +406,46 @@ mixin _StateMixin on ChangeNotifier {
 
     if (_itemsWithoutCover.contains(apiItemId)) return null;
 
+    final dl = DownloadService().getInfo(itemId);
     if (_api != null && !isOffline) {
-      // A local metadata override cover wins over the server cover so the
-      // chosen art shows everywhere (grid, absorbing card), not just the
-      // book sheet.
       final overrideCover = MetadataOverrideService().coverUrlFor(itemId);
       if (overrideCover != null && overrideCover.isNotEmpty) return overrideCover;
       final ts = _itemUpdatedAt[apiItemId];
       return _api!.getCoverUrl(apiItemId, width: width, updatedAt: ts);
     }
 
-    final dl = DownloadService().getInfo(itemId);
-    if (dl.localCoverPath != null) {
-      return dl.localCoverPath;
-    }
+    final local = _usableLocalCover(dl.localCoverPath) ??
+        DownloadService().syncLocalCoverProbe(apiItemId);
+    if (local != null) return local;
 
     if (dl.status == DownloadStatus.none) {
       final match = DownloadService()
           .downloadedItems
           .where((d) =>
-              d.itemId.startsWith('$itemId-') && d.localCoverPath != null)
+              d.itemId.startsWith('$itemId-') &&
+              (_usableLocalCover(d.localCoverPath) != null ||
+                  DownloadService().syncLocalCoverProbe(d.itemId) != null))
           .firstOrNull;
-      if (match?.localCoverPath != null) {
-        return match!.localCoverPath;
+      if (match != null) {
+        final cover = _usableLocalCover(match.localCoverPath) ??
+            DownloadService().syncLocalCoverProbe(match.itemId);
+        if (cover != null) return cover;
       }
     }
 
     if (_api != null) return _api!.getCoverUrl(apiItemId, width: width);
     return dl.coverUrl;
+  }
+
+  /// Only a local cover file that actually exists and carries bytes wins the
+  /// offline fallback. A missing or zero-length path (interrupted cover cache
+  /// write) would otherwise blank the cover instead of falling through to the
+  /// server, and brick it until the download is deleted.
+  String? _usableLocalCover(String? path) {
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    if (file.lengthSync() == 0) return null;
+    return path;
   }
 }

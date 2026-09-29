@@ -37,6 +37,72 @@ bool isIpWithoutPort(String host) {
   return false;
 }
 
+/// Drop a scheme's default port from [hostPort] so fields show the bare host
+/// ("192.168.1.5:13378"/"example.com:443") as "192.168.1.5"/"example.com".
+/// Bare IP literals default to the ABS LAN port 13378; domains keep https's
+/// 443 or http's 80. Any other port is a deliberate choice and is kept, as is
+/// any "/path?query" suffix. Mirrors the inference in [buildServerUrl], so a
+/// stripped port is exactly re-added when the URL is rebuilt.
+String stripDefaultPort(String hostPort, String protocol) {
+  final splitIdx = hostPort.indexOf(RegExp(r'[\/?#]'));
+  var hostPart = hostPort;
+  var suffix = '';
+  if (splitIdx >= 0) {
+    suffix = hostPart.substring(splitIdx);
+    hostPart = hostPart.substring(0, splitIdx);
+  }
+
+  String host;
+  int? port;
+  // Bracketed IPv6 host:port ("[::1]:13378") - split after the closing bracket.
+  final bracketed = RegExp(r'^(\[[0-9a-fA-F:]+\]):(\d+)$').firstMatch(hostPart);
+  if (bracketed != null) {
+    host = bracketed.group(1)!;
+    port = int.parse(bracketed.group(2)!);
+  } else if (hostPart.contains('::')) {
+    // Bare IPv6: no way to tell a trailing colons from a port, leave untouched.
+    return hostPort;
+  } else {
+    final idx = hostPart.lastIndexOf(':');
+    if (idx > 0) {
+      final maybePort = hostPart.substring(idx + 1);
+      if (RegExp(r'^\d+$').hasMatch(maybePort)) {
+        host = hostPart.substring(0, idx);
+        port = int.parse(maybePort);
+      } else {
+        host = hostPart;
+      }
+    } else {
+      host = hostPart;
+    }
+  }
+  if (port == null) return hostPort;
+
+  final isDefault =
+      (isIpWithoutPort(host) && port == 13378) ||
+      (protocol == 'https://' && port == 443) ||
+      (protocol == 'http://' && port == 80);
+  return isDefault ? '$host$suffix' : hostPort;
+}
+
+/// Display form of a saved server URL: strips the scheme and the scheme's
+/// default port, so lists and rows show "192.168.1.5" / "example.com" instead
+/// of "https://192.168.1.5:13378" / "https://example.com:443". The scheme is
+/// read from the URL when present; [fallbackProtocol] applies otherwise.
+String displayServerUrl(String url, {String fallbackProtocol = 'https://'}) {
+  var rest = url.trim();
+  var protocol = fallbackProtocol;
+  final scheme = RegExp(
+    r'^(https?):\/\/(.*)$',
+    caseSensitive: false,
+  ).firstMatch(rest);
+  if (scheme != null) {
+    protocol = '${scheme.group(1)!.toLowerCase()}://';
+    rest = scheme.group(2)!;
+  }
+  return stripDefaultPort(rest, protocol);
+}
+
 /// The server address field shared by first-run sign-in and the settings
 /// "edit server connection" editor.
 ///
@@ -135,7 +201,8 @@ class ServerAddressFieldState extends State<ServerAddressField> {
 
   /// Splits an already-complete URL ("https://host:port/path") that the caller
   /// seeded the controller with, so the scheme lands in the dropdown and the
-  /// field shows the bare host the way sign-in does.
+  /// field shows the bare host the way sign-in does. A scheme-default port is
+  /// dropped the same way sign-in drops it ("192.168.1.5:13378" -> host).
   void _adoptSchemeFromInitialValue() {
     final raw = widget.controller.text;
     final scheme = RegExp(
@@ -145,7 +212,8 @@ class ServerAddressFieldState extends State<ServerAddressField> {
     if (scheme == null) return;
     _protocol = '${scheme.group(1)!.toLowerCase()}://';
     _skipAutoProtocol = true;
-    widget.controller.text = scheme.group(2) ?? '';
+    widget.controller.text =
+        stripDefaultPort(scheme.group(2) ?? '', _protocol);
     _skipAutoProtocol = false;
   }
 
@@ -182,7 +250,7 @@ class ServerAddressFieldState extends State<ServerAddressField> {
     ).firstMatch(text);
     if (scheme != null) {
       final protocol = '${scheme.group(1)!.toLowerCase()}://';
-      final host = scheme.group(2) ?? '';
+      final host = stripDefaultPort(scheme.group(2) ?? '', protocol);
       if (protocol != _protocol) {
         setState(() => _protocol = protocol);
       }
@@ -210,23 +278,32 @@ class ServerAddressFieldState extends State<ServerAddressField> {
       return;
     }
 
+    // Bare host literals auto-pick a scheme unless the user chose one by hand
+    // (_skipAutoProtocol) or pinned a custom port (an explicit ":port" is typed
+    // in, so the scheme was chosen deliberately alongside it).
+    //   - bare IP literal  -> the ABS LAN convention: HTTP + port 13378
+    //   - localhost        -> HTTP (local dev servers are plain HTTP)
+    //   - domain / hostname -> HTTPS by default
+    // Domains keep the scheme's implicit port (https 443 / http 80); an
+    // explicit ":port" typed into the field always wins either way.
+    final hostPart = text.split(RegExp(r'[\/?#]')).first;
+    final hasExplicitPort = RegExp(r':\d+$').hasMatch(hostPart);
+    if (!_skipAutoProtocol && !hasExplicitPort) {
+      if (isIpWithoutPort(hostPart) ||
+          hostPart.toLowerCase() == 'localhost') {
+        if (_protocol != 'http://') {
+          setState(() => _protocol = 'http://');
+        }
+      } else if (_protocol != 'https://') {
+        setState(() => _protocol = 'https://');
+      }
+    }
+
     if (!widget.validate) {
       // The address is accepted as typed, so there is nothing to invalidate and
       // nothing to probe. Protocol inference above still applies.
       _debounce?.cancel();
       return;
-    }
-
-    // Bare IP literals use the ABS LAN convention: HTTP + port 13378. The port
-    // is NOT written back into the field (so it stays freely editable) — it is
-    // added implicitly when the effective URL is built.
-    // Domains keep the scheme's implicit port (https 443 / http 80); an
-    // explicit ":port" typed into the field always wins.
-    final hostPart = text.split(RegExp(r'[\/?#]')).first;
-    if (isIpWithoutPort(hostPart) &&
-        !_skipAutoProtocol &&
-        _protocol != 'http://') {
-      setState(() => _protocol = 'http://');
     }
 
     // Only invalidate if the server text actually changed from what we validated

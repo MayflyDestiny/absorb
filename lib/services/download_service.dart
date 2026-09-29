@@ -583,12 +583,49 @@ class DownloadService extends ChangeNotifier {
     return '${appDir.path}/downloads';
   }
 
+  /// Cached internal cover base so synchronous callers (now-playing card etc.)
+  /// can probe a download's cover.jpg during a build without awaiting the app
+  /// documents dir round-trip.
+  String? _cachedInternalBasePath;
+
+  /// The internal cover base if it has been resolved at least once, else null.
+  String? get internalBasePathCached => _cachedInternalBasePath;
+
+  /// Resolve and cache the internal cover base early so later synchronous
+  /// probes hit immediately.
+  Future<void> warmInternalBasePath() async {
+    _cachedInternalBasePath ??= await _internalBasePath;
+  }
+
+  /// Synchronous probe for a downloaded item's local cover: the persisted path
+  /// first, then the internal cover dir (the file the homescreen widget and
+  /// lockscreen render). Mirrors [getLocalCoverPath] without awaiting, and only
+  /// accepts a file that actually exists and carries bytes.
+  String? syncLocalCoverProbe(String itemId) {
+    final info = _downloads[itemId];
+    if (info == null) return null;
+    final persisted = info.localCoverPath;
+    if (persisted != null && persisted.isNotEmpty) {
+      final f = File(persisted);
+      if (f.existsSync() && f.lengthSync() > 0) return persisted;
+    }
+    final base = _cachedInternalBasePath;
+    if (base != null) {
+      final internal = File('$base/$itemId/cover.jpg');
+      if (internal.existsSync() && internal.lengthSync() > 0) {
+        return internal.path;
+      }
+    }
+    return null;
+  }
+
   /// Always returns the internal app directory for cover caching.
   /// Covers are stored here even when audio uses a custom external path,
   /// because external storage may have permission restrictions.
   Future<String> get _internalBasePath async {
     final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/downloads';
+    _cachedInternalBasePath ??= '${appDir.path}/downloads';
+    return _cachedInternalBasePath!;
   }
 
   /// Set the Android SAF custom download folder. Pass null to revert to default.
@@ -1268,6 +1305,7 @@ class DownloadService extends ChangeNotifier {
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _customDownloadUri = prefs.getString('custom_download_uri');
+    _cachedInternalBasePath ??= await _internalBasePath;
     // Legacy raw-path custom folders can't be converted to a SAF content URI
     // without a fresh user pick, and we no longer hold the storage permission
     // to write them. Drop the old setting so new downloads use SAF or internal.
@@ -2680,14 +2718,22 @@ class DownloadService extends ChangeNotifier {
       if (coverResp.statusCode == 200 && coverResp.bodyBytes.isNotEmpty) {
         final internalBase = await _internalBasePath;
         final coverDir = Directory('$internalBase/$itemId');
-        if (!coverDir.existsSync()) coverDir.createSync(recursive: true);
         final coverFile = File('${coverDir.path}/cover.jpg');
-        await coverFile.writeAsBytes(coverResp.bodyBytes);
+        final tempFile = File('${coverFile.path}.part');
+        if (!coverDir.existsSync()) coverDir.createSync(recursive: true);
+        // Atomic write: a kill mid-write must not leave a torn cover.jpg that a
+        // valid-looking probe would later accept and try to render.
+        await tempFile.writeAsBytes(coverResp.bodyBytes);
+        await tempFile.rename(coverFile.path);
         verboseLog('[Download] Cached cover image: ${coverFile.path}');
         return coverFile.path;
       }
     } catch (e) {
       basicLog('[Download] Cover cache failed (non-fatal): $e');
+      try {
+        final stale = File('${_cachedInternalBasePath ?? ''}/$itemId/cover.jpg.part');
+        if (stale.existsSync()) stale.deleteSync();
+      } catch (_) {}
     }
     return null;
   }
@@ -3048,8 +3094,17 @@ class DownloadService extends ChangeNotifier {
     final p = _pending[itemId];
     if (p == null) return;
 
-    // Files always land in internal storage first.
-    final localPaths = p.expectedPaths.where((path) => File(path).existsSync()).toList();
+    // Files always land in internal storage first. Async `exists()` (not the
+    // blocking `existsSync()`) so finalizing a 1000+ track book can't stall
+    // the UI isolate while audio is playing - 1300 synchronous syscalls at
+    // once is exactly the "顿一下" the download-complete notification shows.
+    final present = await Future.wait([
+      for (final path in p.expectedPaths) File(path).exists(),
+    ]);
+    final localPaths = [
+      for (var i = 0; i < p.expectedPaths.length; i++)
+        if (present[i]) p.expectedPaths[i],
+    ];
     if (localPaths.length != p.trackCount) {
       verboseLog('[Download] Finalize "$itemId": only ${localPaths.length}/${p.trackCount} '
           'files present, treating as failure');
@@ -3318,10 +3373,14 @@ class DownloadService extends ChangeNotifier {
     if (bookDir == null || isContentUri(bookDir)) return;
     final dir = Directory(bookDir);
     try {
-      if (dir.existsSync()) {
-        dir.deleteSync(recursive: true);
+      // Async deletes only - the sync variants block the Dart (UI) isolate for
+      // the whole recursive walk and stall every frame while they run.
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
         final parent = dir.parent;
-        if (parent.existsSync() && parent.listSync().isEmpty) parent.deleteSync();
+        if (await parent.exists() && (await parent.list().toList()).isEmpty) {
+          await parent.delete();
+        }
       }
     } catch (_) {}
   }
@@ -3539,7 +3598,9 @@ class DownloadService extends ChangeNotifier {
           await FileDownloader().uri.deleteFile(Uri.parse(path));
         } else {
           final file = File(path);
-          if (file.existsSync()) file.deleteSync();
+          // Async delete: a full book is thousands of files, and the blocking
+          // deleteSync() would freeze the UI for the whole deletion.
+          if (await file.exists()) await file.delete();
         }
       } catch (_) {}
     }
@@ -3552,18 +3613,18 @@ class DownloadService extends ChangeNotifier {
         try {
           await FileDownloader().uri.deleteFile(Uri.parse(dirPath));
         } catch (_) {}
-      } else if (dirPath != null && Directory(dirPath).existsSync()) {
-        Directory(dirPath).deleteSync(recursive: true);
+      } else if (dirPath != null && await Directory(dirPath).exists()) {
+        await Directory(dirPath).delete(recursive: true);
         // Clean up empty parent (Author folder) if it's now empty
         final parent = Directory(dirPath).parent;
-        if (parent.existsSync() && parent.listSync().isEmpty) {
-          parent.deleteSync();
+        if (await parent.exists() && (await parent.list().toList()).isEmpty) {
+          await parent.delete();
         }
       } else {
         // Legacy fallback: UUID-based directory
         final basePath = await downloadBasePath;
         final bookDir = Directory('$basePath/$itemId');
-        if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+        if (await bookDir.exists()) await bookDir.delete(recursive: true);
       }
     } catch (_) {}
 
@@ -3572,12 +3633,12 @@ class DownloadService extends ChangeNotifier {
       final coverDir = Directory('$internalBase/$itemId');
       final coverFile = File('$internalBase/$itemId/cover.jpg');
       // FileImage caches by path; evict so a re-download at the same path renders fresh.
-      if (coverFile.existsSync()) {
+      if (await coverFile.exists()) {
         final evicted = PaintingBinding.instance.imageCache
             .evict(FileImage(coverFile));
         verboseLog('[Download] evict cover ${coverFile.path} -> $evicted');
       }
-      if (coverDir.existsSync()) coverDir.deleteSync(recursive: true);
+      if (await coverDir.exists()) await coverDir.delete(recursive: true);
     } catch (e) {
       basicLog('[Download] cover cleanup failed: $e');
     }

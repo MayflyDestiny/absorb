@@ -54,6 +54,7 @@ import '../widgets/absorb_slider.dart';
 import '../widgets/card_scrubber_mode_selector.dart';
 import '../widgets/collapsible_section.dart';
 import '../widgets/overlay_toast.dart';
+import '../widgets/server_address_field.dart' show displayServerUrl;
 import '../widgets/tips_sheet.dart';
 import '../widgets/feature_hint.dart';
 import '../widgets/welcome_sheet.dart';
@@ -2447,7 +2448,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ]),
                                       const SizedBox(height: 2),
                                       Text(
-                            auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '',
+                            displayServerUrl(auth.serverUrl ?? ''),
                             maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
                         ])),
@@ -6191,7 +6192,7 @@ const Divider(height: 1, indent: 16, endIndent: 16),
       }
     }
 
-    final shortServer = auth.serverUrl?.replaceAll(RegExp(r'^https?://'), '').replaceAll(RegExp(r'/+$'), '') ?? '';
+    final shortServer = displayServerUrl(auth.serverUrl ?? '');
     final userType = auth.isRoot ? l.rootAdmin : auth.isAdmin ? l.admin : l.userFallback;
     final libraryCount = lib.libraries.length;
 
@@ -6303,9 +6304,7 @@ const Divider(height: 1, indent: 16, endIndent: 16),
                   color: cs.onSurfaceVariant.withValues(alpha: 0.4), fontWeight: FontWeight.w600, letterSpacing: 0.5))),
                 ),
                 ...otherAccounts.map((account) {
-                  final shortUrl = account.serverUrl
-                      .replaceAll(RegExp(r'^https?://'), '')
-                      .replaceAll(RegExp(r'/+$'), '');
+                  final shortUrl = displayServerUrl(account.serverUrl);
                   return InkWell(
                 onTap: () { Navigator.pop(ctx); _switchAccount(context, account); },
                 onLongPress: () { Navigator.pop(ctx); _accountOptions(context, account); },
@@ -6521,7 +6520,7 @@ const Divider(height: 1, indent: 16, endIndent: 16),
         title: Text(l.removeAccountTitle),
         content: Text(l.removeAccountContent(
             account.username,
-            account.serverUrl.replaceAll(RegExp(r'^https?://'), ''),
+            displayServerUrl(account.serverUrl),
         )),
         actions: [
           TextButton(
@@ -6548,7 +6547,7 @@ const Divider(height: 1, indent: 16, endIndent: 16),
         title: Text(l.switchAccountTitle),
         content: Text(l.switchAccountContent(
             account.username,
-            account.serverUrl.replaceAll(RegExp(r'^https?://'), ''),
+            displayServerUrl(account.serverUrl),
         )),
         actions: [
           TextButton(

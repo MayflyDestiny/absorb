@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -12,6 +11,7 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/chapter_lookup.dart';
+import '../services/cover_blur_cache.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
 import 'ebook_router.dart';
@@ -26,7 +26,12 @@ import 'card_playback_controls.dart';
 import 'card_buttons.dart';
 import '../services/chromecast_service.dart';
 import 'expanded_card.dart';
-import '../main.dart' show colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
+import '../main.dart'
+    show
+        colorSourceNotifier,
+        useColorEverywhereNotifier,
+        manualSeedNotifier,
+        manualColorScheme;
 import 'stable_cached_network_image.dart';
 
 class AbsorbingCard extends StatefulWidget {
@@ -38,17 +43,23 @@ class AbsorbingCard extends StatefulWidget {
   State<AbsorbingCard> createState() => AbsorbingCardState();
 }
 
-class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveClientMixin {
+class AbsorbingCardState extends State<AbsorbingCard>
+    with AutomaticKeepAliveClientMixin {
   ColorScheme? _rawCoverScheme;
   Brightness? _coverBrightness; // brightness used to generate _coverScheme
 
   /// Cover-derived scheme, unless a manual app color is set to apply everywhere.
   ColorScheme? get _coverScheme {
-    if (colorSourceNotifier.value == 'manual' && useColorEverywhereNotifier.value) {
-      return manualColorScheme(manualSeedNotifier.value, Theme.of(context).brightness);
+    if (colorSourceNotifier.value == 'manual' &&
+        useColorEverywhereNotifier.value) {
+      return manualColorScheme(
+        manualSeedNotifier.value,
+        Theme.of(context).brightness,
+      );
     }
     return _rawCoverScheme;
   }
+
   ImageProvider? _coverProvider; // cached for re-deriving on theme change
   String? _coverProviderIdentity;
   bool _isStarting = false;
@@ -64,7 +75,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   bool _refetchQueued = false;
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
-  ui.Image? _blurredCover; // Precached blurred background
+  CoverBlurLease? _blurLease; // Cached blurred background (owned by the cache)
   String? _blurredCoverIdentity;
   String? _pendingBlurIdentity;
   // Mean brightness of the blurred cover's top strip, which is what the
@@ -79,22 +90,25 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
   bool _coverPlayButton = false;
   String _cardBackground = 'blurred';
   bool _speedAdjustedTime = true;
-  double _progressTextScale = 1.0; // elapsed/remaining/percent text size (GH #230)
+  double _progressTextScale =
+      1.0; // elapsed/remaining/percent text size (GH #230)
   double _savedSpeed = 1.0; // per-book or default speed for inactive display
   final ValueNotifier<bool> _edgeBarExpanded = ValueNotifier(false);
-  String? _lastRenderLogSig;
 
   @override
   bool get wantKeepAlive => true;
 
   String get _itemId => widget.item['id'] as String? ?? '';
-  Map<String, dynamic> get _media => widget.item['media'] as Map<String, dynamic>? ?? {};
-  Map<String, dynamic> get _metadata => _media['metadata'] as Map<String, dynamic>? ?? {};
+  Map<String, dynamic> get _media =>
+      widget.item['media'] as Map<String, dynamic>? ?? {};
+  Map<String, dynamic> get _metadata =>
+      _media['metadata'] as Map<String, dynamic>? ?? {};
   String get _title {
     final t = _metadata['title'] as String?;
     if (t != null && t.isNotEmpty) return t;
     return mounted ? AppLocalizations.of(context)!.unknown : 'Unknown';
   }
+
   String get _author => _metadata['authorName'] as String? ?? '';
   double get _duration => (_media['duration'] as num?)?.toDouble() ?? 0;
   Map<String, dynamic>? get _ebookFile =>
@@ -103,18 +117,22 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final ext = ebookExt(_ebookFile);
     return ext.isEmpty ? null : ext;
   }
+
   List<dynamic> get _chapters {
     // Prefer fetched chapters (from full item or episode), fall back to inline data
-    if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty) return _fetchedChapters!;
+    if (_fetchedChapters != null && _fetchedChapters!.isNotEmpty)
+      return _fetchedChapters!;
     final inline = _media['chapters'] as List<dynamic>? ?? [];
     if (inline.isNotEmpty) return inline;
     // For podcast episodes, chapters live on the episode object
     final epChapters = _recentEpisode?['chapters'] as List<dynamic>? ?? [];
     if (epChapters.isNotEmpty) return epChapters;
     // For active podcast episodes, chapters come from the playback session
-    if (_isActive && widget.player.chapters.isNotEmpty) return widget.player.chapters;
+    if (_isActive && widget.player.chapters.isNotEmpty)
+      return widget.player.chapters;
     return [];
   }
+
   bool get _isActive {
     if (widget.player.currentItemId != _itemId) return false;
     // For podcast episode cards, only active if the same episode is playing
@@ -123,15 +141,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
     return true;
   }
+
   bool get _isCastingThis {
     final cast = ChromecastService();
     return cast.isCasting && cast.castingItemId == _itemId;
   }
+
   bool get _isPlaybackActive => _isActive || _isCastingThis;
-  bool get _isPodcastEpisode => _isActive && widget.player.currentEpisodeId != null;
+  bool get _isPodcastEpisode =>
+      _isActive && widget.player.currentEpisodeId != null;
 
   // For inactive podcast show cards: recentEpisode is embedded in the continue-listening entity
-  Map<String, dynamic>? get _recentEpisode => widget.item['recentEpisode'] as Map<String, dynamic>?;
+  Map<String, dynamic>? get _recentEpisode =>
+      widget.item['recentEpisode'] as Map<String, dynamic>?;
 
   /// Resolve full episode data for the current episode.
   // Episode ID: prefer recentEpisode, fall back to compound absorbing key
@@ -143,6 +165,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     if (absKey != null && absKey.length > 36) return absKey.substring(37);
     return null;
   }
+
   // Use episode duration for inactive podcast show cards (show duration is aggregate/incorrect)
   double get _effectiveDuration {
     if (!_isActive && _recentEpisode != null) {
@@ -156,23 +179,68 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     return _duration;
   }
 
-  String? get _coverUrl {
+  String? get _coverUrl => _resolveCoverUrl();
+
+  String? _resolveCoverUrl() {
     final lib = context.read<LibraryProvider>();
-    return lib.getCoverUrl(_itemId, width: 1200);
+
+    // Podcast episodes carry their own artwork - honour the player's resolved
+    // URL so the cover matches the episode actually playing.
+    if (_isPodcastEpisode) {
+      final playingCover = widget.player.currentCoverUrl;
+      if (playingCover != null && playingCover.isNotEmpty) {
+        return playingCover;
+      }
+      final episodeLocal = _usableLocalCover(
+        DownloadService().getInfo('$_itemId-$_episodeId').localCoverPath,
+      );
+      if (episodeLocal != null) return episodeLocal;
+    }
+
+    // A downloaded book's cover.jpg is rendered by the homescreen widget /
+    // lockscreen, so it is guaranteed present and bytes if the record is marked
+    // downloaded. Prefer it - the card then never races a single-shot server
+    // fetch on a cold start (which used to leave the hero card blank until the
+    // registered-updatedAt re-resolve landed). Fall back to the same shelf URL
+    // (same width and cache key as the expanded card) otherwise.
+    final dl = DownloadService().getInfo(_itemId);
+    if (dl.status == DownloadStatus.downloaded) {
+      final local =
+          _usableLocalCover(dl.localCoverPath) ??
+          DownloadService().syncLocalCoverProbe(_itemId);
+      if (local != null) return local;
+    }
+    final shelfUrl = lib.getCoverUrl(_itemId, width: 1200);
+    if (shelfUrl != null && shelfUrl.isNotEmpty) return shelfUrl;
+
+    final bookLocal = _usableLocalCover(
+      DownloadService().getInfo(_itemId).localCoverPath,
+    );
+    if (bookLocal != null) return bookLocal;
+
+    final playingCover = widget.player.currentCoverUrl;
+    return (playingCover != null && playingCover.isNotEmpty)
+        ? playingCover
+        : null;
+  }
+
+  String? _usableLocalCover(String? path) {
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    if (file.lengthSync() == 0) return null;
+    return path;
   }
 
   String? _coverIdentity(String? coverUrl, LibraryProvider lib) {
     if (coverUrl == null) return null;
     if (coverUrl.startsWith('/')) return coverUrl;
-    final key = widget.item['_absorbingKey'] as String? ?? _itemId;
-    final cached = lib.absorbingItemCache[key];
-    final localUpdatedAt = widget.item['updatedAt'] as int? ?? cached?['updatedAt'] as int?;
-    return stableCoverCacheKey(coverUrl, updatedAt: localUpdatedAt);
+    return stableCoverCacheKey(coverUrl);
   }
 
   String? _currentCoverIdentity() {
     final lib = context.read<LibraryProvider>();
-    final coverUrl = lib.getCoverUrl(_itemId, width: 1200);
+    final coverUrl = _resolveCoverUrl();
     return _coverIdentity(coverUrl, lib);
   }
 
@@ -205,13 +273,15 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final key = epId != null ? '$_itemId-$epId' : _itemId;
     final cached = lib.absorbingItemCache[key]?['libraryId'] as String?;
     if (cached != null && cached.isNotEmpty) return cached;
-    if (_itemId == widget.player.currentItemId) return widget.player.currentLibraryId;
+    if (_itemId == widget.player.currentItemId)
+      return widget.player.currentLibraryId;
     return null;
   }
 
   void _reloadCoverShape() {
     PlayerSettings.getRectangleCoversFor(_resolveLibraryId()).then((v) {
-      if (mounted && v != _rectangleCovers) setState(() => _rectangleCovers = v);
+      if (mounted && v != _rectangleCovers)
+        setState(() => _rectangleCovers = v);
     });
   }
 
@@ -223,10 +293,12 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   void _reloadButtonOrder() {
     PlayerSettings.getCardButtonOrder().then((o) {
-      if (mounted && o.join(',') != _buttonOrder.join(',')) setState(() => _buttonOrder = o);
+      if (mounted && o.join(',') != _buttonOrder.join(','))
+        setState(() => _buttonOrder = o);
     });
     PlayerSettings.getCardButtonVisibleCount().then((c) {
-      if (mounted && c != _buttonVisibleCount) setState(() => _buttonVisibleCount = c);
+      if (mounted && c != _buttonVisibleCount)
+        setState(() => _buttonVisibleCount = c);
     });
     PlayerSettings.getCardIconsOnly().then((v) {
       if (mounted && v != _iconsOnly) setState(() => _iconsOnly = v);
@@ -236,9 +308,15 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         setState(() {
           _moreInline = v;
           if (v && !_buttonOrder.contains('_more')) {
-            final insertAt = (_buttonVisibleCount >= 9 ? 8 : _buttonVisibleCount).clamp(0, _buttonOrder.length);
+            final insertAt =
+                (_buttonVisibleCount >= 9 ? 8 : _buttonVisibleCount).clamp(
+                  0,
+                  _buttonOrder.length,
+                );
             _buttonOrder.insert(insertAt, '_more');
-            _buttonVisibleCount = (_buttonVisibleCount < 9 ? _buttonVisibleCount + 1 : 9);
+            _buttonVisibleCount = (_buttonVisibleCount < 9
+                ? _buttonVisibleCount + 1
+                : 9);
             PlayerSettings.setCardButtonOrder(_buttonOrder);
             PlayerSettings.setCardButtonVisibleCount(_buttonVisibleCount);
           }
@@ -247,13 +325,16 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     });
     _reloadCoverShape();
     PlayerSettings.getCoverPlayButton().then((v) {
-      if (mounted && v != _coverPlayButton) setState(() => _coverPlayButton = v);
+      if (mounted && v != _coverPlayButton)
+        setState(() => _coverPlayButton = v);
     });
     PlayerSettings.getSpeedAdjustedTime().then((v) {
-      if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v);
+      if (mounted && v != _speedAdjustedTime)
+        setState(() => _speedAdjustedTime = v);
     });
     PlayerSettings.getProgressTextScale().then((v) {
-      if (mounted && v != _progressTextScale) setState(() => _progressTextScale = v);
+      if (mounted && v != _progressTextScale)
+        setState(() => _progressTextScale = v);
     });
     PlayerSettings.getCardBackground().then((v) {
       if (mounted && v != _cardBackground) setState(() => _cardBackground = v);
@@ -261,7 +342,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     _loadSavedSpeed();
   }
 
-  void _onDownloadChanged() { if (mounted) setState(() {}); }
+  void _onDownloadChanged() {
+    if (mounted) setState(() {});
+  }
 
   void _onCastChanged() {
     _startChapterTracking();
@@ -398,7 +481,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
           final ch = chapters[i] as Map<String, dynamic>;
           final start = (ch['start'] as num?)?.toDouble() ?? 0;
           final end = (ch['end'] as num?)?.toDouble() ?? 0;
-          if (posS >= start && posS < end) { idx = i; break; }
+          if (posS >= start && posS < end) {
+            idx = i;
+            break;
+          }
         }
         if (idx != _lastChapterIdx) {
           _lastChapterIdx = idx;
@@ -411,7 +497,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     _chapterTrackSub = widget.player.absolutePositionStream.listen((pos) {
       if (!_isActive) return;
       final posS = pos.inMilliseconds / 1000.0;
-      final chapters = widget.player.chapters.isNotEmpty ? widget.player.chapters : _chapters;
+      final chapters = widget.player.chapters.isNotEmpty
+          ? widget.player.chapters
+          : _chapters;
       if (chapters.isEmpty) {
         final sec = pos.inSeconds;
         if (sec != _lastChapterIdx) {
@@ -425,7 +513,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         final ch = chapters[i] as Map<String, dynamic>;
         final start = (ch['start'] as num?)?.toDouble() ?? 0;
         final end = (ch['end'] as num?)?.toDouble() ?? 0;
-        if (posS >= start && posS < end) { idx = i; break; }
+        if (posS >= start && posS < end) {
+          idx = i;
+          break;
+        }
       }
       if (idx != _lastChapterIdx) {
         _lastChapterIdx = idx;
@@ -451,15 +542,17 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       _coverBrightness = null;
       _coverProvider = null;
       _coverProviderIdentity = null;
-      _blurredCover?.dispose();
-      _blurredCover = null;
+      _blurLease?.release();
+      _blurLease = null;
       _blurredCoverIdentity = null;
       _pendingBlurIdentity = null;
       _coverTopLuminance = null;
       _fetchedChapters = null;
       _fetchedEbookFile = null;
       _lastChapterIdx = -1;
-      _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
+      _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(
+        _itemId,
+      );
       _fetchChaptersIfNeeded();
       // The per-show speed is item state too - without this, a card recycled
       // for a different item shows times computed at the old item's speed.
@@ -478,7 +571,7 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     DownloadService().removeListener(_onDownloadChanged);
     widget.player.removeListener(_onSpeedMaybeChanged);
     _chapterTrackSub?.cancel();
-    _blurredCover?.dispose();
+    _blurLease?.release();
     _edgeBarExpanded.dispose();
     super.dispose();
   }
@@ -551,56 +644,42 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         .catchError((_) {});
   }
 
-  /// Resolve the image, render it blurred to an offscreen canvas, cache the result.
+  /// Take the blurred background from the shared cache, generating it only if
+  /// nobody has built this cover's blur yet.
   Future<void> _precacheBlur(
     ImageProvider provider,
     String coverIdentity,
   ) async {
     try {
-      final completer = Completer<ui.Image>();
-      final stream = provider.resolve(ImageConfiguration.empty);
-      late ImageStreamListener listener;
-      listener = ImageStreamListener((info, _) {
-        completer.complete(info.image);
-        stream.removeListener(listener);
-      }, onError: (e, _) {
-        if (!completer.isCompleted) completer.completeError(e);
-        stream.removeListener(listener);
-      });
-      stream.addListener(listener);
-
-      final srcImage = await completer.future;
-      // Render at reduced size for performance (blur hides detail anyway)
-      const targetWidth = 200;
-      final aspect = srcImage.height / srcImage.width;
-      final targetHeight = (targetWidth * aspect).round();
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()));
-      final paint = Paint()
-        ..imageFilter = ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30, tileMode: TileMode.decal);
-      canvas.drawImageRect(
-        srcImage,
-        Rect.fromLTWH(0, 0, srcImage.width.toDouble(), srcImage.height.toDouble()),
-        Rect.fromLTWH(0, 0, targetWidth.toDouble(), targetHeight.toDouble()),
-        paint,
+      final lease = await CoverBlurCache.instance.acquire(
+        provider,
+        coverIdentity,
       );
-      final picture = recorder.endRecording();
-      final blurred = await picture.toImage(targetWidth, targetHeight);
-      picture.dispose();
+      if (lease == null) return;
+      if (!mounted || _currentCoverIdentity() != coverIdentity) {
+        lease.release();
+        return;
+      }
 
-      final topLuminance = await topStripLuminance(blurred);
+      // The blurred bitmap is what the card paints, so put it up first. The
+      // top-strip brightness only tunes the scrim gradient, and reading it back
+      // is another image round-trip - it used to sit in front of the swap,
+      // which is what read as a beat of lag before the blur appeared.
+      final known = CoverBlurCache.instance.luminanceOf(coverIdentity);
+      final previous = _blurLease;
+      setState(() {
+        _blurLease = lease;
+        _blurredCoverIdentity = coverIdentity;
+        _coverTopLuminance = known;
+      });
+      previous?.release();
+      if (known != null) return;
 
+      final luminance = await topStripLuminance(lease.image);
+      if (luminance == null) return;
+      CoverBlurCache.instance.rememberLuminance(coverIdentity, luminance);
       if (mounted && _currentCoverIdentity() == coverIdentity) {
-        final previous = _blurredCover;
-        setState(() {
-          _blurredCover = blurred;
-          _blurredCoverIdentity = coverIdentity;
-          _coverTopLuminance = topLuminance;
-        });
-        previous?.dispose();
-      } else {
-        blurred.dispose();
+        setState(() => _coverTopLuminance = luminance);
       }
     } catch (_) {
       // Fallback: card will show without blurred background, which is fine
@@ -611,7 +690,6 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
   }
 
-
   /// The store key the live transcript runs under for this card.
   String get _lyricsKey =>
       _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
@@ -621,14 +699,15 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     super.build(context); // required for AutomaticKeepAliveClientMixin
     // E-ink mode: the cover-derived palette renders as washed-out grey, so
     // the card sticks to the monochrome app theme.
-    final cs = (PlayerSettings.einkMode ? null : _coverScheme) ??
+    final cs =
+        (PlayerSettings.einkMode ? null : _coverScheme) ??
         Theme.of(context).colorScheme;
     final accent = cs.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
-    final coverUrl = lib.getCoverUrl(_itemId, width: 1200);
+    final coverUrl = _resolveCoverUrl();
     final coverIdentity = _coverIdentity(coverUrl, lib);
     final isLocalCover = coverUrl?.startsWith('/') ?? false;
     _maybeRefetchOnServerChange(lib);
@@ -636,11 +715,13 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     final progress = (_episodeId != null)
         ? lib.getEpisodeProgress(_itemId, _episodeId!)
         : (_isPodcastEpisode
-            ? lib.getEpisodeProgress(_itemId, widget.player.currentEpisodeId!)
-            : lib.getProgress(_itemId));
+              ? lib.getEpisodeProgress(_itemId, widget.player.currentEpisodeId!)
+              : lib.getProgress(_itemId));
     final chapterIdx = _currentChapterIndex();
     final cast = ChromecastService();
-    final totalChapters = _isCastingThis ? cast.castingChapters.length : (_isActive ? widget.player.chapters.length : _chapters.length);
+    final totalChapters = _isCastingThis
+        ? cast.castingChapters.length
+        : (_isActive ? widget.player.chapters.length : _chapters.length);
     final double bookProgress;
     if (_isCastingThis && cast.castingDuration > 0) {
       final castPos = cast.castPosition.inMilliseconds / 1000.0;
@@ -650,22 +731,13 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       if (playerPos < 1.0 && progress > 0.01) {
         bookProgress = progress;
       } else {
-        bookProgress = (playerPos / widget.player.totalDuration).clamp(0.0, 1.0);
+        bookProgress = (playerPos / widget.player.totalDuration).clamp(
+          0.0,
+          1.0,
+        );
       }
     } else {
       bookProgress = progress;
-    }
-
-    // Alpha diagnostic: fires only when a state-shape transition happens
-    // (not on every position tick), to confirm why a card's progress bar
-    // would render empty after an AA cold-start.
-    final durBucket = widget.player.totalDuration > 0 ? 'pos' : 'zero';
-    final progBucket = progress <= 0.001 ? '0' : (progress >= 0.999 ? '1' : 'mid');
-    final bookBucket = bookProgress <= 0.001 ? '0' : (bookProgress >= 0.999 ? '1' : 'mid');
-    final sig = 'item=$_itemId ep=$_episodeId active=$_isActive hasBook=${widget.player.hasBook} dur=$durBucket prog=$progBucket bar=$bookBucket playerItem=${widget.player.currentItemId} playerEp=${widget.player.currentEpisodeId}';
-    if (sig != _lastRenderLogSig) {
-      _lastRenderLogSig = sig;
-      debugPrint('[Card] $sig');
     }
 
     // In gradient/off mode the cover image isn't painted, so derive its scheme separately.
@@ -684,536 +756,896 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
         if (vy < -300) expandCard(context); // swipe up to expand
       },
       child: Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: accent.withValues(alpha: 0.15), width: 1),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(23),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-          // Layer 1: Card background — blurred cover, color gradient, or plain surface
-          if (_cardBackground == 'off')
-            ColoredBox(color: Theme.of(context).colorScheme.surface)
-          else if (_cardBackground == 'gradient')
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [cs.primaryContainer, cs.surface],
-                ),
-              ),
-            )
-          // Pre-blurred cover background (cached bitmap — no per-frame blur)
-          else if (_blurredCover != null)
-            RepaintBoundary(
-              child: RawImage(
-                image: _blurredCover,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-              ),
-            )
-          else if (coverUrl != null && coverIdentity != null)
-            // Fallback while blur is being computed: show unblurred cover dimmed
-            RepaintBoundary(
-              child: isLocalCover
-                  ? Builder(builder: (_) {
-                      final provider = FileImage(File(coverUrl));
-                      _onCoverLoaded(provider, coverIdentity);
-                      return Opacity(
-                        opacity: 0.3,
-                        child: Image.file(File(coverUrl), fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) => Container(color: isDark ? Colors.black : Colors.white)),
-                      );
-                    })
-                  : StableCachedNetworkImage(
-                      imageUrl: coverUrl,
-                      cacheKey: coverIdentity,
-                      fit: BoxFit.cover,
-                      httpHeaders: mediaHeaders,
-                      imageBuilder: (_, provider) {
-                        _onCoverLoaded(provider, coverIdentity);
-                        return Opacity(
-                          opacity: 0.3,
-                          child: Image(image: provider, fit: BoxFit.cover),
-                        );
-                      },
-                      placeholder: (_, __) => Container(color: isDark ? Colors.black : Colors.white),
-                      errorWidget: (_, __, ___) => Container(color: isDark ? Colors.black : Colors.white),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: accent.withValues(alpha: 0.15), width: 1),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(23),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Layer 1: Card background — blurred cover, color gradient, or plain surface
+              if (_cardBackground == 'off')
+                ColoredBox(color: Theme.of(context).colorScheme.surface)
+              else if (_cardBackground == 'gradient')
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [cs.primaryContainer, cs.surface],
                     ),
-            ),
-          // Layer 2: Scrim
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  // Lighter scrim over the gradient/off backgrounds so the cover
-                  // tint reads through; the blurred photo still needs the heavier one.
-                  colors: _cardBackground == 'blurred'
-                    ? (isDark
-                        ? [
-                            Colors.black.withValues(alpha: 0.3),
-                            Colors.black.withValues(alpha: 0.6),
-                            Colors.black.withValues(alpha: 0.85),
-                          ]
-                        : [
-                            Colors.white.withValues(alpha: 0.4),
-                            Colors.white.withValues(alpha: 0.7),
-                            Colors.white.withValues(alpha: 0.9),
-                          ])
-                    : (isDark
-                        ? [
-                            Colors.black.withValues(alpha: 0.15),
-                            Colors.black.withValues(alpha: 0.4),
-                            Colors.black.withValues(alpha: 0.68),
-                          ]
-                        : [
-                            Colors.white.withValues(alpha: 0.25),
-                            Colors.white.withValues(alpha: 0.55),
-                            Colors.white.withValues(alpha: 0.8),
-                          ]),
-                ),
-              ),
-            ),
-          ),
-          // Layer 3: Content
-          LayoutBuilder(
-          builder: (context, cardConstraints) {
-          final textScale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.5);
-          final compact = cardConstraints.maxHeight < 600 * textScale;
-          // In landscape the card is wider than tall — switch to a two-pane
-          // layout with the cover on the left and everything else on the right.
-          final wide = cardConstraints.maxWidth > cardConstraints.maxHeight;
-
-          final statsRow = ValueListenableBuilder<bool>(
-                valueListenable: _edgeBarExpanded,
-                builder: (_, expanded, child) => AnimatedOpacity(
-                  opacity: expanded ? 0.0 : 1.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: child,
-                ),
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(24, compact ? 6 : 10, 24, 0),
-                  child: StreamBuilder<Duration>(
-                    stream: _isCastingThis
-                        ? cast.castPositionStream
-                        : widget.player.absolutePositionStream,
-                    builder: (_, snap) {
-                      final double pos;
-                      final double dur;
-                      if (_isCastingThis) {
-                        pos = cast.castPosition.inMilliseconds / 1000.0;
-                        dur = cast.castingDuration;
-                      } else if (_isActive) {
-                        pos = (snap.data?.inMilliseconds ?? 0) / 1000.0;
-                        dur = _effectiveDuration;
-                      } else {
-                        // Use exact currentTime from server progress if available,
-                        // otherwise fall back to progress ratio * duration.
-                        final pd = _episodeId != null
-                            ? lib.getEpisodeProgressData(_itemId, _episodeId!)
-                            : lib.getProgressData(_itemId);
-                        final ct = (pd?['currentTime'] as num?)?.toDouble();
-                        pos = (ct != null && ct > 0) ? ct : bookProgress * _effectiveDuration;
-                        dur = _effectiveDuration;
-                      }
-                      final speed = _speedAdjustedTime ? (_isActive ? widget.player.speed : _savedSpeed) : 1.0;
-                      final liveBookProgress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : bookProgress;
-                      final elapsed = pos / speed;
-                      final remaining = (dur - pos) / speed;
-                      // This row sits on the cover, not on the theme surface.
-                      // With a blurred background the scrim is at its thinnest
-                      // right here (0.3 / 0.4), so a pale cover in dark mode
-                      // used to leave white text on a near-white backdrop.
-                      // Pick the ink from what is actually behind it; the other
-                      // background modes follow the theme as before.
-                      final coverLuminance =
-                          _cardBackground == 'blurred' ? _coverTopLuminance : null;
-                      final ink = coverLuminance == null
-                          ? null
-                          : inkForLuminance(scrimmedLuminance(
-                              coverLuminance,
-                              isDark ? Colors.black : Colors.white,
-                              isDark ? 0.3 : 0.4,
-                            ));
-                      final timeStyle = tt.labelSmall?.copyWith(
-                        color: ink?.ink ??
-                            (isDark ? Colors.white.withValues(alpha: 0.55) : cs.onSurface),
-                        fontWeight: FontWeight.w500, fontSize: (compact ? 10 : 11) * _progressTextScale,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        shadows: [Shadow(color: ink?.shadow ?? (isDark ? Colors.black.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.6)), blurRadius: 4)],
-                      );
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Row(
-                            children: [
-                              if (_effectiveDuration > 0 && showBookBar)
-                                Text(fmtTime(elapsed), style: timeStyle),
-                              const Spacer(),
-                              if (_effectiveDuration > 0 && showBookBar)
-                                Text('-${fmtTime(remaining)}', style: timeStyle),
-                            ],
+                  ),
+                )
+              // Pre-blurred cover background (cached bitmap — no per-frame blur)
+              else if (_blurLease != null)
+                RepaintBoundary(
+                  child: RawImage(
+                    image: _blurLease!.image,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
+                )
+              else if (coverUrl != null && coverIdentity != null)
+                // Fallback while blur is being computed: show unblurred cover dimmed
+                RepaintBoundary(
+                  child: isLocalCover
+                      ? Builder(
+                          builder: (_) {
+                            final provider = FileImage(File(coverUrl));
+                            _onCoverLoaded(provider, coverIdentity);
+                            return Opacity(
+                              opacity: 0.3,
+                              child: Image.file(
+                                File(coverUrl),
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: isDark ? Colors.black : Colors.white,
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : StableCachedNetworkImage(
+                          imageUrl: coverUrl,
+                          cacheKey: coverIdentity,
+                          fit: BoxFit.cover,
+                          httpHeaders: mediaHeaders,
+                          imageBuilder: (_, provider) {
+                            _onCoverLoaded(provider, coverIdentity);
+                            return Opacity(
+                              opacity: 0.3,
+                              child: Image(image: provider, fit: BoxFit.cover),
+                            );
+                          },
+                          placeholder: (_, __) => Container(
+                            color: isDark ? Colors.black : Colors.white,
                           ),
-                          Text('${(liveBookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                            style: timeStyle),
-                        ],
-                      );
-                    },
+                          errorWidget: (_, __, ___) => Container(
+                            color: isDark ? Colors.black : Colors.white,
+                          ),
+                        ),
+                ),
+              // Layer 2: Scrim
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      // Lighter scrim over the gradient/off backgrounds so the cover
+                      // tint reads through; the blurred photo still needs the heavier one.
+                      colors: _cardBackground == 'blurred'
+                          ? (isDark
+                                ? [
+                                    Colors.black.withValues(alpha: 0.3),
+                                    Colors.black.withValues(alpha: 0.6),
+                                    Colors.black.withValues(alpha: 0.85),
+                                  ]
+                                : [
+                                    Colors.white.withValues(alpha: 0.4),
+                                    Colors.white.withValues(alpha: 0.7),
+                                    Colors.white.withValues(alpha: 0.9),
+                                  ])
+                          : (isDark
+                                ? [
+                                    Colors.black.withValues(alpha: 0.15),
+                                    Colors.black.withValues(alpha: 0.4),
+                                    Colors.black.withValues(alpha: 0.68),
+                                  ]
+                                : [
+                                    Colors.white.withValues(alpha: 0.25),
+                                    Colors.white.withValues(alpha: 0.55),
+                                    Colors.white.withValues(alpha: 0.8),
+                                  ]),
+                    ),
                   ),
                 ),
-              );
+              ),
+              // Layer 3: Content
+              LayoutBuilder(
+                builder: (context, cardConstraints) {
+                  final textScale = MediaQuery.textScalerOf(
+                    context,
+                  ).scale(1.0).clamp(1.0, 1.5);
+                  final compact = cardConstraints.maxHeight < 600 * textScale;
+                  // In landscape the card is wider than tall — switch to a two-pane
+                  // layout with the cover on the left and everything else on the right.
+                  final wide =
+                      cardConstraints.maxWidth > cardConstraints.maxHeight;
 
-          final coverArea = Padding(
+                  final statsRow = ValueListenableBuilder<bool>(
+                    valueListenable: _edgeBarExpanded,
+                    builder: (_, expanded, child) => AnimatedOpacity(
+                      opacity: expanded ? 0.0 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: child,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(24, compact ? 6 : 10, 24, 0),
+                      child: StreamBuilder<Duration>(
+                        stream: _isCastingThis
+                            ? cast.castPositionStream
+                            : widget.player.absolutePositionStream,
+                        builder: (_, snap) {
+                          final double pos;
+                          final double dur;
+                          if (_isCastingThis) {
+                            pos = cast.castPosition.inMilliseconds / 1000.0;
+                            dur = cast.castingDuration;
+                          } else if (_isActive) {
+                            pos = (snap.data?.inMilliseconds ?? 0) / 1000.0;
+                            dur = _effectiveDuration;
+                          } else {
+                            // Use exact currentTime from server progress if available,
+                            // otherwise fall back to progress ratio * duration.
+                            final pd = _episodeId != null
+                                ? lib.getEpisodeProgressData(
+                                    _itemId,
+                                    _episodeId!,
+                                  )
+                                : lib.getProgressData(_itemId);
+                            final ct = (pd?['currentTime'] as num?)?.toDouble();
+                            pos = (ct != null && ct > 0)
+                                ? ct
+                                : bookProgress * _effectiveDuration;
+                            dur = _effectiveDuration;
+                          }
+                          final speed = _speedAdjustedTime
+                              ? (_isActive ? widget.player.speed : _savedSpeed)
+                              : 1.0;
+                          final liveBookProgress = dur > 0
+                              ? (pos / dur).clamp(0.0, 1.0)
+                              : bookProgress;
+                          final elapsed = pos / speed;
+                          final remaining = (dur - pos) / speed;
+                          // This row sits on the cover, not on the theme surface.
+                          // With a blurred background the scrim is at its thinnest
+                          // right here (0.3 / 0.4), so a pale cover in dark mode
+                          // used to leave white text on a near-white backdrop.
+                          // Pick the ink from what is actually behind it; the other
+                          // background modes follow the theme as before.
+                          final coverLuminance = _cardBackground == 'blurred'
+                              ? _coverTopLuminance
+                              : null;
+                          final ink = coverLuminance == null
+                              ? null
+                              : inkForLuminance(
+                                  scrimmedLuminance(
+                                    coverLuminance,
+                                    isDark ? Colors.black : Colors.white,
+                                    isDark ? 0.3 : 0.4,
+                                  ),
+                                );
+                          final timeStyle = tt.labelSmall?.copyWith(
+                            color:
+                                ink?.ink ??
+                                (isDark
+                                    ? Colors.white.withValues(alpha: 0.55)
+                                    : cs.onSurface),
+                            fontWeight: FontWeight.w500,
+                            fontSize: (compact ? 10 : 11) * _progressTextScale,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                            shadows: [
+                              Shadow(
+                                color:
+                                    ink?.shadow ??
+                                    (isDark
+                                        ? Colors.black.withValues(alpha: 0.6)
+                                        : Colors.white.withValues(alpha: 0.6)),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          );
+                          return Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Row(
+                                children: [
+                                  if (_effectiveDuration > 0 && showBookBar)
+                                    Text(fmtTime(elapsed), style: timeStyle),
+                                  const Spacer(),
+                                  if (_effectiveDuration > 0 && showBookBar)
+                                    Text(
+                                      '-${fmtTime(remaining)}',
+                                      style: timeStyle,
+                                    ),
+                                ],
+                              ),
+                              Text(
+                                '${(liveBookProgress * 100).clamp(0, 100).toStringAsFixed(1)}%',
+                                style: timeStyle,
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
+
+                  final coverArea = Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: ListenableBuilder(
-                    listenable: Listenable.merge([ChromecastService(), widget.player]),
-                    builder: (context, _) => LayoutBuilder(
-                    builder: (context, constraints) {
-                      final maxW = constraints.maxWidth * 0.85;
-                      final rawH = constraints.maxHeight.isFinite ? constraints.maxHeight : maxW;
-                      final maxH = rawH - 24;
-                      double coverW, coverH;
-                      if (_rectangleCovers) {
-                        coverW = maxW;
-                        coverH = coverW * 1.5;
-                        if (coverH > maxH) { coverH = maxH; coverW = coverH / 1.5; }
-                      } else {
-                        final s = maxW < maxH ? maxW : maxH;
-                        coverW = s;
-                        coverH = s;
-                      }
-                      final downloads = DownloadService();
-                      final isDownloaded = downloads.isCurrentChapterSaved(
-                          episodeId: _episodeId,
-                          itemId: _itemId,
-                          chapters: _chapters,
-                          chapterIndex: chapterIdx);
-                      final castService = ChromecastService();
-                      final isCastingThis = castService.isCasting && castService.castingItemId == _itemId;
-                      final coverPlaying = isCastingThis ? castService.isPlaying : (_isActive && widget.player.isPlaying);
-                      final coverLoading = _isStarting || (_isActive && widget.player.isLoadingOrBuffering && !widget.player.isPlaying);
-                      return Column(
-                        mainAxisSize: MainAxisSize.max,
-                        children: [
-                          const Spacer(flex: 2),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: () {
-                              final showStreaming = !isDownloaded && _isActive;
-                              final showSaved = isDownloaded;
-                              final visible = showSaved || showStreaming;
-                              final streamColor = isDark ? Colors.white.withValues(alpha: 0.5) : cs.onSurface.withValues(alpha: 0.6);
-                              final savedColor = isDark ? Colors.greenAccent.withValues(alpha: 0.7) : Colors.green.shade700.withValues(alpha: 0.7);
-                              return Opacity(
-                                opacity: visible ? 1.0 : 0.0,
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  Icon(
-                                    showSaved ? Icons.download_done_rounded : Icons.cell_tower_rounded,
-                                    size: 11, color: showSaved ? savedColor : streamColor),
-                                  const SizedBox(width: 3),
-                                  Text(showSaved ? l.saved : l.expandedCardStreaming, style: TextStyle(
-                                    fontSize: 10, fontWeight: FontWeight.w500,
-                                    color: showSaved ? savedColor : streamColor,
-                                  )),
-                                ]),
-                              );
-                            }(),
-                          ),
-                          GestureDetector(
-                        onTap: _coverPlayButton ? () {
-                          if (isCastingThis) {
-                            castService.togglePlayPause();
-                          } else if (_isActive) {
-                            widget.player.togglePlayPause(fromUi: true);
+                      listenable: Listenable.merge([
+                        ChromecastService(),
+                        widget.player,
+                      ]),
+                      builder: (context, _) => LayoutBuilder(
+                        builder: (context, constraints) {
+                          final maxW = constraints.maxWidth * 0.85;
+                          final rawH = constraints.maxHeight.isFinite
+                              ? constraints.maxHeight
+                              : maxW;
+                          final maxH = rawH - 24;
+                          double coverW, coverH;
+                          if (_rectangleCovers) {
+                            coverW = maxW;
+                            coverH = coverW * 1.5;
+                            if (coverH > maxH) {
+                              coverH = maxH;
+                              coverW = coverH / 1.5;
+                            }
                           } else {
-                            _startPlayback();
+                            final s = maxW < maxH ? maxW : maxH;
+                            coverW = s;
+                            coverH = s;
                           }
-                        } : null,
-                        child: Container(
-                          width: coverW,
-                          height: coverH,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.15), blurRadius: 20, spreadRadius: -2, offset: const Offset(0, 6)),
-                              BoxShadow(color: accent.withValues(alpha: 0.15), blurRadius: 30, spreadRadius: -5),
-                            ],
-                          ),
-                          child: RepaintBoundary(
-                            child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                // Cover image - hidden while the transcript
-                                // has the cover.
-                                AnimatedBuilder(
-                                  animation: LyricsService.instance,
-                                  builder: (context, child) =>
-                                      LyricsService.instance
-                                              .coversArtFor(_lyricsKey)
-                                          ? Offstage(child: child)
-                                          : child!,
-                                  child: EinkCoverTone(child: coverUrl != null && coverIdentity != null
-                                    ? isLocalCover
-                                        ? BlurPaddedCover(blurChild: Image.file(File(coverUrl), fit: BoxFit.cover,
-                                            gaplessPlayback: true,
-                                            errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                                            enabled: !_rectangleCovers, child: Image.file(File(coverUrl), fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
-                                            gaplessPlayback: true,
-                                            errorBuilder: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
-                                        : BlurPaddedCover(blurChild: StableCachedNetworkImage(imageUrl: coverUrl, cacheKey: coverIdentity, fit: BoxFit.cover,
-                                              httpHeaders: mediaHeaders,
-                                              errorWidget: (_, __, ___) => const SizedBox.shrink()),
-                                            enabled: !_rectangleCovers, child: StableCachedNetworkImage(imageUrl: coverUrl, cacheKey: coverIdentity,
-                                              fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain,
-                                              httpHeaders: mediaHeaders,
-                                              imageBuilder: (_, provider) {
-                                                _onCoverLoaded(provider, coverIdentity);
-                                                return Image(image: provider, fit: _rectangleCovers ? BoxFit.cover : BoxFit.contain);
-                                              },
-                                              placeholder: (_, __) => CoverPlaceholder(title: _title, author: _author),
-                                              errorWidget: (_, __, ___) => CoverPlaceholder(title: _title, author: _author)))
-                                    : CoverPlaceholder(title: _title, author: _author))),
-                                                // Casting overlay
-                                if (isCastingThis) ...[
-                                  Positioned.fill(
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.45),
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned.fill(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                          final downloads = DownloadService();
+                          final isDownloaded = downloads.isCurrentChapterSaved(
+                            episodeId: _episodeId,
+                            itemId: _itemId,
+                            chapters: _chapters,
+                            chapterIndex: chapterIdx,
+                          );
+                          final castService = ChromecastService();
+                          final isCastingThis =
+                              castService.isCasting &&
+                              castService.castingItemId == _itemId;
+                          final coverPlaying = isCastingThis
+                              ? castService.isPlaying
+                              : (_isActive && widget.player.isPlaying);
+                          final coverLoading =
+                              _isStarting ||
+                              (_isActive &&
+                                  widget.player.isLoadingOrBuffering &&
+                                  !widget.player.isPlaying);
+                          return Column(
+                            mainAxisSize: MainAxisSize.max,
+                            children: [
+                              const Spacer(flex: 2),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: () {
+                                  final showStreaming =
+                                      !isDownloaded && _isActive;
+                                  final showSaved = isDownloaded;
+                                  final visible = showSaved || showStreaming;
+                                  final streamColor = isDark
+                                      ? Colors.white.withValues(alpha: 0.5)
+                                      : cs.onSurface.withValues(alpha: 0.6);
+                                  final savedColor = isDark
+                                      ? Colors.greenAccent.withValues(
+                                          alpha: 0.7,
+                                        )
+                                      : Colors.green.shade700.withValues(
+                                          alpha: 0.7,
+                                        );
+                                  return Opacity(
+                                    opacity: visible ? 1.0 : 0.0,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.cast_connected_rounded, size: 36, color: accent.withValues(alpha: 0.9)),
-                                        const SizedBox(height: 8),
-                                        Text(l.castingTo, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500)),
-                                        const SizedBox(height: 2),
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          child: Text(
-                                            castService.connectedDeviceName ?? l.expandedCardDeviceFallback,
-                                            style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w700),
-                                            textAlign: TextAlign.center,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                        Icon(
+                                          showSaved
+                                              ? Icons.download_done_rounded
+                                              : Icons.cell_tower_rounded,
+                                          size: 11,
+                                          color: showSaved
+                                              ? savedColor
+                                              : streamColor,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          showSaved
+                                              ? l.saved
+                                              : l.expandedCardStreaming,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                            color: showSaved
+                                                ? savedColor
+                                                : streamColor,
                                           ),
                                         ),
                                       ],
                                     ),
+                                  );
+                                }(),
+                              ),
+                              GestureDetector(
+                                onTap: _coverPlayButton
+                                    ? () {
+                                        if (isCastingThis) {
+                                          castService.togglePlayPause();
+                                        } else if (_isActive) {
+                                          widget.player.togglePlayPause(
+                                            fromUi: true,
+                                          );
+                                        } else {
+                                          _startPlayback();
+                                        }
+                                      }
+                                    : null,
+                                child: Container(
+                                  width: coverW,
+                                  height: coverH,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: isDark ? 0.5 : 0.15,
+                                        ),
+                                        blurRadius: 20,
+                                        spreadRadius: -2,
+                                        offset: const Offset(0, 6),
+                                      ),
+                                      BoxShadow(
+                                        color: accent.withValues(alpha: 0.15),
+                                        blurRadius: 30,
+                                        spreadRadius: -5,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                                // Play/pause overlay - the tap still works
-                                // with the transcript up, but the button would
-                                // sit on the words.
-                                if (_coverPlayButton) Positioned.fill(
-                                  child: AnimatedBuilder(
-                                    animation: LyricsService.instance,
-                                    builder: (context, child) =>
-                                        LyricsService.instance
-                                                .coversArtFor(_lyricsKey)
-                                            ? Offstage(child: child)
-                                            : child!,
-                                    child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    decoration: BoxDecoration(
-                                      color: coverPlaying ? Colors.transparent : Colors.black.withValues(alpha: 0.25),
-                                    ),
-                                    child: Center(
-                                      child: coverLoading
-                                          ? Container(
-                                              width: 65, height: 65,
-                                              decoration: BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                color: Colors.black.withValues(alpha: 0.5),
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(12),
-                                                child: CircularProgressIndicator(strokeWidth: 3, color: accent),
-                                              ),
-                                            )
-                                          : AnimatedOpacity(
-                                              opacity: coverPlaying ? 0.2 : 0.9,
-                                              duration: const Duration(milliseconds: 200),
+                                  child: RepaintBoundary(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          // Cover image - hidden while the transcript
+                                          // has the cover.
+                                          AnimatedBuilder(
+                                            animation: LyricsService.instance,
+                                            builder: (context, child) =>
+                                                LyricsService.instance
+                                                    .coversArtFor(_lyricsKey)
+                                                ? Offstage(child: child)
+                                                : child!,
+                                            child: EinkCoverTone(
+                                              child:
+                                                  coverUrl != null &&
+                                                      coverIdentity != null
+                                                  ? isLocalCover
+                                                        ? BlurPaddedCover(
+                                                            blurChild: Image.file(
+                                                              File(coverUrl),
+                                                              fit: BoxFit.cover,
+                                                              gaplessPlayback:
+                                                                  true,
+                                                              errorBuilder:
+                                                                  (
+                                                                    _,
+                                                                    __,
+                                                                    ___,
+                                                                  ) =>
+                                                                      const SizedBox.shrink(),
+                                                            ),
+                                                            enabled:
+                                                                !_rectangleCovers,
+                                                            child: Image.file(
+                                                              File(coverUrl),
+                                                              fit:
+                                                                  _rectangleCovers
+                                                                  ? BoxFit.cover
+                                                                  : BoxFit
+                                                                        .contain,
+                                                              gaplessPlayback:
+                                                                  true,
+                                                              errorBuilder:
+                                                                  (
+                                                                    _,
+                                                                    __,
+                                                                    ___,
+                                                                  ) => CoverPlaceholder(
+                                                                    title:
+                                                                        _title,
+                                                                    author:
+                                                                        _author,
+                                                                  ),
+                                                            ),
+                                                          )
+                                                        : BlurPaddedCover(
+                                                            blurChild: StableCachedNetworkImage(
+                                                              imageUrl:
+                                                                  coverUrl,
+                                                              cacheKey:
+                                                                  coverIdentity,
+                                                              fit: BoxFit.cover,
+                                                              httpHeaders:
+                                                                  mediaHeaders,
+                                                              errorWidget:
+                                                                  (
+                                                                    _,
+                                                                    __,
+                                                                    ___,
+                                                                  ) =>
+                                                                      const SizedBox.shrink(),
+                                                            ),
+                                                            enabled:
+                                                                !_rectangleCovers,
+                                                            child: StableCachedNetworkImage(
+                                                              imageUrl:
+                                                                  coverUrl,
+                                                              cacheKey:
+                                                                  coverIdentity,
+                                                              fit:
+                                                                  _rectangleCovers
+                                                                  ? BoxFit.cover
+                                                                  : BoxFit
+                                                                        .contain,
+                                                              httpHeaders:
+                                                                  mediaHeaders,
+                                                              imageBuilder: (_, provider) {
+                                                                _onCoverLoaded(
+                                                                  provider,
+                                                                  coverIdentity,
+                                                                );
+                                                                return Image(
+                                                                  image:
+                                                                      provider,
+                                                                  fit:
+                                                                      _rectangleCovers
+                                                                      ? BoxFit
+                                                                            .cover
+                                                                      : BoxFit
+                                                                            .contain,
+                                                                );
+                                                              },
+                                                              placeholder: (_, __) =>
+                                                                  CoverPlaceholder(
+                                                                    title:
+                                                                        _title,
+                                                                    author:
+                                                                        _author,
+                                                                  ),
+                                                              errorWidget:
+                                                                  (
+                                                                    _,
+                                                                    __,
+                                                                    ___,
+                                                                  ) => CoverPlaceholder(
+                                                                    title:
+                                                                        _title,
+                                                                    author:
+                                                                        _author,
+                                                                  ),
+                                                            ),
+                                                          )
+                                                  : CoverPlaceholder(
+                                                      title: _title,
+                                                      author: _author,
+                                                    ),
+                                            ),
+                                          ),
+                                          // Casting overlay
+                                          if (isCastingThis) ...[
+                                            Positioned.fill(
                                               child: Container(
-                                                width: 72, height: 72,
                                                 decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  color: Colors.black.withValues(alpha: 0.45),
-                                                ),
-                                                child: Icon(
-                                                  coverPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                                  size: 42, color: accent,
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.45),
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
                                                 ),
                                               ),
                                             ),
+                                            Positioned.fill(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons
+                                                        .cast_connected_rounded,
+                                                    size: 36,
+                                                    color: accent.withValues(
+                                                      alpha: 0.9,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    l.castingTo,
+                                                    style: TextStyle(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.6,
+                                                          ),
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 16,
+                                                        ),
+                                                    child: Text(
+                                                      castService
+                                                              .connectedDeviceName ??
+                                                          l.expandedCardDeviceFallback,
+                                                      style: TextStyle(
+                                                        color: accent,
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                          // Play/pause overlay - the tap still works
+                                          // with the transcript up, but the button would
+                                          // sit on the words.
+                                          if (_coverPlayButton)
+                                            Positioned.fill(
+                                              child: AnimatedBuilder(
+                                                animation:
+                                                    LyricsService.instance,
+                                                builder: (context, child) =>
+                                                    LyricsService.instance
+                                                        .coversArtFor(
+                                                          _lyricsKey,
+                                                        )
+                                                    ? Offstage(child: child)
+                                                    : child!,
+                                                child: AnimatedContainer(
+                                                  duration: const Duration(
+                                                    milliseconds: 200,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: coverPlaying
+                                                        ? Colors.transparent
+                                                        : Colors.black
+                                                              .withValues(
+                                                                alpha: 0.25,
+                                                              ),
+                                                  ),
+                                                  child: Center(
+                                                    child: coverLoading
+                                                        ? Container(
+                                                            width: 65,
+                                                            height: 65,
+                                                            decoration:
+                                                                BoxDecoration(
+                                                                  shape: BoxShape
+                                                                      .circle,
+                                                                  color: Colors
+                                                                      .black
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.5,
+                                                                      ),
+                                                                ),
+                                                            child: Padding(
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    12,
+                                                                  ),
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                    strokeWidth:
+                                                                        3,
+                                                                    color:
+                                                                        accent,
+                                                                  ),
+                                                            ),
+                                                          )
+                                                        : AnimatedOpacity(
+                                                            opacity:
+                                                                coverPlaying
+                                                                ? 0.2
+                                                                : 0.9,
+                                                            duration:
+                                                                const Duration(
+                                                                  milliseconds:
+                                                                      200,
+                                                                ),
+                                                            child: Container(
+                                                              width: 72,
+                                                              height: 72,
+                                                              decoration: BoxDecoration(
+                                                                shape: BoxShape
+                                                                    .circle,
+                                                                color: Colors
+                                                                    .black
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.45,
+                                                                    ),
+                                                              ),
+                                                              child: Icon(
+                                                                coverPlaying
+                                                                    ? Icons
+                                                                          .pause_rounded
+                                                                    : Icons
+                                                                          .play_arrow_rounded,
+                                                                size: 42,
+                                                                color: accent,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          // Live transcript (lyrics mode)
+                                          LyricsOverlay(
+                                            compact: true,
+                                            forKey: _lyricsKey,
+                                            surface: cs.surface,
+                                            onSurface: cs.onSurface,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                )),
-                                // Live transcript (lyrics mode)
-                                LyricsOverlay(
-                                    compact: true,
-                                    forKey: _lyricsKey,
-                                    surface: cs.surface,
-                                    onSurface: cs.onSurface),
+                                ),
+                              ),
+                              const Spacer(flex: 2),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
+
+                  final scrubberBar = Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: CardDualProgressBar(
+                      player: widget.player,
+                      accent: accent,
+                      isActive: _isActive,
+                      staticProgress: (_isPodcastEpisode && _chapters.isEmpty)
+                          ? 0.0
+                          : progress,
+                      staticDuration: (_isPodcastEpisode && _chapters.isEmpty)
+                          ? widget.player.totalDuration
+                          : _effectiveDuration,
+                      chapters: _chapters,
+                      showBookBar: false,
+                      showChapterBar: true,
+                      chapterName: (_isPodcastEpisode && _chapters.isEmpty)
+                          ? (widget.player.currentEpisodeTitle ??
+                                widget.player.currentTitle ??
+                                _title)
+                          : (_episodeId != null && !_isActive
+                                ? (_recentEpisode?['title'] as String? ??
+                                      _title)
+                                : (_chapters.isEmpty
+                                      ? _title
+                                      : _chapterName(chapterIdx))),
+                      chapterIndex: chapterIdx,
+                      totalChapters: totalChapters,
+                      itemId: _itemId,
+                      compact: compact,
+                    ),
+                  );
+
+                  final controlsRow = Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: CardPlaybackControls(
+                      player: widget.player,
+                      accent: accent,
+                      isActive: _isActive,
+                      isStarting: _isStarting,
+                      onStart: _startPlayback,
+                      itemId: _itemId,
+                      showPlayButton: !_coverPlayButton,
+                      libraryId: _resolveLibraryId(),
+                    ),
+                  );
+
+                  final buttonGrid = MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(textScaler: TextScaler.noScaling),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: LayoutBuilder(
+                        builder: (context, buttonsConstraints) => FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: SizedBox(
+                            width: buttonsConstraints.maxWidth - 40,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ..._buildButtonGrid(accent, tt),
+                                if (!_moreInline) ...[
+                                  const SizedBox(height: 6),
+                                  Center(
+                                    child: ListenableBuilder(
+                                      listenable: ChromecastService(),
+                                      builder: (context, _) {
+                                        final castActive =
+                                            ChromecastService().isCasting &&
+                                            !_buttonOrder
+                                                .take(_visibleButtonCount)
+                                                .contains('cast');
+                                        return Pressable(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: () => _showMoreMenu(
+                                            context,
+                                            accent,
+                                            tt,
+                                          ),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: castActive
+                                                  ? accent.withValues(
+                                                      alpha: 0.15,
+                                                    )
+                                                  : cs.onSurface.withValues(
+                                                      alpha: 0.08,
+                                                    ),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: castActive
+                                                  ? [
+                                                      Icon(
+                                                        Icons
+                                                            .cast_connected_rounded,
+                                                        size: 18,
+                                                        color: accent,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        l.casting,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          color: accent,
+                                                        ),
+                                                      ),
+                                                    ]
+                                                  : [
+                                                      Icon(
+                                                        Icons
+                                                            .more_horiz_rounded,
+                                                        size: 18,
+                                                        color: cs.onSurface
+                                                            .withValues(
+                                                              alpha: 0.54,
+                                                            ),
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        l.more,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          color: cs.onSurface
+                                                              .withValues(
+                                                                alpha: 0.54,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                                SizedBox(height: compact ? 4 : 8),
                               ],
                             ),
                           ),
                         ),
                       ),
-                      ),
-                      const Spacer(flex: 2),
-                      ]);
-                    },
-                  ),
-                  ),
-              );
+                    ),
+                  );
 
-          final scrubberBar = Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: CardDualProgressBar(player: widget.player, accent: accent, isActive: _isActive, staticProgress: (_isPodcastEpisode && _chapters.isEmpty) ? 0.0 : progress, staticDuration: (_isPodcastEpisode && _chapters.isEmpty) ? widget.player.totalDuration : _effectiveDuration, chapters: _chapters, showBookBar: false, showChapterBar: true, chapterName: (_isPodcastEpisode && _chapters.isEmpty) ? (widget.player.currentEpisodeTitle ?? widget.player.currentTitle ?? _title) : (_episodeId != null && !_isActive ? (_recentEpisode?['title'] as String? ?? _title) : (_chapters.isEmpty ? _title : _chapterName(chapterIdx))), chapterIndex: chapterIdx, totalChapters: totalChapters, itemId: _itemId, compact: compact),
-                );
+                  if (wide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: coverArea),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              statsRow,
+                              SizedBox(height: compact ? 6 : 10),
+                              scrubberBar,
+                              SizedBox(height: compact ? 6 : 10),
+                              controlsRow,
+                              SizedBox(height: compact ? 6 : 12),
+                              buttonGrid,
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  }
 
-          final controlsRow = Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: CardPlaybackControls(
+                  return Column(
+                    children: [
+                      statsRow,
+                      Expanded(child: coverArea),
+                      SizedBox(height: compact ? 6 : 10),
+                      scrubberBar,
+                      SizedBox(height: compact ? 6 : 10),
+                      controlsRow,
+                      SizedBox(height: compact ? 6 : 12),
+                      buttonGrid,
+                    ],
+                  );
+                },
+              ),
+              // Edge progress bar (thin strip at top of card)
+              if (showBookBar)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: CardEdgeProgressBar(
                     player: widget.player,
                     accent: accent,
                     isActive: _isActive,
-                    isStarting: _isStarting,
-                    onStart: _startPlayback,
+                    staticProgress: progress,
+                    staticDuration: _effectiveDuration,
+                    chapters: _chapters,
                     itemId: _itemId,
-                    showPlayButton: !_coverPlayButton,
-                    libraryId: _resolveLibraryId(),
-                  ),
-                );
-
-          final buttonGrid = MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    textScaler: TextScaler.noScaling,
-                  ),
-                  child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: LayoutBuilder(
-                    builder: (context, buttonsConstraints) => FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: SizedBox(
-                      width: buttonsConstraints.maxWidth - 40,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ..._buildButtonGrid(accent, tt),
-                          if (!_moreInline) ...[
-                          const SizedBox(height: 6),
-                          Center(
-                            child: ListenableBuilder(
-                              listenable: ChromecastService(),
-                              builder: (context, _) {
-                                final castActive = ChromecastService().isCasting && !_buttonOrder.take(_visibleButtonCount).contains('cast');
-                                return Pressable(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _showMoreMenu(context, accent, tt),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: castActive ? accent.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.08),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: castActive
-                                          ? [
-                                              Icon(Icons.cast_connected_rounded, size: 18, color: accent),
-                                              const SizedBox(width: 4),
-                                              Text(l.casting, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: accent)),
-                                            ]
-                                          : [
-                                              Icon(Icons.more_horiz_rounded, size: 18, color: cs.onSurface.withValues(alpha: 0.54)),
-                                              const SizedBox(width: 4),
-                                              Text(l.more, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.onSurface.withValues(alpha: 0.54))),
-                                            ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          ],
-                          SizedBox(height: compact ? 4 : 8),
-                        ],
-                      ),
-                    ),
-                  ),
+                    expandedNotifier: _edgeBarExpanded,
                   ),
                 ),
-                );
-
-          if (wide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: coverArea),
-                Expanded(child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    statsRow,
-                    SizedBox(height: compact ? 6 : 10),
-                    scrubberBar,
-                    SizedBox(height: compact ? 6 : 10),
-                    controlsRow,
-                    SizedBox(height: compact ? 6 : 12),
-                    buttonGrid,
-                  ],
-                )),
-              ],
-            );
-          }
-
-          return Column(
-            children: [
-              statsRow,
-              Expanded(child: coverArea),
-              SizedBox(height: compact ? 6 : 10),
-              scrubberBar,
-              SizedBox(height: compact ? 6 : 10),
-              controlsRow,
-              SizedBox(height: compact ? 6 : 12),
-              buttonGrid,
             ],
-          );
-          }),
-          // Edge progress bar (thin strip at top of card)
-          if (showBookBar)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: CardEdgeProgressBar(
-                player: widget.player,
-                accent: accent,
-                isActive: _isActive,
-                staticProgress: progress,
-                staticDuration: _effectiveDuration,
-                chapters: _chapters,
-                itemId: _itemId,
-                expandedNotifier: _edgeBarExpanded,
-              ),
-            ),
-        ],
+          ),
+        ),
       ),
-      ),
-    ),
     );
   }
 
@@ -1232,10 +1664,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
     if (!mounted) return;
     if (ebookFile == null) {
-      showOverlayToast(context, AppLocalizations.of(context)!.noEbookFileFound, icon: Icons.menu_book_outlined);
+      showOverlayToast(
+        context,
+        AppLocalizations.of(context)!.noEbookFileFound,
+        icon: Icons.menu_book_outlined,
+      );
       return;
     }
-    openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ebookFile);
+    openEbookReader(
+      context,
+      itemId: _itemId,
+      title: _title,
+      ebookFile: ebookFile,
+    );
   }
 
   void _openReadAlong() async {
@@ -1247,11 +1688,20 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     }
     if (!mounted) return;
     if (ebookFile == null) {
-      showOverlayToast(context, AppLocalizations.of(context)!.noEbookFileFound, icon: Icons.menu_book_outlined);
+      showOverlayToast(
+        context,
+        AppLocalizations.of(context)!.noEbookFileFound,
+        icon: Icons.menu_book_outlined,
+      );
       return;
     }
-    openEbookReader(context, itemId: _itemId, title: _title, ebookFile: ebookFile,
-        startReadAlong: true);
+    openEbookReader(
+      context,
+      itemId: _itemId,
+      title: _title,
+      ebookFile: ebookFile,
+      startReadAlong: true,
+    );
   }
 
   void _findInEbook() async {
@@ -1262,12 +1712,19 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
       ebookFile = _ebookFile;
     }
     if (!mounted) return;
-    launchFindInEbook(context, itemId: _itemId, title: _title, ebookFile: ebookFile);
+    launchFindInEbook(
+      context,
+      itemId: _itemId,
+      title: _title,
+      ebookFile: ebookFile,
+    );
   }
 
   int _currentChapterIndex() {
     final cast = ChromecastService();
-    final chapters = _isCastingThis ? cast.castingChapters : (_isActive ? widget.player.chapters : _chapters);
+    final chapters = _isCastingThis
+        ? cast.castingChapters
+        : (_isActive ? widget.player.chapters : _chapters);
     if (chapters.isEmpty) return -1;
     double pos;
     if (_isCastingThis) {
@@ -1325,19 +1782,21 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   void expandCard(BuildContext context) {
     AppShell.setExpandedOpen(true);
-    Navigator.of(context, rootNavigator: true).push(
-      ExpandedCardRoute(
-        child: ExpandedCard(
-          item: widget.item,
-          player: widget.player,
-          initialCoverScheme: _coverScheme,
-          initialBlurredCover: _blurredCover,
-          initialChapters: _fetchedChapters,
-          initialEbookFile: _ebookFile,
-          initialCardBackground: _cardBackground,
-        ),
-      ),
-    ).then((_) => AppShell.setExpandedOpen(false));
+    Navigator.of(context, rootNavigator: true)
+        .push(
+          ExpandedCardRoute(
+            child: ExpandedCard(
+              item: widget.item,
+              player: widget.player,
+              initialCoverScheme: _coverScheme,
+              initialBlurIdentity: _blurredCoverIdentity,
+              initialChapters: _fetchedChapters,
+              initialEbookFile: _ebookFile,
+              initialCardBackground: _cardBackground,
+            ),
+          ),
+        )
+        .then((_) => AppShell.setExpandedOpen(false));
   }
 
   Future<void> _startPlayback() async {
@@ -1348,10 +1807,18 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     setState(() => _isStarting = true);
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
-    if (api == null) { setState(() => _isStarting = false); return; }
+    if (api == null) {
+      setState(() => _isStarting = false);
+      return;
+    }
     final error = await widget.player.playItem(
-      api: api, itemId: _itemId, title: _title, author: _author,
-      coverUrl: _coverUrl, totalDuration: _effectiveDuration, chapters: _chapters,
+      api: api,
+      itemId: _itemId,
+      title: _title,
+      author: _author,
+      coverUrl: _coverUrl,
+      totalDuration: _effectiveDuration,
+      chapters: _chapters,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
       libraryId: _resolveLibraryId(),
@@ -1404,7 +1871,10 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
     buttonOrder: _buttonOrder,
     removeFromAbsorbing: _removeFromAbsorbing,
     onReorder: (newOrder, newCount) {
-      setState(() { _buttonOrder = newOrder; _buttonVisibleCount = newCount; });
+      setState(() {
+        _buttonOrder = newOrder;
+        _buttonVisibleCount = newCount;
+      });
       PlayerSettings.setCardButtonOrder(newOrder);
       PlayerSettings.setCardButtonVisibleCount(newCount);
     },
@@ -1417,8 +1887,9 @@ class AbsorbingCardState extends State<AbsorbingCard> with AutomaticKeepAliveCli
 
   int get _visibleButtonCount => _buttonVisibleCount;
 
-  List<Widget> _buildButtonGrid(Color accent, TextTheme tt) => _makeActions().buildButtonGrid(accent, tt);
+  List<Widget> _buildButtonGrid(Color accent, TextTheme tt) =>
+      _makeActions().buildButtonGrid(accent, tt);
 
-  void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) => _makeActions().showMoreMenu(accent, tt);
-
+  void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) =>
+      _makeActions().showMoreMenu(accent, tt);
 }

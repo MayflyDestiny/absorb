@@ -4549,6 +4549,11 @@ class AudioPlayerService extends ChangeNotifier {
     final cachedJson = _downloadService.getCachedSessionData(itemId);
     List<dynamic>? audioTracks;
     List<double>? absoluteStarts;
+    // Chapter-selection downloads persist this flag in their slim session. It's
+    // the ONLY reliable "this is a partial download" signal - `audioTracks`
+    // holds the DOWNLOADED subset, so its length always equals localPaths.length
+    // even when the download is just the single chapter currently playing.
+    var tracksAreChapters = false;
     if (cachedJson != null) {
       try {
         final session = jsonDecode(cachedJson) as Map<String, dynamic>;
@@ -4556,8 +4561,58 @@ class AudioPlayerService extends ChangeNotifier {
         absoluteStarts = (session['trackStartOffsets'] as List<dynamic>?)
             ?.map((e) => (e as num).toDouble())
             .toList();
+        tracksAreChapters = session['tracksAreChapters'] == true;
         _applyTrackToChapterFromSession(session);
       } catch (_) {}
+    }
+
+    // A PARTIAL download that doesn't include where the listener actually is
+    // must not hot-swap: the replacement source would only contain the
+    // downloaded subset, so the preserved position would clamp past its end and
+    // playback would collapse onto the first downloaded chapter (e.g. playing
+    // chapter 11 while chapter 1's download finishes → clamp to chapter 1's end
+    // → auto-advance to "next" / pause with the wrong title). Only swap when
+    // the current position falls inside a downloaded track's playback range;
+    // whole-item downloads always qualify.
+    if (audioTracks != null &&
+        absoluteStarts != null &&
+        absoluteStarts.length == audioTracks.length) {
+      final absSec = currentAbsolutePos.inMilliseconds / 1000.0;
+      var covered = false;
+      for (var i = 0; i < audioTracks.length; i++) {
+        final start = absoluteStarts[i];
+        final dur = ((audioTracks[i] as Map<String, dynamic>)['duration']
+                as num?)
+            ?.toDouble() ??
+            0;
+        if (absSec >= start - 0.5 && absSec < start + dur - 0.5) {
+          covered = true;
+          break;
+        }
+      }
+      if (!covered) {
+        verboseLog(
+          '[Player] Skip hot-swap: download does not cover current position '
+          '${absSec.toStringAsFixed(1)}s (partial download of another chapter)',
+        );
+        return false;
+      }
+
+      // A download of the chapter CURRENTLY PLAYING must not hot-swap mid-play:
+      // setAudioSource stops the audio and the rebuilt source zeroes the
+      // position - the stutter plus the title flash on the playback screen.
+      // The local files still win the next time this book loads a session, so
+      // skipping here loses nothing. Note the correct partial signal is the
+      // tracksAreChapters flag, not `localPaths.length < audioTracks.length`
+      // (both count the downloaded subset, so that test is always false and
+      // the single-chapter case used to hot-swap mid-play).
+      if (wasPlaying && (tracksAreChapters || localPaths.length < audioTracks.length)) {
+        verboseLog(
+          '[Player] Skip hot-swap: chapter download finished while this chapter '
+          'is playing - staying on stream to avoid interrupting playback',
+        );
+        return false;
+      }
     }
 
     // Rebuild track offsets for local files

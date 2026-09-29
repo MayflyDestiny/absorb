@@ -16,6 +16,8 @@ import '../services/setup_link_service.dart';
 import '../services/user_account_service.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/overlay_toast.dart';
+import '../widgets/server_address_field.dart'
+    show displayServerUrl, stripDefaultPort;
 import '../widgets/setup_link_login.dart';
 import '../services/audio_player_service.dart';
 import '../main.dart' show applyTrustAllCerts, flatNotifier;
@@ -128,9 +130,10 @@ class _LoginScreenState extends State<LoginScreen>
         ? '${uri!.scheme}://'
         : _protocol;
     setState(() => _protocol = protocol);
-    _serverController.text = serverUrl.startsWith(protocol)
+    final host = serverUrl.startsWith(protocol)
         ? serverUrl.substring(protocol.length)
         : serverUrl;
+    _serverController.text = stripDefaultPort(host, protocol);
     _usernameController.text = username;
   }
 
@@ -198,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen>
     ).firstMatch(text);
     if (scheme != null) {
       final protocol = '${scheme.group(1)!.toLowerCase()}://';
-      final host = scheme.group(2) ?? '';
+      final host = stripDefaultPort(scheme.group(2) ?? '', protocol);
       if (protocol != _protocol) {
         setState(() => _protocol = protocol);
       }
@@ -938,9 +941,7 @@ serverUrl: serverUrl,
             ),
             const SizedBox(height: 12),
             ...accounts.map((account) {
-              final shortUrl = account.serverUrl
-                  .replaceAll(RegExp(r'^https?://'), '')
-                  .replaceAll(RegExp(r'/+$'), '');
+              final shortUrl = displayServerUrl(account.serverUrl);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Material(
