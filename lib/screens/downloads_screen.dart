@@ -26,6 +26,13 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   Map<String, int> _fileSizes = {};
   Map<String, DateTime> _downloadedTimes = {};
   Map<String, bool> _isPodcast = {};
+
+  /// Rows dropped from the list ahead of their delete landing. DownloadService
+  /// still reports them until the delete finishes, and this screen ticks on
+  /// every service notify - so without this the row would be re-added by
+  /// [_addFinishedItems] and blink back for as long as the unlink takes.
+  /// [_load] clears it, since that rebuilds the list from live state.
+  final Set<String> _dropping = {};
   bool _selecting = false;
   final Set<String> _selected = {};
   bool _mergeLibraries = false;
@@ -46,19 +53,32 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  /// [validate] walks every downloaded file to drop entries whose audio was
+  /// deleted outside the app (SAF content URIs especially). Skipped after our
+  /// own delete: the removed rows are already known, and the walk awaits one
+  /// File.exists() per remaining track, which on a large library is seconds of
+  /// queued IO for information we don't need.
+  Future<void> _load({bool validate = true}) async {
+    final dl = DownloadService();
     // Re-check downloaded files before rendering so entries whose audio was
     // deleted externally (SAF content URIs especially) drop off the list.
-    await DownloadService().validateDownloads();
-    final items = DownloadService().downloadedItems;
+    if (validate) await dl.validateDownloads();
+    final items = dl.downloadedItems;
     final sizes = <String, int>{};
     final times = <String, DateTime>{};
     final pods = <String, bool>{};
     for (final item in items) {
-      sizes[item.itemId] = DownloadService().getItemFileSize(item.itemId);
-      final t = _latestFileTime(item);
+      // After our own delete, surviving rows already have their size / timestamp
+      // / podcast flag cached. Re-stat-ing every remaining file is what made
+      // removing one book out of a large library feel like a freeze.
+      final cached = !validate && _itemIds.contains(item.itemId);
+      sizes[item.itemId] = cached
+          ? (_fileSizes[item.itemId] ?? 0)
+          : dl.getItemFileSize(item.itemId);
+      final t = cached ? _downloadedTimes[item.itemId] : _latestFileTime(item);
       if (t != null) times[item.itemId] = t;
-      pods[item.itemId] = _sessionIsPodcast(item.sessionData);
+      pods[item.itemId] =
+          _isPodcast[item.itemId] ?? _sessionIsPodcast(item.sessionData);
     }
     final merge = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted) {
@@ -70,12 +90,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         _isPodcast = pods;
         _mergeLibraries = merge;
         _loading = false;
+        // Live state is authoritative again, so the optimistic-drop guard has
+        // done its job.
+        _dropping.clear();
       });
       // A download that finished after the snapshot above ticked while
       // [_loading] was still set, so it was dropped with no second tick coming.
       // Re-check now the gate is open; both sides are the same set, so this
       // settles after one extra pass.
-      _maybeRefreshMetadata(DownloadService());
+      _maybeRefreshMetadata(dl);
     }
   }
 
@@ -84,7 +107,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   /// DownloadService tick (~4x/s), so it stays cheap and never setStates here.
   void _maybeRefreshMetadata(DownloadService ds) {
     if (_metadataRefreshScheduled || _loading) return;
-    final liveIds = ds.downloadedItemIds;
+    final liveIds = ds.downloadedItemIds
+        .where((id) => !_dropping.contains(id))
+        .toSet();
     if (liveIds.length == _itemIds.length && liveIds.containsAll(_itemIds)) {
       return;
     }
@@ -110,6 +135,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final added = <DownloadInfo>[];
     var kept = 0;
     for (final item in items) {
+      if (_dropping.contains(item.itemId)) continue;
       if (_itemIds.contains(item.itemId)) {
         kept++;
       } else {
@@ -278,20 +304,21 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    for (final itemId in _selected.toList()) {
+    // Same reasoning as _performDelete: drop the rows and confirm before the
+    // filesystem work, and don't pay for a validating reload afterwards.
+    // Snapshot the ids first - _exitSelection() clears the selection.
+    final ids = _selected.toList();
+    _removeRows(ids);
+    _exitSelection();
+    showOverlayToast(
+      context,
+      l.downloadsDeletedCount(count),
+      icon: Icons.delete_outline_rounded,
+    );
+    for (final itemId in ids) {
       await DownloadService().deleteDownload(itemId, byUser: true);
     }
-
-    _exitSelection();
-    await _load();
-
-    if (mounted) {
-      showOverlayToast(
-        context,
-        l.downloadsDeletedCount(count),
-        icon: Icons.delete_outline_rounded,
-      );
-    }
+    if (mounted) _load(validate: false);
   }
 
   Future<bool> _confirmDelete(DownloadInfo info) async {
@@ -317,17 +344,42 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     return confirmed == true && mounted;
   }
 
+  /// Drops rows and everything cached for them in one rebuild, and marks them as
+  /// dropping so the service tick can't add them back before the delete lands.
+  /// The list updates the moment a delete is confirmed instead of after the
+  /// filesystem work.
+  void _removeRows(List<String> itemIds) {
+    if (!mounted || itemIds.isEmpty) return;
+    final gone = itemIds.toSet();
+    setState(() {
+      _items = _items.where((d) => !gone.contains(d.itemId)).toList();
+      _itemIds.removeAll(gone);
+      for (final id in gone) {
+        _fileSizes.remove(id);
+        _downloadedTimes.remove(id);
+        _isPodcast.remove(id);
+      }
+      _selected.removeAll(gone);
+      _dropping.addAll(gone);
+    });
+  }
+
   Future<void> _performDelete(DownloadInfo info) async {
     final l = AppLocalizations.of(context)!;
+    // Update first, delete after. deleteDownload() unlinks every track one at a
+    // time and then rewrites the whole registry, so all of it - plus the
+    // validating reload that used to follow - ran before any feedback: the row
+    // sat there with its audio already gone, and no toast appeared until seconds
+    // later.
+    _removeRows([info.itemId]);
+    showOverlayToast(
+      context,
+      l.downloadsRemovedTitle(info.title ?? ''),
+      icon: Icons.delete_outline_rounded,
+    );
     await DownloadService().deleteDownload(info.itemId, byUser: true);
-    await _load();
-    if (mounted) {
-      showOverlayToast(
-        context,
-        l.downloadsRemovedTitle(info.title ?? ''),
-        icon: Icons.delete_outline_rounded,
-      );
-    }
+    // Cheap refresh: our own delete needs no revalidation.
+    if (mounted) _load(validate: false);
   }
 
   Future<void> _deleteSingle(DownloadInfo info) async {
@@ -366,17 +418,17 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     );
     if (confirmed != true || !mounted) return;
     final count = paused.length;
+    _removeRows([for (final info in paused) info.itemId]);
+    showOverlayToast(
+      context,
+      l.downloadsDeletedCount(count),
+      icon: Icons.delete_outline_rounded,
+    );
     for (final info in paused) {
       await DownloadService().deleteDownload(info.itemId, byUser: true);
     }
-    await _load();
-    if (mounted) {
-      showOverlayToast(
-        context,
-        l.downloadsDeletedCount(count),
-        icon: Icons.delete_outline_rounded,
-      );
-    }
+    // No validating reload: these rows are gone by construction.
+    if (mounted) _load(validate: false);
   }
 
   Future<void> _openTrackManager(DownloadInfo info) async {

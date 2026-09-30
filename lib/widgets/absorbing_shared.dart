@@ -284,6 +284,7 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
 
   @override Widget build(BuildContext context) {
     final downloading = _dl.isDownloading(widget.itemId);
+    final paused = _dl.isPaused(widget.itemId);
     final savedChapters = widget.chapters.isEmpty
         ? const <int>[]
         : _dl.downloadedChapterIndicesCached(widget.itemId, widget.chapters);
@@ -306,6 +307,12 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
       icon = Icons.downloading_rounded;
       label = '${(progress * 100).toStringAsFixed(0)}%';
       color = widget.accent;
+    } else if (paused) {
+      // Paused needs its own state: falling through to the plain "download"
+      // label made a tap re-confirm a download that was merely suspended.
+      icon = Icons.pause_rounded;
+      label = l.downloadsPaused;
+      color = Theme.of(context).colorScheme.onSurfaceVariant;
     } else {
       icon = Icons.download_outlined;
       label = l.download;
@@ -406,7 +413,15 @@ class _DownloadWideButtonState extends State<DownloadWideButton> {
         showOverlayToast(context, error, icon: Icons.error_outline_rounded);
       }
     } else if (_dl.isDownloading(widget.itemId)) {
-      _dl.cancelDownload(widget.itemId);
+      await handleRunningDownloadTap(
+        context,
+        _dl,
+        widget.itemId,
+        title: widget.title,
+        accent: widget.accent,
+      );
+    } else if (_dl.isPaused(widget.itemId)) {
+      _dl.resumeDownload(widget.itemId, api: api);
     } else {
       // Not saved: let the user pick the chapters to download (like the
       // saved-state flow), falling back to a whole-item confirm when the book

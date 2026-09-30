@@ -343,6 +343,7 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
         final l = AppLocalizations.of(context)!;
         final dl = DownloadService();
         final downloading = dl.isDownloading(widget._key);
+        final paused = dl.isPaused(widget._key);
         final downloaded = dl.isCurrentChapterSaved(
             episodeId: widget.episodeId,
             itemId: widget.itemId,
@@ -364,6 +365,12 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
           icon = Icons.downloading_rounded;
           label = '${(progress * 100).toStringAsFixed(0)}%';
           color = widget.accent;
+        } else if (paused) {
+          // Paused needs its own state: falling through to the plain "download"
+          // label made a tap re-confirm a download that was merely suspended.
+          icon = Icons.pause_rounded;
+          label = l.downloadsPaused;
+          color = cs.onSurfaceVariant;
         } else {
           icon = Icons.download_outlined;
           label = l.download;
@@ -477,7 +484,16 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
         }
       }
     } else if (dl.isDownloading(widget._key)) {
-      dl.cancelDownload(widget._key);
+      await handleRunningDownloadTap(
+        context,
+        dl,
+        widget._key,
+        title: widget.title,
+        accent: widget.accent,
+      );
+    } else if (dl.isPaused(widget._key)) {
+      final api = context.read<AuthProvider>().apiService;
+      if (api != null) dl.resumeDownload(widget._key, api: api);
     } else {
       final ok = await confirmDownload(context, widget.title);
       if (!ok || !context.mounted) return;
@@ -2328,14 +2344,38 @@ class CardActionDelegate {
     );
   }
 
-  /// Single entry point for the More menu's Download action. Unlike the old
-  /// flow, a fully downloaded book with chapters reopens the chapter picker so
-  /// more chapters can be added on top (already downloaded rows are greyed out
-  /// and kept via a replace-with-union re-download).
+  /// Single entry point for the More menu's Download action. Transfer state is
+  /// resolved first (pause / cancel / resume), then the active card, then the
+  /// already-saved book, and only then a *fresh* download: the chapter picker
+  /// for a partial book, or a whole-item confirm when there's no chapter list.
+  /// A saved book reopens its chapter list so more chapters can be added on top
+  /// of what's there (already downloaded rows are greyed out and kept via a
+  /// replace-with-union re-download).
   Future<void> _handleDownloadTap(BuildContext ctx, Color accent) async {
     final l = AppLocalizations.of(ctx)!;
     final dl = DownloadService();
     final dlKey = episodeId != null ? '$itemId-$episodeId' : itemId;
+
+    // Transfer state first, before anything that depends on which card this is:
+    // a running download has to be stoppable from every card, and a paused one
+    // resumable, whatever the card represents. The active-card branches below
+    // only pick the target for a *fresh* download.
+    if (dl.isDownloading(dlKey)) {
+      await handleRunningDownloadTap(
+        ctx,
+        dl,
+        dlKey,
+        title: title,
+        accent: accent,
+      );
+      return;
+    }
+    if (dl.isPaused(dlKey)) {
+      // Resume from where it paused rather than starting over.
+      final api = ctx.read<AuthProvider>().apiService;
+      if (api != null) dl.resumeDownload(dlKey, api: api);
+      return;
+    }
 
     if (isActive && episodeId == null && chapters.isNotEmpty) {
       // "正在收听" 的书：下载永远对准正在听的那一集。第5章在播 → 提示第5章，
@@ -2344,26 +2384,7 @@ class CardActionDelegate {
       final ci = _currentChapterIndex.clamp(0, chapters.length - 1);
       if (dl.isDownloaded(dlKey) &&
           dl.downloadedChapterIndices(dlKey, chapters).contains(ci)) {
-        final already =
-            dl.downloadedChapterIndices(dlKey, chapters).toList()..sort();
-        final result = await showDownloadedChaptersSheet(
-          ctx,
-          itemId: itemId,
-          accent: accent,
-          title: title,
-          chapters: chapters,
-          downloadedChapters: already,
-          downloadKey: dlKey,
-          onRemoveChapters: (indices) =>
-              dl.deleteDownloadChapters(dlKey, chapters, indices),
-        );
-        if (!ctx.mounted || result == null) return;
-        if (result.removeDownload) {
-          showOverlayToast(ctx, l.downloadRemoved, icon: Icons.delete_outline_rounded);
-          return;
-        }
-        if (result.selectedIndices.isEmpty) return;
-        await _startDownload(dlKey, result.selectedIndices);
+        await _manageSavedChapters(ctx, accent, dlKey);
         return;
       }
       final currentTitle = (chapters[ci] as Map<String, dynamic>)['title']
@@ -2387,59 +2408,88 @@ class CardActionDelegate {
     }
 
     if (dl.isDownloaded(dlKey)) {
-      if (chapters.isEmpty) {
-        showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
+      // No chapter list on this card yet (cold start with chapters still
+      // loading, or a single-file book), or none of the saved indices map onto
+      // it (the list reloaded at a different length, so _savedChaptersFromSession
+      // bails and the file-overlap probe misses too). Either way there is no
+      // per-chapter list to show, and the whole download is the only thing there
+      // is to manage - so offer its removal instead of a dead "saved" toast
+      // that leaves the user nowhere to go.
+      if (chapters.isEmpty ||
+          dl.downloadedChapterIndices(dlKey, chapters).isEmpty) {
+        _confirmRemoveDownload(ctx, dl, dlKey);
         return;
       }
-      final already = dl.downloadedChapterIndices(dlKey, chapters).toList()..sort();
-      if (already.isEmpty) {
-        showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
-        return;
-      }
-      final result = await showDownloadedChaptersSheet(
-        ctx,
-        itemId: itemId,
-        accent: accent,
-        title: title,
-        chapters: chapters,
-        downloadedChapters: already,
-        downloadKey: dlKey,
-        onRemoveChapters: (indices) =>
-            dl.deleteDownloadChapters(dlKey, chapters, indices),
-      );
-      if (!ctx.mounted || result == null) return;
-      if (result.removeDownload) {
-        showOverlayToast(ctx, l.downloadRemoved, icon: Icons.delete_outline_rounded);
-        return;
-      }
-      if (result.selectedIndices.isEmpty) return;
-      await _startDownload(dlKey, result.selectedIndices);
-    } else if (dl.isDownloading(dlKey)) {
-      dl.cancelDownload(dlKey);
-    } else if (dl.isPaused(dlKey)) {
-      // Resume from where it paused rather than starting over.
-      final api = ctx.read<AuthProvider>().apiService;
-      if (api != null) dl.resumeDownload(dlKey, api: api);
-    } else {
-      List<int>? selectedChapters;
-      if (chapters.isEmpty) {
-        final ok = await confirmDownload(ctx, title);
-        if (!ok) return;
-      } else {
-        final result = await showChapterDownloadSheet(ctx,
-            accent: accent,
-            title: title,
-            chapters: chapters,
-            downloadKey: dlKey);
-        if (!ctx.mounted) return;
-        if (result == null || result.selectedIndices.isEmpty) return;
-        // A dismissed chapter sheet returns null; treat that as a cancel
-        // instead of starting a whole-book download.
-        selectedChapters = result.selectedIndices;
-      }
-      if (!ctx.mounted) return;
-      await _startDownload(dlKey, selectedChapters);
+      await _manageSavedChapters(ctx, accent, dlKey);
+      return;
     }
+
+    List<int>? selectedChapters;
+    if (chapters.isEmpty) {
+      final ok = await confirmDownload(ctx, title);
+      if (!ok) return;
+    } else {
+      final result = await showChapterDownloadSheet(ctx,
+          accent: accent,
+          title: title,
+          chapters: chapters,
+          downloadKey: dlKey);
+      if (!ctx.mounted) return;
+      if (result == null || result.selectedIndices.isEmpty) return;
+      // A dismissed chapter sheet returns null; treat that as a cancel
+      // instead of starting a whole-book download.
+      selectedChapters = result.selectedIndices;
+    }
+    if (!ctx.mounted) return;
+    await _startDownload(dlKey, selectedChapters);
+  }
+
+  /// Opens the saved-chapters sheet for a book that already has audio on disk
+  /// and downloads whatever the user adds on top of it. Shared by the active
+  /// card (when the chapter being played is already saved) and the generic path.
+  Future<void> _manageSavedChapters(
+      BuildContext ctx, Color accent, String dlKey) async {
+    final l = AppLocalizations.of(ctx)!;
+    final dl = DownloadService();
+    final already = dl.downloadedChapterIndices(dlKey, chapters).toList()
+      ..sort();
+    final result = await showDownloadedChaptersSheet(
+      ctx,
+      itemId: itemId,
+      accent: accent,
+      title: title,
+      chapters: chapters,
+      downloadedChapters: already,
+      downloadKey: dlKey,
+      onRemoveChapters: (indices) =>
+          dl.deleteDownloadChapters(dlKey, chapters, indices),
+    );
+    if (!ctx.mounted || result == null) return;
+    if (result.removeDownload) {
+      showOverlayToast(ctx, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+      return;
+    }
+    if (result.selectedIndices.isEmpty) return;
+    await _startDownload(dlKey, result.selectedIndices);
+  }
+
+  /// Removal confirmation for a download whose per-chapter list can't be shown
+  /// (no chapters on this card, or none of the saved indices map onto them).
+  /// Without it the tap answered with a "saved" toast and no way forward.
+  void _confirmRemoveDownload(BuildContext ctx, DownloadService dl, String dlKey) {
+    final l = AppLocalizations.of(ctx)!;
+    showDialog(context: ctx, builder: (dctx) => AlertDialog(
+      title: Text(l.removeDownloadQuestion),
+      content: Text(l.removeDownloadContent),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dctx), child: Text(l.cancel)),
+        TextButton(onPressed: () {
+          dl.deleteDownload(dlKey, byUser: true);
+          Navigator.pop(dctx);
+          showOverlayToast(ctx, l.downloadRemoved, icon: Icons.delete_outline_rounded);
+        }, child: Text(l.remove, style: const TextStyle(color: Colors.redAccent))),
+      ],
+    ));
   }
 
   /// Builds the union of already-downloaded and newly selected chapters so a

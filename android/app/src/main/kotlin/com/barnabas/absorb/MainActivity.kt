@@ -5,6 +5,7 @@ import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
@@ -240,6 +241,7 @@ class MainActivity : AudioServiceActivity() {
                     "migrateMarkers" -> handleMigrateMarkers(call, result)
                     "scanSafDirectory" -> handleScanSafDirectory(call, result)
                     "checkSafFiles" -> handleCheckSafFiles(call, result)
+                    "pruneSafBookDirs" -> handlePruneSafBookDirs(call, result)
                     "saveEbookToSaf" -> handleSaveEbookToSaf(call, result)
                     else -> result.notImplemented()
                 }
@@ -902,6 +904,108 @@ val audioExts = setOf(
         val existing = parent.findFile(name)
         return if (existing != null && existing.isDirectory) existing
             else (parent.createDirectory(name) ?: parent)
+    }
+
+    // Remove a book's SAF folder plus any ancestor left empty by the delete.
+    // Deleting only the per-file audio leaves `audiobooks/<Author>/<Title>`
+    // behind, and unlinking that folder leaves `<Author>` - so storage slowly
+    // fills with empty nesting. Dart cannot list content:// children, so it
+    // cannot prove an author folder is empty, and deleteDocument() on a
+    // non-empty folder takes the whole subtree with it, i.e. every other book
+    // by the same author. So the emptiness check and the removal are kept
+    // together here, per level, and the walk stops at the first folder that
+    // still holds something. Author/title arrive already sanitized from Dart so
+    // both sides agree on the folder names by construction.
+    private fun handlePruneSafBookDirs(call: MethodCall, result: MethodChannel.Result) {
+        val treeUri = call.argument<String>("treeUri")
+        val titleName = call.argument<String>("titleName")
+        if (treeUri == null || titleName.isNullOrEmpty()) {
+            result.error("SAF_ARGS", "treeUri/titleName required", null)
+            return
+        }
+        val authorName = call.argument<String>("authorName")
+        Thread {
+            var removed = 0
+            try {
+                val treeRoot = Uri.parse(treeUri)
+                val tree = DocumentFile.fromTreeUri(applicationContext, treeRoot)
+                    ?: throw IllegalStateException("Download folder not accessible")
+                val audioRoot = tree.findFile(AUDIOBOOKS_SUBDIR)
+                if (audioRoot != null && audioRoot.isDirectory) {
+                    // The live tree and the hidden marker mirror share the same
+                    // <Author>/<Title> shape, so they are pruned independently.
+                    // Only the mirror holds a marker file.
+                    val roots = listOf(
+                        audioRoot to false,
+                        audioRoot.findFile(ABSORB_META_DIR) to true,
+                    )
+                    for ((root, isMirror) in roots) {
+                        if (root == null || !root.isDirectory) continue
+                        val authorDir = if (authorName.isNullOrEmpty()) root
+                                         else root.findFile(authorName) ?: continue
+                        if (!authorDir.isDirectory) continue
+                        // The book folder is usually already gone by the time we
+                        // get here - Dart unlinks it (which takes the subtree
+                        // with it) before calling in - so its absence is the
+                        // normal case and must not stop us from collapsing the
+                        // parent, which is the whole point of this handler.
+                        val titleDir = authorDir.findFile(titleName)
+                        if (titleDir != null && titleDir.isDirectory) {
+                            // The mirror's only content is the marker, and it
+                            // describes a download that no longer exists - left
+                            // behind it would keep the folder alive forever and
+                            // let the next folder scan resurrect the book.
+                            if (isMirror) {
+                                try { titleDir.findFile(ABSORB_MARKER)?.delete() }
+                                catch (e: Exception) {
+                                    Log.e(TAG, "pruneSafBookDirs marker: ${e.message}", e)
+                                }
+                            }
+                            if (deleteIfEmpty(titleDir, treeRoot)) removed++
+                        }
+                        if (deleteIfEmpty(authorDir, treeRoot)) removed++
+                    }
+                }
+                runOnUiThread { result.success(removed) }
+            } catch (e: Exception) {
+                Log.e(TAG, "pruneSafBookDirs failed: ${e.message}", e)
+                // Best-effort: a leftover empty folder must never fail a delete.
+                runOnUiThread { result.success(0) }
+            }
+        }.start()
+    }
+
+    // Removes [dir] only when it is provably empty at this moment.
+    //
+    // DocumentFile.listFiles() is deliberately not trusted for that verdict: on a
+    // provider hiccup it hands back an empty array instead of failing, which is
+    // indistinguishable from "really empty" - and deleteDocument() on a folder
+    // that still holds another book by the same author takes their files with
+    // it. So emptiness is confirmed through a ContentResolver query that either
+    // answers truthfully or throws, and anything short of proof keeps the folder.
+    private fun deleteIfEmpty(dir: DocumentFile, treeUri: Uri): Boolean {
+        return try {
+            if (!dir.isDirectory || !dir.canWrite()) return false
+            if (!isEmptySafDir(treeUri, dir.uri)) return false
+            dir.delete()
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteIfEmpty failed: ${e.message}", e)
+            false
+        }
+    }
+
+    // True only when [documentUri] demonstrably has no children.
+    private fun isEmptySafDir(treeUri: Uri, documentUri: Uri): Boolean {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(
+            treeUri, DocumentsContract.getDocumentId(documentUri)
+        )
+        contentResolver.query(
+            children,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+            null, null, null
+        )?.use { return !it.moveToFirst() }
+        // No cursor at all: emptiness was not proven, so the folder stays.
+        return false
     }
 
     // Batch existence check for SAF content URIs. The download registry cannot
