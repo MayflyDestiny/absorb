@@ -1662,6 +1662,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chapterSkipPerBookSubtitle => 'Remembered for this book';
 
   @override
+  String get chapterSkipOnStatus => 'On · remembered for this book';
+
+  @override
+  String get chapterSkipHint =>
+      'Automatically skips a fixed number of seconds at the start and end of every chapter. Changes apply from the next chapter.';
+
+  @override
   String get chapterSkipEnabled => 'Skip intros and outros';
 
   @override
@@ -2383,6 +2390,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get localServerUrlHint => 'http://192.168.1.100:13378';
+
+  @override
+  String get localServerUrlNotConnectedTitle => 'Not connected to local server';
 
   @override
   String get localServerUrlSetSnackbar =>

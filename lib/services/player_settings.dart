@@ -797,7 +797,10 @@ class PlayerSettings {
         value ? CardScrubberMode.both : CardScrubberMode.chapter,
       );
 
-  static Future<bool> getSpeedAdjustedTime() => _get('speedAdjustedTime', true);
+  // Default OFF: the skip engine (intro/outro) measures the content timeline,
+// so dividing the readout by speed would make a 20s intro skip look like it
+// landed at 16s at 1.25x. Users who prefer a "time left" estimate can opt in.
+  static Future<bool> getSpeedAdjustedTime() => _get('speedAdjustedTime', false);
   static Future<void> setSpeedAdjustedTime(bool value) => _set('speedAdjustedTime', value, notify: true);
 
   static Future<int> getForwardSkip() => _get('forwardSkip', 15);

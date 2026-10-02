@@ -160,7 +160,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   String _cardBackground = 'blurred';
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   double _progressTextScale = 1.0;
 
   // Our own route, captured for popUntil when modals are stacked above us

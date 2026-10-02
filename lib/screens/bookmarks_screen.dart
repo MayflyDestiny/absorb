@@ -46,7 +46,7 @@ class _BookmarksScreenState extends State<BookmarksScreen>
   // sets so a selection can't leak across tabs.
   final Set<String> _selectedHighlights = {};
   final Map<String, String> _titleCache = {};
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   // Per-book playback speed so each group's timestamps honor the
   // speed-adjusted-time setting at that book's own speed.
   final Map<String, double> _bookSpeeds = {};

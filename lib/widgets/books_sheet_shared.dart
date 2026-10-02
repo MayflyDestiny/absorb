@@ -11,8 +11,10 @@ void registerBookCover(LibraryProvider lib, Map<String, dynamic> book) {
   if (id == null) return;
   final ts = book['updatedAt'] as num?;
   if (ts != null) lib.registerUpdatedAt(id, ts.toInt());
-  final coverPath = (book['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-  lib.registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+  // Asserts nothing when the payload carries no media map - a book entry from
+  // a series/narrator payload can be partial, and pinning it as coverless
+  // would replace its cover with a text placeholder.
+  lib.registerHasCoverFromItem(id, book);
 }
 
 void registerBookCovers(LibraryProvider lib, Iterable<Map<String, dynamic>> books) {

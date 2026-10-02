@@ -217,7 +217,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   bool _narratorsExpanded = false;
   bool _squareCovers = false;
   bool _isUpdatingProgressDate = false;
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   double _savedSpeed = 1.0;
   // Ebook synthesized from the offline reader cache, for downloads whose
   // persisted metadata predates the trimmed-libraryItem fix. Read-only

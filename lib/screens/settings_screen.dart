@@ -54,7 +54,11 @@ import '../widgets/absorb_slider.dart';
 import '../widgets/card_scrubber_mode_selector.dart';
 import '../widgets/collapsible_section.dart';
 import '../widgets/overlay_toast.dart';
-import '../widgets/server_address_field.dart' show displayServerUrl;
+import '../widgets/server_address_field.dart'
+    show
+        ServerAddressField,
+        ServerAddressFieldState,
+        displayServerUrl;
 import '../widgets/tips_sheet.dart';
 import '../widgets/feature_hint.dart';
 import '../widgets/welcome_sheet.dart';
@@ -109,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoplayOnCarConnect = false;
   bool _lockSeekBar = false;
   bool _mp3IndexSeeking = false;
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   int _forwardSkip = 15;
   int _backSkip = 15;
   bool _skipChapterBarrier = true;
@@ -216,6 +220,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _localServerEnabled = false;
   String _localServerUrl = '';
   late final TextEditingController _localServerController;
+  // Reaches into ServerAddressField for the resolved URL (protocol dropdown plus
+  // the implied 13378 port), which the raw controller text no longer carries.
+  final _localServerFieldKey = GlobalKey<ServerAddressFieldState>();
   bool _trustAllCerts = false;
   bool _includePreReleases = false;
   String? _rmabBaseUrl;
@@ -2250,7 +2257,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveLocalServerUrl(AuthProvider auth, AppLocalizations l) async {
-    final url = _localServerController.text.trim();
+    // Read the resolved URL, not the field text: the field shows a bare host and
+    // keeps the protocol plus the implied 13378 port in its own state, so typing
+    // "192.168.1.100" has to persist as http://192.168.1.100:13378.
+    final url = _localServerFieldKey.currentState?.fullUrl ??
+        _localServerController.text.trim();
     if (url.isEmpty) return;
     _localServerUrl = url;
     await auth.setLocalServerConfig(enabled: _localServerEnabled, url: _localServerUrl);
@@ -5211,36 +5222,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const Divider(height: 1, indent: 16, endIndent: 16),
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                                child: TextField(
+                                child: ServerAddressField(
+                                  key: _localServerFieldKey,
                                   controller: _localServerController,
-                                  decoration: InputDecoration(
-                                    labelText: l.localServerUrlLabel,
-                                    hintText: l.localServerUrlHint,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                                    ),
-                            onSubmitted: (_) => _saveLocalServerUrl(auth, l),
+                                  // An unreachable LAN address is still a valid
+                                  // setting to save (VPN off, server asleep), so
+                                  // no probe verdict is shown here.
+                                  validate: false,
+                                  label: l.localServerUrlLabel,
+                                  hint: l.localServerUrlHint,
+                                  helperText: l.loginServerHelper,
+                                  textInputAction: TextInputAction.done,
+                                  // An ABS LAN address is plain HTTP. Scheme
+                                  // inference is off so a hostname cannot be
+                                  // silently rewritten to HTTPS and point the
+                                  // app at a TLS port nothing listens on; the
+                                  // dropdown is still there if it ever is.
+                                  initialProtocol: 'http://',
+                                  inferProtocol: false,
+                                  onSubmitted: () => _saveLocalServerUrl(auth, l),
                                 ),
                               ),
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: FilledButton.icon(
-                              icon: const Icon(Icons.check_rounded, size: 18),
-                                    label: Text(l.setTooltip),
-                                    onPressed: () => _saveLocalServerUrl(auth, l),
-                                  ),
+                                child: Row(
+                                  children: [
+                                    // Reachability state for the configured
+                                    // address, shown whether or not it is
+                                    // currently connected: "cannot reach it" is
+                                    // exactly the case that needs reporting, and
+                                    // a save-time toast alone cannot confirm it.
+                                    if (_localServerUrl.isNotEmpty) ...[
+                                      Icon(
+                                        auth.useLocalServer
+                                            ? Icons.check_circle_rounded
+                                            : Icons.cloud_off_rounded,
+                                        size: 20,
+                                        color: auth.useLocalServer
+                                            ? Colors.greenAccent.shade400
+                                            : cs.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              auth.useLocalServer
+                                                  ? l.localServerOnConnectedSubtitle
+                                                  : l
+                                                      .localServerUrlNotConnectedTitle,
+                                              style: tt.bodyMedium,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            Text(
+                                              _localServerUrl,
+                                              style: tt.bodySmall?.copyWith(
+                                                  color: cs.onSurfaceVariant),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ] else
+                                      const Spacer(),
+                                    const SizedBox(width: 12),
+                                    FilledButton.icon(
+                                      icon: const Icon(Icons.check_rounded,
+                                          size: 18),
+                                      label: Text(l.setTooltip),
+                                      onPressed: () =>
+                                          _saveLocalServerUrl(auth, l),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              if (auth.useLocalServer) ...[
-                          const Divider(height: 1, indent: 16, endIndent: 16),
-                                ListTile(
-                            leading: Icon(Icons.check_circle_rounded, color: Colors.greenAccent.shade400),
-                                  title: Text(l.localServerOnConnectedSubtitle),
-                            subtitle: Text(_localServerUrl,
-                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                                ),
-                              ],
                             ],
                             const Divider(height: 1, indent: 16, endIndent: 16),
                             SwitchListTile(

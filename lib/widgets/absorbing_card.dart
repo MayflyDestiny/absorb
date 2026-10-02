@@ -89,7 +89,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   String _cardBackground = 'blurred';
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   double _progressTextScale =
       1.0; // elapsed/remaining/percent text size (GH #230)
   double _savedSpeed = 1.0; // per-book or default speed for inactive display

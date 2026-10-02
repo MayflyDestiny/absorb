@@ -1645,6 +1645,13 @@ class AppLocalizationsEs extends AppLocalizations {
   String get chapterSkipPerBookSubtitle => 'Remembered for this book';
 
   @override
+  String get chapterSkipOnStatus => 'On · remembered for this book';
+
+  @override
+  String get chapterSkipHint =>
+      'Automatically skips a fixed number of seconds at the start and end of every chapter. Changes apply from the next chapter.';
+
+  @override
   String get chapterSkipEnabled => 'Skip intros and outros';
 
   @override
@@ -2342,7 +2349,7 @@ class AppLocalizationsEs extends AppLocalizations {
       'If you run your Audiobookshelf server at home, you can set a local/LAN URL here. Absorb will automatically switch to the faster local connection when it detects you\'re on your home network, and fall back to your remote URL when you\'re away.';
 
   @override
-  String get localServerOnConnectedSubtitle => 'Connected via local server';
+  String get localServerOnConnectedSubtitle => 'Connected to local server';
 
   @override
   String get localServerOnRemoteSubtitle => 'Enabled - using remote server';
@@ -2355,7 +2362,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get localServerUrlLabel => 'Local server URL';
 
   @override
-  String get localServerUrlHint => 'http://192.168.1.100:13378';
+  String get localServerUrlHint => '192.168.1.100';
+
+  @override
+  String get localServerUrlNotConnectedTitle => 'Not connected to local server';
 
   @override
   String get localServerUrlSetSnackbar =>

@@ -1586,10 +1586,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chapterSkipOffSubtitle => '已关闭 - 正常播放章节';
 
   @override
-  String get chapterSkipIntro => '跳过片头（秒）';
+  String get chapterSkipIntro => '跳过片头';
 
   @override
-  String get chapterSkipOutro => '跳过片尾（秒）';
+  String get chapterSkipOutro => '跳过片尾';
 
   @override
   String get chapterSkipShort => '跳过片头/片尾';
@@ -1599,6 +1599,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chapterSkipPerBookSubtitle => '每一本都会单独记住设置';
+
+  @override
+  String get chapterSkipOnStatus => '已开启 · 每一本单独保存';
+
+  @override
+  String get chapterSkipHint => '自动跳过每章开头与结尾的固定秒数，改动从下一章开始生效。';
 
   @override
   String get chapterSkipEnabled => '跳过片头片尾';
@@ -2254,7 +2260,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '如果你在家运行 Audiobookshelf 服务器，可以在此设置本地/局域网 URL。Absorb 在检测到您处于家庭网络时会自动切换到更快的本地连接，而在外出时则回退到远程 URL。';
 
   @override
-  String get localServerOnConnectedSubtitle => '已通过本地服务器连接';
+  String get localServerOnConnectedSubtitle => '已连通本地服务器';
 
   @override
   String get localServerOnRemoteSubtitle => '已启用 - 正在使用远程服务器';
@@ -2266,7 +2272,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get localServerUrlLabel => '本地服务器 URL';
 
   @override
-  String get localServerUrlHint => 'http://192.168.1.100:13378';
+  String get localServerUrlHint => '192.168.1.100';
+
+  @override
+  String get localServerUrlNotConnectedTitle => '未连接到本地服务器';
 
   @override
   String get localServerUrlSetSnackbar => '本地服务器 URL 已设置 - 当处于家庭网络时将自动连接';

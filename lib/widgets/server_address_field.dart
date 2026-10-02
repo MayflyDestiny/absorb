@@ -122,6 +122,9 @@ class ServerAddressField extends StatefulWidget {
     this.headersProvider,
     this.onValidityChanged,
     this.onValidUrl,
+    this.onSubmitted,
+    this.initialProtocol = 'https://',
+    this.inferProtocol = true,
     this.autofocus = false,
     this.textInputAction = TextInputAction.next,
   });
@@ -154,6 +157,28 @@ class ServerAddressField extends StatefulWidget {
   /// Fired with the resolved URL once a check succeeds.
   final void Function(String url)? onValidUrl;
 
+  /// Fired when the keyboard's text-input action is triggered. Defaults to
+  /// [checkNow], which is a no-op probe when [validate] is false - so a
+  /// caller that only wants to persist the value (no reachability check) must
+  /// pass its own handler here.
+  final VoidCallback? onSubmitted;
+
+  /// Scheme the dropdown starts on. Defaults to HTTPS because that is what a
+  /// remote server almost always is. An initial value carrying its own scheme
+  /// still wins - see [_adoptSchemeFromInitialValue].
+  final String initialProtocol;
+
+  /// Whether a bare host with no explicit port may pick its own scheme by
+  /// looking at what was typed.
+  ///
+  /// The LAN server field turns this off. An ABS LAN address is served over
+  /// plain HTTP, and inferring from the shape of the host meant a hostname
+  /// (`absorb.lan`) silently became HTTPS - pointing the app at a TLS port
+  /// nothing is listening on, with no visible reason why it would not connect.
+  /// With this off the field keeps [initialProtocol] until the user picks a
+  /// scheme from the dropdown themselves.
+  final bool inferProtocol;
+
   final bool autofocus;
   final TextInputAction textInputAction;
 
@@ -181,6 +206,7 @@ class ServerAddressFieldState extends State<ServerAddressField> {
   @override
   void initState() {
     super.initState();
+    _protocol = widget.initialProtocol;
     _adoptSchemeFromInitialValue();
     widget.controller.addListener(_onChanged);
     if (widget.validate && widget.controller.text.trim().isNotEmpty) {
@@ -279,8 +305,9 @@ class ServerAddressFieldState extends State<ServerAddressField> {
     }
 
     // Bare host literals auto-pick a scheme unless the user chose one by hand
-    // (_skipAutoProtocol) or pinned a custom port (an explicit ":port" is typed
-    // in, so the scheme was chosen deliberately alongside it).
+    // (_skipAutoProtocol), pinned a custom port (an explicit ":port" is typed
+    // in, so the scheme was chosen deliberately alongside it), or the caller
+    // disabled inference entirely via [ServerAddressField.inferProtocol].
     //   - bare IP literal  -> the ABS LAN convention: HTTP + port 13378
     //   - localhost        -> HTTP (local dev servers are plain HTTP)
     //   - domain / hostname -> HTTPS by default
@@ -288,7 +315,7 @@ class ServerAddressFieldState extends State<ServerAddressField> {
     // explicit ":port" typed into the field always wins either way.
     final hostPart = text.split(RegExp(r'[\/?#]')).first;
     final hasExplicitPort = RegExp(r':\d+$').hasMatch(hostPart);
-    if (!_skipAutoProtocol && !hasExplicitPort) {
+    if (widget.inferProtocol && !_skipAutoProtocol && !hasExplicitPort) {
       if (isIpWithoutPort(hostPart) ||
           hostPart.toLowerCase() == 'localhost') {
         if (_protocol != 'http://') {
@@ -406,7 +433,13 @@ class ServerAddressFieldState extends State<ServerAddressField> {
           autocorrect: false,
           enableSuggestions: false,
           autofocus: widget.autofocus,
-          onFieldSubmitted: (_) => checkNow(),
+          onFieldSubmitted: (_) {
+        if (widget.onSubmitted != null) {
+          widget.onSubmitted!();
+        } else {
+          checkNow();
+        }
+      },
           style: TextStyle(color: cs.onSurface),
           decoration: InputDecoration(
             labelText: widget.label ?? l.loginServerAddress,

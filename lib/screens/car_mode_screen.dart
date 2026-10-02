@@ -47,7 +47,7 @@ class _CarModeScreenState extends State<CarModeScreen>
   int _backSkip = 15;
   int _forwardSkip = 15;
   bool _preferChapterBar = false;
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   late AnimationController _playPauseController;
   Timer? _displayTimer;
 

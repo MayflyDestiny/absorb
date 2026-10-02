@@ -1648,6 +1648,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           registerUpdatedAt(id, ts.toInt());
           changed = true;
         }
+        // This routine exists to repair socket events the app missed, and the
+        // item payload is right here. A book pinned as coverless by a partial
+        // event would otherwise stay pinned for the whole process - the cover
+        // cache-buster got repaired but the cover-presence flag never did, so
+        // the grid kept rendering a text placeholder until a manual refresh
+        // refetched the page.
+        registerHasCoverFromItem(id, item);
         BookSearchIndex().patchItem(item);
       }
       if (changed) notifyListeners();
@@ -1943,8 +1950,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       AndroidAutoService.notifyItemUpdated(id, ts.toInt());
     }
     if (id != null) {
-      final coverPath = (data['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-      registerHasCover(id, coverPath != null && coverPath.isNotEmpty);
+      // A partial payload (progress-only event, lite object) says nothing
+      // about the cover, so it must not pin the item as coverless.
+      registerHasCoverFromItem(id, data);
     }
     // Invalidate cached session metadata - track URLs may have changed
     if (id != null) SessionCache.clear(itemId: id);
@@ -2299,14 +2307,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         // map. Series entities and partial shelf payloads omit it; pinning
         // their ids into _itemsWithoutCover would make getCoverUrl() return
         // null and hide a real cover until a full grid payload re-registers it.
-        final media = e['media'];
-        if (media is Map<String, dynamic>) {
-          registerHasCover(
-            id,
-            media['coverPath'] is String &&
-                (media['coverPath'] as String).isNotEmpty,
-          );
-        }
+        registerHasCoverFromItem(id, e);
       }
     }
   }

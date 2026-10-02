@@ -884,7 +884,7 @@ class SimpleBookmarkSheet extends StatefulWidget {
 class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
   List<Bookmark>? _bookmarks;
   String _sort = 'newest';
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   double _savedSpeed = 1.0;
   @override void initState() {
     super.initState();
@@ -2664,7 +2664,7 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
   late final TabController _tabController;
   late final Future<List<PlaybackEvent>> _localFuture;
   Future<List<Map<String, dynamic>>?>? _serverFuture;
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   double _savedSpeed = 1.0;
 
   double get _displaySpeed {
@@ -3141,64 +3141,68 @@ class _CardChapterSkipSheetState extends State<CardChapterSkipSheet> {
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
         const SizedBox(height: 16),
-        Text(l.chapterSkipSheetTitle, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        // Title matches the button that opened this sheet (chapterSkipTitle),
+        // and the switch moves up beside it. A separate switch row restated the
+        // same words one line lower, and its subtitle repeated the very numbers
+        // the two sliders show right underneath.
+        Row(
+          children: [
+            Expanded(
+              child: Text(l.chapterSkipTitle,
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            ),
+            Switch(
+              value: _enabled,
+              onChanged: _loaded ? (v) async {
+                setState(() => _enabled = v);
+                await _save();
+              } : null,
+            ),
+          ],
+        ),
         const SizedBox(height: 4),
-        Text(l.chapterSkipPerBookSubtitle, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          title: Text(l.chapterSkipEnabled),
-          subtitle: Text(
-            _enabled
-                ? l.chapterSkipOnSubtitleFormat(_intro.toString(), _outro.toString())
-                : l.chapterSkipOffSubtitle,
-            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        // Occupies the slot the playback-speed sheet gives "1.25x", but as a
+        // quiet state line rather than a hero number: skip has TWO values and
+        // each already sits on its own slider, so repeating them up here at
+        // headline weight was both redundant and visually louder than the
+        // controls below it.
+        Text(
+          _enabled ? l.chapterSkipOnStatus : l.chapterSkipOffSubtitle,
+          style: tt.titleMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: _enabled ? widget.accent : cs.onSurfaceVariant,
           ),
-          value: _enabled,
-          onChanged: _loaded ? (v) async {
-            setState(() => _enabled = v);
-            await _save();
-          } : null,
+        ),
+        const SizedBox(height: 12),
+        FeatureHint(
+          prefKey: 'hint_chapter_skip',
+          message: l.chapterSkipHint,
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
         ),
         if (_enabled) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(l.chapterSkipIntro, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                Text(l.secondsValue(_intro.toString()), style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: widget.accent)),
-              ],
-            ),
-          ),
-          AbsorbSlider(
-            value: _intro.toDouble(),
-            min: 0, max: 120, divisions: 120,
-            onChanged: _loaded ? (v) async {
-              setState(() => _intro = v.round());
+          _StepSlider(
+            label: l.chapterSkipIntro,
+            valueLabel: l.secondsValue(_intro.toString()),
+            value: _intro,
+            accent: widget.accent,
+            enabled: _loaded,
+            onChanged: (v) async {
+              setState(() => _intro = v);
               await _save();
-            } : null,
+            },
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(l.chapterSkipOutro, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                Text(l.secondsValue(_outro.toString()), style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: widget.accent)),
-              ],
-            ),
-          ),
-          AbsorbSlider(
-            value: _outro.toDouble(),
-            min: 0, max: 120, divisions: 120,
-            onChanged: _loaded ? (v) async {
-              setState(() => _outro = v.round());
+          _StepSlider(
+            label: l.chapterSkipOutro,
+            valueLabel: l.secondsValue(_outro.toString()),
+            value: _outro,
+            accent: widget.accent,
+            enabled: _loaded,
+            onChanged: (v) async {
+              setState(() => _outro = v);
               await _save();
-            } : null,
+            },
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -3216,6 +3220,149 @@ class _CardChapterSkipSheetState extends State<CardChapterSkipSheet> {
           ),
         ],
       ]),
+    );
+  }
+}
+
+/// Whole-second slider with a minus and a plus button on either side, plus the
+/// range end labels underneath.
+///
+/// Mirrors the default-speed control in Settings ("播放速度"), which uses the
+/// same 36dp circular stepper and the same dimmed 11px end labels. Dragging a
+/// 0-120s range one pixel at a time cannot reliably land on an exact second, so
+/// the buttons are what make the value precise.
+class _StepSlider extends StatelessWidget {
+  const _StepSlider({
+    required this.label,
+    required this.valueLabel,
+    required this.value,
+    required this.accent,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String valueLabel;
+  final int value;
+  final Color accent;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  static const int minSeconds = 0;
+  static const int maxSeconds = 120;
+  static const int step = 1;
+
+  void _step(int delta) {
+    final next = (value + delta).clamp(minSeconds, maxSeconds);
+    if (next != value) onChanged(next);
+  }
+
+  Widget _button(BuildContext context, IconData icon, VoidCallback? onTap) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: cs.onSurface.withValues(alpha: 0.08),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: cs.onSurface.withValues(alpha: enabled ? 0.7 : 0.3),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                label,
+                style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(width: 6),
+              // Value rides on the label's own line ("跳过片头 20 秒") instead of
+              // being pushed to the far edge, so the number it belongs to is
+              // never more than a word away. Baseline alignment keeps the two
+              // type sizes optically level rather than middle-mixed.
+              Text(
+                valueLabel,
+                style: tt.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              _button(
+                context,
+                Icons.remove_rounded,
+                enabled && value > minSeconds
+                    ? () => _step(-step)
+                    : null,
+              ),
+              Expanded(
+                child: AbsorbSlider(
+                  value: value.toDouble(),
+                  min: minSeconds.toDouble(),
+                  max: maxSeconds.toDouble(),
+                  divisions: maxSeconds - minSeconds,
+                  activeColor: accent,
+                  onChanged: enabled ? (v) => onChanged(v.round()) : null,
+                ),
+              ),
+              _button(
+                context,
+                Icons.add_rounded,
+                enabled && value < maxSeconds
+                    ? () => _step(step)
+                    : null,
+              ),
+            ],
+          ),
+          // Inset by the stepper width so the labels sit under the track
+          // ends rather than under the buttons, matching the speed control.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(52, 0, 52, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  l.secondsValue(minSeconds.toString()),
+                  style: TextStyle(
+                    color: cs.onSurface.withValues(alpha: 0.3),
+                    fontSize: 11,
+                  ),
+                ),
+                Text(
+                  l.secondsValue(maxSeconds.toString()),
+                  style: TextStyle(
+                    color: cs.onSurface.withValues(alpha: 0.3),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -48,7 +48,7 @@ class _CardEdgeProgressBarState extends State<CardEdgeProgressBar>
   bool _isPlaying = false;
   bool _isCastMode = false;
   StreamSubscription<Duration>? _posSub;
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
 
   // ── Expand/collapse animation ──
   late AnimationController _expandController;

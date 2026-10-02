@@ -8646,7 +8646,7 @@ class AudioPlayerService extends ChangeNotifier {
     // A raw chapter-start jump sets _lastUserSeekTime, which suppresses the
     // auto-skip for 3s - so the listener heard the opening ~3s of every chapter
     // before the skip yanked forward. Mirrors the prev/next pre-jump exactly.
-    final introTarget = await _crossChapterIntroSkipTarget(chapterIndex, start);
+    final introTarget = await _crossChapterIntroSkipTarget(chapterIndex);
     var target = introTarget ?? start;
     // Chapter end for the repair clamp: explicit end, else next chapter start.
     double chapterEnd = _totalDuration;
@@ -8808,10 +8808,7 @@ class AudioPlayerService extends ChangeNotifier {
       _totalDuration,
     );
     if (chapterIdx != null) {
-      preJumpTarget = await _crossChapterIntroSkipTarget(
-        chapterIdx,
-        target.seconds,
-      );
+      preJumpTarget = await _crossChapterIntroSkipTarget(chapterIdx);
     }
     if (preJumpTarget != null) {
       await _seekAbsoluteAlignedRepair(
@@ -8867,7 +8864,7 @@ class AudioPlayerService extends ChangeNotifier {
         // armed - pre-jump straight to the intro-skip point so the chapter's
         // opening words aren't briefly played while the skip waits for the
         // first post-landing position tick before jumping.
-        final preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
+        final preJumpTarget = await _crossChapterIntroSkipTarget(i);
         if (preJumpTarget != null) {
           await _seekAbsoluteAlignedRepair(
             preJumpTarget,
@@ -8917,7 +8914,7 @@ class AudioPlayerService extends ChangeNotifier {
         // first post-landing position tick before jumping.
         double? preJumpTarget;
         if (!disarmedSameChapter) {
-          preJumpTarget = await _crossChapterIntroSkipTarget(i, start);
+preJumpTarget = await _crossChapterIntroSkipTarget(i);
         }
         if (preJumpTarget != null) {
           await _seekAbsoluteAlignedRepair(
@@ -8987,6 +8984,101 @@ class AudioPlayerService extends ChangeNotifier {
     return true;
   }
 
+  // ── Chapter skip: file-timeline chapter bounds ────────────────────────────
+  //
+  // The player reports and seeks in the FILE timeline: `position` is
+  // track-relative plus _trackStartOffsets[currentTrack] (see [position]), and
+  // _seekAbsolute converts an absolute target back into (track, offset). The
+  // `start`/`end` fields in _chapters are a SEPARATE timeline that drifts away
+  // from the file timeline by a few seconds once a book has been split and
+  // re-encoded - the same drift already documented for chapter jumps at
+  // [_resolveAbsolutePosition].
+  //
+  // The skip windows used to compare a FILE-timeline position against
+  // METADATA-timeline boundaries, so the drift was paid twice: the trigger
+  // fired at the wrong moment AND the resulting target was re-interpreted in
+  // the other coordinate system. Measured on a 1:1 book whose metadata ran
+  // behind the real audio, an "intro 20s" skip advanced only 16s and an
+  // "outro 7s" skip fired with 5s still audible - exactly the reported numbers.
+  //
+  // Everything below therefore works in the file timeline, where chapter bounds
+  // are exact by construction:
+  //   chapter i starts at the start of the FILE holding its metadata start
+  //   chapter i ends   at the start of the FILE holding chapter i+1's start
+  // A single-file book has only one timeline, so its metadata is already exact
+  // and is returned verbatim. The math itself lives in ChapterLookup so it can
+  // be unit-tested without spinning up just_audio.
+
+  /// Whether chapter bounds must be read from the file timeline. Multi-file
+  /// books are the only ones where the two timelines can disagree.
+  bool get _useFileTimelineBounds =>
+      ChapterLookup.useFileTimeline(_trackStartOffsets, _trackDurations);
+
+  double _chapterMetaStart(int i) => ChapterLookup.metaStart(_chapters, i);
+
+  // File-timeline chapter bounds, rebuilt only when the inputs change. The skip
+  // check runs on every position tick (and on a 120ms poll inside the outro
+  // window), so recomputing the bounds there cost several full track scans per
+  // tick; see [ChapterLookup.buildFileBounds].
+  ({List<double> starts, List<double> ends})? _chapterBoundsCache;
+  List<dynamic>? _chapterBoundsChapters;
+  List<double>? _chapterBoundsOffsets;
+  List<double>? _chapterBoundsDurations;
+  double? _chapterBoundsTotalDuration;
+  int? _chapterBoundsCount;
+
+  ({List<double> starts, List<double> ends}) get _chapterBounds {
+    final cached = _chapterBoundsCache;
+    // _chapters is always replaced wholesale rather than mutated in place, so
+    // reference identity plus length is a sufficient generation check.
+    if (cached != null &&
+        identical(_chapterBoundsChapters, _chapters) &&
+        identical(_chapterBoundsOffsets, _trackStartOffsets) &&
+        identical(_chapterBoundsDurations, _trackDurations) &&
+        _chapterBoundsTotalDuration == _totalDuration &&
+        _chapterBoundsCount == _chapters.length) {
+      return cached;
+    }
+    final built = ChapterLookup.buildFileBounds(
+      chapters: _chapters,
+      trackStartOffsets: _trackStartOffsets,
+      trackDurations: _trackDurations,
+      totalDuration: _totalDuration,
+    );
+    _chapterBoundsCache = built;
+    _chapterBoundsChapters = _chapters;
+    _chapterBoundsOffsets = _trackStartOffsets;
+    _chapterBoundsDurations = _trackDurations;
+    _chapterBoundsTotalDuration = _totalDuration;
+    _chapterBoundsCount = _chapters.length;
+    return built;
+  }
+
+  /// Bounds of chapter [i] in the timeline the player reports and seeks in.
+  ({double start, double end}) _chapterSkipBounds(int i) {
+    final bounds = _chapterBounds;
+    if (i < 0 || i >= bounds.starts.length) {
+      return (start: 0, end: _totalDuration);
+    }
+    return (start: bounds.starts[i], end: bounds.ends[i]);
+  }
+
+  /// Chapter index for [posSec], refined from the metadata [hint] into the file
+  /// timeline the position actually lives on. Near a boundary the two can
+  /// disagree by one chapter, and the outro window is half-open, so a stale
+  /// index would immediately satisfy `end - pos < outroSkip` at the very top of
+  /// a chapter and jump the listener straight past it.
+  int _chapterSkipIndexAt(double posSec, int hint) {
+    if (!_useFileTimelineBounds) return hint;
+    final bounds = _chapterBounds;
+    return ChapterLookup.indexAtPrecomputed(
+      starts: bounds.starts,
+      ends: bounds.ends,
+      hint: hint,
+      posSec: posSec,
+    );
+  }
+
   /// For a genuinely different-chapter arrival, pre-computes the chapter's
   /// intro-skip target so the previous-chapter press lands directly at
   /// chapterStart + introSkip instead of playing the opening words and then
@@ -8995,24 +9087,19 @@ class AudioPlayerService extends ChangeNotifier {
   /// settings are used and the same in-chapter clamp applies (at least 1s of
   /// content must remain after the target). Returns null when the normal skip
   /// wouldn't fire anyway (disabled, intro=0, or the chapter is too short).
-  Future<double?> _crossChapterIntroSkipTarget(
-    int chapterIdx,
-    double chapterStart,
-  ) async {
+  ///
+  /// The bounds come from [_chapterSkipBounds] rather than from the caller's
+  /// metadata start, so the target is expressed in the same timeline the seek
+  /// will be issued in.
+  Future<double?> _crossChapterIntroSkipTarget(int chapterIdx) async {
     if (chapterIdx < 0 || chapterIdx >= _chapters.length) return null;
     final settings = await ChapterSkipSettings.loadForItem(_mediaItemKey);
     if (!settings.enabled || settings.introSkipSeconds <= 0) return null;
-    final target = chapterStart + settings.introSkipSeconds.toDouble();
-    final ch = _chapters[chapterIdx] as Map<String, dynamic>;
-    double? chapterEndFromData = (ch['end'] as num?)?.toDouble();
-    if (chapterEndFromData == null && chapterIdx + 1 < _chapters.length) {
-      chapterEndFromData = ((_chapters[chapterIdx + 1] as Map)['start'] as num?)
-          ?.toDouble();
-    }
-    final chapterEnd = chapterEndFromData ?? _totalDuration;
-    if (chapterEnd - target < 1.0) return null;
+    final bounds = _chapterSkipBounds(chapterIdx);
+    final target = bounds.start + settings.introSkipSeconds.toDouble();
+    if (bounds.end - target < 1.0) return null;
     verboseLog(
-      '[Service] ChapterSkip Prev-chapter pre-jump → chapter $chapterIdx at ${chapterStart.toStringAsFixed(1)}s → ${target.toStringAsFixed(1)}s (intro ${settings.introSkipSeconds}s)',
+      '[Service] ChapterSkip Prev-chapter pre-jump → chapter $chapterIdx at ${bounds.start.toStringAsFixed(1)}s → ${target.toStringAsFixed(1)}s (intro ${settings.introSkipSeconds}s)',
     );
     return target;
   }
@@ -9115,26 +9202,24 @@ class AudioPlayerService extends ChangeNotifier {
     // a deliberate user navigation (e.g. rewinding to a chapter start).
     if (now.difference(_lastUserSeekTime).inMilliseconds < 3000) return;
 
-    final chapterIdx = ChapterLookup.indexAtWithGrace(
+    final metaIdx = ChapterLookup.indexAtWithGrace(
       _chapters,
       posSec,
       _totalDuration,
     );
-    if (chapterIdx == null) return;
-    final ch = _chapters[chapterIdx] as Map<String, dynamic>;
-    final chapterStart = (ch['start'] as num?)?.toDouble() ?? 0;
-    // Chapter end: use the explicit end if present, otherwise derive it from
-    // the next chapter's start. Falling back to _totalDuration makes the
-    // "target must stay inside the chapter" guard useless for books whose
-    // chapters lack an end field - the intro skip would then race the position
-    // forward past the chapter, bouncing "previous chapter" back to where the
-    // user started (short ~5-10s chapters + a 10s intro skip).
-    double? chapterEndFromData = (ch['end'] as num?)?.toDouble();
-    if (chapterEndFromData == null && chapterIdx + 1 < _chapters.length) {
-      chapterEndFromData = ((_chapters[chapterIdx + 1] as Map)['start'] as num?)
-          ?.toDouble();
-    }
-    final chapterEnd = chapterEndFromData ?? _totalDuration;
+    if (metaIdx == null) return;
+    // ChapterLookup reads the metadata timeline; refine the hit into the file
+    // timeline the position actually lives on before deriving any window.
+    final chapterIdx = _chapterSkipIndexAt(posSec, metaIdx);
+    // Bounds are file-timeline, i.e. the same clock as posSec, so "7s from the
+    // end" really is 7s before the last audible sample no matter how far the
+    // metadata has drifted. A single file keeps its metadata verbatim (one
+    // timeline, already exact). The previous inline derivation fell back to
+    // _totalDuration for chapters lacking an end field, which made the
+    // "target must stay inside the chapter" guard useless for those books.
+    final bounds = _chapterSkipBounds(chapterIdx);
+    final chapterStart = bounds.start;
+    final chapterEnd = bounds.end;
 
     // A new "entry" begins whenever playback crosses into a different chapter
     // (prev/next nav, or switching back to an already-played chapter). Reset
@@ -9225,8 +9310,14 @@ class AudioPlayerService extends ChangeNotifier {
       _outroSkippedThisEntry = true;
       // If there's a next chapter, skip to it when the jump is meaningful.
       if (chapterIdx + 1 < _chapters.length) {
-        final nextChapter = _chapters[chapterIdx + 1] as Map<String, dynamic>;
-        final nextStart = (nextChapter['start'] as num?)?.toDouble() ?? 0;
+        // On the file timeline this chapter's end IS the next chapter's first
+        // frame (both resolve to the same file start), so the tail lands
+        // exactly on the rollover. A single file keeps the next chapter's
+        // metadata start instead: its `end` may sit inside a trailing gap, and
+        // jumping into that gap would leave the position with no chapter.
+        final nextStart = _useFileTimelineBounds
+            ? chapterEnd
+            : _chapterMetaStart(chapterIdx + 1);
         if (nextStart - posSec >= 1.0) {
           verboseLog(
             '[ChapterSkip] Skipping outro: pos=${posSec.toStringAsFixed(1)}s chapterEnd=${chapterEnd.toStringAsFixed(1)}s nextChapterStart=${nextStart.toStringAsFixed(1)}s',

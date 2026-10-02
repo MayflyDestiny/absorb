@@ -320,11 +320,38 @@ mixin _StateMixin on ChangeNotifier {
   int? itemUpdatedAt(String id) => _itemUpdatedAt[id];
 
   void registerHasCover(String id, bool hasCover) {
-    if (hasCover) {
-      _itemsWithoutCover.remove(id);
-    } else {
-      _itemsWithoutCover.add(id);
-    }
+    // Set.add/remove report whether the set actually changed, so this notifies
+    // only on a real transition. Registering is done in loops over whole pages
+    // of library items, where an unconditional notify would rebuild the grid
+    // once per row.
+    final changed =
+        hasCover ? _itemsWithoutCover.remove(id) : _itemsWithoutCover.add(id);
+    if (changed) notifyListeners();
+  }
+
+  /// Cover presence asserted by a library-item payload, or null when the
+  /// payload says nothing about it.
+  ///
+  /// A payload that carries no `media` map is PARTIAL (a socket event that
+  /// only reports progress, a series entity, a lite shelf entry) and must not
+  /// be read as "this book has no cover" - doing so pins the id into
+  /// [_itemsWithoutCover], which makes [getCoverUrl] return null and swaps the
+  /// real cover for a text placeholder until some full payload happens to
+  /// re-register it. Only an explicitly empty coverPath counts as false.
+  static bool? hasCoverFromItem(Map<String, dynamic>? item) {
+    final media = item?['media'];
+    if (media is! Map<String, dynamic>) return null;
+    final coverPath = media['coverPath'];
+    return coverPath is String && coverPath.isNotEmpty;
+  }
+
+  /// [registerHasCover] fed straight from a library-item payload. Asserts
+  /// nothing for partial payloads - see [hasCoverFromItem].
+  void registerHasCoverFromItem(String? id, Map<String, dynamic>? item) {
+    if (id == null) return;
+    final hasCover = hasCoverFromItem(item);
+    if (hasCover == null) return;
+    registerHasCover(id, hasCover);
   }
 
   bool _isLikelyNetworkError(Object error) {

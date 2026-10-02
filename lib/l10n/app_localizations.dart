@@ -3067,13 +3067,13 @@ abstract class AppLocalizations {
   /// No description provided for @chapterSkipIntro.
   ///
   /// In en, this message translates to:
-  /// **'Skip intro (seconds)'**
+  /// **'Skip intro'**
   String get chapterSkipIntro;
 
   /// No description provided for @chapterSkipOutro.
   ///
   /// In en, this message translates to:
-  /// **'Skip outro (seconds)'**
+  /// **'Skip outro'**
   String get chapterSkipOutro;
 
   /// No description provided for @chapterSkipShort.
@@ -3093,6 +3093,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remembered for this book'**
   String get chapterSkipPerBookSubtitle;
+
+  /// No description provided for @chapterSkipOnStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'On · remembered for this book'**
+  String get chapterSkipOnStatus;
+
+  /// No description provided for @chapterSkipHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically skips a fixed number of seconds at the start and end of every chapter. Changes apply from the next chapter.'**
+  String get chapterSkipHint;
 
   /// No description provided for @chapterSkipEnabled.
   ///
@@ -4315,7 +4327,7 @@ abstract class AppLocalizations {
   /// No description provided for @localServerOnConnectedSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Connected via local server'**
+  /// **'Connected to local server'**
   String get localServerOnConnectedSubtitle;
 
   /// No description provided for @localServerOnRemoteSubtitle.
@@ -4339,8 +4351,14 @@ abstract class AppLocalizations {
   /// No description provided for @localServerUrlHint.
   ///
   /// In en, this message translates to:
-  /// **'http://192.168.1.100:13378'**
+  /// **'192.168.1.100'**
   String get localServerUrlHint;
+
+  /// No description provided for @localServerUrlNotConnectedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Not connected to local server'**
+  String get localServerUrlNotConnectedTitle;
 
   /// No description provided for @localServerUrlSetSnackbar.
   ///

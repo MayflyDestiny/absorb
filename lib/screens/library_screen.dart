@@ -961,15 +961,7 @@ class LibraryScreenState extends State<LibraryScreen>
             final id = r['id'] as String?;
             final ts = r['updatedAt'] as num?;
             if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
-            if (id != null) {
-              final coverPath =
-                  (r['media'] as Map<String, dynamic>?)?['coverPath']
-                      as String?;
-              lib.registerHasCover(
-                id,
-                coverPath != null && coverPath.isNotEmpty,
-              );
-            }
+            lib.registerHasCoverFromItem(id, r);
             if (filterDownloaded && !DownloadService().isDownloaded(id ?? ''))
               continue;
             if (filterSubscribed && !lib.isPodcastSubscribed(id ?? ''))
@@ -1012,15 +1004,7 @@ class LibraryScreenState extends State<LibraryScreen>
             final ts = r['updatedAt'] as num?;
             if (id != null && ts != null)
               lib.registerUpdatedAt(id, ts.toInt());
-            if (id != null) {
-              final coverPath =
-                  (r['media'] as Map<String, dynamic>?)?['coverPath']
-                      as String?;
-              lib.registerHasCover(
-                id,
-                coverPath != null && coverPath.isNotEmpty,
-              );
-            }
+            lib.registerHasCoverFromItem(id, r);
             if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
             freshItems.add(r);
           }
@@ -1542,14 +1526,7 @@ class LibraryScreenState extends State<LibraryScreen>
       final id = r['id'] as String?;
       final ts = r['updatedAt'] as num?;
       if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
-      if (id != null) {
-        final coverPath =
-            (r['media'] as Map<String, dynamic>?)?['coverPath'] as String?;
-        lib.registerHasCover(
-          id,
-          coverPath != null && coverPath.isNotEmpty,
-        );
-      }
+lib.registerHasCoverFromItem(id, r);
     }
     setState(() {
       // Dedupe by id while restoring — earlier buggy sessions persisted grids
@@ -1785,15 +1762,7 @@ class LibraryScreenState extends State<LibraryScreen>
             final id = r['id'] as String?;
             final ts = r['updatedAt'] as num?;
             if (id != null && ts != null) lib.registerUpdatedAt(id, ts.toInt());
-            if (id != null) {
-              final coverPath =
-                  (r['media'] as Map<String, dynamic>?)?['coverPath']
-                      as String?;
-              lib.registerHasCover(
-                id,
-                coverPath != null && coverPath.isNotEmpty,
-              );
-            }
+            lib.registerHasCoverFromItem(id, r);
             if (filterDownloaded && !DownloadService().isDownloaded(id ?? ''))
               continue;
             if (filterSubscribed && !lib.isPodcastSubscribed(id ?? ''))
@@ -1849,15 +1818,7 @@ class LibraryScreenState extends State<LibraryScreen>
               final ts = r['updatedAt'] as num?;
               if (id != null && ts != null)
                 lib.registerUpdatedAt(id, ts.toInt());
-              if (id != null) {
-                final coverPath =
-                    (r['media'] as Map<String, dynamic>?)?['coverPath']
-                        as String?;
-                lib.registerHasCover(
-                  id,
-                  coverPath != null && coverPath.isNotEmpty,
-                );
-              }
+lib.registerHasCoverFromItem(id, r);
               if (_hideEbookOnly && PlayerSettings.isEbookOnly(r)) continue;
               // A retried/aligned offset (pageIndex = loadedCount ~/ limit
               // floors when loadedCount isn't a multiple of limit) can hand

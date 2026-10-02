@@ -39,7 +39,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
   double _bookScrubSpeed = 1.0;
   double _chapterScrubSpeed = 1.0;
   CardScrubberMode _scrubberMode = CardScrubberMode.chapter;
-  bool _speedAdjustedTime = true;
+  bool _speedAdjustedTime = false;
   Timer? _smoothTicker;
   final _tickNotifier = ChangeNotifier(); // drives ListenableBuilder rebuilds
 
