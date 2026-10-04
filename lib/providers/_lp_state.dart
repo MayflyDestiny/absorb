@@ -319,6 +319,11 @@ mixin _StateMixin on ChangeNotifier {
   /// ebook file added to a book) without an app restart.
   int? itemUpdatedAt(String id) => _itemUpdatedAt[id];
 
+  /// Low-level cover-presence setter. Only [registerHasCoverFromItem] calls it,
+  /// and it currently only ever passes true - see [coverPresenceFromItem] for
+  /// why no payload can assert the negative. The false branch stays so a caller
+  /// that one day holds real evidence (a dedicated "no cover" field, a 404 the
+  /// client is willing to cache) has somewhere to go.
   void registerHasCover(String id, bool hasCover) {
     // Set.add/remove report whether the set actually changed, so this notifies
     // only on a real transition. Registering is done in loops over whole pages
@@ -329,27 +334,11 @@ mixin _StateMixin on ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// Cover presence asserted by a library-item payload, or null when the
-  /// payload says nothing about it.
-  ///
-  /// A payload that carries no `media` map is PARTIAL (a socket event that
-  /// only reports progress, a series entity, a lite shelf entry) and must not
-  /// be read as "this book has no cover" - doing so pins the id into
-  /// [_itemsWithoutCover], which makes [getCoverUrl] return null and swaps the
-  /// real cover for a text placeholder until some full payload happens to
-  /// re-register it. Only an explicitly empty coverPath counts as false.
-  static bool? hasCoverFromItem(Map<String, dynamic>? item) {
-    final media = item?['media'];
-    if (media is! Map<String, dynamic>) return null;
-    final coverPath = media['coverPath'];
-    return coverPath is String && coverPath.isNotEmpty;
-  }
-
   /// [registerHasCover] fed straight from a library-item payload. Asserts
-  /// nothing for partial payloads - see [hasCoverFromItem].
+  /// nothing for partial payloads - see [coverPresenceFromItem].
   void registerHasCoverFromItem(String? id, Map<String, dynamic>? item) {
     if (id == null) return;
-    final hasCover = hasCoverFromItem(item);
+    final hasCover = coverPresenceFromItem(item);
     if (hasCover == null) return;
     registerHasCover(id, hasCover);
   }
@@ -475,4 +464,33 @@ mixin _StateMixin on ChangeNotifier {
     if (file.lengthSync() == 0) return null;
     return path;
   }
+}
+
+/// Cover presence asserted by a library-item payload, or null when the payload
+/// says nothing about it.
+///
+/// Returns true or null and NEVER false, because a library payload can prove a
+/// cover exists but cannot prove one doesn't:
+///
+///  * `coverPath == null` is the NORMAL state of a book the server just added -
+///    the cover file is generated a moment later. Reading that as "coverless"
+///    pinned the id into `_itemsWithoutCover`, and since a pin is only ever
+///    cleared by a later payload that *does* carry a path, a book whose
+///    `item_updated` landed while the app was locked stayed wrong until a manual
+///    refresh. Newly added books on the home shelves and the library grid showed
+///    a text placeholder for exactly that reason.
+///  * No `media` map at all means a PARTIAL payload (a progress-only socket
+///    event, a series entity, a lite shelf entry).
+///  * ABS's minified item projection drops the key entirely.
+///
+/// Dropping the pin costs nothing for genuinely coverless books: the cover
+/// request 404s and `StableCachedNetworkImage`'s errorWidget renders the same
+/// title placeholder, with the failure cached instead of refetched per rebuild.
+/// The pin only ever traded a transient wrong answer for that.
+bool? coverPresenceFromItem(Map<String, dynamic>? item) {
+  final media = item?['media'];
+  if (media is! Map<String, dynamic>) return null;
+  final coverPath = media['coverPath'];
+  if (coverPath is! String || coverPath.isEmpty) return null;
+  return true;
 }

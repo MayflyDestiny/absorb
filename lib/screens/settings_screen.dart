@@ -119,6 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _skipChapterBarrier = true;
   bool _prevChapterDirectJump = true;
   bool _confirmEveryChapterJump = false;
+  bool _chapterJumpAutoPlay = true;
   bool _longSkipButtons = false;
   int _longForwardSkip = 60;
   int _longBackSkip = 60;
@@ -1050,6 +1051,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final mp3IndexSeek = await PlayerSettings.getMp3IndexSeeking();
     final prevChapterDirectJump = await PlayerSettings.getPrevChapterDirectJump();
     final confirmEveryChapterJump = await PlayerSettings.getConfirmEveryChapterJump();
+    final chapterJumpAutoPlay = await PlayerSettings.getChapterJumpAutoPlay();
     final coverSize = await PlayerSettings.getCoverSize();
     final flatBackground = await PlayerSettings.getFlatBackground();
     final showSubtitles = await PlayerSettings.getShowSubtitles();
@@ -1240,6 +1242,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _skipChapterBarrier = skipBarrier;
         _prevChapterDirectJump = prevChapterDirectJump;
         _confirmEveryChapterJump = confirmEveryChapterJump;
+    _chapterJumpAutoPlay = chapterJumpAutoPlay;
         _longSkipButtons = longSkipButtons;
         _longForwardSkip = longFwd;
         _longBackSkip = longBack;
@@ -3036,6 +3039,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       setState(() =>
                                           _confirmEveryChapterJump = v);
                                       PlayerSettings.setConfirmEveryChapterJump(v);
+                                    }
+                                  : null,
+                            ),
+                            SwitchListTile(
+                              title: Text(l.chapterJumpAutoPlay),
+                              subtitle: Text(
+                                _chapterJumpAutoPlay
+                                    ? l.chapterJumpAutoPlayOnSubtitle
+                                    : l.chapterJumpAutoPlayOffSubtitle,
+                                style: tt.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                              value: _chapterJumpAutoPlay,
+                              onChanged: _loaded
+                                  ? (v) {
+                                      setState(() => _chapterJumpAutoPlay = v);
+                                      PlayerSettings.setChapterJumpAutoPlay(v);
                                     }
                                   : null,
                             ),

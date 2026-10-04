@@ -3119,6 +3119,12 @@ class AudioPlayerService extends ChangeNotifier {
               verboseLog(
                 '[Player] 1:1 pinned chapter $mappedChapter on track advance',
               );
+              // An automatic advance into a genuinely different chapter keeps
+              // the intro skip armed - pre-jump straight to the intro-skip
+              // point so the chapter's opening words aren't briefly played
+              // while the skip waits for the first post-flip position tick.
+              // Mirrors the prev/next/chapter-list pre-jump.
+              unawaited(_autoAdvanceIntroSkip(mappedChapter));
             }
           }
           _currentTrackIndex = clamped;
@@ -8636,9 +8642,12 @@ class AudioPlayerService extends ChangeNotifier {
   /// BEFORE the chapter's own metadata start; the boundary snap + nearest
   /// -start latch then both promote to the NEXT chapter and the jump lands a
   /// chapter off ("012" is played, "013" is reported).
-  Future<void> seekToChapterIndex(int chapterIndex) async {
-    if (_player == null || _chapters.isEmpty) return;
-    if (chapterIndex < 0 || chapterIndex >= _chapters.length) return;
+  Future<void> seekToChapterIndex(int chapterIndex) =>
+      _chapterJumpThenAutoPlay(() => _seekToChapterIndexImpl(chapterIndex));
+
+  Future<bool> _seekToChapterIndexImpl(int chapterIndex) async {
+    if (_player == null || _chapters.isEmpty) return false;
+    if (chapterIndex < 0 || chapterIndex >= _chapters.length) return false;
     final ch = _chapters[chapterIndex] as Map<String, dynamic>;
     final start = (ch['start'] as num?)?.toDouble() ?? 0;
     // Land DIRECTLY at the intro-skip point when enabled, instead of seeking
@@ -8691,6 +8700,7 @@ class AudioPlayerService extends ChangeNotifier {
       overridePosition: from.inMilliseconds / 1000.0,
     );
     notifyListeners();
+    return true;
   }
 
   /// Rewind triggered by the sleep timer firing. Same mechanics as a manual
@@ -8774,8 +8784,11 @@ class AudioPlayerService extends ChangeNotifier {
     );
   }
 
-  Future<void> skipToNextChapter() async {
-    if (_player == null || _chapters.isEmpty) return;
+  Future<void> skipToNextChapter() =>
+      _chapterJumpThenAutoPlay(_skipToNextChapterImpl);
+
+  Future<bool> _skipToNextChapterImpl() async {
+    if (_player == null || _chapters.isEmpty) return false;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
     // Resolve against the pending-start / active-seek target, NOT the raw
@@ -8788,13 +8801,16 @@ class AudioPlayerService extends ChangeNotifier {
       posS,
       _totalDuration,
     );
-    if (target == null) return;
+    if (target == null) return false;
     if (target.finishesItem) {
       verboseLog('[Service] skipToNextChapter → end at ${target.seconds}s');
       _lastKnownPositionSec = target.seconds;
       _logEvent(PlaybackEventType.seek, detail: 'next chapter to end');
+      // NOT a chapter jump: this is the end of the BOOK. Whether playback
+      // continues (autoplay-next-book) is the completion path's decision, so
+      // report "didn't jump" and leave _onPlaybackComplete in charge.
       await _onPlaybackComplete(userRequested: true);
-      return;
+      return false;
     }
     verboseLog('[Service] skipToNextChapter → ${target.seconds}s');
     // Crossing into a genuinely DIFFERENT chapter keeps the intro skip armed -
@@ -8833,10 +8849,14 @@ class AudioPlayerService extends ChangeNotifier {
           : 'next chapter',
     );
     notifyListeners();
+    return true;
   }
 
-  Future<void> skipToPreviousChapter() async {
-    if (_player == null || _chapters.isEmpty) return;
+  Future<void> skipToPreviousChapter() =>
+      _chapterJumpThenAutoPlay(_skipToPreviousChapterImpl);
+
+  Future<bool> _skipToPreviousChapterImpl() async {
+    if (_player == null || _chapters.isEmpty) return false;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
     // Same session-upgrade caveat as skipToNextChapter: every chapter is its
@@ -8886,12 +8906,12 @@ class AudioPlayerService extends ChangeNotifier {
               : 'prev chapter (direct)',
         );
         notifyListeners();
-        return;
+        return true;
       }
       _disarmIntroForSameChapterRewind(posS, 0);
       await _seekAbsolute(0);
       notifyListeners();
-      return;
+      return true;
     }
     // If more than 3s into current chapter, go to start of current chapter
     // Otherwise go to previous chapter
@@ -8914,7 +8934,7 @@ class AudioPlayerService extends ChangeNotifier {
         // first post-landing position tick before jumping.
         double? preJumpTarget;
         if (!disarmedSameChapter) {
-preJumpTarget = await _crossChapterIntroSkipTarget(i);
+          preJumpTarget = await _crossChapterIntroSkipTarget(i);
         }
         if (preJumpTarget != null) {
           await _seekAbsoluteAlignedRepair(
@@ -8937,13 +8957,41 @@ preJumpTarget = await _crossChapterIntroSkipTarget(i);
               : 'prev chapter',
         );
         notifyListeners();
-        return;
+        return true;
       }
     }
     // If at the very start, seek to 0
     _disarmIntroForSameChapterRewind(posS, 0);
     await _seekAbsolute(0);
     notifyListeners();
+    return true;
+  }
+
+  /// Applies the paused-jump auto-play policy around a chapter jump.
+  ///
+  /// Tapping a chapter in the sheet, or a prev/next chapter button, while the
+  /// player is paused almost always means "I want to hear this one" - but the
+  /// jumps themselves only reposition, so the player used to sit there paused
+  /// and the tap looked like it did nothing audible. [PlayerSettings
+  /// .getChapterJumpAutoPlay] turns the resume on (default) or keeps the
+  /// reposition-only behaviour for lining a chapter up before starting.
+  ///
+  /// The seek already recorded `_seekedWhilePaused`, so resuming through [play]
+  /// takes the "the user placed this position" path: no auto-rewind into the
+  /// previous chapter's tail, no server-position adoption overriding the jump.
+  ///
+  /// [jump] reports whether it actually seeked, so a no-op - no chapters, no
+  /// next chapter, or next-past-the-end - can't be the thing that starts
+  /// playback.
+  Future<void> _chapterJumpThenAutoPlay(Future<bool> Function() jump) async {
+    final wasPaused = _player != null && !_player!.playing;
+    if (!await jump()) return;
+    if (!wasPaused || _player == null || _player!.playing) return;
+    if (!await PlayerSettings.getChapterJumpAutoPlay()) return;
+    verboseLog(
+      '[Service] Chapter jump made from a paused player → resuming playback',
+    );
+    await play(logDetail: 'chapter jump from paused', fromUi: true);
   }
 
   /// Returns true when the previous-chapter press (or chapter-start snap in
@@ -9102,6 +9150,42 @@ preJumpTarget = await _crossChapterIntroSkipTarget(i);
       '[Service] ChapterSkip Prev-chapter pre-jump → chapter $chapterIdx at ${bounds.start.toStringAsFixed(1)}s → ${target.toStringAsFixed(1)}s (intro ${settings.introSkipSeconds}s)',
     );
     return target;
+  }
+
+  /// Intro-skip pre-jump for the AUTOMATIC chapter transition.
+  ///
+  /// Every deliberate navigation already lands straight on the intro-skip point
+  /// via [_crossChapterIntroSkipTarget]. An automatic advance on a 1:1 book was
+  /// the one crossing with nothing armed: it is a bare track flip issued by
+  /// AVQueuePlayer, so it never seeks and never reaches the pre-jump code. The
+  /// new track reports position 0, `position` maps that to exactly
+  /// `chapterStart`, and the `posSec > chapterStart` test in
+  /// [_maybeSkipChapterIntroOutro] rejects an exact hit - so the chapter's
+  /// opening words played until the next position-stream tick arrived. That
+  /// tick window is what made it audible as a stray sound effect or a word or
+  /// two before the skip yanked forward.
+  ///
+  /// Deliberately seeks and nothing else: no `_lastUserSeekTime` (this is not a
+  /// user action, and faking one would suppress the skip for 3s) and no
+  /// entry-flag bookkeeping. If this seek fails, the tick-driven skip still runs
+  /// normally, whereas pre-marking the entry as handled would let the entire
+  /// intro play out.
+  Future<void> _autoAdvanceIntroSkip(int chapterIdx) async {
+    final introTarget = await _crossChapterIntroSkipTarget(chapterIdx);
+    // Re-check after the settings await: the item can be swapped out while
+    // that round-trips, and a stale target would seek into the wrong book.
+    if (introTarget == null || _player == null || _isLoadingNewItem) return;
+    final bounds = _chapterSkipBounds(chapterIdx);
+    verboseLog(
+      '[ChapterSkip] Auto-advance pre-jump → chapter $chapterIdx at '
+      '${bounds.start.toStringAsFixed(1)}s → ${introTarget.toStringAsFixed(1)}s',
+    );
+    _resetStuckDetection();
+    await _seekAbsoluteAlignedRepair(
+      introTarget,
+      clampMaxSec: bounds.end - 1.0,
+      pinChapterIndex: chapterIdx,
+    );
   }
 
   /// Seek that verifies the actual landing and re-seeks forward when the

@@ -2074,6 +2074,9 @@
   "chaptersConfirmJump": "Confirm chapter jumps",
   "chaptersConfirmJumpOnSubtitle": "On - only ask when the book isn't playing",
   "chaptersConfirmJumpOffSubtitle": "Off - ask before every chapter jump",
+  "chapterJumpAutoPlay": "Auto-play after chapter jump",
+  "chapterJumpAutoPlayOnSubtitle": "On - a jump while paused starts playing",
+  "chapterJumpAutoPlayOffSubtitle": "Off - a jump while paused only repositions",
   "autoRewindOnSubtitleFormat": "On -{min}s to {max}s based on pause length",
   "@autoRewindOnSubtitleFormat": {
     "placeholders": {

@@ -4176,6 +4176,17 @@ class AppLocalizationsJa extends AppLocalizations {
       'Off - ask before every chapter jump';
 
   @override
+  String get chapterJumpAutoPlay => 'Auto-play after chapter jump';
+
+  @override
+  String get chapterJumpAutoPlayOnSubtitle =>
+      'On - a jump while paused starts playing';
+
+  @override
+  String get chapterJumpAutoPlayOffSubtitle =>
+      'Off - a jump while paused only repositions';
+
+  @override
   String autoRewindOnSubtitleFormat(String min, String max) {
     return 'On -${min}s to ${max}s based on pause length';
   }

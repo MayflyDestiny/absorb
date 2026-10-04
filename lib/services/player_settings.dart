@@ -822,6 +822,16 @@ class PlayerSettings {
   static Future<bool> getPrevChapterDirectJump() => _get('prevChapterDirectJump', true);
   static Future<void> setPrevChapterDirectJump(bool value) => _set('prevChapterDirectJump', value);
 
+  /// Whether picking a chapter while PAUSED should start playing.
+  ///
+  /// ON (true, default): the chapter list and the prev/next chapter buttons
+  /// land on the target and press play, so tapping a chapter from a paused
+  /// player does what the tap obviously means. OFF keeps the historical
+  /// behaviour - the jump repositions a paused player and leaves it paused, for
+  /// lining a chapter up before starting.
+  static Future<bool> getChapterJumpAutoPlay() => _get('chapterJumpAutoPlay', true);
+  static Future<void> setChapterJumpAutoPlay(bool value) => _set('chapterJumpAutoPlay', value);
+
   /// Per-library skip override: a library (podcast or book) can use its own
   /// forward/back amounts instead of the global ones. Both are set together;
   /// null = no override for that library.

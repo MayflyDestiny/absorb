@@ -4025,6 +4025,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chaptersConfirmJumpOffSubtitle => '关闭 - 每次跳转前都询问';
 
   @override
+  String get chapterJumpAutoPlay => '章节跳转后自动播放';
+
+  @override
+  String get chapterJumpAutoPlayOnSubtitle => '开启 - 暂停时跳转会直接开始播放';
+
+  @override
+  String get chapterJumpAutoPlayOffSubtitle => '关闭 - 暂停时跳转只定位，保持暂停';
+
+  @override
   String autoRewindOnSubtitleFormat(String min, String max) {
     return '开启 - 根据暂停时长倒回 $min 秒至 $max 秒';
   }

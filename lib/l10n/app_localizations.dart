@@ -7510,6 +7510,24 @@ abstract class AppLocalizations {
   /// **'Off - ask before every chapter jump'**
   String get chaptersConfirmJumpOffSubtitle;
 
+  /// No description provided for @chapterJumpAutoPlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-play after chapter jump'**
+  String get chapterJumpAutoPlay;
+
+  /// No description provided for @chapterJumpAutoPlayOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - a jump while paused starts playing'**
+  String get chapterJumpAutoPlayOnSubtitle;
+
+  /// No description provided for @chapterJumpAutoPlayOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - a jump while paused only repositions'**
+  String get chapterJumpAutoPlayOffSubtitle;
+
   /// No description provided for @autoRewindOnSubtitleFormat.
   ///
   /// In en, this message translates to:
