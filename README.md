@@ -2,7 +2,13 @@
 
 一款基于 Audiobookshelf 的现代有声书客户端，提供卡片式播放体验。
 
-> **关于本 Fork 的说明：** 本仓库为 [pounat/absorb](https://github.com/pounat/absorb) 的 Fork 版本，**所有后续修改均由 AI（OpenCode / Claude Code）生成并提交**。Fork 后的改动集中在 **Android 平台的 UI 体验优化与功能增强**，仅打包 Android 版本，不涉及 iOS 构建。
+> 🤖 **本项目全部由 AI 开发，未经人工审核，稳定性无法保证；仅提供 Android 版本。**
+
+**本仓库**是 [pounat/absorb](https://github.com/pounat/absorb) 的 Fork，后续所有修改均由 AI（OpenCode / Claude Code）生成并提交，改动集中在 Android 平台的界面体验与功能增强。
+
+- ⚠️ **稳定性无法保证** — 改动范围广、缺少系统性回归测试，可能引入上游没有的 Bug、性能回退或机型兼容问题。请勿当作生产级软件使用，重要数据请自行备份。
+- 📱 **仅 Android 平台** — 只构建并发布 Android APK；不提供 iOS 构建，也未对 iOS 做过验证。如需 iOS 版本请使用上游仓库。
+- 🌐 **界面语言以简体中文为主** — 基础语言包继承自上游社区翻译，Fork 新增文案由 AI 翻译，其中部分中文经人工校对修饰。
 
 ---
 
@@ -50,9 +56,9 @@
 - **播放列表与收藏** — 创建自定义分组并播放
 - **最近播放** — 快速访问收听历史
 - **实时同步** — 通过 socket.io 同步进度、书库变更
-- **桌面小组件** — Android/iOS 桌面正在播放小组件
+- **桌面小组件** — Android 桌面正在播放小组件
 - **车载模式** — 大按钮驾驶 UI（无需 Android Auto）
-- **国际化** — 社区翻译（Crowdin）
+- **国际化** — 支持多语言，界面以简体中文为主
 
 ## 新增功能 / Fork Additions
 
@@ -78,11 +84,9 @@
 
 ---
 
-## 国际化翻译
+## 多语言
 
-[![Crowdin](https://badges.crowdin.net/absorb/localized.svg)](https://crowdin.com/project/absorb)
-
-Absorb 通过 [Crowdin](https://crowdin.com/project/absorb) 进行社区翻译。欢迎贡献你的语言翻译。
+应用支持多种界面语言，可在设置中切换。基础语言包来自上游项目的 [Crowdin](https://crowdin.com/project/absorb) 社区翻译；本 Fork 新增功能的文案由 AI 翻译生成，其中中文经人工校对修饰，其余语言可能存在缺漏或不够准确。
 
 ## 安装
 
@@ -322,5 +326,5 @@ Absorb 支持 Android Auto 车载浏览和收听。使用 GitHub 版本需要启
 
 ---
 
-> **本 Fork 所有修改均由 AI 生成，仅打包 Android 版本。**
-> 如需 iOS 版本或原始功能，请使用上游仓库 [pounat/absorb](https://github.com/pounat/absorb)。
+> **本 Fork 的全部修改均由 AI 生成，未经人工审核，稳定性无法保证；仅打包 Android 版本。**
+> 如需 iOS 版本或稳定版本，请使用上游仓库 [pounat/absorb](https://github.com/pounat/absorb)。
