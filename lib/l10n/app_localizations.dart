@@ -1066,6 +1066,24 @@ abstract class AppLocalizations {
   /// **'Number of Books'**
   String get numberOfBooks;
 
+  /// No description provided for @sortTotalDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Total duration'**
+  String get sortTotalDuration;
+
+  /// No description provided for @sortLastBookAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Last book added'**
+  String get sortLastBookAdded;
+
+  /// No description provided for @sortLastBookUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Last book updated'**
+  String get sortLastBookUpdated;
+
   /// No description provided for @publishedYear.
   ///
   /// In en, this message translates to:
@@ -14271,6 +14289,66 @@ abstract class AppLocalizations {
   /// **'That destination is already used by \"{title}\".'**
   String adminUploadDestinationUsedBy(String title);
 
+  /// No description provided for @adminUploadAddToExistingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder already exists'**
+  String get adminUploadAddToExistingTitle;
+
+  /// No description provided for @adminUploadAddToExisting.
+  ///
+  /// In en, this message translates to:
+  /// **'That folder belongs to \"{title}\". Add the files to it? The server picks them up on its next scan.'**
+  String adminUploadAddToExisting(String title);
+
+  /// No description provided for @adminUploadAddToExistingNoItem.
+  ///
+  /// In en, this message translates to:
+  /// **'That folder already exists on the server. Add the files to it?'**
+  String get adminUploadAddToExistingNoItem;
+
+  /// No description provided for @adminUploadAddToBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to an existing book'**
+  String get adminUploadAddToBook;
+
+  /// No description provided for @adminUploadAddToBookHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search this library'**
+  String get adminUploadAddToBookHint;
+
+  /// No description provided for @adminUploadNoBooksFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No books found'**
+  String get adminUploadNoBooksFound;
+
+  /// No description provided for @adminUploadAddingTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Adding files to \"{title}\"'**
+  String adminUploadAddingTo(String title);
+
+  /// No description provided for @adminUploadAddedTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Added files to \"{title}\"'**
+  String adminUploadAddedTo(String title);
+
+  /// No description provided for @adminUploadTargetNoFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t find that book\'s folder on the server.'**
+  String get adminUploadTargetNoFolder;
+
+  /// No description provided for @adminUploadTargetFolderMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'The server would put these files in \"{preview}\", not in that book\'s folder \"{folder}\". Nothing was uploaded.'**
+  String adminUploadTargetFolderMismatch(String preview, String folder);
+
   /// No description provided for @adminUploadUploading.
   ///
   /// In en, this message translates to:
@@ -17367,6 +17445,180 @@ abstract class AppLocalizations {
   /// **'The screen stays on while car mode is open'**
   String get keepScreenOnCarModeSubtitle;
 
+  /// No description provided for @loginServerType.
+  ///
+  /// In en, this message translates to:
+  /// **'Server type'**
+  String get loginServerType;
+
+  /// No description provided for @authBookOrbitDefaultPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'This account still has its default password. Change it in BookOrbit, then sign in again.'**
+  String get authBookOrbitDefaultPassword;
+
+  /// No description provided for @authServerIsBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'This is a BookOrbit server. Choose BookOrbit above the server address.'**
+  String get authServerIsBookOrbit;
+
+  /// No description provided for @authServerIsAudiobookshelf.
+  ///
+  /// In en, this message translates to:
+  /// **'This is an Audiobookshelf server. Choose Audiobookshelf above the server address.'**
+  String get authServerIsAudiobookshelf;
+
+  /// No description provided for @castNotAvailableBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'Casting is not available with BookOrbit servers'**
+  String get castNotAvailableBookOrbit;
+
+  /// No description provided for @loginMagicLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Magic link'**
+  String get loginMagicLink;
+
+  /// No description provided for @loginMagicLinkDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with a BookOrbit magic link instead of a password.'**
+  String get loginMagicLinkDescription;
+
+  /// No description provided for @collectionPublicTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Public'**
+  String get collectionPublicTitle;
+
+  /// No description provided for @collectionPublicSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone on this server can see this collection'**
+  String get collectionPublicSubtitle;
+
+  /// No description provided for @loginSignInWithProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with {provider}'**
+  String loginSignInWithProvider(String provider);
+
+  /// No description provided for @loginSignInWithSso.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with SSO'**
+  String get loginSignInWithSso;
+
+  /// No description provided for @loginChooseSsoProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how to sign in'**
+  String get loginChooseSsoProvider;
+
+  /// No description provided for @loginRedirectUriBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'Redirect URI: bookorbit://oauth2-callback'**
+  String get loginRedirectUriBookOrbit;
+
+  /// No description provided for @readStatusTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading status'**
+  String get readStatusTitle;
+
+  /// No description provided for @readStatusHint.
+  ///
+  /// In en, this message translates to:
+  /// **'BookOrbit keeps a status you pick here until you change it.'**
+  String get readStatusHint;
+
+  /// No description provided for @readStatusUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Unread'**
+  String get readStatusUnread;
+
+  /// No description provided for @readStatusWantToRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to read'**
+  String get readStatusWantToRead;
+
+  /// No description provided for @readStatusReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading'**
+  String get readStatusReading;
+
+  /// No description provided for @readStatusOnHold.
+  ///
+  /// In en, this message translates to:
+  /// **'On hold'**
+  String get readStatusOnHold;
+
+  /// No description provided for @readStatusRereading.
+  ///
+  /// In en, this message translates to:
+  /// **'Rereading'**
+  String get readStatusRereading;
+
+  /// No description provided for @readStatusRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Read'**
+  String get readStatusRead;
+
+  /// No description provided for @readStatusSkimmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Skimmed'**
+  String get readStatusSkimmed;
+
+  /// No description provided for @readStatusAbandoned.
+  ///
+  /// In en, this message translates to:
+  /// **'Abandoned'**
+  String get readStatusAbandoned;
+
+  /// No description provided for @personalNoteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your note'**
+  String get personalNoteTitle;
+
+  /// No description provided for @personalNoteAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a private note'**
+  String get personalNoteAdd;
+
+  /// No description provided for @personalNoteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Only you can see this note.'**
+  String get personalNoteHint;
+
+  /// No description provided for @moreLikeThis.
+  ///
+  /// In en, this message translates to:
+  /// **'More like this'**
+  String get moreLikeThis;
+
+  /// No description provided for @coverSlotAudiobook.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobook cover'**
+  String get coverSlotAudiobook;
+
+  /// No description provided for @coverSlotBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Book cover'**
+  String get coverSlotBook;
+
   /// No description provided for @cardButtonFill.
   ///
   /// In en, this message translates to:
@@ -17397,6 +17649,12 @@ abstract class AppLocalizations {
   /// **'Solid'**
   String get cardButtonFillSolid;
 
+  /// No description provided for @loginBookOrbitPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'BookOrbit support is new. Playback, downloads and browsing work, but some screens may still look or act like Audiobookshelf. Follow the progress on GitHub, and let us know if something seems off.'**
+  String get loginBookOrbitPreview;
+
   /// No description provided for @signedOutTapToSignIn.
   ///
   /// In en, this message translates to:
@@ -17414,6 +17672,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'What you listen to while signed out is kept on this phone and syncs when you sign back in as {username} on {server}. Any way of signing in to that account works.'**
   String signedOutSyncNote(String username, String server);
+
+  /// No description provided for @comicReadingDirection.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading direction'**
+  String get comicReadingDirection;
+
+  /// No description provided for @comicLeftToRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Left to right'**
+  String get comicLeftToRight;
+
+  /// No description provided for @comicRightToLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Right to left (manga)'**
+  String get comicRightToLeft;
+
+  /// No description provided for @comicNeedsConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'This comic opens page by page from your server, so it needs a connection.'**
+  String get comicNeedsConnection;
+
+  /// No description provided for @comicNoPages.
+  ///
+  /// In en, this message translates to:
+  /// **'No pages found in this comic.'**
+  String get comicNoPages;
 }
 
 class _AppLocalizationsDelegate

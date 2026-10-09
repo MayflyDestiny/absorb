@@ -114,6 +114,7 @@ mixin _StateMixin on ChangeNotifier {
   Timer? _healthCheckTimer;
   int _healthCheckMisses = 0;
   int _connectivityPingMisses = 0;
+  Timer? _bookOrbitPollTimer;
   Timer? _localProbeTimer;
   int _localProbeFailures = 0;
   DateTime? _localLastReachableAt;

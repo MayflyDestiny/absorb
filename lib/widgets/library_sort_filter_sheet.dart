@@ -356,6 +356,9 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
           (LibrarySort.alphabetical, l.name, Icons.sort_by_alpha_rounded),
           (LibrarySort.recentlyAdded, l.dateAdded, Icons.schedule_rounded),
           (LibrarySort.totalDuration, l.numberOfBooks, Icons.auto_stories_rounded),
+          (LibrarySort.seriesTotalDuration, l.sortTotalDuration, Icons.timer_outlined),
+          (LibrarySort.lastBookAdded, l.sortLastBookAdded, Icons.library_add_rounded),
+          (LibrarySort.lastBookUpdated, l.sortLastBookUpdated, Icons.update_rounded),
         ];
       case LibraryTab.authors:
         return [
@@ -402,7 +405,7 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
           (LibrarySort.dateStarted, l.dateStarted, Icons.play_arrow_rounded),
           (LibrarySort.dateFinished, l.dateFinished, Icons.done_all_rounded),
           (LibrarySort.random, l.random, Icons.shuffle_rounded),
-        ];
+        ]..removeWhere((o) => librarySortForServer(o.$1) != o.$1);
         if (widget.currentFilter == LibraryFilter.series &&
             widget.filterValue != null &&
             widget.filterValue != 'no-series') {
@@ -452,6 +455,7 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
         (LibraryFilter.explicit, l.explicitContent, Icons.explicit_rounded),
       );
     }
+    filters.removeWhere((f) => !libraryFilterSupportedOnServer(f.$1));
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       children: [
@@ -554,7 +558,9 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: Column(
-              children: MissingMetadataField.values.map((field) {
+              children: MissingMetadataField.values
+                  .where(missingMetadataSupportedOnServer)
+                  .map((field) {
                 final selected =
                     widget.currentFilter == LibraryFilter.missingMetadata &&
                     widget.missingMetadataFilter == field;

@@ -543,6 +543,15 @@ class AppLocalizationsEs extends AppLocalizations {
   String get numberOfBooks => 'Number of Books';
 
   @override
+  String get sortTotalDuration => 'Total duration';
+
+  @override
+  String get sortLastBookAdded => 'Last book added';
+
+  @override
+  String get sortLastBookUpdated => 'Last book updated';
+
+  @override
   String get publishedYear => 'Published Year';
 
   @override
@@ -8360,6 +8369,46 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
+  String get adminUploadAddToExistingTitle => 'Folder already exists';
+
+  @override
+  String adminUploadAddToExisting(String title) {
+    return 'That folder belongs to \"$title\". Add the files to it? The server picks them up on its next scan.';
+  }
+
+  @override
+  String get adminUploadAddToExistingNoItem =>
+      'That folder already exists on the server. Add the files to it?';
+
+  @override
+  String get adminUploadAddToBook => 'Add to an existing book';
+
+  @override
+  String get adminUploadAddToBookHint => 'Search this library';
+
+  @override
+  String get adminUploadNoBooksFound => 'No books found';
+
+  @override
+  String adminUploadAddingTo(String title) {
+    return 'Adding files to \"$title\"';
+  }
+
+  @override
+  String adminUploadAddedTo(String title) {
+    return 'Added files to \"$title\"';
+  }
+
+  @override
+  String get adminUploadTargetNoFolder =>
+      'Couldn\'t find that book\'s folder on the server.';
+
+  @override
+  String adminUploadTargetFolderMismatch(String preview, String folder) {
+    return 'The server would put these files in \"$preview\", not in that book\'s folder \"$folder\". Nothing was uploaded.';
+  }
+
+  @override
   String get adminUploadUploading => 'Uploading...';
 
   @override
@@ -10134,6 +10183,103 @@ class AppLocalizationsEs extends AppLocalizations {
       'The screen stays on while car mode is open';
 
   @override
+  String get loginServerType => 'Server type';
+
+  @override
+  String get authBookOrbitDefaultPassword =>
+      'This account still has its default password. Change it in BookOrbit, then sign in again.';
+
+  @override
+  String get authServerIsBookOrbit =>
+      'This is a BookOrbit server. Choose BookOrbit above the server address.';
+
+  @override
+  String get authServerIsAudiobookshelf =>
+      'This is an Audiobookshelf server. Choose Audiobookshelf above the server address.';
+
+  @override
+  String get castNotAvailableBookOrbit =>
+      'Casting is not available with BookOrbit servers';
+
+  @override
+  String get loginMagicLink => 'Magic link';
+
+  @override
+  String get loginMagicLinkDescription =>
+      'Sign in with a BookOrbit magic link instead of a password.';
+
+  @override
+  String get collectionPublicTitle => 'Public';
+
+  @override
+  String get collectionPublicSubtitle =>
+      'Everyone on this server can see this collection';
+
+  @override
+  String loginSignInWithProvider(String provider) {
+    return 'Sign in with $provider';
+  }
+
+  @override
+  String get loginSignInWithSso => 'Sign in with SSO';
+
+  @override
+  String get loginChooseSsoProvider => 'Choose how to sign in';
+
+  @override
+  String get loginRedirectUriBookOrbit =>
+      'Redirect URI: bookorbit://oauth2-callback';
+
+  @override
+  String get readStatusTitle => 'Reading status';
+
+  @override
+  String get readStatusHint =>
+      'BookOrbit keeps a status you pick here until you change it.';
+
+  @override
+  String get readStatusUnread => 'Unread';
+
+  @override
+  String get readStatusWantToRead => 'Want to read';
+
+  @override
+  String get readStatusReading => 'Reading';
+
+  @override
+  String get readStatusOnHold => 'On hold';
+
+  @override
+  String get readStatusRereading => 'Rereading';
+
+  @override
+  String get readStatusRead => 'Read';
+
+  @override
+  String get readStatusSkimmed => 'Skimmed';
+
+  @override
+  String get readStatusAbandoned => 'Abandoned';
+
+  @override
+  String get personalNoteTitle => 'Your note';
+
+  @override
+  String get personalNoteAdd => 'Add a private note';
+
+  @override
+  String get personalNoteHint => 'Only you can see this note.';
+
+  @override
+  String get moreLikeThis => 'More like this';
+
+  @override
+  String get coverSlotAudiobook => 'Audiobook cover';
+
+  @override
+  String get coverSlotBook => 'Book cover';
+
+  @override
   String get cardButtonFill => 'Button background';
 
   @override
@@ -10150,6 +10296,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get cardButtonFillSolid => 'Solid';
 
   @override
+  String get loginBookOrbitPreview =>
+      'BookOrbit support is new. Playback, downloads and browsing work, but some screens may still look or act like Audiobookshelf. Follow the progress on GitHub, and let us know if something seems off.';
+
+  @override
   String get signedOutTapToSignIn => 'Signed out. Tap to sign in again.';
 
   @override
@@ -10160,4 +10310,20 @@ class AppLocalizationsEs extends AppLocalizations {
   String signedOutSyncNote(String username, String server) {
     return 'What you listen to while signed out is kept on this phone and syncs when you sign back in as $username on $server. Any way of signing in to that account works.';
   }
+
+  @override
+  String get comicReadingDirection => 'Reading direction';
+
+  @override
+  String get comicLeftToRight => 'Left to right';
+
+  @override
+  String get comicRightToLeft => 'Right to left (manga)';
+
+  @override
+  String get comicNeedsConnection =>
+      'This comic opens page by page from your server, so it needs a connection.';
+
+  @override
+  String get comicNoPages => 'No pages found in this comic.';
 }

@@ -1599,6 +1599,43 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _healthCheckTimer = null;
   }
 
+  /// BookOrbit pushes no progress events, so while the app is open the book
+  /// sitting paused in the player is checked against the server instead, and
+  /// a newer position from another device goes through the same handler the
+  /// Audiobookshelf socket feeds.
+  void _startBookOrbitPoll() {
+    _bookOrbitPollTimer?.cancel();
+    _bookOrbitPollTimer = null;
+    if (_auth?.isBookOrbit != true) return;
+    if (_isBackgrounded || _readerQuiet || PlayerSettings.einkMode) return;
+    _bookOrbitPollTimer = Timer.periodic(
+        const Duration(seconds: 30), (_) => _pollPausedBookProgress());
+  }
+
+  void _stopBookOrbitPoll() {
+    _bookOrbitPollTimer?.cancel();
+    _bookOrbitPollTimer = null;
+  }
+
+  Future<void> _pollPausedBookProgress() async {
+    final api = _api;
+    if (api == null || !api.isBookOrbit || isOffline) return;
+    final player = AudioPlayerService();
+    final itemId = player.currentItemId;
+    if (!player.hasBook || player.isPlaying || itemId == null) return;
+    if (player.currentEpisodeId != null) return;
+    try {
+      final mp = await api.getItemProgress(itemId);
+      if (mp == null || player.isPlaying || player.currentItemId != itemId) return;
+      final serverUpd = (mp['lastUpdate'] as num?)?.toInt() ?? 0;
+      if (serverUpd <= await ProgressSyncService().getSavedTimestamp(itemId)) return;
+      debugPrint('[Sync] BookOrbit has a newer position for the paused book');
+      _onRemoteProgressUpdated(mp);
+    } catch (e) {
+      debugPrint('[Sync] BookOrbit progress poll failed: $e');
+    }
+  }
+
   // ── Battery-saving lifecycle ──
 
   void onAppBackgrounded() {
@@ -1606,6 +1643,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _backgroundedAt = DateTime.now();
     _stopServerPingTimer();
     _stopHealthCheckTimer();
+    _stopBookOrbitPoll();
     if (!AudioPlayerService().isPlaying) {
       _stopLocalProbeTimer();
     }
@@ -1643,6 +1681,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       debugPrint('[Library] Reader open - quieting live work');
       _stopServerPingTimer();
       _stopHealthCheckTimer();
+      _stopBookOrbitPoll();
       if (!AudioPlayerService().isPlaying) _stopLocalProbeTimer();
       _softDisconnectSocket();
       return;
@@ -1664,6 +1703,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       debugPrint('[Library] E-ink mode on - quieting live work');
       _stopServerPingTimer();
       _stopHealthCheckTimer();
+      _stopBookOrbitPoll();
       if (!AudioPlayerService().isPlaying) _stopLocalProbeTimer();
       _softDisconnectSocket();
       return;
@@ -1677,7 +1717,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   /// and awake. [quietSince] is when live work stopped, so a long gap can
   /// replay what the socket would have delivered.
   void _resumeLiveWork({DateTime? quietSince}) {
+    if (_auth?.isBookOrbit == true) unawaited(_api?.ensureMediaReady());
     _ensureSocketConnected();
+    _startBookOrbitPoll();
     if (_networkOffline && _deviceHasConnectivity && !_manualOffline) {
       _startServerPingTimer();
     } else if (!_networkOffline && !_manualOffline) {
@@ -1694,6 +1736,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           : DateTime.now().difference(quietSince);
       if (away != null && away > const Duration(seconds: 30)) {
         _catchUpAfterBackground();
+        if (_auth?.isBookOrbit == true) {
+          unawaited(_pollPausedBookProgress());
+          unawaited(_catchUpRemoteProgress());
+        }
       }
     }
   }
@@ -2601,6 +2647,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   Future<Map<String, dynamic>?> createPlaylist(String name) async {
     if (_api == null || _selectedLibraryId == null) return null;
+    if (_api!.isBookOrbit) return createCollection(name);
     final result = await _api!.createPlaylist(_selectedLibraryId!, name);
     if (result != null) {
       _playlists = [..._playlists, result];
@@ -2615,6 +2662,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     String? episodeId,
   }) async {
     if (_api == null) return false;
+    if (_api!.isBookOrbit) return addToCollection(playlistId, libraryItemId);
     final updated = await _api!.addItemToPlaylist(
       playlistId, libraryItemId, episodeId: episodeId,
     );
@@ -2631,6 +2679,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     String? episodeId,
   }) async {
     if (_api == null) return false;
+    if (_api!.isBookOrbit) return removeFromCollection(playlistId, libraryItemId);
     final updated = await _api!.removeItemFromPlaylist(
       playlistId, libraryItemId, episodeId: episodeId,
     );
@@ -2662,6 +2711,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   Future<bool> deletePlaylist(String playlistId) async {
     if (_api == null) return false;
+    if (_api!.isBookOrbit) return await deleteCollection(playlistId) == 200;
     final ok = await _api!.deletePlaylist(playlistId);
     if (ok) {
       _playlists = _playlists.where((p) => (p as Map)['id'] != playlistId).toList();
@@ -2733,6 +2783,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       return true;
     }
     return false;
+  }
+
+  Future<bool> setCollectionPublic(String collectionId, bool isPublic) async {
+    if (_api == null) return false;
+    final ok = await _api!.setCollectionPublic(collectionId, isPublic);
+    if (ok) await _doLoadCollections();
+    return ok;
   }
 
   Future<bool> reorderCollectionBooks(

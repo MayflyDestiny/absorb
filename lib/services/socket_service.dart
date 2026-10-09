@@ -3,6 +3,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'player_settings.dart';
 import 'app_log.dart';
+import 'server_backend.dart';
 
 class SocketService {
   static const authorChangeEvents = <String>[
@@ -284,6 +285,21 @@ class SocketService {
     }
   }
 
+  /// An item change made by this app on a server with no socket (BookOrbit),
+  /// sent to the same listeners the socket's item_updated reaches.
+  void emitLocalItemUpdated(Map<String, dynamic> item) {
+    onItemUpdated?.call(item);
+    _emitItemUpdated(item);
+    _emitItemsChanged();
+  }
+
+  /// The item_removed counterpart of [emitLocalItemUpdated].
+  void emitLocalItemRemoved(Map<String, dynamic> item) {
+    onItemRemoved?.call(item);
+    _emitItemRemoved(item);
+    _emitItemsChanged();
+  }
+
   // Removal fan-out with payload ({id, ...}), alongside the single-slot
   // onItemRemoved owned by the library provider.
   final List<void Function(Map<String, dynamic>)> _itemRemovedListeners = [];
@@ -338,6 +354,10 @@ class SocketService {
 
   void connect(String serverUrl, String token, {Map<String, String> customHeaders = const {}}) {
     if (_socket != null) disconnect();
+
+    // BookOrbit has its own socket namespaces and no progress events, so
+    // its accounts run on the refresh timers instead.
+    if (ServerBackend.active.isBookOrbit) return;
 
     _token = token;
     _serverUrl = serverUrl;
@@ -554,6 +574,7 @@ class SocketService {
   /// Reconnect after a soft disconnect, reusing saved credentials.
   void softReconnect() {
     if (_socket != null) return; // already connected
+    if (ServerBackend.active.isBookOrbit) return;
     if (PlayerSettings.einkMode) return;
     final url = _serverUrl;
     final token = _token;
