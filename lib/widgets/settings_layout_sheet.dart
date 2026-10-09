@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
@@ -68,6 +70,8 @@ IconData settingsSectionIcon(String id) {
       return Icons.style_rounded;
     case 'Media Controls':
       return Icons.dvr_rounded;
+    case 'Car':
+      return Icons.directions_car_rounded;
     case 'Sleep Timer':
       return Icons.bedtime_outlined;
     case 'Downloads & Storage':
@@ -101,6 +105,8 @@ String settingsSectionTitle(String id, AppLocalizations l) {
       return l.sectionAbsorbingCards;
     case 'Media Controls':
       return l.sectionMediaControls;
+    case 'Car':
+      return Platform.isIOS ? l.sectionCarIos : l.sectionCar;
     case 'Sleep Timer':
       return l.sectionSleepTimer;
     case 'Downloads & Storage':

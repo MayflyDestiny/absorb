@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -400,8 +401,17 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
               canQuickMatch: auth.isAdmin && !lib.isPodcastLibrary,
               canMarkProgress: !lib.isPodcastLibrary,
               canDelete: auth.canDelete,
+              canDownload: !lib.isPodcastLibrary,
               onSelectAll: _toggleSelectAll,
               onClear: _clearSelection,
+              onDownload: () => _runBatchAction(
+                () => DesktopBatchActions.download(
+                  context,
+                  selectableItems
+                      .where((i) => _selectedItemIds.contains(i['id']))
+                      .toList(),
+                ),
+              ),
               onQuickMatch: () => _runBatchAction(
                 () => DesktopBatchActions.quickMatch(
                   context,
@@ -966,6 +976,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           (recentEpisode != null
               ? (recentEpisode['duration'] as num?)?.toDouble() ?? 0
               : (media['duration'] as num?)?.toDouble() ?? 0);
+      // Offline there is no server record, only what this phone saved.
+      if (progressData == null && progress > 0) {
+        currentTime = progress * totalDuration;
+      }
     }
 
     final accent = _accent ?? cs.primary;
@@ -1267,40 +1281,75 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       return;
     }
 
-    // Full item data to get chapters. The shelf item already carries the
-    // media payload (metadata, chapters, duration) for most shelves, so use it
-    // directly and only hit the disk cache — then the network — when the
-    // chapters aren't already in hand. A 30s expanded fetch should never
-    // block starting a book that's sitting on screen.
-    var media = widget.item['media'] as Map<String, dynamic>? ?? {};
-    var fullItem = widget.item;
-    bool hasChapters(Map<String, dynamic> m) =>
-        (m['chapters'] as List<dynamic>?)?.isNotEmpty ?? false;
-    if (!hasChapters(media)) {
-      final cached = await api.getCachedLibraryItem(itemId);
-      if (cached != null) {
-        fullItem = cached;
-        media = cached['media'] as Map<String, dynamic>? ?? {};
+    final String title;
+    final String author;
+    double duration;
+    List<dynamic> chapters;
+    String? libraryId;
+    final downloads = DownloadService();
+    if (downloads.isDownloaded(itemId)) {
+      // The download carries everything the player needs, so a book on the
+      // phone starts without asking the server, offline or not.
+      final media = widget.item['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      final info = downloads.getInfo(itemId);
+      title = metadata['title'] as String? ?? info.title ?? '';
+      author = metadata['authorName'] as String? ?? info.author ?? '';
+      duration = (media['duration'] as num?)?.toDouble() ?? 0;
+      chapters = (media['chapters'] as List<dynamic>?) ?? [];
+      libraryId = widget.item['libraryId'] as String? ?? info.libraryId;
+      final cached = downloads.getCachedSessionData(itemId);
+      if (cached != null && (duration <= 0 || chapters.isEmpty)) {
+        try {
+          final session = jsonDecode(cached) as Map<String, dynamic>;
+          if (duration <= 0) {
+            duration = (session['duration'] as num?)?.toDouble() ?? 0;
+          }
+          if (chapters.isEmpty) {
+            chapters = session['chapters'] as List<dynamic>? ?? [];
+          }
+        } catch (_) {}
       }
-    }
-    if (!hasChapters(media)) {
-      final fetched = await api.getLibraryItem(itemId);
-      if (fetched == null) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
+    } else {
+      // Full item data to get chapters. The shelf item already carries the
+      // media payload (metadata, chapters, duration) for most shelves, so use it
+      // directly and only hit the disk cache — then the network — when the
+      // chapters aren't already in hand. A 30s expanded fetch should never
+      // block starting a book that's sitting on screen.
+      var media = widget.item['media'] as Map<String, dynamic>? ?? {};
+      var fullItem = widget.item;
+      bool hasChapters(Map<String, dynamic> m) =>
+          (m['chapters'] as List<dynamic>?)?.isNotEmpty ?? false;
+      if (!hasChapters(media)) {
+        final cached = await api.getCachedLibraryItem(itemId);
+        if (cached != null) {
+          fullItem = cached;
+          media = cached['media'] as Map<String, dynamic>? ?? {};
+        }
       }
-      fullItem = fetched;
-      media = fetched['media'] as Map<String, dynamic>? ?? {};
+      if (!hasChapters(media)) {
+        final fetched = await api.getLibraryItem(itemId);
+        if (fetched == null) {
+          if (mounted) {
+            showErrorToast(
+                context, AppLocalizations.of(context)!.loginCouldNotReachServer);
+            setState(() => _isLoading = false);
+          }
+          return;
+        }
+        fullItem = fetched;
+        media = fetched['media'] as Map<String, dynamic>? ?? {};
+      }
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      title = metadata['title'] as String? ?? '';
+      author = metadata['authorName'] as String? ?? '';
+      duration = (media['duration'] is num)
+          ? (media['duration'] as num).toDouble()
+          : 0.0;
+      chapters = (media['chapters'] as List<dynamic>?) ?? [];
+      libraryId = fullItem['libraryId'] as String?;
     }
-
-    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-    final title = metadata['title'] as String? ?? '';
-    final author = metadata['authorName'] as String? ?? '';
     final coverUrl = widget.lib.getCoverUrl(itemId);
-    final duration = (media['duration'] is num)
-        ? (media['duration'] as num).toDouble()
-        : 0.0;
-    final chapters = (media['chapters'] as List<dynamic>?) ?? [];
 
     // Start playback
     final error = await widget.player.playItem(
@@ -1311,7 +1360,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       coverUrl: coverUrl,
       totalDuration: duration,
       chapters: chapters,
-      libraryId: fullItem['libraryId'] as String?,
+      libraryId: libraryId,
       fromUi: true,
     );
     if (error != null && mounted) showErrorToast(context, error);

@@ -18,6 +18,7 @@ import '../services/transcription_service.dart';
 import '../services/equalizer_service.dart';
 import '../services/playback_history_service.dart';
 import '../services/scoped_prefs.dart';
+import '../services/screen_wake.dart';
 import '../services/sleep_timer_service.dart';
 import '../utils/episode_key.dart';
 import '../utils/series_id.dart';
@@ -47,6 +48,21 @@ Color _inkAccent(Color accent) =>
     PlayerSettings.einkMode ? Colors.black : accent;
 double _inkAlpha(double normal, double eink) =>
     PlayerSettings.einkMode ? eink : normal;
+
+/// A card button's fill under the Button background setting. Subtle is the
+/// tint at the given strength; Solid lays it over an opaque surface.
+Color _buttonFill(ColorScheme cs, Color tint, double normal, double eink, {bool neutral = false}) =>
+    switch (PlayerSettings.cardButtonFill) {
+      'clear' => Colors.transparent,
+      'solid' => neutral
+          ? cs.surfaceContainerHighest
+          : Color.alphaBlend(tint.withValues(alpha: 0.2), cs.surfaceContainerHighest),
+      _ => tint.withValues(alpha: _inkAlpha(normal, eink)),
+    };
+
+/// A card button's edge; Clear drops it with the fill.
+Color _buttonEdge(Color tint, double normal, double eink) =>
+    PlayerSettings.cardButtonFill == 'clear' ? Colors.transparent : tint.withValues(alpha: _inkAlpha(normal, eink));
 
 /// Wrapper that gives any child a press-down opacity+scale effect.
 class Pressable extends StatefulWidget {
@@ -84,6 +100,22 @@ class _PressableState extends State<Pressable> {
 }
 
 /// Show a toast when the user taps a button that requires active playback.
+/// The card's Keep screen on button: holds the screen while the player is up
+/// and playing, until the app is closed. With the Settings switch on it only
+/// says so.
+void toggleKeepScreenOn(BuildContext context) {
+  final l = AppLocalizations.of(context)!;
+  if (PlayerScreenWake.always) {
+    showOverlayToast(context, l.keepScreenOnAlwaysHint,
+        icon: Icons.lightbulb_rounded);
+    return;
+  }
+  final on = !PlayerScreenWake.sessionOn.value;
+  PlayerScreenWake.sessionOn.value = on;
+  showOverlayToast(context, on ? l.keepScreenOnUntilClosed : l.keepScreenOnOff,
+      icon: on ? Icons.lightbulb_rounded : Icons.lightbulb_outline_rounded);
+}
+
 void showInactiveToast(BuildContext context) {
   final l = AppLocalizations.of(context)!;
   showOverlayToast(context, l.startPlayingSomethingFirst,
@@ -138,13 +170,13 @@ class CardWideButton extends StatelessWidget {
         padding: EdgeInsets.symmetric(vertical: vPad),
         decoration: BoxDecoration(
           color: highlighted
-              ? _inkAccent(accent).withValues(alpha: _inkAlpha(0.1, 0.12))
-              : cs.onSurface.withValues(alpha: _inkAlpha(0.06, 0.03)),
+              ? _buttonFill(cs, _inkAccent(accent), 0.1, 0.12)
+              : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
           borderRadius: BorderRadius.circular(radius),
           border: Border.all(
               color: highlighted
-                  ? _inkAccent(accent).withValues(alpha: _inkAlpha(0.3, 1.0))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.08, 0.55))),
+                  ? _buttonEdge(_inkAccent(accent), 0.3, 1.0)
+                  : _buttonEdge(cs.onSurface, 0.08, 0.55)),
         ),
         child: showIconOnly
           ? Center(child: Icon(icon, size: iconSize, color: fgColor))
@@ -255,12 +287,12 @@ class CardSleepButtonInline extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: active
-                  ? _inkAccent(accent).withValues(alpha: _inkAlpha(0.1, 0.12))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.06, 0.03)),
+                  ? _buttonFill(cs, _inkAccent(accent), 0.1, 0.12)
+                  : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
               borderRadius: BorderRadius.circular(radius),
               border: Border.all(color: active
-                  ? _inkAccent(accent).withValues(alpha: _inkAlpha(0.3, 1.0))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.08, 0.55))),
+                  ? _buttonEdge(_inkAccent(accent), 0.3, 1.0)
+                  : _buttonEdge(cs.onSurface, 0.08, 0.55)),
             ),
             child: Stack(children: [
               if (active && isTime)
@@ -389,12 +421,12 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: downloaded
-                  ? dlGreen.withValues(alpha: _inkAlpha(0.1, 0.12))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.06, 0.03)),
+                  ? _buttonFill(cs, dlGreen, 0.1, 0.12)
+                  : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
               borderRadius: BorderRadius.circular(radius),
               border: Border.all(color: downloaded
-                  ? dlGreen.withValues(alpha: _inkAlpha(0.3, 0.9))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.08, 0.55))),
+                  ? _buttonEdge(dlGreen, 0.3, 0.9)
+                  : _buttonEdge(cs.onSurface, 0.08, 0.55)),
             ),
             child: Stack(children: [
               if (downloading)
@@ -571,9 +603,9 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
       child: Container(
         padding: EdgeInsets.symmetric(vertical: vPad),
         decoration: BoxDecoration(
-          color: cs.onSurface.withValues(alpha: _inkAlpha(0.06, 0.03)),
+          color: _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: cs.onSurface.withValues(alpha: _inkAlpha(0.08, 0.55))),
+          border: Border.all(color: _buttonEdge(cs.onSurface, 0.08, 0.55)),
         ),
         child: cp || widget.iconsOnly
           ? Center(child: Icon(Icons.bookmark_outline_rounded, size: iconSz, color: cs.onSurfaceVariant))
@@ -707,9 +739,9 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
           child: Container(
             height: h,
             decoration: BoxDecoration(
-              color: cs.onSurface.withValues(alpha: _inkAlpha(0.06, 0.03)),
+              color: _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
               borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: cs.onSurface.withValues(alpha: _inkAlpha(0.08, 0.55))),
+              border: Border.all(color: _buttonEdge(cs.onSurface, 0.08, 0.55)),
             ),
             child: content,
           ),
@@ -775,7 +807,7 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
   }
   void _setSpeed(double v) {
     final s = (v * 20).round() / 20.0;
-    setState(() => _speed = s.clamp(0.5, 3.0));
+    setState(() => _speed = s.clamp(0.5, 5.0));
     if (_isCasting) {
       ChromecastService().setSpeed(_speed);
     } else if (widget.player.hasBook) {
@@ -847,7 +879,7 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
               child: Icon(Icons.remove_rounded, size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
             ),
           ),
-          Expanded(child: AbsorbSlider(value: _speed, min: 0.5, max: 3.0, divisions: 50, activeColor: widget.accent, onChanged: _setSpeed)),
+          Expanded(child: AbsorbSlider(value: _speed, min: 0.5, max: 5.0, divisions: 90, activeColor: widget.accent, onChanged: _setSpeed)),
           GestureDetector(
             onTap: () => _setSpeed(_speed + 0.05),
             child: Container(
@@ -861,7 +893,7 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('0.5x', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), fontSize: 11)),
-            Text('3.0x', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), fontSize: 11)),
+            Text('5.0x', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), fontSize: 11)),
           ],
         )),
       ]),
@@ -1266,7 +1298,9 @@ class MoreMenuSheet extends StatefulWidget {
   final Color accent;
   final Widget Function(String id) buildItem;
   final void Function(List<String>, int) onReorder;
-  const MoreMenuSheet({super.key, required this.overflowIds, required this.allIds, this.visibleCount = 4, required this.accent, required this.buildItem, required this.onReorder});
+  // The transcript slot reads Read along on a card whose book has an epub.
+  final bool readAlongLabel;
+  const MoreMenuSheet({super.key, required this.overflowIds, required this.allIds, this.visibleCount = 4, required this.accent, required this.buildItem, required this.onReorder, this.readAlongLabel = false});
   @override State<MoreMenuSheet> createState() => _MoreMenuSheetState();
 }
 
@@ -1525,10 +1559,18 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(children: [
-                        Icon(isMore ? Icons.more_horiz_rounded : def!.icon, size: 20,
+                        Icon(
+                          isMore
+                              ? Icons.more_horiz_rounded
+                              : (id == 'lyrics' && widget.readAlongLabel ? Icons.auto_stories_rounded : def!.icon),
+                          size: 20,
                           color: id == 'remove' ? Colors.red.shade300 : cs.onSurface.withValues(alpha: 0.7)),
                         const SizedBox(width: 12),
-                        Expanded(child: Text(isMore ? l.more : localizedCardButtonLabel(l, def!), style: tt.bodyMedium)),
+                        Expanded(child: Text(
+                          isMore
+                              ? l.more
+                              : (id == 'lyrics' && widget.readAlongLabel ? l.readAlong : localizedCardButtonLabel(l, def!)),
+                          style: tt.bodyMedium)),
                         if (isOnCard)
                           Padding(
                             padding: const EdgeInsets.only(right: 8),
@@ -1827,12 +1869,12 @@ class CardActionDelegate {
             padding: EdgeInsets.symmetric(vertical: vPad),
             decoration: BoxDecoration(
               color: castActive
-                  ? _inkAccent(accent).withValues(alpha: _inkAlpha(0.1, 0.12))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.06, 0.03)),
+                  ? _buttonFill(cs, _inkAccent(accent), 0.1, 0.12)
+                  : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
               borderRadius: BorderRadius.circular(radius),
               border: Border.all(color: castActive
-                  ? _inkAccent(accent).withValues(alpha: _inkAlpha(0.3, 1.0))
-                  : cs.onSurface.withValues(alpha: _inkAlpha(0.08, 0.55))),
+                  ? _buttonEdge(_inkAccent(accent), 0.3, 1.0)
+                  : _buttonEdge(cs.onSurface, 0.08, 0.55)),
             ),
             child: iconsOnly
               ? Center(child: Icon(moreIcon, size: iconSz, color: iconColor))
@@ -1983,6 +2025,17 @@ class CardActionDelegate {
           icon: Icons.directions_car_rounded, label: l.carModeTitle,
           accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () => openCarMode(context),
+        );
+      case 'wake':
+        return ValueListenableBuilder<bool>(
+          valueListenable: PlayerScreenWake.wanted,
+          builder: (_, on, __) => CardWideButton(
+            icon: on ? Icons.lightbulb_rounded : Icons.lightbulb_outline_rounded,
+            label: l.keepScreenOn,
+            accent: accent, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
+            highlighted: on,
+            onTap: () => toggleKeepScreenOn(context),
+          ),
         );
       case 'notes':
         return CardWideButton(
@@ -2150,6 +2203,14 @@ class CardActionDelegate {
           icon: Icons.directions_car_rounded, label: l.carModeTitle, accent: accent,
           onTap: () { Navigator.pop(ctx); openCarMode(context); },
         );
+      case 'wake':
+        return MoreMenuItem(
+          icon: PlayerScreenWake.wanted.value
+              ? Icons.lightbulb_rounded
+              : Icons.lightbulb_outline_rounded,
+          label: l.keepScreenOn, accent: accent,
+          onTap: () { Navigator.pop(ctx); toggleKeepScreenOn(context); },
+        );
       case 'notes':
         return MoreMenuItem(
           icon: Icons.note_rounded, label: l.notes, accent: accent,
@@ -2245,6 +2306,7 @@ class CardActionDelegate {
         accent: accent,
         buildItem: (id) => buildMoreMenuItem(id, accent, tt, ctx),
         onReorder: (order, newCount) => onReorder(order, newCount),
+        readAlongLabel: _readAlongInstead,
       ),
     );
   }

@@ -1033,11 +1033,11 @@ class ChromecastService extends ChangeNotifier {
   double get castSpeed => _castSpeed;
 
   Future<void> setSpeed(double speed) async {
-    _castSpeed = speed.clamp(0.5, 3.0);
+    _castSpeed = speed.clamp(0.5, 5.0);
     if (!isConnected) return;
     try {
-      await GoogleCastRemoteMediaClient.instance.setPlaybackRate(speed);
-      verboseLog('[Cast] Speed set to ${speed}x');
+      await GoogleCastRemoteMediaClient.instance.setPlaybackRate(_castSpeed);
+      verboseLog('[Cast] Speed set to ${_castSpeed}x');
     } catch (e) {
       basicLog('[Cast] setPlaybackRate error (may not be supported): $e');
     }

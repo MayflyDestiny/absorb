@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/android_auto_service.dart';
 import '../services/episode_notification_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
@@ -68,6 +69,7 @@ import '../widgets/settings_layout_sheet.dart';
 import '../widgets/server_connection_editor.dart';
 import '../widgets/server_admin_status_badges.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/sign_in_again.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -97,7 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _defaultSpeed = 1.0;
 
   void _setDefaultSpeed(double v) {
-    final s = ((v * 20).round() / 20.0).clamp(0.5, 3.0);
+    final s = ((v * 20).round() / 20.0).clamp(0.5, 5.0);
     setState(() => _defaultSpeed = s);
     PlayerSettings.setDefaultSpeed(s);
   }
@@ -111,6 +113,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _notifSpeedBookmark = false;
   bool _duckBriefInterruptions = false;
   bool _autoplayOnCarConnect = false;
+  bool _keepScreenOnPlayer = false;
+  bool _keepScreenOnCarMode = false;
+  String _carBookSort = 'title';
+  bool _carBookSortReverse = false;
+  String _carPodcastSort = 'title';
+  bool _carEpisodesOldestFirst = false;
   bool _lockSeekBar = false;
   bool _mp3IndexSeeking = false;
   bool _speedAdjustedTime = false;
@@ -160,6 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hideEbookOnly = false;
   bool _showGoodreadsButton = false;
   bool _showExplicitBadge = true;
+  bool _showEbookBadge = true;
   String _finishedBadgeMode = 'text';
   bool _loggingEnabled = false;
   bool _fullScreenPlayer = false;
@@ -171,6 +180,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _rectangleCovers = false;
   bool _showSubtitles = false;
   String _coverSize = 'medium';
+  String _cardButtonFill = 'subtle';
   // Per-library overrides shown in the Library section, scoped to whichever
   // library is currently selected (scales to accounts with many libraries -
   // no giant list, just "whatever you're browsing right now").
@@ -488,6 +498,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _manualSeed = argb);
     PlayerSettings.setManualSeedColor(argb);
     applyManualSeed(argb);
+  }
+
+  Widget _carSortPicker(TextTheme tt, String label, String value,
+      List<(String, String)> options, ValueChanged<String> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: tt.titleSmall),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                for (final (key, text) in options)
+                  ButtonSegment(
+                    value: key,
+                    label: FittedBox(
+                        fit: BoxFit.scaleDown, child: Text(text, maxLines: 1)),
+                  ),
+              ],
+              selected: {value},
+              onSelectionChanged:
+                  _loaded ? (selected) => onChanged(selected.first) : null,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildColorSwatches(ColorScheme cs) {
@@ -1053,8 +1095,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final confirmEveryChapterJump = await PlayerSettings.getConfirmEveryChapterJump();
     final chapterJumpAutoPlay = await PlayerSettings.getChapterJumpAutoPlay();
     final coverSize = await PlayerSettings.getCoverSize();
+    final cardButtonFill = await PlayerSettings.getCardButtonFill();
     final flatBackground = await PlayerSettings.getFlatBackground();
     final showSubtitles = await PlayerSettings.getShowSubtitles();
+    final showEbookBadge = await PlayerSettings.getShowEbookBadge();
     final einkMode = await PlayerSettings.getEinkMode();
     final colorSource = await PlayerSettings.getColorSource();
     final manualSeed = await PlayerSettings.getManualSeedColor();
@@ -1140,6 +1184,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final duckBriefInterruptions = await PlayerSettings.getDuckBriefInterruptions();
     final autoplayOnCarConnect = await PlayerSettings.getAutoplayOnCarConnect();
     final finishedBadgeMode = await PlayerSettings.getFinishedBadgeMode();
+    final keepScreenOnPlayer = await PlayerSettings.getKeepScreenOnInPlayer();
+    final keepScreenOnCarMode = await PlayerSettings.getKeepScreenOnInCarMode();
+    final carBookSort = await PlayerSettings.getCarBookSort();
+    final carBookSortReverse = await PlayerSettings.getCarBookSortReverse();
+    final carPodcastSort = await PlayerSettings.getCarPodcastSort();
+    final carEpisodesOldestFirst = await PlayerSettings.getCarEpisodesOldestFirst();
     unawaited(JsonFileCache.usageBytes().then((b) {
       if (mounted) setState(() => _jsonCacheBytes = b);
     }));
@@ -1191,6 +1241,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _duckBriefInterruptions = duckBriefInterruptions;
         _autoplayOnCarConnect = autoplayOnCarConnect;
         _finishedBadgeMode = finishedBadgeMode;
+        _keepScreenOnPlayer = keepScreenOnPlayer;
+        _keepScreenOnCarMode = keepScreenOnCarMode;
+        _carBookSort = carBookSort;
+        _carBookSortReverse = carBookSortReverse;
+        _carPodcastSort = carPodcastSort;
+        _carEpisodesOldestFirst = carEpisodesOldestFirst;
         _lockSeekBar = lockSeek;
         _speedAdjustedTime = speedAdj;
         _forwardSkip = fwd;
@@ -1236,6 +1292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _rectangleCovers = rectCovers;
         _showSubtitles = showSubtitles;
         _coverSize = coverSize;
+        _cardButtonFill = cardButtonFill;
         _coverPlayButton = coverPlay;
         _cardBackground = cardBg;
         _progressTextScale = progressScale;
@@ -1248,6 +1305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _longBackSkip = longBack;
         _trustAllCerts = trustCerts;
         _showExplicitBadge = showExplicit;
+        _showEbookBadge = showEbookBadge;
         _includePreReleases = preReleases;
         _sleepFadeDuration = fadeDur;
         _sleepChime = chime;
@@ -2418,7 +2476,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                         child: GestureDetector(
-                          onTap: () => _showAccountSheet(context),
+                          onTap: () => auth.isSignedOut
+                              ? openSignInAgain(context)
+                              : _showAccountSheet(context),
                           child: Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -2465,6 +2525,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             displayServerUrl(auth.serverUrl ?? ''),
                             maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                          if (auth.isSignedOut) ...[
+                            const SizedBox(height: 2),
+                            Text(l.signedOutTapToSignIn,
+                              style: tt.labelSmall?.copyWith(color: cs.error, fontWeight: FontWeight.w600)),
+                          ],
                         ])),
                         Icon(Icons.chevron_right_rounded, size: 20, color: cs.primary.withValues(alpha: 0.5)),
                       ]),
@@ -2754,8 +2819,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     child: AbsorbSlider(
                                       value: _defaultSpeed,
                                       min: 0.5,
-                                      max: 3.0,
-                                      divisions: 50,
+                                      max: 5.0,
+                                      divisions: 90,
                                       activeColor: cs.primary,
                                       onChanged: _loaded
                                           ? _setDefaultSpeed
@@ -2802,7 +2867,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     ),
                                   ),
                                   Text(
-                                    '3.0x',
+                                    '5.0x',
                                     style: TextStyle(
                                       color: cs.onSurface.withValues(alpha: 0.3),
                                       fontSize: 11,
@@ -3784,6 +3849,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(l.cardButtonFill, style: tt.titleSmall),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    l.cardButtonFillSubtitle,
+                                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: SegmentedButton<String>(
+                                      showSelectedIcon: false,
+                                      segments: [
+                                        ButtonSegment(value: 'clear', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardButtonFillClear, maxLines: 1))),
+                                        ButtonSegment(value: 'subtle', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardButtonFillSubtle, maxLines: 1))),
+                                        ButtonSegment(value: 'solid', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardButtonFillSolid, maxLines: 1))),
+                                      ],
+                                      selected: {_cardButtonFill},
+                                      onSelectionChanged: _loaded ? (selected) {
+                                        final v = selected.first;
+                                        setState(() => _cardButtonFill = v);
+                                        PlayerSettings.setCardButtonFill(v);
+                                      } : null,
+                                      style: const ButtonStyle(
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
                             SwitchListTile(
                               title: Text(l.wordingClassicTitle),
                               subtitle: Text(
@@ -4097,6 +4198,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         } : null,
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
+                            SwitchListTile(
+                              title: Text(l.keepScreenOnPlayer),
+                              subtitle: Text(l.keepScreenOnPlayerSubtitle,
+                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _keepScreenOnPlayer,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _keepScreenOnPlayer = v);
+                                PlayerSettings.setKeepScreenOnInPlayer(v);
+                              } : null,
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
                             ValueListenableBuilder<bool>(
                               valueListenable: classicWordingNotifier,
                               builder: (context, _, __) {
@@ -4366,22 +4478,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       PlayerSettings.setLockSeekBar(v);
                         } : null,
                             ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            SwitchListTile(
-                        title: Text(Platform.isIOS
-                                    ? l.carConnectAutoplayIos
-                            : l.carConnectAutoplay),
-                              subtitle: Text(
-                                _autoplayOnCarConnect
-                                    ? l.carConnectAutoplayOnSubtitle
-                                    : l.carConnectAutoplayOffSubtitle,
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              value: _autoplayOnCarConnect,
-                        onChanged: _loaded ? (v) {
-                                      setState(() => _autoplayOnCarConnect = v);
-                                      PlayerSettings.setAutoplayOnCarConnect(v);
-                        } : null,
-                            ),
                             // Android only: chooses which pair fills the phone media
                             // player's two extra slots. iOS uses CarPlay's own buttons.
                             if (Platform.isAndroid) ...[
@@ -4414,6 +4510,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           } : null,
                               ),
                             ],
+                          ],
+                        );
+      case 'Car':
+        return
+                        CollapsibleSection(
+                          key: _keyFor('Car'),
+                          icon: Icons.directions_car_rounded,
+                          title: Platform.isIOS ? l.sectionCarIos : l.sectionCar,
+                          cs: cs,
+                          isExpanded: _expandedSection == 'Car',
+                          onExpansionChanged: (v) => _onSectionExpanded('Car', v),
+                          children: [
+                            SwitchListTile(
+                              title: Text(Platform.isIOS
+                                  ? l.carConnectAutoplayIos
+                                  : l.carConnectAutoplay),
+                              subtitle: Text(
+                                  _autoplayOnCarConnect
+                                      ? l.carConnectAutoplayOnSubtitle
+                                      : l.carConnectAutoplayOffSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _autoplayOnCarConnect,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _autoplayOnCarConnect = v);
+                                PlayerSettings.setAutoplayOnCarConnect(v);
+                              } : null,
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            SwitchListTile(
+                              title: Text(l.keepScreenOnCarMode),
+                              subtitle: Text(l.keepScreenOnCarModeSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _keepScreenOnCarMode,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _keepScreenOnCarMode = v);
+                                PlayerSettings.setKeepScreenOnInCarMode(v);
+                              } : null,
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            _carSortPicker(
+                              tt,
+                              l.carBookOrder,
+                              _carBookSort,
+                              [('title', l.title), ('author', l.author), ('added', l.dateAdded)],
+                              (v) {
+                                setState(() => _carBookSort = v);
+                                PlayerSettings.setCarBookSort(v)
+                                    .then((_) => AndroidAutoService.browseOrderChanged());
+                              },
+                            ),
+                            SwitchListTile(
+                              title: Text(l.carBookOrderReverse),
+                              subtitle: Text(l.carBookOrderReverseSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _carBookSortReverse,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _carBookSortReverse = v);
+                                PlayerSettings.setCarBookSortReverse(v)
+                                    .then((_) => AndroidAutoService.browseOrderChanged());
+                              } : null,
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            _carSortPicker(
+                              tt,
+                              l.carPodcastOrder,
+                              _carPodcastSort,
+                              [('title', l.title), ('added', l.dateAdded)],
+                              (v) {
+                                setState(() => _carPodcastSort = v);
+                                PlayerSettings.setCarPodcastSort(v)
+                                    .then((_) => AndroidAutoService.browseOrderChanged());
+                              },
+                            ),
+                            SwitchListTile(
+                              title: Text(l.carEpisodesOldestFirst),
+                              subtitle: Text(l.carEpisodesOldestFirstSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _carEpisodesOldestFirst,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _carEpisodesOldestFirst = v);
+                                PlayerSettings.setCarEpisodesOldestFirst(v)
+                                    .then((_) => AndroidAutoService.browseOrderChanged());
+                              } : null,
+                            ),
                           ],
                         );
       case 'Sleep Timer':
@@ -5085,6 +5265,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       PlayerSettings.setShowExplicitBadge(v);
                         } : null,
                             ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            SwitchListTile(
+                              title: Text(l.showEbookBadge),
+                              subtitle: Text(
+                                _showEbookBadge
+                                    ? l.showEbookBadgeOnSubtitle
+                                    : l.showEbookBadgeOffSubtitle,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _showEbookBadge,
+                        onChanged: _loaded ? (v) {
+                                      setState(() => _showEbookBadge = v);
+                                      PlayerSettings.setShowEbookBadge(v);
+                        } : null,
+                            ),
                             if (lib.libraries.length > 1) ...[
                               const Divider(height: 1, indent: 16, endIndent: 16),
                               ...lib.libraries.map((library) {
@@ -5660,6 +5854,42 @@ const Divider(height: 1, indent: 16, endIndent: 16),
                             mode: LaunchMode.externalApplication),
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
+                            ListTile(
+                              leading: Icon(Icons.discord, color: cs.onSurfaceVariant),
+                              title: Text(l.joinDiscord),
+                              subtitle: Text(l.joinDiscordSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              trailing: Icon(Icons.open_in_new_rounded,
+                                  size: 18, color: cs.onSurfaceVariant),
+                              onTap: () => launchUrl(
+                                  Uri.parse('https://discord.gg/bwH6hdvzZ4'),
+                                  mode: LaunchMode.externalApplication),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            ListTile(
+                              leading: Icon(Icons.email_outlined, color: cs.primary),
+                              title: Text(l.contact),
+                              subtitle: Text(l.contactSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: () {
+                                LogService().contactEmail(
+                                  serverVersion: auth.serverVersion,
+                                );
+                              },
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            ListTile(
+                              leading: Icon(Icons.coffee_rounded, color: Colors.amber.shade600),
+                              title: Text(l.supportTheDev),
+                              subtitle: Text(l.buyMeACoffee,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              trailing: Icon(Icons.favorite_rounded, size: 18, color: Colors.amber.shade600),
+                              onTap: () => launchUrl(
+                                  Uri.parse('https://www.buymeacoffee.com/BarnabasApps'),
+                                  mode: LaunchMode.externalApplication),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
                             SwitchListTile(
                               title: Text(l.enableLogging),
                               subtitle: Text(
@@ -6201,7 +6431,8 @@ const Divider(height: 1, indent: 16, endIndent: 16),
     _syncUploading = true;
     HapticFeedback.mediumImpact();
     try {
-      final result = await SettingsSyncService().pushIfChanged();
+      final result =
+          await SettingsSyncService().pushIfChanged(ignoreBackoff: true);
       if (!mounted) return;
       await _refreshSyncStatus();
       if (!mounted) return;

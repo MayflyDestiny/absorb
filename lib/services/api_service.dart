@@ -424,6 +424,10 @@ class ApiService {
 
   String get _cleanBaseUrl => normalizeServerUrl(baseUrl);
 
+  Future<http.Response> _get(Uri url, {Map<String, String>? headers}) {
+    return _httpClient?.get(url, headers: headers) ?? http.get(url, headers: headers);
+  }
+
   Future<http.Response> _post(Uri url, {Map<String, String>? headers, Object? body}) {
     return _httpClient?.post(url, headers: headers, body: body) ??
         http.post(url, headers: headers, body: body);
@@ -599,6 +603,33 @@ class ApiService {
     }
   }
 
+  /// An API key can't be refreshed, so a 401 on one may mean it was revoked.
+  /// Ask the server once whether it still knows the key before signing out,
+  /// so a stray 401 from something in between doesn't end the session.
+  static DateTime? _apiKeyCheckedAt;
+  static bool _apiKeyCheckRunning = false;
+
+  void _checkRevokedApiKey() {
+    if (_apiKeyCheckRunning) return;
+    final last = _apiKeyCheckedAt;
+    if (last != null && DateTime.now().difference(last) < const Duration(minutes: 1)) return;
+    _apiKeyCheckedAt = DateTime.now();
+    _apiKeyCheckRunning = true;
+    () async {
+      try {
+        final r = await _get(Uri.parse('$_cleanBaseUrl/api/me'), headers: _headers)
+            .timeout(const Duration(seconds: 15));
+        if (r.statusCode == 401) {
+          basicLog('[API] The server no longer accepts this API key');
+          onAuthExpired?.call();
+        }
+      } catch (_) {
+      } finally {
+        _apiKeyCheckRunning = false;
+      }
+    }();
+  }
+
   /// Attempt to refresh the access token using the refresh token. A rejected
   /// refresh is kept distinct from a temporary network/server failure so only
   /// an explicit 401/403 can expire the local session.
@@ -730,7 +761,11 @@ class ApiService {
   /// Static state outlives a single test, so a test that trips the cooldown
   /// would otherwise silently disable the pre-flight for whatever runs next.
   @visibleForTesting
-  static void resetPreflightCooldown() => _preflightCooldownUntil = null;
+  static void resetPreflightCooldown() {
+    _preflightCooldownUntil = null;
+    _apiKeyCheckedAt = null;
+    _apiKeyCheckRunning = false;
+  }
 
   /// Refresh BEFORE spending a known-expired access token, rather than firing
   /// the request, taking a 401, and recovering afterwards.
@@ -806,6 +841,8 @@ class ApiService {
         );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
+    } else if (response.statusCode == 401) {
+      _checkRevokedApiKey();
     }
     return response;
   }
@@ -899,6 +936,8 @@ class ApiService {
         );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
+    } else if (response.statusCode == 401) {
+      _checkRevokedApiKey();
     }
     return response;
   }
@@ -965,6 +1004,8 @@ class ApiService {
         );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
+    } else if (response.statusCode == 401) {
+      _checkRevokedApiKey();
     }
     return response;
   }
@@ -990,6 +1031,8 @@ class ApiService {
         );
       }
       if (outcome == _RefreshOutcome.rejected) onAuthExpired?.call();
+    } else if (response.statusCode == 401) {
+      _checkRevokedApiKey();
     }
     return response;
   }
@@ -2596,7 +2639,9 @@ class ApiService {
   /// false only to deliberately un-finish: the server answers that by
   /// clearing the position to 0, same as the web UI's "mark as not finished",
   /// so [currentTime] is not sent in that case.
-  Future<void> updateProgress(
+  /// Returns false on a 5xx, where a retry could still land; network errors
+  /// still throw.
+  Future<bool> updateProgress(
     String itemId, {
     required double currentTime,
     required double duration,
@@ -2613,7 +2658,7 @@ class ApiService {
             timeout: const Duration(seconds: 10));
         verboseLog('[API] updateProgress unfinish $progressPath: ${unfinish.statusCode}');
         noteLocalProgressPush(itemId);
-        return;
+        return unfinish.statusCode < 500;
       }
       final body = jsonEncode({
         'currentTime': currentTime,
@@ -2626,8 +2671,9 @@ class ApiService {
       final resp = await _authPatch(url,
         body: body,
         timeout: const Duration(seconds: 10));
-      verboseLog('[API] updateProgress response: ${resp.statusCode}');
+      verboseLog('[API] updateProgress response: ${resp.statusCode} ${resp.body}');
       noteLocalProgressPush(itemId);
+      return resp.statusCode < 500;
     } catch (e) {
       verboseLog('[API] updateProgress error: $e');
       rethrow;
@@ -2836,7 +2882,9 @@ class ApiService {
   /// Same [isFinished] contract as [updateProgress]: null leaves the flag out
   /// so the server writes the percent, true marks finished, false un-finishes
   /// and lets the server clear the position to 0.
-  Future<void> updateEpisodeProgress(
+  /// Returns false when it never reached the server (network error or 5xx),
+  /// so a queued save can stay queued.
+  Future<bool> updateEpisodeProgress(
     String itemId,
     String episodeId, {
     required double currentTime,
@@ -2851,7 +2899,7 @@ class ApiService {
             timeout: const Duration(seconds: 10));
         verboseLog('[API] updateEpisodeProgress unfinish $episodeId: ${unfinish.statusCode}');
         noteLocalProgressPush('$itemId-$episodeId');
-        return;
+        return unfinish.statusCode < 500;
       }
       final resp = await _authPatch(url,
         body: jsonEncode({
@@ -2865,8 +2913,10 @@ class ApiService {
       if (resp.statusCode != 200) {
         verboseLog('[API] updateEpisodeProgress $episodeId: HTTP ${resp.statusCode}');
       }
+      return resp.statusCode < 500;
     } catch (e) {
       verboseLog('[API] updateEpisodeProgress error: $e');
+      return false;
     }
   }
 

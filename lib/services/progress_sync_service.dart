@@ -217,12 +217,16 @@ class ProgressSyncService {
           duration: duration,
         );
       } else {
-        await api.updateProgress(
+        final ok = await api.updateProgress(
           itemId,
           currentTime: currentTime,
           duration: await serverTrustedDuration(api, itemId, duration),
           isFinished: isFinished ? true : null,
         );
+        if (!ok) {
+          verboseLog('[Sync] Server did not take $itemId - keeping it pending');
+          return false;
+        }
       }
 
       final pendingList = await ScopedPrefs.getStringList('pending_syncs');
@@ -348,20 +352,28 @@ class ProgressSyncService {
           final localFinished = data['isFinished'] as bool? ?? false;
           final syncDuration =
               await serverTrustedDuration(api, itemId, localDuration);
+          final bool pushed;
           if (episodeId != null) {
-            await api.updateEpisodeProgress(
+            pushed = await api.updateEpisodeProgress(
               apiItemId, episodeId,
               currentTime: localTime,
               duration: syncDuration,
               isFinished: localFinished ? true : null,
             );
           } else {
-            await api.updateProgress(
+            pushed = await api.updateProgress(
               apiItemId,
               currentTime: localTime,
               duration: syncDuration,
               isFinished: localFinished ? true : null,
             );
+          }
+          if (!pushed) {
+            // Dropping it as flushed is how a refused push lost a position
+            // overnight: the next start resumed from the stale spot.
+            verboseLog('[Sync] Push for $itemId did not reach the server - keeping it for the next flush');
+            _consecutiveFailures++;
+            break;
           }
           verboseLog('[Sync] Flushed $itemId via progress update: ${localTime}s');
           // Reset backoff on success - a successful response proves

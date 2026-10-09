@@ -31,6 +31,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Appearance', l.sectionAppearance, l.coverSize, [l.coverSizeSubtitle, l.coverSizeSmall, l.coverSizeMedium, l.coverSizeLarge]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.wordingClassicTitle, [l.wordingClassicOnSubtitle, l.wordingClassicOffSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.finishedBadgeMode, [l.finishedBadgeModeSubtitle, l.finishedBadgeModeText, l.finishedBadgeModeIcon, l.finishedBadgeModeOff]),
+    SettingSearchEntry('Appearance', l.sectionAppearance, l.cardButtonFill, [l.cardButtonFillSubtitle, l.cardButtonFillClear, l.cardButtonFillSubtle, l.cardButtonFillSolid]),
     if (!(Platform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600))
       SettingSearchEntry('Appearance', l.sectionAppearance, l.rotationLockTitle, [l.rotationLockOnSubtitle, l.rotationLockOffSubtitle]),
 
@@ -47,6 +48,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardBackground, [l.cardBackgroundBlurred, l.cardBackgroundGradient, l.off]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardScrubbers, [l.cardScrubbersBothSubtitle, l.cardScrubbersChapterSubtitle, l.cardScrubbersLockedSubtitle]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.speedAdjustedTime, [l.speedAdjustedTimeOnSubtitle, l.speedAdjustedTimeOffSubtitle]),
+    SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.keepScreenOnPlayer, [l.keepScreenOnPlayerSubtitle]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, w.mergeLibraries, [w.mergeLibrariesOnSubtitle, w.mergeLibrariesOffSubtitle, l.settingsMergeImpliedByPodcastTab]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.queueMode, [l.queueModeMergedSubtitle, l.queueModeBooks, l.queueModePodcasts, l.queueModeOff, l.queueModeManual, l.queueModeAuto, l.queueModeSeriesLabel, l.queueModeShowLabel, l.queueModePlaylist]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.autoDownloadQueue, [l.autoDownloadQueueOffSubtitle]),
@@ -71,15 +73,20 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     // ── Media Controls ──
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.chapterProgressInNotification, [l.chapterProgressInNotificationIos, l.chapterProgressOnSubtitle, l.chapterProgressOnSubtitleIos, l.chapterProgressOffSubtitle]),
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.lockSeekBar, [l.lockSeekBarOnSubtitle, l.lockSeekBarOffSubtitle]),
-    SettingSearchEntry(
-        'Media Controls',
-        l.sectionMediaControls,
-        Platform.isIOS ? l.carConnectAutoplayIos : l.carConnectAutoplay,
-        [l.carConnectAutoplayOnSubtitle, l.carConnectAutoplayOffSubtitle]),
     if (Platform.isAndroid) ...[
       SettingSearchEntry('Media Controls', l.sectionMediaControls, l.duckTitle, [l.duckOnSubtitle, l.duckOffSubtitle]),
       SettingSearchEntry('Media Controls', l.sectionMediaControls, l.speedBookmarkInControls, [l.speedBookmarkOnSubtitle, l.speedBookmarkOffSubtitle]),
     ],
+
+    // ── Car ──
+    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar,
+        Platform.isIOS ? l.carConnectAutoplayIos : l.carConnectAutoplay,
+        [l.carConnectAutoplayOnSubtitle, l.carConnectAutoplayOffSubtitle]),
+    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.keepScreenOnCarMode, [l.keepScreenOnCarModeSubtitle]),
+    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carBookOrder, [l.title, l.author, l.dateAdded]),
+    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carBookOrderReverse, [l.carBookOrderReverseSubtitle]),
+    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carPodcastOrder, [l.title, l.dateAdded]),
+    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carEpisodesOldestFirst, [l.carEpisodesOldestFirstSubtitle]),
 
     // ── Sleep Timer ──
     SettingSearchEntry('Sleep Timer', l.sectionSleepTimer, l.shakeDuringSleepTimer, [l.shakeOff, l.shakeAddTime, l.shakeReset]),
@@ -117,6 +124,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Library', l.sectionLibrary, l.hideEbookOnlyTitles, [l.hideEbookOnlyOnSubtitle, l.hideEbookOnlyOffSubtitle]),
     SettingSearchEntry('Library', l.sectionLibrary, l.showGoodreadsButton, [l.showGoodreadsOnSubtitle, l.showGoodreadsOffSubtitle]),
     SettingSearchEntry('Library', l.sectionLibrary, l.showExplicitBadge, [l.showExplicitBadgeOnSubtitle, l.showExplicitBadgeOffSubtitle]),
+    SettingSearchEntry('Library', l.sectionLibrary, l.showEbookBadge, [l.showEbookBadgeOnSubtitle, l.showEbookBadgeOffSubtitle]),
     SettingSearchEntry('Library', l.sectionLibrary, l.coverShapeLabel, [l.coverShapeDefault, l.coverShapeSquare, l.coverShapeRectangle]),
     SettingSearchEntry('Library', l.sectionLibrary, l.subtitleVisibilityLabel, [l.subtitleVisibilityDefault, l.subtitleVisibilityShow, l.subtitleVisibilityHide]),
     SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySkipOverride, [l.currentLibrarySkipOverrideOnSubtitle, l.currentLibrarySkipOverrideOffSubtitle]),

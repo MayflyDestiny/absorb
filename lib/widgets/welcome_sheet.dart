@@ -8,7 +8,7 @@ import '../utils/settle_frames.dart';
 /// couple of essential gestures. Kept short on purpose - the previous version
 /// was a long modal sheet that users tended to dismiss without reading.
 class WelcomeSheet {
-  static const _prefKey = 'has_seen_welcome';
+  static const prefKey = 'has_seen_welcome';
 
   /// Shows a one-time welcome dialog. The future only completes once the dialog
   /// is dismissed (or immediately when it's already been seen) - so callers can
@@ -16,8 +16,8 @@ class WelcomeSheet {
   /// stacking dialogs on top of each other.
   static Future<void> showIfNeeded(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_prefKey) == true) return;
-    await prefs.setBool(_prefKey, true);
+    if (prefs.getBool(prefKey) == true) return;
+    await prefs.setBool(prefKey, true);
     if (!context.mounted) return;
     // Hold the dialog until the shell has actually drawn rather than guessing
     // with a fixed delay. On a first install the cover cache is empty and the

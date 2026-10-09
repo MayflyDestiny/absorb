@@ -2929,15 +2929,11 @@
   "chapterShowSeconds": "显示秒数",
   "chapterShiftBySeconds": "平移（秒）",
   "chapterShiftHint": "平移所有未锁定的章节。使用负值可将其提前。",
-  "chapterBack1Second": "后退 1 秒",
-  "chapterForward1Second": "前进 1 秒",
   "chapterTitleHint": "章节标题",
   "chapterStopPreview": "停止预览",
   "chapterPreviewFromHere": "从此处预览",
   "chapterScrubHint": "拖动到准确位置，然后设置",
   "chapterStartAt": "从 {time} 开始",
-  "chapterSetStartHere": "在此处设置开始",
-  "chapterMore": "更多",
   "chapterUnlock": "解锁",
   "chapterLock": "锁定",
   "chapterInsertBelow": "在下方插入",
@@ -3470,7 +3466,6 @@
   "readAlongFollowSentence": "句子",
   "readAlongColor": "伴读颜色",
   "readAlongLost": "找不到页面上的朗读内容",
-  "readAlongReady": "伴读已就绪",
   "findInEbook": "在电子书中查找",
   "findInEbookSearching": "正在电子书中查找此位置...",
   "findInEbookNotFound": "无法在电子书中找到此位置。",
@@ -3693,6 +3688,188 @@
   "@playerErrorGeneric": {
     "placeholders": {
       "error": {"type": "String"}
+    }
+  },
+  "whatsNewTitle": "Absorb 已更新",
+  "whatsNewContent": "你当前使用的是 {version}。",
+  "@whatsNewContent": {
+    "placeholders": {
+      "version": {"type": "String"}
+    }
+  },
+  "whatsNewButton": "查看更新内容",
+  "loginPlayDownloads": "播放已下载内容",
+  "signedOutDownloadsNote": "你已退出登录。在这里收听的内容，会在重新用 {username} 登录后同步过去。",
+  "@signedOutDownloadsNote": {
+    "placeholders": {
+      "username": {"type": "String"}
+    }
+  },
+  "downloadsEbooks": "电子书",
+  "downloadFailedMissingFile": "无法下载 \"{title}\" - 它的某个文件不在服务器上，扫描书架可能可以修复。",
+  "@downloadFailedMissingFile": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadFailedNoSpace": "无法下载 \"{title}\" - 存储空间不足",
+  "@downloadFailedNoSpace": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadFailedPermission": "无法下载 \"{title}\" - 请检查设置中的下载位置",
+  "@downloadFailedPermission": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadFailedGeneric": "无法下载 \"{title}\"",
+  "@downloadFailedGeneric": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "bookmarksSearchHint": "搜索书签",
+  "bookmarksNoMatches": "没有匹配的书签",
+  "batchDownloadQueued": "{count, plural, =1{正在下载 1 本书} other{正在下载 {count} 本书}}",
+  "@batchDownloadQueued": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchDownloadNothingNew": "已下载过了",
+  "absorbAudioNotDownloaded": "音频未下载",
+  "absorbAudioNotDownloadedEbookOnly": "音频未下载，仅有电子书",
+  "absorbNext": "接下来收听",
+  "absorbNextAdded": "已加入正在收听，排在下一位",
+  "absorbLast": "最后收听",
+  "absorbNextHint": "排在当前播放内容之后",
+  "absorbLastHint": "排在列表末尾",
+  "showEbookBadge": "显示电子书徽章",
+  "showEbookBadgeOnSubtitle": "含电子书的书籍会在封面上显示书本图标",
+  "showEbookBadgeOffSubtitle": "已关闭 - 不显示电子书徽章",
+  "sectionCar": "Android Auto",
+  "sectionCarIos": "CarPlay",
+  "carBookOrder": "车内的书籍顺序",
+  "carBookOrderReverse": "反转书籍顺序",
+  "carBookOrderReverseSubtitle": "从 Z 到 A，或最早添加的在前",
+  "carPodcastOrder": "车内的播客顺序",
+  "carEpisodesOldestFirst": "最早剧集优先",
+  "carEpisodesOldestFirstSubtitle": "适合从头开始收听的节目",
+  "androidAutoCatCollections": "书单",
+  "androidAutoCatPlaylists": "播放列表",
+  "chapterWindowMinutes": "{minutes} 分钟",
+  "@chapterWindowMinutes": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "chapterLoopCut": "循环播放剪辑",
+  "chapterFindStart": "查找章节开头",
+  "chapterFindStartListening": "正在试听标记点附近",
+  "chapterFindStartNone": "这里听不出章节开头",
+  "chapterFindStartWider": "扩大搜索范围",
+  "chapterFindStartCeiling": "已在标记点前后各搜索半小时。章节开头还要更远，或者根本没有章节播报。",
+  "chapterFindStartStrong": "听起来像本章开头",
+  "chapterFindStartMaybe": "有类似章节开头的措辞",
+  "chapterFindStartGap": "{seconds} 秒间隔",
+  "@chapterFindStartGap": {
+    "placeholders": { "seconds": { "type": "String" } }
+  },
+  "chapterFindStartRange": "已搜索 {from} 至 {to}",
+  "@chapterFindStartRange": {
+    "placeholders": { "from": { "type": "String" }, "to": { "type": "String" } }
+  },
+  "chapterFindStartNeedsModel": "请先在设置中开启转录并下载模型",
+  "chapterFindStartUseThis": "使用这里",
+  "chapterFindStartTitle": "标题：{title}",
+  "@chapterFindStartTitle": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+  "readerKeepAwake": "保持屏幕常亮",
+  "readerKeepAwakeHint": "按自己的节奏阅读时避免屏幕超时熄灭。自动滚动和朗读跟随会始终保持屏幕常亮。",
+  "readerMoreControls": "更多控件",
+  "readerAutoScrollSleep": "自动滚动睡眠定时",
+  "readerAutoScrollSleepHint": "一段时间后停止滚动并让屏幕熄灭。",
+  "readerAutoScrollSleepMinutes": "{minutes} 分钟",
+  "@readerAutoScrollSleepMinutes": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "readerAutoScrollSleepLeft": "剩余 {minutes} 分钟",
+  "@readerAutoScrollSleepLeft": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "readerAutoScrollSleepIn": "自动滚动将在 {minutes} 分钟后停止",
+  "@readerAutoScrollSleepIn": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "readerAutoScrollSleepOff": "自动滚动睡眠定时已关闭",
+  "readerAutoScrollSleepEnded": "睡眠定时到 - 自动滚动已关闭",
+  "readerDownloadStarted": "开始下载",
+  "detailChaptersJumpTitle": "跳转到本章节？",
+  "detailChaptersJumpContent": "播放将跳转到 \"{title}\"。",
+  "@detailChaptersJumpContent": {
+    "placeholders": { "title": { "type": "String" } }
+  },
+  "detailChaptersJump": "跳转",
+  "detailChaptersFinished": "{count, plural, =1{已听完 1 个章节} other{已听完 {count} 个章节}}",
+  "@detailChaptersFinished": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "detailOtherListeners": "{count, plural, =0{没有其他听众} =1{1 位其他听众} other{{count} 位其他听众}}",
+  "@detailOtherListeners": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "seriesUpNext": "接下来",
+  "seriesJumpToUpNext": "跳到下一部",
+  "seriesStatsFinished": "已听完",
+  "seriesStatsListened": "已收听",
+  "seriesStatsLeft": "剩余",
+  "seriesFinishedOf": "{done} / {total}",
+  "@seriesFinishedOf": {
+    "placeholders": { "done": { "type": "int" }, "total": { "type": "int" } }
+  },
+  "detailSessionsNone": "还没有收听会话",
+  "detailSessionsAll": "全部 {count} 次会话",
+  "@detailSessionsAll": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "catchUpAudioAhead": "有声书进度更靠前，点按跳过去。",
+  "catchUpPageAhead": "当前页比有声书进度靠前，点按让有声书跳到这里。",
+  "readerShortcutButton": "快捷按钮",
+  "keepScreenOn": "保持屏幕常亮",
+  "keepScreenOnUntilClosed": "屏幕保持常亮，直到你关闭应用",
+  "keepScreenOnOff": "屏幕可以再次熄灭",
+  "keepScreenOnAlwaysHint": "设置中已开启",
+  "keepScreenOnPlayer": "在播放器中保持屏幕常亮",
+  "keepScreenOnPlayerSubtitle": "播放器打开时屏幕保持常亮",
+  "keepScreenOnCarMode": "在车载模式中保持屏幕常亮",
+  "keepScreenOnCarModeSubtitle": "车载模式打开时屏幕保持常亮",
+  "cardButtonFill": "按钮背景",
+  "cardButtonFillSubtitle": "播放卡片上按钮的填充方式",
+  "cardButtonFillClear": "透明",
+  "cardButtonFillSubtle": "浅淡",
+  "cardButtonFillSolid": "实心",
+  "signedOutTapToSignIn": "已退出登录，点按重新登录。",
+  "authSignedOutKeepListening": "你已退出登录。已下载的内容仍可播放。点按红色云朵重新登录。",
+  "signedOutSyncNote": "退出登录期间收听的内容会保存在本机，重新以 {username} 在 {server} 登录后会同步过去。用该账号的任意方式登录都可以。",
+  "@signedOutSyncNote": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "server": {
+        "type": "String"
+      }
     }
   }
 }

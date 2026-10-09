@@ -50,6 +50,16 @@ Map<String, dynamic>? resolveEbookFile(Map<String, dynamic>? item) {
   return firstReadable ?? firstEbook;
 }
 
+/// Whether a library item comes with an ebook, from the full item or from
+/// the minified list form, which only carries the format.
+bool hasEbookFile(Map<String, dynamic>? item) {
+  if (item == null) return false;
+  if (resolveEbookFile(item) != null) return true;
+  final media = item['media'] as Map<String, dynamic>?;
+  final fmt = media?['ebookFormat'];
+  return fmt is String && fmt.isNotEmpty;
+}
+
 Directory? _ebookCacheDirHandle;
 
 Future<Directory> _ebookCacheDir() async {
@@ -142,6 +152,38 @@ Future<Map<String, dynamic>?> cachedEbookFileFor(String itemId) async {
     return first;
   } catch (_) {}
   return null;
+}
+
+/// Item ids that have an ebook file in the cache.
+Future<List<String>> cachedEbookItemIds() async {
+  final ids = <String>{};
+  try {
+    final dir = await _ebookCacheDir();
+    for (final f in dir.listSync()) {
+      if (f is! File) continue;
+      final name = f.uri.pathSegments.last;
+      final dot = name.lastIndexOf('.');
+      if (dot <= 0) continue;
+      final ext = name.substring(dot + 1).toLowerCase();
+      if (!allEbookFormats.contains(ext)) continue;
+      ids.add(name.substring(0, dot));
+    }
+  } catch (_) {}
+  return ids.toList();
+}
+
+/// Cover kept beside a cached ebook for the offline lists. Named so neither
+/// cachedEbookFileFor nor cachedEbookBytesSync can take it for the book.
+Future<File> ebookCoverCacheFile(String itemId) async {
+  final dir = await _ebookCacheDir();
+  return File('${dir.path}/cover_$itemId.jpg');
+}
+
+Future<void> deleteCachedEbookCover(String itemId) async {
+  try {
+    final f = await ebookCoverCacheFile(itemId);
+    if (f.existsSync()) await f.delete();
+  } catch (_) {}
 }
 
 /// Persistent cache path for an item's ebook, keyed by itemId so it's stable
@@ -267,7 +309,9 @@ Future<void> deleteCachedEbook(String itemId) async {
     for (final f in dir.listSync()) {
       if (f is! File) continue;
       final name = f.uri.pathSegments.last;
-      if (name == itemId || name.startsWith('$itemId.')) {
+      if (name == itemId ||
+          name.startsWith('$itemId.') ||
+          name == 'cover_$itemId.jpg') {
         try { await f.delete(); } catch (_) {}
       }
     }

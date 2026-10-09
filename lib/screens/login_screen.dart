@@ -19,6 +19,7 @@ import '../widgets/overlay_toast.dart';
 import '../widgets/server_address_field.dart'
     show displayServerUrl, stripDefaultPort;
 import '../widgets/setup_link_login.dart';
+import '../services/signed_out_playback.dart';
 import '../services/audio_player_service.dart';
 import '../main.dart' show applyTrustAllCerts, flatNotifier;
 import '../l10n/app_localizations.dart';
@@ -596,6 +597,10 @@ serverUrl: serverUrl,
                                     ),
                                   ),
 
+                                  if (context.watch<AuthProvider>().isSignedOut) ...[
+                                    _buildSignedOutSyncNote(cs),
+                                    const SizedBox(height: 12),
+                                  ],
                                   // Server URL
                                   _buildInputField(
                                     controller: _serverController,
@@ -849,6 +854,30 @@ serverUrl: serverUrl,
                       ),
                     ),
                   ),
+
+                  if (SignedOutPlayback.available && !context.watch<AuthProvider>().isSignedOut) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: FilledButton.tonalIcon(
+                        key: const Key('play-downloads-signed-out'),
+                        icon: const Icon(Icons.download_done_rounded),
+                        label: Text(l.loginPlayDownloads),
+                        style: FilledButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () {
+                          final account = SignedOutPlayback.expiredAccount();
+                          if (account != null) {
+                            context.read<AuthProvider>().continueSignedOut(account);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
 
                   // ── Version + Restore pill ──
                   const SizedBox(height: 32),
@@ -1160,7 +1189,7 @@ serverUrl: serverUrl,
     );
     controller.dispose();
     if (link == null || !mounted) return;
-    await handleSetupLinkLogin(context, link, askForConfirmation: false);
+    await handleSetupLinkLogin(context, link);
   }
 
   Future<void> _quickSwitch(SavedAccount account) async {
@@ -1183,6 +1212,36 @@ serverUrl: serverUrl,
       }
       // If this is the root login screen, AuthGate will react to the state change
     }
+  }
+
+  /// Signing back in after the session ended: say which account the
+  /// listening done since then belongs to, since only that one sends it up.
+  Widget _buildSignedOutSyncNote(ColorScheme cs) {
+    final l = AppLocalizations.of(context)!;
+    final tt = Theme.of(context).textTheme;
+    final auth = context.read<AuthProvider>();
+    final server = (auth.serverUrl ?? '')
+        .replaceAll(RegExp(r'^https?://'), '')
+        .replaceAll(RegExp(r'/+$'), '');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.sync_rounded, size: 18, color: cs.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            l.signedOutSyncNote(auth.username ?? '', server),
+            style: tt.bodySmall?.copyWith(color: cs.onSurface, height: 1.4),
+          ),
+        ),
+      ]),
+    );
   }
 
   Widget _buildInputField({

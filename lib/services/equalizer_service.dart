@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'scoped_prefs.dart';
+import 'app_log.dart';
 
 /// Android AudioEffect equalizer bands and presets via platform channels.
 /// Falls back gracefully on unsupported devices.
@@ -95,13 +96,13 @@ class EqualizerService extends ChangeNotifier {
         if (_enabled) _applyCurrentSettings();
       }
     } on MissingPluginException {
-      debugPrint('[EQ] Platform channel not available — using software presets');
+      basicLog('[EQ] Platform channel not available — using software presets');
       _setupSoftwareFallback();
     } on PlatformException catch (e) {
-      debugPrint('[EQ] Platform EQ error: $e — using software presets');
+      basicLog('[EQ] Platform EQ error: $e — using software presets');
       _setupSoftwareFallback();
     } catch (e) {
-      debugPrint('[EQ] Unexpected error: $e — using software presets');
+      basicLog('[EQ] Unexpected error: $e — using software presets');
       _setupSoftwareFallback();
     }
     _skipSilenceApplier?.call(_skipSilence);
@@ -257,7 +258,7 @@ class EqualizerService extends ChangeNotifier {
     if (sessionId <= 0) return;
     try {
       await _channel.invokeMethod('attachSession', {'sessionId': sessionId});
-      debugPrint('[EQ] Attached to audio session $sessionId — enabled=$_enabled '
+      verboseLog('[EQ] Attached to audio session $sessionId — enabled=$_enabled '
           'perItem=$_perItem item=$_currentItemId preset=$_activePreset '
           'bands=$_bandLevels bass=$_bassBoost loud=$_loudnessGain mono=$_mono');
       if (_enabled) {

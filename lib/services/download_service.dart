@@ -1241,6 +1241,72 @@ class DownloadService extends ChangeNotifier {
   DownloadInfo getInfo(String itemId) =>
       _downloads[itemId] ?? DownloadInfo(itemId: itemId);
 
+  // Books whose ebook was opened in the reader. The cached copy stays listed
+  // and kept when there is no audio download to carry it. Never a download
+  // record: the player must not think the audio is on the phone.
+  final Map<String, DownloadInfo> _keptEbooks = {};
+
+  List<DownloadInfo> get keptEbooks => _keptEbooks.values.toList();
+
+  DownloadInfo? keptEbook(String itemId) => _keptEbooks[itemId];
+
+  Future<void> keepEbook({
+    required ApiService api,
+    required String itemId,
+    Map<String, dynamic>? item,
+  }) async {
+    if (_keptEbooks.containsKey(itemId)) return;
+    Map<String, dynamic>? full;
+    try {
+      full = await api.getLibraryItem(itemId);
+    } catch (_) {}
+    final stored = full ?? item;
+    if (stored == null) return;
+    final media = stored['media'] as Map<String, dynamic>?;
+    final metadata = media?['metadata'] as Map<String, dynamic>?;
+    String? coverPath;
+    try {
+      final resp = await http
+          .get(Uri.parse(_hiResCoverUrl(api.getCoverUrl(itemId, width: 800))),
+              headers: api.mediaHeaders)
+          .timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+        final f = await ebookCoverCacheFile(itemId);
+        await f.writeAsBytes(resp.bodyBytes);
+        coverPath = f.path;
+      }
+    } catch (_) {}
+    _keptEbooks[itemId] = DownloadInfo(
+      itemId: itemId,
+      status: DownloadStatus.downloaded,
+      sessionData: jsonEncode({
+        'libraryItem': stored,
+        'mediaMetadata': metadata,
+        'duration': 0,
+        'chapters': const <dynamic>[],
+      }),
+      title: metadata?['title'] as String?,
+      author: metadata?['authorName'] as String?,
+      localCoverPath: coverPath,
+      libraryId: stored['libraryId'] as String?,
+    );
+    await _save();
+    notifyListeners();
+      verboseLog('[Download] ebook kept for offline: $itemId');
+  }
+
+  Future<void> deleteKeptEbook(String itemId) async {
+    if (_keptEbooks.remove(itemId) == null) return;
+    // A downloaded audiobook still reads from the same cached file.
+    if (_downloads.containsKey(itemId)) {
+      await deleteCachedEbookCover(itemId);
+    } else {
+      await deleteCachedEbook(itemId);
+    }
+    await _save();
+    notifyListeners();
+  }
+
   bool isDownloaded(String itemId) =>
       _downloads[itemId]?.status == DownloadStatus.downloaded;
 
@@ -1250,11 +1316,15 @@ class DownloadService extends ChangeNotifier {
   /// ebook bytes live in the reader's persistent cache (fetchEbookToCache).
   /// Fetches a full copy of the item so the offline sheet has the cover,
   /// description, and ebookFile - not just the title.
-  Future<void> registerEbookDownload({
+  /// With [onlyIfNoAudio], a book that has audio is left alone: opening the
+  /// companion ebook of an audiobook must not mark the audiobook downloaded.
+  /// Returns whether a record was written.
+  Future<bool> registerEbookDownload({
     required ApiService api,
     required String itemId,
     Map<String, dynamic>? item,
     String? libraryId,
+    bool onlyIfNoAudio = false,
   }) async {
     Map<String, dynamic>? fullItem;
     try {
@@ -1262,6 +1332,15 @@ class DownloadService extends ChangeNotifier {
     } catch (_) {}
     final stored = fullItem ?? item ?? {'id': itemId};
     final media = stored['media'] as Map<String, dynamic>?;
+    if (onlyIfNoAudio) {
+      final tracks = media?['numTracks'];
+      final audioFiles = media?['audioFiles'];
+      final duration = media?['duration'];
+      final hasAudio = (tracks is num && tracks > 0) ||
+          (audioFiles is List && audioFiles.isNotEmpty) ||
+          (duration is num && duration > 0);
+      if (fullItem == null || hasAudio) return false;
+    }
     final metadata = media?['metadata'] as Map<String, dynamic>?;
     final title = metadata?['title'] as String?;
     final author = metadata?['authorName'] as String?;
@@ -1289,6 +1368,8 @@ class DownloadService extends ChangeNotifier {
     );
     await _save();
     notifyListeners();
+        verboseLog('[Download] ebook-only book kept for offline: $itemId');
+    return true;
   }
 
   bool isDownloading(String itemId) =>
@@ -1358,6 +1439,18 @@ class DownloadService extends ChangeNotifier {
     // to write them. Drop the old setting so new downloads use SAF or internal.
     if (prefs.getString('custom_download_path') != null) {
       await prefs.remove('custom_download_path');
+    }
+    final keptJson = prefs.getString('kept_ebooks');
+    if (keptJson != null) {
+      try {
+        final map = jsonDecode(keptJson) as Map<String, dynamic>;
+        for (final entry in map.entries) {
+          _keptEbooks[entry.key] =
+              DownloadInfo.fromJson(entry.value as Map<String, dynamic>);
+        }
+      } catch (e) {
+        basicLog('[Download] kept ebooks init error: $e');
+      }
     }
     final json = prefs.getString('downloads');
     if (json != null) {
@@ -2098,6 +2191,9 @@ class DownloadService extends ChangeNotifier {
       }
     }
     await prefs.setString('downloads', jsonEncode(map));
+    await prefs.setString('kept_ebooks', jsonEncode({
+      for (final e in _keptEbooks.entries) e.key: e.value.toJson(),
+    }));
   }
 
   List<String>? getLocalPaths(String itemId) {
@@ -2170,6 +2266,14 @@ class DownloadService extends ChangeNotifier {
     bool replaceExisting = false,
   }) async {
     if (shouldStart?.call() == false) return null;
+    // Episodes are keyed "podcastId-episodeId" everywhere below. A caller
+    // holding the bare podcast id (the transcription download prompt did)
+    // used to fail in the key math before a single request went out.
+    if (episodeId != null && !itemId.endsWith('-$episodeId')) {
+      verboseLog('[Download] "$title": composing the episode key from '
+          'podcast $itemId + episode $episodeId');
+      itemId = '$itemId-$episodeId';
+    }
     try {
       await init().timeout(const Duration(seconds: 8));
     } on TimeoutException catch (e) {
@@ -2363,26 +2467,74 @@ class DownloadService extends ChangeNotifier {
   /// (killed mid-transfer, offline at the time). Called when the app comes up
   /// with a working connection; cheap when everything is already cached.
   Future<void> catchUpEbookCaches(ApiService api) async {
-    for (final info in _downloads.values.toList()) {
+    // An ebook opened from a streamed book has a cached file and nothing
+    // that lists it. Give those a record once, so they show offline.
+    for (final id in await cachedEbookItemIds()) {
+      if (_downloads.containsKey(id) || _keptEbooks.containsKey(id)) continue;
+      if (!_ebookRecheckDone.add('kept:$id')) continue;
+      await keepEbook(api: api, itemId: id);
+    }
+    var changed = false;
+    for (final entry in _downloads.entries.toList()) {
+      final info = entry.value;
       if (info.status != DownloadStatus.downloaded) continue;
       if (info.sessionData == null) continue;
       try {
         final session = jsonDecode(info.sessionData!) as Map<String, dynamic>;
-        final ebookFile = resolveEbookFile(
-          session['libraryItem'] as Map<String, dynamic>?,
-        );
-        if (ebookFile == null) continue;
+        var item = session['libraryItem'] as Map<String, dynamic>?;
+        var ebookFile = resolveEbookFile(item);
         final apiItemId = session['libraryItemId'] as String? ?? info.itemId;
+        if (ebookFile == null) {
+          // The record was written when the book was downloaded. An epub
+          // dropped into the folder later never reaches it, so offline Read
+          // says there is no ebook while the web app shows one. Ask the
+          // server once per run for books whose record has none.
+          if (session['episodeId'] != null || item == null) continue;
+          if (!_ebookRecheckDone.add(apiItemId)) continue;
+          final fresh = await api.getLibraryItem(apiItemId);
+          ebookFile = resolveEbookFile(fresh);
+          if (fresh == null || ebookFile == null) continue;
+          final freshMedia = fresh['media'] as Map<String, dynamic>? ?? {};
+          final media =
+              Map<String, dynamic>.from(item['media'] as Map<String, dynamic>? ?? {});
+          media['ebookFile'] = freshMedia['ebookFile'];
+          item = Map<String, dynamic>.from(item)
+            ..['media'] = media
+            ..['libraryFiles'] = [ebookFile];
+          session['libraryItem'] = item;
+          _downloads[entry.key] = DownloadInfo(
+            itemId: info.itemId,
+            status: info.status,
+            progress: info.progress,
+            localPaths: info.localPaths,
+            sessionData: jsonEncode(session),
+            title: info.title,
+            author: info.author,
+            coverUrl: info.coverUrl,
+            localCoverPath: info.localCoverPath,
+            localDirPath: info.localDirPath,
+            libraryId: info.libraryId,
+          );
+          changed = true;
+          verboseLog('[Download] ebook appeared on the server after the '
+              'download: $apiItemId (${ebookFile['ebookFormat'] ?? ebookFile['metadata']?['ext']})');
+        }
         if (await isEbookCached(apiItemId, ebookFile)) continue;
         await _cacheEbookForOffline(
-          api,
-          apiItemId,
-          ebookFile,
-          info.title ?? apiItemId,
-        );
-      } catch (_) {}
+            api, apiItemId, ebookFile, info.title ?? apiItemId);
+      } catch (e) {
+        verboseLog('[Download] ebook catch-up failed for ${info.itemId}: $e');
+      }
+    }
+    if (changed) {
+      await _save();
+      notifyListeners();
     }
   }
+
+  // Books already asked about this run, so a library of downloads costs one
+  // item fetch each per launch, not one per reconnect.
+  final Set<String> _ebookRecheckDone = {};
 
   /// Resolve a book/episode to durable per-file download tasks and enqueue them.
   /// Returns once the tasks are handed to `background_downloader`; progress and
@@ -2428,11 +2580,17 @@ class DownloadService extends ChangeNotifier {
           ? itemId.substring(0, itemId.length - episodeId.length - 1)
           : itemId;
 
-      // The forced direct-play session provides both offline metadata and the
-      // authoritative /file/:ino path for every included track.
-      final sessionData = episodeId != null
-          ? await api.startEpisodePlaybackSession(apiItemId, episodeId)
-          : await api.startPlaybackSession(apiItemId);
+      // Offline metadata and the /file/:ino path of every track, read from the
+      // item itself. A play session carries the same data, but opening one
+      // makes the server close whatever session this phone is streaming on:
+      // the stream then died about 20 seconds into every download and had to
+      // reload, heard as a blip. The session stays as the fallback for a
+      // server whose item has no track list.
+      final sessionData =
+          await _sessionShapedItem(api, apiItemId, episodeId) ??
+              (episodeId != null
+                  ? await api.startEpisodePlaybackSession(apiItemId, episodeId)
+                  : await api.startPlaybackSession(apiItemId));
       if (sessionData == null) throw Exception('Failed to start session');
 
       final allTracks = sessionData['audioTracks'] as List<dynamic>?;
@@ -2456,6 +2614,41 @@ class DownloadService extends ChangeNotifier {
       // re-guessing via time-overlap (which drags phantom neighbours in).
       final downloadedChapters = tracksAreChapters ? resolved.indices : null;
 
+      // The caller's names come from whatever list started the download, and
+      // a queue entry has been seen carrying another episode's title and an
+      // episode title as the show. The server's answer is for exactly this
+      // item, so it names the record and the folder. An episode's "author"
+      // is its show, which is how downloads are grouped.
+      final serverMeta = sessionData['mediaMetadata'] as Map<String, dynamic>?;
+      final serverTitle = (sessionData['displayTitle'] as String?)?.trim() ?? '';
+      final authorField = episodeId != null ? 'title' : 'authorName';
+      final serverAuthor = (serverMeta?[authorField] as String?)?.trim() ?? '';
+      if (serverTitle.isNotEmpty && serverTitle != title) {
+        verboseLog('[Download] Title from the server: "$serverTitle" (was "$title")');
+        title = serverTitle;
+      }
+      var renamed = false;
+      if (serverAuthor.isNotEmpty && serverAuthor != author) {
+        verboseLog('[Download] Author from the server: "$serverAuthor" (was "$author")');
+        author = serverAuthor;
+        renamed = true;
+      }
+      if (renamed || _downloads[itemId]?.title != title) {
+        final running = _downloads[itemId];
+        if (running != null && running.status == DownloadStatus.downloading) {
+          _downloads[itemId] = DownloadInfo(
+            itemId: itemId,
+            status: DownloadStatus.downloading,
+            progress: running.progress,
+            title: title,
+            author: author,
+            coverUrl: coverUrl,
+            libraryId: libraryId,
+          );
+          notifyListeners();
+        }
+      }
+
       final files = _resolveDurableFiles(api, apiItemId, audioTracks);
 
       // Pull the companion ebook into the offline cache too, so a downloaded
@@ -2473,7 +2666,12 @@ class DownloadService extends ChangeNotifier {
       // is moved into the user's chosen folder under "Author/Title" on
       // completion (a direct SAF write can't nest subfolders). iOS downloads
       // into the app group container.
-      final nestedName = _nestedAudioDir(author, title);
+      var nestedName = _nestedAudioDir(author, title);
+      // Books sharing a title and author (a release split into parts) used to
+      // share one folder, so deleting or failing one wiped the others' files.
+      if (_folderTakenByOther(nestedName, itemId)) {
+        nestedName = '$nestedName (${itemId.substring(itemId.length - 8)})';
+      }
       // iOS downloads into the app group container; Android into the
       // app-specific external files dir
       // (/storage/emulated/0/Android/data/<pkg>/files/downloads), which needs
@@ -2539,7 +2737,7 @@ class DownloadService extends ChangeNotifier {
 
       // Cancelled while we were resolving? Bail before enqueueing anything.
       if (_cancelledIds.remove(itemId)) {
-        await _cleanupBookDir(bookDirRef);
+        await _cleanupBookDir(bookDirRef, itemId);
         _activeDownloadIds.remove(itemId);
         _downloads.remove(itemId);
         notifyListeners();
@@ -2656,6 +2854,68 @@ class DownloadService extends ChangeNotifier {
 
   /// Rebuild forced-direct-play track URLs against the current server/token so
   /// native tasks can outlive the playback session that supplied the metadata.
+  /// What a download needs from a play session - tracks, chapters, duration
+  /// and the item for offline metadata - built from the item instead, in the
+  /// session's shape so everything that reads a stored download is unchanged.
+  /// Null when the item does not give a usable track list; the caller then
+  /// falls back to a real session.
+  Future<Map<String, dynamic>?> _sessionShapedItem(
+      ApiService api, String apiItemId, String? episodeId) async {
+    try {
+      final fetched = await api.getLibraryItem(apiItemId);
+      if (fetched == null) return null;
+      final item = Map<String, dynamic>.from(fetched)..remove('userMediaProgress');
+      final media = item['media'] as Map<String, dynamic>? ?? const {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
+
+      List<dynamic> tracks;
+      List<dynamic> chapters;
+      num? duration;
+      String? title;
+      String? author;
+      if (episodeId != null) {
+        final episode = (media['episodes'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .where((e) => e['id'] == episodeId)
+            .firstOrNull;
+        final track = episode?['audioTrack'];
+        if (episode == null || track is! Map<String, dynamic>) return null;
+        tracks = [track];
+        chapters = episode['chapters'] as List<dynamic>? ?? const [];
+        duration = episode['duration'] as num? ?? track['duration'] as num?;
+        title = episode['title'] as String?;
+        author = metadata['author'] as String?;
+      } else {
+        tracks = media['tracks'] as List<dynamic>? ?? const [];
+        chapters = media['chapters'] as List<dynamic>? ?? const [];
+        duration = media['duration'] as num?;
+        title = metadata['title'] as String?;
+        author = metadata['authorName'] as String?;
+      }
+      if (tracks.isEmpty || duration == null || duration <= 0) return null;
+      // Throws on a track without a /file/:ino path.
+      _resolveDurableFiles(api, apiItemId, tracks);
+
+      verboseLog('[Download] Track list read from the item, no play session opened '
+          '(${tracks.length} tracks)');
+      return {
+        'libraryItemId': apiItemId,
+        'episodeId': episodeId,
+        'mediaType': item['mediaType'],
+        'mediaMetadata': metadata,
+        'displayTitle': title,
+        'displayAuthor': author,
+        'duration': duration,
+        'chapters': chapters,
+        'audioTracks': tracks,
+        'libraryItem': item,
+      };
+    } catch (e) {
+      verboseLog('[Download] Item has no usable track list ($e) - using a play session');
+      return null;
+    }
+  }
+
   List<({String url, String filename})> _resolveDurableFiles(
     ApiService api,
     String apiItemId,
@@ -3356,9 +3616,7 @@ class DownloadService extends ChangeNotifier {
       if (moved != null) {
         finalPaths = moved.fileUris;
         finalDirPath = moved.dirUri;
-        await _cleanupBookDir(
-          p.bookDir,
-        ); // drop the now-empty internal temp dir
+        await _cleanupBookDir(p.bookDir, p.itemId); // drop the now-empty internal temp dir
       } else {
         basicLog(
           '[Download] SAF move failed for "$itemId", keeping internal copy',
@@ -3446,7 +3704,7 @@ class DownloadService extends ChangeNotifier {
     if (p != null && !p.failing && p.trackCount > 1) {
       _dismissGroupNotification(itemId);
     }
-    await _cleanupBookDir(dir);
+    await _cleanupBookDir(dir, itemId);
 
     final msg = _mapError(cause, taskException, responseCode);
     _downloads[itemId] = DownloadInfo(
@@ -3464,8 +3722,35 @@ class DownloadService extends ChangeNotifier {
     basicLog(
       '[Download] Failed "$t": $msg (${cause ?? taskException?.description})',
     );
+    _toastFailure(t, cause, taskException, responseCode);
     notifyListeners();
     unawaited(_processQueue());
+  }
+
+  /// A failed book used to just drop back to the download button, so a book
+  /// whose server folder holds a file the server 404s looked like it never
+  /// started (GH #310). Say what went wrong.
+  void _toastFailure(
+      String title, Object? cause, TaskException? te, int? code) {
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return;
+    final l = AppLocalizations.of(navigator.context);
+    if (l == null) return;
+    final s = '${cause ?? ''} ${te?.description ?? ''}'.toLowerCase();
+    final String message;
+    if (code == 404) {
+      message = l.downloadFailedMissingFile(title);
+    } else if (s.contains('no space') || s.contains('enospc')) {
+      message = l.downloadFailedNoSpace(title);
+    } else if (s.contains('permission') ||
+        s.contains('not permitted') ||
+        code == 403) {
+      message = l.downloadFailedPermission(title);
+    } else {
+      message = l.downloadFailedGeneric(title);
+    }
+    showNavigatorOverlayToast(navigator, message,
+        icon: Icons.error_outline_rounded);
   }
 
   Future<void> _handleCanceled(String itemId) async {
@@ -3475,7 +3760,7 @@ class DownloadService extends ChangeNotifier {
     // leave a lingering "Download Complete" for a book the user just
     // canceled - dismiss it.
     if ((p?.trackCount ?? 0) > 1) _dismissGroupNotification(itemId);
-    await _cleanupBookDir(p?.bookDir);
+    await _cleanupBookDir(p?.bookDir, itemId);
     _downloads.remove(itemId);
     _activeDownloadIds.remove(itemId);
     _pending.remove(itemId);
@@ -3608,8 +3893,16 @@ class DownloadService extends ChangeNotifier {
   /// tampered value would otherwise turn "remove this book's folder" into an
   /// unconditional recursive delete of whatever it points at. Refusing is the
   /// cheap direction to fail: the folder is left behind instead of lost.
-  Future<void> _cleanupBookDir(String? bookDir, {Directory? stopAt}) async {
+  ///
+  /// [itemId] guards folders books can share: when another download keeps
+  /// files in the same folder, the folder itself must stay.
+  Future<void> _cleanupBookDir(
+    String? bookDir,
+    String itemId, {
+    Directory? stopAt,
+  }) async {
     if (bookDir == null || isContentUri(bookDir)) return;
+    if (_dirSharedWithOther(bookDir, itemId)) return;
     final dir = Directory(bookDir);
     try {
       // Checked before resolving the root: a folder that's already gone is the
@@ -3691,6 +3984,49 @@ class DownloadService extends ChangeNotifier {
     if (child == parent) return true;
     final normalized = parent.endsWith('/') ? parent : '$parent/';
     return child.startsWith(normalized);
+  }
+
+  /// True when another download already lives in [nestedName] ("Author/Title").
+  /// Books sharing a title and author (a release split into parts) used to
+  /// share one folder, so deleting or failing one wiped the others' files.
+  bool _folderTakenByOther(String nestedName, String itemId) {
+    bool matches(String? dir) {
+      if (dir == null) return false;
+      var d = dir;
+      try {
+        d = Uri.decodeComponent(dir);
+      } catch (_) {}
+      d = d.replaceAll(r'\', '/');
+      return d.endsWith('/$nestedName');
+    }
+
+    for (final e in _downloads.entries) {
+      if (e.key != itemId && matches(e.value.localDirPath)) return true;
+    }
+    for (final p in _pending.values) {
+      if (p.itemId != itemId &&
+          (matches(p.bookDir) || p.safSubfolder == nestedName)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether any other download keeps files in [dirPath]. Downloads made
+  /// before folders were made unique can still share one, and removing the
+  /// whole folder then deletes books the user never touched.
+  bool _dirSharedWithOther(String dirPath, String itemId) {
+    final prefix = dirPath.endsWith('/') ? dirPath : '$dirPath/';
+    for (final e in _downloads.entries) {
+      if (e.key == itemId) continue;
+      final info = e.value;
+      if (info.localDirPath == dirPath) return true;
+      if (info.localPaths.any((p) => p.startsWith(prefix))) return true;
+    }
+    for (final p in _pending.values) {
+      if (p.itemId != itemId && p.bookDir == dirPath) return true;
+    }
+    return false;
   }
 
   String _mapError(Object? cause, TaskException? te, int? code) {
@@ -3928,7 +4264,12 @@ class DownloadService extends ChangeNotifier {
       }
     }
 
+    final sharedPaths = <String>{
+      for (final e in _downloads.entries)
+        if (e.key != itemId) ...e.value.localPaths,
+    };
     for (final path in info.localPaths) {
+      if (sharedPaths.contains(path)) continue;
       try {
         if (isContentUri(path)) {
           await FileDownloader().uri.deleteFile(Uri.parse(path));
@@ -3947,7 +4288,9 @@ class DownloadService extends ChangeNotifier {
     // Author (and book) folder behind.
     try {
       final dirPath = info.localDirPath;
-      if (dirPath != null && isContentUri(dirPath)) {
+      if (dirPath != null && _dirSharedWithOther(dirPath, itemId)) {
+        // Other books still have files here: only this book's files go.
+      } else if (dirPath != null && isContentUri(dirPath)) {
         // SAF book folder: best-effort delete (harmless if already emptied).
         try {
           await FileDownloader().uri.deleteFile(Uri.parse(dirPath));
@@ -3961,9 +4304,9 @@ class DownloadService extends ChangeNotifier {
         await _pruneSafBookDirs(info);
       } else {
         final base = Directory(await downloadBasePath);
-        await _cleanupBookDir(dirPath, stopAt: base);
+        await _cleanupBookDir(dirPath, itemId, stopAt: base);
         // Legacy fallback: UUID-based directory.
-        await _cleanupBookDir('${base.path}/$itemId', stopAt: base);
+        await _cleanupBookDir('${base.path}/$itemId', itemId, stopAt: base);
         // The hidden marker mirror `audiobooks/.absorb/<Author>/<Title>` is a
         // sibling tree of its own, so it needs pruning separately.
         final mirror = _nestedAudioDir(info.author, info.title ?? itemId)
@@ -3971,7 +4314,7 @@ class DownloadService extends ChangeNotifier {
               '$audiobooksSubdir/',
               '$audiobooksSubdir/$absorbMetaDir/',
             );
-        await _cleanupBookDir('${base.path}/$mirror', stopAt: base);
+        await _cleanupBookDir('${base.path}/$mirror', itemId, stopAt: base);
       }
     } catch (_) {}
 
@@ -3992,8 +4335,8 @@ class DownloadService extends ChangeNotifier {
       basicLog('[Download] cover cleanup failed: $e');
     }
 
-    // Drop the offline ebook copy too, if any.
-    await deleteCachedEbook(itemId);
+    // Drop the offline ebook copy too, unless the reader has a claim on it.
+    if (!_keptEbooks.containsKey(itemId)) await deleteCachedEbook(itemId);
 
     await _save();
   }

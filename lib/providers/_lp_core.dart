@@ -322,7 +322,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final reachable =
           await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
       if (!reachable) {
-        debugPrint('[Library] Manual offline off but server unreachable — staying offline');
+        basicLog('[Library] Manual offline off but server unreachable — staying offline');
         _networkOffline = true;
         _buildOfflineSections();
         notifyListeners();
@@ -331,7 +331,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
       _networkOffline = false;
       if (_api != null) {
-        debugPrint('[Library] Manual offline off — flushing pending syncs');
+        verboseLog('[Library] Manual offline off — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
         LocalSessionService().flushPending(api: _api!);
@@ -441,7 +441,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // force-close. No-op if it's already loaded.
       unawaited(_auth?.ensureUserInfoLoaded() ?? Future.value());
       if (_api != null) {
-        debugPrint('[Library] Back online — flushing pending syncs');
+        verboseLog('[Library] Back online — flushing pending syncs');
         AudioPlayerService().resetServerSyncBackoff();
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
@@ -489,9 +489,23 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
       return (dl.itemId.length > 36) == isPodcast;
     }).toList();
+    final downloadedIds = downloads.map((d) => d.itemId).toSet();
+    final keptEbooks = isPodcast
+        ? const <DownloadInfo>[]
+        : DownloadService().keptEbooks.where((k) {
+            if (downloadedIds.contains(k.itemId)) return false;
+            final libraryId = k.libraryId;
+            if (libraryId != null &&
+                libraryId.isNotEmpty &&
+                _selectedLibraryId != null) {
+              return libraryId == _selectedLibraryId;
+            }
+            return true;
+          }).toList();
     debugPrint(
-        '[Library] Building offline sections: ${downloads.length}/${allDownloads.length} downloads (${isPodcast ? "podcast" : "book"})');
-    if (downloads.isEmpty) {
+        '[Library] Building offline sections: ${downloads.length}/${allDownloads.length} downloads (${isPodcast ? "podcast" : "book"}) '
+        '+${keptEbooks.length} kept ebooks library=$_selectedLibraryId of ${_libraries.length}');
+    if (downloads.isEmpty && keptEbooks.isEmpty) {
       _personalizedSections = [];
       _errorMessage = null;
       _isLoading = false;
@@ -505,6 +519,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       double duration = 0;
       List<dynamic> chapters = [];
       String? episodeTitle;
+      Map<String, dynamic>? ebookFile;
       if (dl.sessionData != null) {
         try {
           final session = jsonDecode(dl.sessionData!) as Map<String, dynamic>;
@@ -512,6 +527,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           chapters = session['chapters'] as List<dynamic>? ?? [];
           episodeTitle = session['episodeTitle'] as String? ??
               session['displayTitle'] as String?;
+          ebookFile = resolveEbookFile(
+              session['libraryItem'] as Map<String, dynamic>?);
         } catch (_) {}
       }
 
@@ -548,6 +565,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             },
             'duration': duration,
             'chapters': chapters,
+            if (ebookFile != null) 'ebookFile': ebookFile,
           },
         };
       }
@@ -560,11 +578,29 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final isFinished =
           _progressMap[dl.itemId]?['isFinished'] == true || progress >= 0.999;
 
-      if (progress > 0 && !isFinished) {
-        continueEntities.add(entity);
-      } else {
-        downloadedEntities.add(entity);
-      }
+      if (progress > 0 && !isFinished) continueEntities.add(entity);
+      downloadedEntities.add(entity);
+    }
+    for (final kept in keptEbooks) {
+      Map<String, dynamic>? item;
+      try {
+        item = (jsonDecode(kept.sessionData ?? '{}')
+            as Map<String, dynamic>)['libraryItem'] as Map<String, dynamic>?;
+      } catch (_) {}
+      final ebookFile = resolveEbookFile(item);
+      downloadedEntities.add({
+        'id': kept.itemId,
+        if (kept.libraryId != null) 'libraryId': kept.libraryId,
+        'media': {
+          'metadata': {
+            'title': kept.title ?? 'Unknown Title',
+            'authorName': kept.author ?? '',
+          },
+          'duration': 0,
+          'chapters': const <dynamic>[],
+          if (ebookFile != null) 'ebookFile': ebookFile,
+        },
+      });
     }
 
     _personalizedSections = [
@@ -622,6 +658,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       double duration = 0;
       List<dynamic> chapters = [];
       String? episodeTitle;
+      Map<String, dynamic>? ebookFile;
       if (dl.sessionData != null) {
         try {
           final session = jsonDecode(dl.sessionData!) as Map<String, dynamic>;
@@ -629,6 +666,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           chapters = session['chapters'] as List<dynamic>? ?? [];
           episodeTitle = session['episodeTitle'] as String? ??
               session['displayTitle'] as String?;
+          ebookFile = resolveEbookFile(
+              session['libraryItem'] as Map<String, dynamic>?);
         } catch (_) {}
       }
 
@@ -664,6 +703,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             },
             'duration': duration,
             'chapters': chapters,
+            if (ebookFile != null) 'ebookFile': ebookFile,
           },
         });
       }
@@ -691,6 +731,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     // Ebook-only books (comics, PDFs, mobi) have no audio progress; surface
     // their reading progress so the cover bar and detail sheet still fill in.
     return (mp['ebookProgress'] as num?)?.toDouble() ?? 0;
+  }
+
+  /// The ebook's own reading progress, apart from any audio progress.
+  double getEbookProgress(String? itemId) {
+    if (itemId == null) return 0;
+    return (_progressMap[itemId]?['ebookProgress'] as num?)?.toDouble() ?? 0;
   }
 
   /// Reflect ebook reading progress in the in-memory map right away, so covers
@@ -721,7 +767,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (_resetItems.contains(itemId)) return null;
     final data = _progressMap[itemId];
     if (_locallyFinishedItems.contains(itemId)) {
-      debugPrint('[Progress] getProgressData($itemId) — forcing isFinished from local override (server isFinished=${data?['isFinished']})');
+      verboseLog('[Progress] getProgressData($itemId) — forcing isFinished from local override (server isFinished=${data?['isFinished']})');
       return {...?data, 'isFinished': true};
     }
     return data;
@@ -1391,6 +1437,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   static const _localProbeFailuresToFlip = 2;
   static const _localProbePiggybackWindow = Duration(seconds: 25);
 
+  // Away from home the local server never answers, and a ping every 30s all
+  // day on mobile data (or with no signal at all) is pure waste. After two
+  // minutes of misses the checks spread out to at most every 5 minutes. A
+  // network change starts the fast checks again, so joining home WiFi still
+  // switches over straight away.
+  int _remoteProbeMisses = 0;
+  DateTime? _nextRemoteProbeAt;
+  static const _remoteProbeFastMisses = 4;
+  static const _remoteProbeMaxGap = Duration(minutes: 5);
+
   void _startLocalProbeTimer() {
     final auth = _auth;
     if (auth == null) return;
@@ -1404,6 +1460,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _stopLocalProbeTimer();
       return;
     }
+    _remoteProbeMisses = 0;
+    _nextRemoteProbeAt = null;
     if (_localProbeTimer != null) return;
     _localProbeFailures = 0;
     _localProbeTimer = Timer.periodic(_localProbeInterval, (_) => _probeLocalServer());
@@ -1441,6 +1499,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         DateTime.now().difference(last) < _localProbePiggybackWindow) {
       return;
     }
+    final nextRemote = _nextRemoteProbeAt;
+    if (!auth.useLocalServer &&
+        nextRemote != null &&
+        DateTime.now().isBefore(nextRemote)) {
+      return;
+    }
 
     final probe = await ApiService.pingServerDetailed(
       auth.localServerUrl,
@@ -1470,8 +1534,19 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       await auth.checkLocalServer();
       _localLastReachableAt = DateTime.now();
       _localProbeFailures = 0;
+      _remoteProbeMisses = 0;
+      _nextRemoteProbeAt = null;
     } else {
-      verboseLog('[Library] Local probe miss while on remote (${probe.detail})');
+      _remoteProbeMisses++;
+      if (_remoteProbeMisses > _remoteProbeFastMisses) {
+        final steps = _remoteProbeMisses - _remoteProbeFastMisses;
+        final gap = _localProbeInterval * (1 << steps.clamp(0, 4));
+        final wait = gap < _remoteProbeMaxGap ? gap : _remoteProbeMaxGap;
+        _nextRemoteProbeAt = DateTime.now().add(wait);
+        verboseLog('[Library] Local probe miss while on remote (${probe.detail}), next in ${wait.inSeconds}s');
+      } else {
+        verboseLog('[Library] Local probe miss while on remote (${probe.detail})');
+      }
     }
   }
 
@@ -1503,7 +1578,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           _healthCheckMisses++;
         }
         if (_healthCheckMisses >= 2) {
-          debugPrint('[Library] Health check failed twice — server unreachable, going offline');
+          basicLog('[Library] Health check failed twice — server unreachable, going offline');
           _healthCheckMisses = 0;
           setNetworkOffline(true, reason: 'server');
         }
@@ -1562,6 +1637,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   void setReaderQuiet(bool quiet) {
     if (_readerQuiet == quiet) return;
     _readerQuiet = quiet;
+    PlayerScreenWake.covered.value = quiet;
     if (quiet) {
       _readerQuietAt = DateTime.now();
       debugPrint('[Library] Reader open - quieting live work');
@@ -1726,7 +1802,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     // Never connected this session (loadAccount bailed before wiring the
     // socket). Callbacks AND credentials are both missing, so wire everything
     // and do a full connect() — there is nothing to softReconnect.
-    debugPrint('[Library] Back online — establishing socket for the first time');
+    basicLog('[Library] Back online — establishing socket for the first time');
     _wireSocketCallbacks();
     socket.connect(url, token, customHeaders: auth.customHeaders);
   }
@@ -1754,13 +1830,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           customHeaders: auth.customHeaders,
         ).timeout(const Duration(seconds: 10), onTimeout: () => false);
         if (reachable) {
-          debugPrint('[Library] Socket reconnect failed but server pings OK — reconnecting socket');
+          basicLog('[Library] Socket reconnect failed but server pings OK — reconnecting socket');
           _softReconnectSocket();
           return;
         }
       }
     }
-    debugPrint('[Library] Socket reconnection failed — going offline');
+    basicLog('[Library] Socket reconnection failed — going offline');
     _goOffline();
   }
 
@@ -1791,10 +1867,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // completed against the server), so a concurrent ping timeout is
       // congestion, not an outage. Stay online — the 60s health check keeps
       // verifying.
-      debugPrint('[Library] Server answered recently — deferring offline flip');
+      verboseLog('[Library] Server answered recently — deferring offline flip');
       return;
     }
-    debugPrint('[Library] Network error — going offline');
+    basicLog('[Library] Network error — going offline');
     setNetworkOffline(true, reason: 'server');
   }
 
@@ -1846,6 +1922,35 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
   }
 
+  /// A start reads the position this phone saved, and only asks the server
+  /// for a couple of seconds before playing. On a slow server that loses,
+  /// and the book resumes from a spot another device has long moved past
+  /// even though its newer position already arrived here. Store it where
+  /// the start looks, but only when it's newer than this phone's own save.
+  Future<void> _storeNewerServerPosition(
+      String key, Map<String, dynamic> mp) async {
+    if (mp['isFinished'] == true) return;
+    final serverTime = (mp['currentTime'] as num?)?.toDouble();
+    final serverUpd = (mp['lastUpdate'] as num?)?.toInt() ?? 0;
+    if (serverTime == null || serverUpd <= 0) return;
+    final sync = ProgressSyncService();
+    if (serverUpd <= await sync.getSavedTimestamp(key)) return;
+    final local = await sync.getLocal(key);
+    final localTime = (local?['currentTime'] as num?)?.toDouble();
+    if (localTime != null && (localTime - serverTime).abs() < 1.0) return;
+    final duration = (mp['duration'] as num?)?.toDouble() ??
+        (local?['duration'] as num?)?.toDouble() ??
+        0;
+    await sync.cacheServerProgress(
+      itemId: key,
+      currentTime: serverTime,
+      duration: duration,
+      overridePending: true,
+    );
+    verboseLog('[Sync] Stored newer server position for $key: '
+        '${localTime?.toStringAsFixed(1) ?? '-'}s -> ${serverTime.toStringAsFixed(1)}s');
+  }
+
   void _onRemoteProgressUpdated(Map<String, dynamic> mp) {
     final itemId = mp['libraryItemId'] as String?;
     final episodeId = mp['episodeId'] as String?;
@@ -1856,6 +1961,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final playingKey = player.currentEpisodeId != null
         ? '${player.currentItemId}-${player.currentEpisodeId}'
         : player.currentItemId;
+    if (!(key == playingKey && player.isPlaying)) {
+      unawaited(_storeNewerServerPosition(key, mp));
+    }
     if (key == playingKey && player.hasBook) {
       if (mp['isFinished'] == true && !_resetItems.contains(key)) {
         // Re-reading a finished book: the server keeps isFinished=true and
