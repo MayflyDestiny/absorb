@@ -78,6 +78,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get later => '稍后';
 
   @override
+  String get whatsNewTitle => 'Absorb 已更新';
+
+  @override
+  String whatsNewContent(String version) {
+    return '你当前使用的是 $version。';
+  }
+
+  @override
+  String get whatsNewButton => '查看更新内容';
+
+  @override
   String get gotIt => '知道了';
 
   @override
@@ -311,6 +322,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupLinkSigningIn => '正在检查登录链接...';
+
+  @override
+  String get loginPlayDownloads => '播放已下载内容';
+
+  @override
+  String signedOutDownloadsNote(String username) {
+    return '你已退出登录。在这里收听的内容，会在重新用 $username 登录后同步过去。';
+  }
 
   @override
   String get loginPasteLink => '粘贴登录链接';
@@ -711,6 +730,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadsCompleted => '已完成';
 
   @override
+  String get downloadsEbooks => '电子书';
+
+  @override
   String get downloadsWaiting => '等待中...';
 
   @override
@@ -743,6 +765,26 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String downloadsRemovedTitle(String title) {
     return '\"$title\" 已移除';
+  }
+
+  @override
+  String downloadFailedMissingFile(String title) {
+    return '无法下载 \"$title\" - 它的某个文件不在服务器上，扫描书架可能可以修复。';
+  }
+
+  @override
+  String downloadFailedNoSpace(String title) {
+    return '无法下载 \"$title\" - 存储空间不足';
+  }
+
+  @override
+  String downloadFailedPermission(String title) {
+    return '无法下载 \"$title\" - 请检查设置中的下载位置';
+  }
+
+  @override
+  String downloadFailedGeneric(String title) {
+    return '无法下载 \"$title\"';
   }
 
   @override
@@ -839,6 +881,26 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get bookmarksNoBookmarks => '暂无书签';
+
+  @override
+  String get bookmarksSearchHint => '搜索书签';
+
+  @override
+  String get bookmarksNoMatches => '没有匹配的书签';
+
+  @override
+  String batchDownloadQueued(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '正在下载 $count 本书',
+      one: '正在下载 1 本书',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get batchDownloadNothingNew => '已下载过了';
 
   @override
   String bookmarksDeleteCount(int count) {
@@ -3136,6 +3198,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ebookOnlyNoAudio => '仅电子书 - 无音频';
 
   @override
+  String get absorbAudioNotDownloaded => '音频未下载';
+
+  @override
+  String get absorbAudioNotDownloadedEbookOnly => '音频未下载，仅有电子书';
+
+  @override
   String get fullyAbsorbed => '已完成';
 
   @override
@@ -3146,6 +3214,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addToAbsorbing => '添加到收听中';
+
+  @override
+  String get absorbNext => '接下来收听';
+
+  @override
+  String get absorbNextAdded => '已加入正在收听，排在下一位';
+
+  @override
+  String get absorbLast => '最后收听';
+
+  @override
+  String get absorbNextHint => '排在当前播放内容之后';
+
+  @override
+  String get absorbLastHint => '排在列表末尾';
 
   @override
   String get removedFromAbsorbing => '已从收听中移除';
@@ -4156,6 +4239,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get finishedBadgeModeOff => '关闭';
+
+  @override
+  String get showEbookBadge => '显示电子书徽章';
+
+  @override
+  String get showEbookBadgeOnSubtitle => '含电子书的书籍会在封面上显示书本图标';
+
+  @override
+  String get showEbookBadgeOffSubtitle => '已关闭 - 不显示电子书徽章';
 
   @override
   String get libraryFallback => '媒体库';
@@ -7238,6 +7330,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get carConnectAutoplayOffSubtitle => '播放等待您按下播放键';
 
   @override
+  String get sectionCar => 'Android Auto';
+
+  @override
+  String get sectionCarIos => 'CarPlay';
+
+  @override
+  String get carBookOrder => '车内的书籍顺序';
+
+  @override
+  String get carBookOrderReverse => '反转书籍顺序';
+
+  @override
+  String get carBookOrderReverseSubtitle => '从 Z 到 A，或最早添加的在前';
+
+  @override
+  String get carPodcastOrder => '车内的播客顺序';
+
+  @override
+  String get carEpisodesOldestFirst => '最早剧集优先';
+
+  @override
+  String get carEpisodesOldestFirstSubtitle => '适合从头开始收听的节目';
+
+  @override
   String get androidAutoCatBooks => '书籍';
 
   @override
@@ -7245,6 +7361,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get androidAutoCatAuthors => '作者';
+
+  @override
+  String get androidAutoCatCollections => '书单';
+
+  @override
+  String get androidAutoCatPlaylists => '播放列表';
 
   @override
   String get showTipsAgain => '再次显示提示';
@@ -7447,16 +7569,60 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chapterShowSeconds => '显示秒数';
 
   @override
+  String chapterWindowMinutes(int minutes) {
+    return '$minutes 分钟';
+  }
+
+  @override
+  String get chapterLoopCut => '循环播放剪辑';
+
+  @override
+  String get chapterFindStart => '查找章节开头';
+
+  @override
+  String get chapterFindStartListening => '正在试听标记点附近';
+
+  @override
+  String get chapterFindStartNone => '这里听不出章节开头';
+
+  @override
+  String get chapterFindStartWider => '扩大搜索范围';
+
+  @override
+  String get chapterFindStartCeiling => '已在标记点前后各搜索半小时。章节开头还要更远，或者根本没有章节播报。';
+
+  @override
+  String get chapterFindStartStrong => '听起来像本章开头';
+
+  @override
+  String get chapterFindStartMaybe => '有类似章节开头的措辞';
+
+  @override
+  String chapterFindStartGap(String seconds) {
+    return '$seconds 秒间隔';
+  }
+
+  @override
+  String chapterFindStartRange(String from, String to) {
+    return '已搜索 $from 至 $to';
+  }
+
+  @override
+  String get chapterFindStartNeedsModel => '请先在设置中开启转录并下载模型';
+
+  @override
+  String get chapterFindStartUseThis => '使用这里';
+
+  @override
+  String chapterFindStartTitle(String title) {
+    return '标题：$title';
+  }
+
+  @override
   String get chapterShiftBySeconds => '平移（秒）';
 
   @override
   String get chapterShiftHint => '平移所有未锁定的章节。使用负值可将其提前。';
-
-  @override
-  String get chapterBack1Second => '后退 1 秒';
-
-  @override
-  String get chapterForward1Second => '前进 1 秒';
 
   @override
   String get chapterTitleHint => '章节标题';
@@ -7474,12 +7640,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String chapterStartAt(String time) {
     return '从 $time 开始';
   }
-
-  @override
-  String get chapterSetStartHere => '在此处设置开始';
-
-  @override
-  String get chapterMore => '更多';
 
   @override
   String get chapterUnlock => '解锁';
@@ -8533,6 +8693,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerPinTopBarHint => '将标题和进度条固定到页面顶部，而不是点击时显示。页面会稍短一些，以免遮挡文字。';
 
   @override
+  String get readerKeepAwake => '保持屏幕常亮';
+
+  @override
+  String get readerKeepAwakeHint => '按自己的节奏阅读时避免屏幕超时熄灭。自动滚动和朗读跟随会始终保持屏幕常亮。';
+
+  @override
   String get readerLayoutAuto => '自动';
 
   @override
@@ -8583,6 +8749,101 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String readerAutoScrollSpeed(int percent) {
     return '速度 $percent%';
+  }
+
+  @override
+  String get readerMoreControls => '更多控件';
+
+  @override
+  String get readerAutoScrollSleep => '自动滚动睡眠定时';
+
+  @override
+  String get readerAutoScrollSleepHint => '一段时间后停止滚动并让屏幕熄灭。';
+
+  @override
+  String readerAutoScrollSleepMinutes(int minutes) {
+    return '$minutes 分钟';
+  }
+
+  @override
+  String readerAutoScrollSleepLeft(int minutes) {
+    return '剩余 $minutes 分钟';
+  }
+
+  @override
+  String readerAutoScrollSleepIn(int minutes) {
+    return '自动滚动将在 $minutes 分钟后停止';
+  }
+
+  @override
+  String get readerAutoScrollSleepOff => '自动滚动睡眠定时已关闭';
+
+  @override
+  String get readerAutoScrollSleepEnded => '睡眠定时到 - 自动滚动已关闭';
+
+  @override
+  String get readerDownloadStarted => '开始下载';
+
+  @override
+  String get detailChaptersJumpTitle => '跳转到本章节？';
+
+  @override
+  String detailChaptersJumpContent(String title) {
+    return '播放将跳转到 \"$title\"。';
+  }
+
+  @override
+  String get detailChaptersJump => '跳转';
+
+  @override
+  String detailChaptersFinished(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已听完 $count 个章节',
+      one: '已听完 1 个章节',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String detailOtherListeners(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 位其他听众',
+      one: '1 位其他听众',
+      zero: '没有其他听众',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seriesUpNext => '接下来';
+
+  @override
+  String get seriesJumpToUpNext => '跳到下一部';
+
+  @override
+  String get seriesStatsFinished => '已听完';
+
+  @override
+  String get seriesStatsListened => '已收听';
+
+  @override
+  String get seriesStatsLeft => '剩余';
+
+  @override
+  String seriesFinishedOf(int done, int total) {
+    return '$done / $total';
+  }
+
+  @override
+  String get detailSessionsNone => '还没有收听会话';
+
+  @override
+  String detailSessionsAll(int count) {
+    return '全部 $count 次会话';
   }
 
   @override
@@ -9170,9 +9431,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readAlongLost => '找不到页面上的朗读内容';
 
   @override
-  String get readAlongReady => '伴读已就绪';
-
-  @override
   String get findInEbook => '在电子书中查找';
 
   @override
@@ -9524,5 +9782,64 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String playerErrorGeneric(String error) {
     return '播放失败：$error';
+  }
+
+  @override
+  String get catchUpAudioAhead => '有声书进度更靠前，点按跳过去。';
+
+  @override
+  String get catchUpPageAhead => '当前页比有声书进度靠前，点按让有声书跳到这里。';
+
+  @override
+  String get readerShortcutButton => '快捷按钮';
+
+  @override
+  String get keepScreenOn => '保持屏幕常亮';
+
+  @override
+  String get keepScreenOnUntilClosed => '屏幕保持常亮，直到你关闭应用';
+
+  @override
+  String get keepScreenOnOff => '屏幕可以再次熄灭';
+
+  @override
+  String get keepScreenOnAlwaysHint => '设置中已开启';
+
+  @override
+  String get keepScreenOnPlayer => '在播放器中保持屏幕常亮';
+
+  @override
+  String get keepScreenOnPlayerSubtitle => '播放器打开时屏幕保持常亮';
+
+  @override
+  String get keepScreenOnCarMode => '在车载模式中保持屏幕常亮';
+
+  @override
+  String get keepScreenOnCarModeSubtitle => '车载模式打开时屏幕保持常亮';
+
+  @override
+  String get cardButtonFill => '按钮背景';
+
+  @override
+  String get cardButtonFillSubtitle => '播放卡片上按钮的填充方式';
+
+  @override
+  String get cardButtonFillClear => '透明';
+
+  @override
+  String get cardButtonFillSubtle => '浅淡';
+
+  @override
+  String get cardButtonFillSolid => '实心';
+
+  @override
+  String get signedOutTapToSignIn => '已退出登录，点按重新登录。';
+
+  @override
+  String get authSignedOutKeepListening => '你已退出登录。已下载的内容仍可播放。点按红色云朵重新登录。';
+
+  @override
+  String signedOutSyncNote(String username, String server) {
+    return '退出登录期间收听的内容会保存在本机，重新以 $username 在 $server 登录后会同步过去。用该账号的任意方式登录都可以。';
   }
 }

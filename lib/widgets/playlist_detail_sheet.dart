@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
+import 'absorb_placement.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import 'cover_badges.dart';
@@ -621,12 +622,9 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                   icon: Icons.add_circle_outline_rounded,
                   color: cs.primary,
                   onTrigger: () async {
-                    await lib.addToAbsorbingQueue(progressKey);
-                    lib.absorbingItemCache[progressKey] = Map<String, dynamic>.from(libraryItem);
-                    HapticFeedback.mediumImpact();
-                    if (context.mounted) {
-                      showOverlayToast(context, Wording.of(context).playlistDetailAddedToAbsorbing(episodeTitle ?? title), icon: Icons.add_circle_outline_rounded);
-                    }
+                    await addToAbsorbingWithPicker(context, progressKey,
+                        item: libraryItem,
+                        addedToast: Wording.of(context).playlistDetailAddedToAbsorbing(episodeTitle ?? title));
                   },
                 ),
           child: Padding(
@@ -716,8 +714,8 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
           .copyWith(bottom: 40),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: coverGridCount(context),
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
         childAspectRatio: 0.62,
       ),
       itemCount: items.length,

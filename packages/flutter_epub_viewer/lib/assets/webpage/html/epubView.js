@@ -155,6 +155,7 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
     manager: manager,
     flow: flow,
     spread: spread,
+    minSpreadWidth: minSpreadWidthFor(spread),
     width: "100vw",
     height: "100vh",
     snap: snap && !useCustomSwipe,
@@ -2276,8 +2277,16 @@ function search(q) {
   ).then(results => Promise.resolve([].concat.apply([], results)));
 };
 
+// Absorb patch: epub.js treats "always" exactly like "auto" - both wait for
+// an 800px wide view - so picking two pages did nothing on an unfolded phone
+// held upright (about 690px). Two pages now only asks for room for two
+// readable columns; a regular phone upright (under 560px) stays on one.
+function minSpreadWidthFor(spread) {
+  return spread === "always" ? 560 : 800;
+}
+
 function setSpread(spread) {
-  rendition.spread(spread);
+  rendition.spread(spread, minSpreadWidthFor(spread));
 }
 
 function setFlow(flow) {

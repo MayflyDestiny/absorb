@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
+import 'absorb_placement.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import 'cover_badges.dart';
@@ -561,12 +562,9 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
                   icon: Icons.add_circle_outline_rounded,
                   color: cs.primary,
                   onTrigger: () async {
-                    await lib.addToAbsorbingQueue(itemId);
-                    lib.absorbingItemCache[itemId] = Map<String, dynamic>.from(book);
-                    HapticFeedback.mediumImpact();
-                    if (context.mounted) {
-                      showOverlayToast(context, Wording.of(context).collectionDetailAddedToAbsorbing(title), icon: Icons.add_circle_outline_rounded);
-                    }
+                    await addToAbsorbingWithPicker(context, itemId,
+                        item: book,
+                        addedToast: Wording.of(context).collectionDetailAddedToAbsorbing(title));
                   },
                 ),
           child: card,
@@ -589,8 +587,8 @@ class _CollectionDetailSheetState extends State<CollectionDetailSheet> {
           .copyWith(bottom: 40),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: coverGridCount(context),
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
         childAspectRatio: 0.62,
       ),
       itemCount: books.length,

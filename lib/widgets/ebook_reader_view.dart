@@ -15,6 +15,9 @@ import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/chapter_lookup.dart';
+import '../services/chromecast_service.dart';
+import '../services/download_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/find_in_ebook.dart';
@@ -24,15 +27,33 @@ import '../services/scoped_prefs.dart';
 import '../services/lyrics_service.dart';
 import '../services/read_along_script.dart';
 import '../services/screen_wake.dart';
+import '../services/sync_point_store.dart';
 import '../services/transcript_line_store.dart';
 import '../services/transcription_service.dart';
 import '../services/volume_key_service.dart';
 import '../utils/series_id.dart';
+import '../utils/chapter_title_match.dart';
 import 'overlay_toast.dart';
 import 'transcription_download_prompt.dart';
 import 'progress_dialog.dart';
 import 'quote_share_sheet.dart';
-import 'card_buttons.dart' show CardSpeedSheet;
+import 'book_detail_sheet.dart';
+import 'card_button_config.dart' show buttonDefById, localizedCardButtonLabel;
+import 'card_buttons.dart'
+    show CardSpeedSheet, MoreMenuItem, SimpleBookmarkSheet, showInactiveToast;
+import 'card_chapters_sheet.dart';
+import 'chromecast_button.dart';
+import 'equalizer_sheet.dart';
+import 'sleep_timer_sheet.dart';
+import '../services/app_log.dart';
+
+typedef _ReaderAction = ({
+  IconData icon,
+  String label,
+  Color? tint,
+  bool enabled,
+  VoidCallback onTap,
+});
 
 /// Reader background/text presets (e-reader themes). Colors are hex so they
 /// feed both the WebView CSS and the Flutter overlays.
@@ -166,6 +187,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // Read along: follow the audiobook by coloring the words being spoken.
   bool _readAlongOn = false;
   bool _didAutoReadAlong = false;
+  // Backgrounding stops read along; this brings it back on return.
+  bool _readAlongResume = false;
+  // Catch up offers: each direction is offered once per visit.
+  bool _didScheduleCatchUp = false;
+  bool _offeredPageToAudio = false;
+  bool _offeredAudioToPage = false;
   // Listening ahead: the runway fills faster with the playhead standing
   // still, and nobody wants to hear words the page can't show yet. Armed at
   // start; the first gated tick pauses a playing book (resumed by itself
@@ -173,6 +200,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   bool _readAlongGateArmed = false;
   bool _readAlongGatePaused = false;
   bool _readAlongGateWaiting = false;
+  // Start-up card in the middle of the page: 'finding' while the audio's
+  // spot is located in the book, 'listening' while the runway builds.
+  String? _readAlongPrep;
   Timer? _readAlongTimer;
   double? _readAlongLineStart;
   double _readAlongLineLastWord = 0;
@@ -221,6 +251,16 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // Keep the title and progress bar on screen above the page instead of
   // fading them in over it. The page gets shorter, never covered.
   bool _pinTop = false;
+  // Hold the screen on for the whole read, not only while auto scroll or
+  // read along moves the page (GH #384).
+  bool _keepAwake = true;
+  // Auto scroll's own sleep timer, set by press-and-hold on its button.
+  Timer? _autoScrollSleepTimer;
+  DateTime? _autoScrollSleepEnd;
+  int _autoScrollSleepMinutes = 0;
+  // After that timer fires the screen may go dark even with keep-awake on,
+  // until the reader is touched again.
+  bool _screenWakeHeldOff = false;
   static const _spreadModes = [EpubSpread.auto, EpubSpread.none, EpubSpread.always];
   // E-reader background theme (empty = follow the app's light/dark) and font.
   String _themeId = '';
@@ -235,6 +275,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   static const _kTheme = 'ereader_theme';
   static const _kFont = 'ereader_font';
   static const _kPinTop = 'ereader_pin_top';
+  static const _kKeepAwake = 'ereader_keep_awake';
+  static const _kBarAction = 'ereader_bar_action';
 
   // Gates the WebView mount until the entering route animation completes, so
   // the heavy platform view doesn't stutter the open transition.
@@ -252,6 +294,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   String _audioAuthor = '';
   String? _audioCoverUrl;
   bool _startingAudio = false;
+  // Which control sits in the player bar's left slot.
+  String _barAction = 'speed';
   // Held from initState so dispose can lift the quiet without a context read.
   late final LibraryProvider _quietLib;
 
@@ -303,13 +347,18 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       final drifted = _bgDrifted;
       _bgCfi = null;
       _bgDrifted = false;
+      final resumeReadAlong = _readAlongResume;
+      _readAlongResume = false;
       if (drifted && cfi != null && cfi.isNotEmpty) {
         Future.delayed(const Duration(milliseconds: 350), () async {
           if (!mounted || !_readerActive) return;
           await _epubController?.display(cfi: cfi);
           // The live page moved under the blind; re-seat it on the page after.
           if (_autoScroll) await _epubController?.autoScrollResync();
+          if (resumeReadAlong) await _resumeReadAlong();
         });
+      } else if (resumeReadAlong) {
+        unawaited(_resumeReadAlong());
       }
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
@@ -321,6 +370,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       // a second, and nobody is reading a page they can't see.
       if (_readAlongOn) {
         debugPrint('[ReadAlong] app backgrounded - stopping');
+        _readAlongResume = true;
         _stopReadAlong();
       }
     } else {
@@ -367,7 +417,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       libraryId: lib.selectedLibraryId,
       fromUi: true,
     );
-    if (mounted) setState(() => _startingAudio = false);
+    if (!mounted) return;
+    setState(() => _startingAudio = false);
+    unawaited(_maybeOfferCatchUp(audioStarting: true));
   }
 
   void _loadSkipSettings() {
@@ -413,6 +465,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _themeId = await ScopedPrefs.getString(_kTheme) ?? '';
     _fontId = await ScopedPrefs.getString(_kFont) ?? 'original';
     _pinTop = await ScopedPrefs.getBool(_kPinTop) ?? false;
+    _keepAwake = await ScopedPrefs.getBool(_kKeepAwake) ?? true;
+    _barAction = await ScopedPrefs.getString(_kBarAction) ?? 'speed';
+    if (mounted) _syncScreenWake();
     _volumeNavMode = await PlayerSettings.getEreaderVolumeNav();
     _volumeNavWhilePlaying = await PlayerSettings.getEreaderVolumeNavWhilePlaying();
     _autoScrollSpeed = (await PlayerSettings.getEreaderAutoScrollSpeed())
@@ -580,6 +635,32 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     await ScopedPrefs.setInt(_kMarginH, margin);
   }
 
+  /// The screen stays on while the setting, auto scroll or read along asks
+  /// for it. Every path that changes one of those ends here, and dispose
+  /// releases it outright since the platform never clears it on its own.
+  void _syncScreenWake() {
+    if (_screenWakeHeldOff) {
+      ScreenWake.hold('reader', false);
+      return;
+    }
+    ScreenWake.hold('reader', _keepAwake || _autoScroll || _readAlongOn);
+  }
+
+  /// The reader is being used again after the auto scroll sleep timer let
+  /// the screen go dark.
+  void _wakeScreenAgain() {
+    if (!_screenWakeHeldOff) return;
+    _screenWakeHeldOff = false;
+    _syncScreenWake();
+  }
+
+  Future<void> _updateKeepAwake(bool on) async {
+    if (on == _keepAwake) return;
+    setState(() => _keepAwake = on);
+    _syncScreenWake();
+    await ScopedPrefs.setBool(_kKeepAwake, on);
+  }
+
   Future<void> _updatePinTop(bool on) async {
     if (on == _pinTop) return;
     // The WebView gets shorter or taller, so epub.js re-paginates and
@@ -604,10 +685,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   void dispose() {
     _stopReadAlong();
     _speedToast?.dismiss();
-    if (_autoScroll) {
-      _epubController?.autoScrollStop();
-      ScreenWake.keepOn(false);
-    }
+    _autoScrollSleepTimer?.cancel();
+    if (_autoScroll) _epubController?.autoScrollStop();
+    ScreenWake.hold('reader', false);
     _quietLib.setReaderQuiet(false);
     WidgetsBinding.instance.removeObserver(this);
     _volumeNav.detach();
@@ -633,6 +713,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   }
 
   void _toggleControls() {
+    _wakeScreenAgain();
     setState(() => _showControls = !_showControls);
   }
 
@@ -648,6 +729,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// the action commits after a short grace window that the highlight tap can
   /// cancel. No highlights, no added latency.
   void _readerTapAt(double frac, String source) {
+    _wakeScreenAgain();
     // While auto scroll runs, the in-WebView pad owns taps: pause, resume and
     // press-and-hold to stop. This Listener sees raw pointers regardless of the
     // platform view, so without this it turned pages under the blind.
@@ -780,6 +862,22 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     if (savedProgress != null) _progress = savedProgress.clamp(0.0, 1.0);
   }
 
+  /// The file is on the device now, but the offline lists only know records.
+  /// An ebook-only book becomes a download record; a book with audio gets a
+  /// kept ebook record, so the copy outlives the audio download.
+  Future<void> _rememberForOffline(ApiService api) async {
+    final downloads = DownloadService();
+    if (!downloads.isDownloaded(widget.itemId)) {
+      final registered = await downloads.registerEbookDownload(
+        api: api,
+        itemId: widget.itemId,
+        onlyIfNoAudio: true,
+      );
+      if (registered) return;
+    }
+    await downloads.keepEbook(api: api, itemId: widget.itemId);
+  }
+
   Future<void> _downloadAndOpen() async {
     try {
       final auth = context.read<AuthProvider>();
@@ -794,6 +892,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       debugPrint('[EbookReader] open item=${widget.itemId} ext=${ebookExtFromFile(widget.ebookFile)} '
           'cached=${await isEbookCached(widget.itemId, widget.ebookFile)} playing=$playing');
       final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
+      unawaited(_rememberForOffline(api));
       final len = file.existsSync() ? await file.length() : 0;
       final locations = await loadCachedLocations(file);
       debugPrint('[EbookReader] file ready item=${widget.itemId} bytes=$len '
@@ -1575,6 +1674,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     _updatePinTop(v);
                   },
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l.readerKeepAwake, style: tt.bodyMedium),
+                  subtitle: Text(l.readerKeepAwakeHint,
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  value: _keepAwake,
+                  onChanged: (v) {
+                    setSheetState(() {});
+                    _updateKeepAwake(v);
+                  },
+                ),
                 const SizedBox(height: 8),
 
                 // Theme (background + text colors)
@@ -1631,23 +1741,26 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     Expanded(child: Text(l.readAlong, style: tt.bodyMedium)),
                   ]),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<String>(
-                      segments: [
-                        ButtonSegment(value: 'word', label: Text(l.readAlongFollowWord)),
-                        ButtonSegment(value: 'sentence', label: Text(l.readAlongFollowSentence)),
-                      ],
-                      selected: {sheetRaMode},
-                      showSelectedIcon: false,
-                      onSelectionChanged: (sel) async {
-                        setSheetState(() => sheetRaMode = sel.first);
-                        await PlayerSettings.setReadAlongMode(sel.first);
-                        await LyricsService.instance.reloadDisplayPrefs();
-                      },
+                  // E-ink always follows by sentence, so the choice is hidden.
+                  if (!PlayerSettings.einkMode) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: SegmentedButton<String>(
+                        segments: [
+                          ButtonSegment(value: 'word', label: Text(l.readAlongFollowWord)),
+                          ButtonSegment(value: 'sentence', label: Text(l.readAlongFollowSentence)),
+                        ],
+                        selected: {sheetRaMode},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (sel) async {
+                          setSheetState(() => sheetRaMode = sel.first);
+                          await PlayerSettings.setReadAlongMode(sel.first);
+                          await LyricsService.instance.reloadDisplayPrefs();
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
                   Wrap(spacing: 10, runSpacing: 10, children: [
                     for (final c in PlayerSettings.readAlongPalette)
                       GestureDetector(
@@ -1771,11 +1884,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         final atEnd = args.isNotEmpty && args[0]?.toString() == 'end';
         _speedToast?.dismiss();
         _speedToast = null;
-        ScreenWake.keepOn(false);
         setState(() {
           _autoScroll = false;
           _autoScrollPaused = false;
         });
+        _cancelAutoScrollSleep();
+        _syncScreenWake();
         final l = AppLocalizations.of(context)!;
         showOverlayToast(
           context,
@@ -1821,11 +1935,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   Future<void> _toggleAutoScroll() async {
     if (_autoScroll) {
       await _epubController?.autoScrollStop();
-      ScreenWake.keepOn(false);
-      if (mounted) setState(() {
+      _cancelAutoScrollSleep();
+      if (!mounted) return;
+      setState(() {
         _autoScroll = false;
         _autoScrollPaused = false;
       });
+      _syncScreenWake();
       return;
     }
     // Read along and the blind both move the page; only one runs at a time.
@@ -1836,7 +1952,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final started =
         await _epubController?.autoScrollStart(speed: _autoScrollSpeed) ?? false;
     if (!mounted || !started) return;
-    ScreenWake.keepOn(true);
+    _screenWakeHeldOff = false;
+    ScreenWake.hold('reader', true);
     showOverlayToast(context, AppLocalizations.of(context)!.readerAutoScrollStarted,
         icon: Icons.swap_vert_rounded);
     setState(() {
@@ -2194,20 +2311,24 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
   /// Runs the whole Find in ebook flow: fuzzy-locate the transcript, decide
   /// whether the best hit is trustworthy, then jump + flash or toast and stay.
-  Future<void> _runFindInEbook(String transcript, String? chapterHint) async {
+  Future<void> _runFindInEbook(String transcript, String? chapterHint,
+      {double? positionSeconds}) async {
     final l = AppLocalizations.of(context)!;
     if (_finding) return;
     setState(() => _finding = true);
     showProgressDialog(context, l.findInEbookSearching);
 
     Map<String, dynamic>? decision;
+    final pos = positionSeconds ?? widget.findPositionSeconds;
+    var windowSeconds = findInEbookWindowSeconds;
     try {
-      decision = await _decideFindTarget(transcript, chapterHint);
+      decision = await _decideFindTarget(transcript, chapterHint,
+          nearSeconds: pos);
       // A short transcript can be too generic to stand out ("So what I am.
       // Am I?" ties with dialogue all over the book). Before giving up,
       // listen to a longer window ending at the same spot and try once more.
-      final pos = widget.findPositionSeconds;
       if (decision == null && pos != null) {
+        windowSeconds = _findRetryWindowSeconds;
         debugPrint('[FindEbook] not confident on the short window - '
             'retrying with ${_findRetryWindowSeconds.toStringAsFixed(0)}s');
         try {
@@ -2223,7 +2344,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
             final f = File(longer.audioPath);
             if (f.existsSync()) await f.delete();
           } catch (_) {}
-          decision = await _decideFindTarget(longer.text.trim(), chapterHint);
+          decision = await _decideFindTarget(longer.text.trim(), chapterHint,
+              nearSeconds: pos);
         } on TranscriptionException catch (e) {
           debugPrint('[FindEbook] retry transcription failed: $e');
         }
@@ -2247,13 +2369,21 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     if (!jumped) {
       showOverlayToast(context, l.findInEbookNotFound,
           icon: Icons.search_off_rounded);
+      return;
+    }
+    // The transcript window ended at the pause point, so its last words are
+    // where the audio was.
+    if (pos != null && decision['e'] is num) {
+      unawaited(_rememberEbookHit(
+          decision, pos, (decision['e'] as num).toDouble(), windowSeconds));
     }
   }
 
   /// Fuzzy-search the book for the transcript and apply the confidence rules.
   /// Returns {href, excerpt} for a trustworthy hit, null when not confident.
   Future<Map<String, dynamic>?> _decideFindTarget(
-      String transcript, String? chapterHint) async {
+      String transcript, String? chapterHint,
+      {double? nearSeconds}) async {
     // Whisper sometimes emits bracketed non-speech tags; they'd poison matching.
     final cleaned = transcript
         .replaceAll(RegExp(r'\[[^\]]*\]|\([^)]*\)'), ' ')
@@ -2266,12 +2396,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
     // Spine sections whose TOC chapter agrees with the audio chapter get
     // searched first (and an early exit on a strong hit there).
+    // Sections that earlier finds or read along pinned near this time come
+    // before the chapter-title guess: they are known, the title is inferred.
     final hintBases = <String>[];
+    if (nearSeconds != null) hintBases.addAll(await _syncHintBases(nearSeconds));
     if (chapterHint != null) {
       for (final ch in _chapters) {
-        if (_chapterTitlesAgree(chapterHint, ch.title)) {
+        if (chapterTitlesAgree(chapterHint, ch.title)) {
           final base = ch.href.split('#').first.split('/').last.toLowerCase();
-          if (base.isNotEmpty) hintBases.add(base);
+          if (base.isNotEmpty && !hintBases.contains(base)) hintBases.add(base);
         }
       }
     }
@@ -2289,7 +2422,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     double scoreOf(Map<String, dynamic> c) {
       final fine = (c['fine'] as num?)?.toDouble() ?? 0;
       final agrees = chapterHint != null &&
-          _chapterTitlesAgree(chapterHint, _chapterForHref(c['href'] as String? ?? '') ?? '');
+          chapterTitlesAgree(chapterHint, _chapterForHref(c['href'] as String? ?? '') ?? '');
       return fine + (agrees ? _findHintBonus : 0);
     }
 
@@ -2313,64 +2446,48 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         'second=${secondScore?.toStringAsFixed(3)} sameSpot=$sameSpot '
         'confident=$confident excerpt="${best['excerpt']}"');
     if (!confident) return null;
-    return {'href': best['href'] as String? ?? '', 'excerpt': best['excerpt'] as String? ?? ''};
+    return {
+      'href': best['href'] as String? ?? '',
+      'excerpt': best['excerpt'] as String? ?? '',
+      'idx': best['idx'],
+      's': best['s'],
+      'e': best['e'],
+    };
   }
 
-  /// True when an audio chapter title and a TOC chapter title plausibly name
-  /// the same chapter: equal, one's words are a subset of the other's, or they
-  /// share a number. Word-level, not substring - raw containment would make
-  /// "Chapter 1" match "Chapter 10". Spelled-out numbers normalize to digits
-  /// first, so "Chapter Nine" can't claim "Chapter Thirty-Nine" via word
-  /// subset (the hyphen splits it into two words), and "Chapter 39" matches
-  /// "Chapter Thirty-Nine" like it should.
-  bool _chapterTitlesAgree(String? audio, String? toc) {
-    if (audio == null || toc == null) return false;
-    final a = _chapterTitleWords(audio), t = _chapterTitleWords(toc);
-    if (a.isEmpty || t.isEmpty) return false;
-    if (a.containsAll(t) || t.containsAll(a)) return true;
-    final an = a.where((w) => RegExp(r'^\d+$').hasMatch(w)).toSet();
-    final tn = t.where((w) => RegExp(r'^\d+$').hasMatch(w)).toSet();
-    return an.isNotEmpty && an.intersection(tn).isNotEmpty;
-  }
-
-  static const _numberUnits = {
-    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
-    'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12,
-    'thirteen': 13, 'fourteen': 14, 'fifteen': 15, 'sixteen': 16,
-    'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
-  };
-  static const _numberTens = {
-    'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60,
-    'seventy': 70, 'eighty': 80, 'ninety': 90,
-  };
-
-  /// Title words with spelled-out numbers collapsed to digit tokens
-  /// ("thirty nine" -> "39", "nine" -> "9").
-  Set<String> _chapterTitleWords(String s) {
-    final raw = s
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\p{L}\p{N} ]+', unicode: true), ' ')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .toList();
-    final out = <String>{};
-    for (var i = 0; i < raw.length; i++) {
-      final w = raw[i];
-      final tens = _numberTens[w];
-      if (tens != null) {
-        final unit = i + 1 < raw.length ? _numberUnits[raw[i + 1]] : null;
-        if (unit != null && unit < 10) {
-          out.add('${tens + unit}');
-          i++;
-        } else {
-          out.add('$tens');
-        }
-        continue;
-      }
-      final unit = _numberUnits[w];
-      out.add(unit != null ? '$unit' : w);
+  /// Spine sections holding sync points recorded within ten minutes of
+  /// [seconds], nearest first - the sections a transcript from around that
+  /// time almost certainly lives in.
+  Future<List<String>> _syncHintBases(double seconds) async {
+    final pts = await SyncPointStore.instance.load(widget.itemId);
+    if (pts.isEmpty) return const [];
+    final near = pts.where((p) => (p.t - seconds).abs() <= 600).toList()
+      ..sort((a, b) => (a.t - seconds).abs().compareTo((b.t - seconds).abs()));
+    if (near.isEmpty) return const [];
+    final hrefs = await _spineHrefs();
+    final out = <String>[];
+    for (final p in near) {
+      if (p.si < 0 || p.si >= hrefs.length) continue;
+      final base = hrefs[p.si].split('#').first.split('/').last.toLowerCase();
+      if (base.isNotEmpty && !out.contains(base)) out.add(base);
+      if (out.length >= 3) break;
     }
     return out;
+  }
+
+  /// A confirmed hit from a transcript taken at [seconds] becomes a sync
+  /// point at [off] characters into section [idx]; [err] is how far the
+  /// transcript window could put the words from [seconds].
+  Future<void> _rememberEbookHit(
+      Map<String, dynamic> decision, double seconds, double off, double err) async {
+    final idx = decision['idx'];
+    if (idx is! num || seconds < 0) return;
+    final hrefs = await _spineHrefs();
+    await SyncPointStore.instance.add(
+      widget.itemId,
+      SyncPoint(t: seconds, si: idx.toInt(), off: off, src: 'e', err: err),
+      spineLength: hrefs.isEmpty ? null : hrefs.length,
+    );
   }
 
   /// Fuzzy passage search over the separate search Book (same instance the
@@ -2471,9 +2588,26 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// whitespace differs), rebuilds the range there and lands on its CFI with
   /// the search flash. Restores the previous position when the re-find fails,
   /// so a bad anchor never strands the user at a chapter start.
-  Future<bool> _jumpToFindHit(String href, String excerpt) async {
+  Future<bool> _jumpToFindHit(String href, String excerpt,
+      {bool flash = true}) async {
     final wc = _epubController?.webViewController;
     if (wc == null || href.isEmpty || excerpt.trim().isEmpty) return false;
+    // A hit that runs across several paragraphs gives epub.js a range it
+    // displays ten pages short of (seen with a 12s read along window). The
+    // first paragraph on its own lands on the right page.
+    var anchor = excerpt;
+    for (final part in excerpt.split('\n')) {
+      final t = part.trim();
+      if (t.split(RegExp(r'\s+')).length >= 4) {
+        anchor = t;
+        break;
+      }
+    }
+    if (anchor != excerpt) {
+      verboseLog('[FindEbook] anchoring on the first paragraph of the hit: '
+          '"${anchor.length > 60 ? anchor.substring(0, 60) : anchor}..."');
+      excerpt = anchor;
+    }
     final res = await wc.callAsyncJavaScript(
       functionBody: r'''
         var dbg = { matched: false };
@@ -2528,7 +2662,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     try {
       final d = jsonDecode(raw) as Map<String, dynamic>;
       if (d['matched'] == true && d['cfi'] is String) {
-        _highlightSearchHit(d['cfi'] as String);
+        if (flash) _highlightSearchHit(d['cfi'] as String);
         return true;
       }
     } catch (_) {}
@@ -2549,6 +2683,193 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // How far a failed probe shifts the search around the original estimate,
   // at minimum; a long section widens it so the probes spread across it.
   static const double _scanStepSeconds = 90.0;
+  static const double _catchUpMinGapSeconds = 300;
+
+  /// Where the audiobook should be for the page at [cfi] and the range it
+  /// could sit in, from sync points or a uniquely named audio chapter. Nothing
+  /// is transcribed.
+  Future<({double est, double lo, double hi})?> _audioEstimateForPage(
+      String cfi) async {
+    final api = context.read<AuthProvider>().apiService;
+    final info = await _selectionSectionInfo(cfi, '');
+    if (info == null) return null;
+    final si = (info['si'] as num).toInt();
+    final offset = (info['offset'] as num).toDouble();
+    final total = (info['total'] as num).toDouble();
+    if (total <= 0 || offset < 0) return null;
+    final audio = await resolveAudioChapters(widget.itemId, api);
+    if (audio.duration <= 0) return null;
+    final spine = await _spineHrefs();
+    await SyncPointStore.instance.load(
+      widget.itemId,
+      audioDuration: audio.duration,
+      spineLength: spine.isEmpty ? null : spine.length,
+    );
+    final sync = await _syncPointCandidate(
+        si: si,
+        offset: offset,
+        total: total,
+        fallbackRate: _fallbackSecPerChar,
+        top: audio.duration);
+    if (sync != null) return (est: sync.est, lo: sync.lo, hi: sync.hi);
+    // A title that several audio chapters share can't place the page.
+    final tocTitle = _chapterForHref(info['href'] as String? ?? '');
+    final named = [
+      for (final ch in audio.chapters)
+        if (ch is Map<String, dynamic> &&
+            chapterTitlesAgree(ch['title'] as String?, tocTitle))
+          ch,
+    ];
+    if (named.length != 1) return null;
+    final a =
+        _chapterAnchorEstimate(named.first, offset, total, audio.duration);
+    return (est: a.est, lo: a.lo, hi: a.hi);
+  }
+
+  /// Offers to close a big gap between the page and the audiobook. Opening
+  /// the book only offers going to the audio; starting audio from here
+  /// ([audioStarting]) can offer either. Nothing moves until the toast is tapped.
+  Future<void> _maybeOfferCatchUp({required bool audioStarting}) async {
+    if (!mounted || !_readerActive || !_hasAudio || !_transcriptionOn) return;
+    if (_readAlongOn || _finding) return;
+    // These opens put a page on screen that is not where the reading stopped.
+    if (widget.findText != null ||
+        widget.openAtCfi != null ||
+        widget.startReadAlong) {
+      return;
+    }
+    if (_offeredPageToAudio && (_offeredAudioToPage || !audioStarting)) return;
+    final cfi = _currentCfi;
+    if (cfi == null || cfi.isEmpty) return;
+    final transcription = TranscriptionService.instance;
+    if (!transcription.canTranscribeBook(widget.itemId)) return;
+    final l = AppLocalizations.of(context)!;
+    final lib = context.read<LibraryProvider>();
+    if (lib.getProgressData(widget.itemId)?['isFinished'] == true) return;
+    var hasModel = false;
+    for (final size in TranscriptionModelSize.values) {
+      if (await transcription.isModelDownloaded(size)) {
+        hasModel = true;
+        break;
+      }
+    }
+    if (!hasModel) return;
+    final player = AudioPlayerService();
+    final live = player.currentItemId == widget.itemId &&
+        player.currentEpisodeId == null;
+    final audioAt = live
+        ? player.position.inMilliseconds / 1000.0
+        : await ProgressSyncService().getSavedPosition(widget.itemId);
+    if (!mounted) return;
+    ({double est, double lo, double hi})? page;
+    try {
+      page = await _audioEstimateForPage(cfi);
+    } catch (e) {
+      basicLog('[CatchUp] estimate failed: $e');
+    }
+    if (!mounted || page == null || _readAlongOn || _finding) return;
+    final gap = page.est - audioAt;
+    final apart = gap.abs() >= _catchUpMinGapSeconds &&
+        (audioAt < page.lo || audioAt > page.hi);
+    verboseLog('[CatchUp] page est=${page.est.toStringAsFixed(0)}s '
+        '(${page.lo.toStringAsFixed(0)}-${page.hi.toStringAsFixed(0)}s) '
+        'audio=${audioAt.toStringAsFixed(0)}s apart=$apart '
+        'audioStarting=$audioStarting');
+    if (!apart) return;
+    if (gap < 0) {
+      if (_offeredPageToAudio) return;
+      if (!audioStarting) {
+        // Already offered at this audio position.
+        final key = 'catchup_offered_at_${widget.itemId}';
+        final last = await ScopedPrefs.getDouble(key);
+        if (last != null && (last - audioAt).abs() < 120) return;
+        await ScopedPrefs.setDouble(key, audioAt);
+        if (!mounted) return;
+      }
+      _offeredPageToAudio = true;
+      showOverlayToast(context, l.catchUpAudioAhead,
+          icon: Icons.headphones_rounded,
+          onTap: () => _catchUpPageToAudio(audioAt));
+    } else {
+      if (!audioStarting || _offeredAudioToPage) return;
+      _offeredAudioToPage = true;
+      showOverlayToast(context, l.catchUpPageAhead,
+          icon: Icons.menu_book_rounded,
+          onTap: () => _findInAudiobookFromSelection(
+              cfiOverride: _currentCfi ?? cfi,
+              textOverride: '',
+              flashPassage: false));
+    }
+  }
+
+  /// Waits briefly for the audiobook's details and the first page.
+  Future<void> _catchUpOnOpen() async {
+    for (var i = 0;
+        i < 20 && mounted && (!_hasAudio || _currentCfi == null);
+        i++) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    if (mounted) await _maybeOfferCatchUp(audioStarting: false);
+  }
+
+  /// Find in ebook from inside the reader, at the audiobook's position
+  /// ([savedAt] when this book is not the one loaded).
+  Future<void> _catchUpPageToAudio(double savedAt) async {
+    if (!mounted || _finding || _readAlongOn) return;
+    final l = AppLocalizations.of(context)!;
+    final api = context.read<AuthProvider>().apiService;
+    final player = AudioPlayerService();
+    final live = player.currentItemId == widget.itemId &&
+        player.currentEpisodeId == null;
+    final pos = live ? player.position.inMilliseconds / 1000.0 : savedAt;
+    showProgressDialog(context, l.transcribing);
+    String? text;
+    String? error;
+    try {
+      final r = await TranscriptionService.instance.transcribeAt(
+        itemId: widget.itemId,
+        positionSeconds: pos,
+        windowSeconds: findInEbookWindowSeconds,
+        leadSeconds: findInEbookWindowSeconds,
+        preferAccuracy: false,
+        feature: TranscriptionFeature.readAlong,
+      );
+      text = r.text.trim();
+      try {
+        final f = File(r.audioPath);
+        if (f.existsSync()) await f.delete();
+      } catch (_) {}
+    } on TranscriptionException catch (e) {
+      error = switch (e.kind) {
+        TranscriptionError.busy => l.transcriptionBusyMsg,
+        TranscriptionError.empty => l.transcriptionEmptyMsg,
+        TranscriptionError.modelMissing => l.transcriptionNoModelDownloaded,
+        TranscriptionError.notDownloaded => l.transcriptionNotDownloadedBook,
+        _ => l.transcriptionFailedMsg,
+      };
+    } catch (_) {
+      error = l.transcriptionFailedMsg;
+    }
+    if (!mounted) return;
+    Navigator.pop(context); // progress dialog
+    if (error != null || text == null || text.isEmpty) {
+      showOverlayToast(context, error ?? l.transcriptionEmptyMsg,
+          icon: Icons.error_outline_rounded);
+      return;
+    }
+    final audio = await resolveAudioChapters(widget.itemId, api);
+    if (!mounted) return;
+    String? chapterHint;
+    final chIdx =
+        ChapterLookup.indexAtWithGrace(audio.chapters, pos, audio.duration);
+    if (chIdx != null) {
+      final t = ((audio.chapters[chIdx] as Map<String, dynamic>)['title']
+              as String?)
+          ?.trim();
+      if (t != null && t.isNotEmpty) chapterHint = t;
+    }
+    await _runFindInEbook(text, chapterHint, positionSeconds: pos);
+  }
 
   /// Reverse of Find in ebook: locate the selected text in the audio and start
   /// listening there. Estimate from the audio chapter and how far through the
@@ -2558,7 +2879,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// [cfiOverride]/[textOverride] let an existing highlight reuse this flow
   /// without a live selection.
   Future<void> _findInAudiobookFromSelection(
-      {String? cfiOverride, String? textOverride}) async {
+      {String? cfiOverride,
+      String? textOverride,
+      bool flashPassage = true}) async {
     final l = AppLocalizations.of(context)!;
     final cfi = cfiOverride ?? _selectionCfi;
     final selText = textOverride ?? _selectionText ?? '';
@@ -2648,7 +2971,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       return;
     }
     await _startAudioAt(targetTime,
-        goToPlayer: after == 'player', passageCfi: cfi);
+        goToPlayer: after == 'player', passageCfi: flashPassage ? cfi : null);
     // Third landing: stay in the reader and follow along from the spot the
     // user highlighted, now that the audio is playing this book. playItem can
     // resolve a beat before the player state settles - wait for it, or the
@@ -2681,6 +3004,19 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       debugPrint('[FindAudio] no audio chapters');
       return null;
     }
+    final spineAll = await _spineHrefs();
+    await SyncPointStore.instance.load(
+      widget.itemId,
+      audioDuration: audio.duration > 0 ? audio.duration : null,
+      spineLength: spineAll.isEmpty ? null : spineAll.length,
+    );
+    Future<double> remember(double t) async {
+      await SyncPointStore.instance.add(
+        widget.itemId,
+        SyncPoint(t: t, si: si, off: offset, src: 'a'),
+      );
+      return t;
+    }
 
     // Which audio chapter is this section? That anchors both the initial
     // estimate and the seconds-per-character correction rate. Books whose
@@ -2695,7 +3031,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final agreeing = <Map<String, dynamic>>[];
     for (final ch in audio.chapters) {
       final m = ch as Map<String, dynamic>;
-      if (_chapterTitlesAgree(m['title'] as String?, tocTitle)) agreeing.add(m);
+      if (chapterTitlesAgree(m['title'] as String?, tocTitle)) agreeing.add(m);
     }
     Map<String, dynamic>? audioCh;
     Map<String, dynamic>? audioChAlt;
@@ -2818,7 +3154,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         Map<String, dynamic>? aCh;
         for (final ch in audio.chapters) {
           final m = ch as Map<String, dynamic>;
-          if (_chapterTitlesAgree(m['title'] as String?, aTitle)) {
+          if (chapterTitlesAgree(m['title'] as String?, aTitle)) {
             aCh = m;
             break;
           }
@@ -2866,7 +3202,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     var probesLeft = _maxTotalProbes;
 
     Future<double?> run(String label, double e, double from, double to,
-        double pace, int rounds) async {
+        double pace, int rounds, {double? step}) async {
       if (probesLeft <= 0) return null;
       final n = rounds < probesLeft ? rounds : probesLeft;
       probesLeft -= n;
@@ -2882,12 +3218,30 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         rate: pace,
         duration: dur,
         maxProbes: n,
-        scanStepSeconds: scanStep,
+        scanStepSeconds: step ?? scanStep,
       );
     }
 
+    // A spot this book has already been matched at, in this section or the
+    // one either side, beats any chapter-title guess: it is known, and two
+    // of them give the real pace between. Probed first, in a window sized to
+    // how far the pacing had to reach.
+    final sync = await _syncPointCandidate(
+        si: si,
+        offset: offset,
+        total: total,
+        fallbackRate: rate,
+        top: dur > 0 ? dur : est + 3600);
+    if (sync != null) {
+      probed.add(sync.est);
+      final window = sync.hi - sync.lo;
+      final r = await run(sync.label, sync.est, sync.lo, sync.hi, sync.rate, 3,
+          step: (window / 3).clamp(45.0, _scanStepSeconds));
+      if (r != null) return remember(r);
+    }
+
     final t = await run('anchor', est, lo, hi, rate, _maxProbes);
-    if (t != null) return t;
+    if (t != null) return remember(t);
 
     // The anchor never matched. Fallback candidates, most likely first, two
     // rounds each.
@@ -2976,10 +3330,63 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       }
       probed.add(c.est);
       final r = await run(c.label, c.est, c.lo, c.hi, c.rate, 2);
-      if (r != null) return r;
+      if (r != null) return remember(r);
     }
     debugPrint('[FindAudio] no candidate matched');
     return null;
+  }
+
+  /// Where the sync points say [offset] in section [si] should be in the
+  /// audio. Same-section points first; failing that the last point of the
+  /// previous section or the first of the next, paced through the text in
+  /// between. Null when nothing recorded is close enough to help.
+  Future<({String label, double est, double lo, double hi, double rate})?>
+      _syncPointCandidate({
+    required int si,
+    required double offset,
+    required double total,
+    required double fallbackRate,
+    required double top,
+  }) async {
+    final pts = SyncPointStore.instance.cached(widget.itemId);
+    if (pts.isEmpty) return null;
+    final same = pts.where((p) => p.si == si).toList();
+    var e = SyncPointEstimator.inSection(same, offset, fallbackRate);
+    var label = 'sync points';
+    if (e == null) {
+      SyncPoint? prev, next;
+      for (final p in pts) {
+        if (p.si == si - 1 && (prev == null || p.off > prev.off)) prev = p;
+        if (p.si == si + 1 && (next == null || p.off < next.off)) next = p;
+      }
+      if (prev != null) {
+        final counts = await _sectionCharCounts(si - 1, si - 1);
+        if (counts.length == 1 && counts.first > 0) {
+          final chars = (counts.first - prev.off) + offset;
+          if (chars * fallbackRate <= 1800) {
+            e = SyncPointEstimator.fromPoint(prev, chars, fallbackRate);
+            label = 'sync point in the previous section';
+          }
+        }
+      }
+      if (e == null && next != null) {
+        final chars = (total - offset) + next.off;
+        if (chars * fallbackRate <= 1800) {
+          e = SyncPointEstimator.fromPoint(next, -chars, fallbackRate);
+          label = 'sync point in the next section';
+        }
+      }
+    }
+    if (e == null) return null;
+    verboseLog('[FindAudio] $label (${e.how}) from ${pts.length} points: '
+        'est=${e.est.toStringAsFixed(1)} rate=${e.rate.toStringAsFixed(4)}');
+    return (
+      label: '$label (${e.how})',
+      est: e.est.clamp(0.0, top),
+      lo: e.lo.clamp(0.0, top),
+      hi: e.hi.clamp(0.0, top),
+      rate: e.rate,
+    );
   }
 
   /// Initial search window and seconds-per-character pacing from an audio
@@ -3481,6 +3888,31 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       }
       return;
     }
+    await _startReadAlong();
+  }
+
+  /// Picks read along back up after the app was backgrounded, without
+  /// touching playback: coming back must never pause what you are hearing.
+  Future<void> _resumeReadAlong() async {
+    final player = AudioPlayerService();
+    bool stillWanted() =>
+        mounted &&
+        _readerActive &&
+        !_readAlongOn &&
+        player.currentItemId == widget.itemId &&
+        player.currentEpisodeId == null;
+    if (!stillWanted()) return;
+    if (!await PlayerSettings.getTranscriptionEnabled()) return;
+    if (!stillWanted() ||
+        !TranscriptionService.instance.canTranscribeBook(widget.itemId)) {
+      return;
+    }
+    verboseLog('[ReadAlong] back in the foreground - picking up again');
+    await _startReadAlong(holdPlayback: false);
+  }
+
+  Future<void> _startReadAlong({bool holdPlayback = true}) async {
+    final player = AudioPlayerService();
     // Read along turns the pages itself, so the blind can't run at the same
     // time - one of them has to own the page.
     if (_autoScroll) {
@@ -3490,28 +3922,46 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         _autoScrollPaused = false;
       });
     }
+    // Pause first: the runway fills faster against a still playhead, and
+    // nobody wants to hear words the page can't show yet. A playing book
+    // resumes by itself once ready; a paused one gets a toast.
+    final wasPlaying = player.isPlaying;
+    final hold = holdPlayback && wasPlaying;
+    if (hold) await player.pause();
+    _readAlongGateArmed = false;
+    _readAlongGatePaused = hold;
+    _readAlongGateWaiting = !wasPlaying;
+    if (mounted) {
+      setState(() {
+        _readAlongOn = true;
+        _readAlongPrep = 'finding';
+      });
+    }
+    // Go to where the audio is before anything else. Waiting for the first
+    // sentence to arrive and then paging forward from the saved spot took a
+    // page turn per page between the two.
+    await _readAlongJumpToAudio();
+    if (!mounted || !_readAlongOn) return;
+    setState(() => _readAlongPrep = 'listening');
     if (!LyricsService.instance.isOn) {
       await LyricsService.instance.enableForCurrent();
       _readAlongStartedPipeline = true;
     }
+    if (!mounted || !_readAlongOn) return;
     LyricsService.instance.readerOwns = true;
     _readAlongColor = LyricsService.instance.readAlongColor;
     _readAlongMode = LyricsService.instance.readAlongMode;
     _readAlongLastPos = player.position.inMilliseconds / 1000.0;
     final wc = _epubController?.webViewController;
-    await wc?.evaluateJavascript(source: readAlongBootstrap(_readAlongColor));
+    await wc?.evaluateJavascript(source: _readAlongBootstrapSource());
     await wc?.evaluateJavascript(
         source: 'window.__absorbRA && __absorbRA.start()');
-    if (mounted) setState(() => _readAlongOn = true);
-    _readAlongGateArmed = true;
-    _readAlongGatePaused = false;
-    _readAlongGateWaiting = false;
     // The first anchor may be behind the page you left the reader on.
     _readAlongAllowBack = true;
     _readAlongLastMatch = DateTime.now();
     _readAlongLost = false;
     _readAlongSeekAt = null;
-    ScreenWake.keepOn(true);
+    ScreenWake.hold('reader', true);
     _readAlongTimer?.cancel();
     // 100ms so a word is never skipped at 2x: the sweep below moves at most
     // one word per tick, ten words a second.
@@ -3520,11 +3970,197 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     debugPrint('[ReadAlong] enabled for ${widget.itemId}');
   }
 
+  // Word by word repaints the page several times a second; on e-ink every
+  // one is a flash, so there read along follows by sentence whatever the
+  // setting says.
+  bool get _readAlongWordMode =>
+      !PlayerSettings.einkMode && LyricsService.instance.readAlongMode == 'word';
+
+  String _readAlongBootstrapSource() {
+    final p = _resolvePalette(context);
+    return readAlongBootstrap(_readAlongColor,
+        eink: PlayerSettings.einkMode,
+        fgArgb: p.fgColor.toARGB32(),
+        bgArgb: p.bgColor.toARGB32());
+  }
+
+  /// Put the page where the audio is. The book's own lines at the playhead
+  /// are the best needle when the transcript already has them; otherwise
+  /// listen to a short window around the playhead. Not finding it is not
+  /// fatal - the whole-book scan still runs once lines arrive.
+  Future<void> _readAlongJumpToAudio() async {
+    final player = AudioPlayerService();
+    final pos = player.position.inMilliseconds / 1000.0;
+    String? chapterHint;
+    final chapters = player.chapters;
+    final chIdx =
+        ChapterLookup.indexAtWithGrace(chapters, pos, player.totalDuration);
+    if (chIdx != null) {
+      final t = ((chapters[chIdx] as Map<String, dynamic>)['title'] as String?)
+          ?.trim();
+      if (t != null && t.isNotEmpty) chapterHint = t;
+    }
+    final store = TranscriptLineStore.instance;
+    String? text;
+    var source = 'transcript';
+    final near = store.lineNear(widget.itemId, pos, holdAfter: 4, preShow: 4);
+    if (near != null && near.exact && !near.approx) {
+      final run = store
+          .fromLine(widget.itemId, near.start, 3)
+          .where((l) => l.exact && !l.approx)
+          .map((l) => l.text.trim())
+          .join(' ');
+      text = run.isEmpty ? near.text.trim() : run;
+      source = 'cached lines';
+    }
+    Map<String, dynamic>? decision;
+    var err = 4.0;
+    try {
+      if (text != null) {
+        decision = await _decideFindTarget(text, chapterHint,
+            nearSeconds: pos);
+      }
+      // Whisper around the playhead: a short window first, a longer one if
+      // the words were too ordinary to pin down.
+      for (final window in const [12.0, 30.0]) {
+        if (decision != null || !mounted || !_readAlongOn) break;
+        final r = await _transcribeForJump(pos, window);
+        if (r == null) break;
+        source = '${window.toStringAsFixed(0)}s window';
+        err = window / 2;
+        decision = await _decideFindTarget(r, chapterHint, nearSeconds: pos);
+      }
+    } catch (e) {
+      basicLog('[ReadAlong] find place failed: $e');
+    }
+    if (!mounted || !_readAlongOn) return;
+    if (decision == null) {
+      verboseLog('[ReadAlong] could not place the audio in the book '
+          '(pos ${pos.toStringAsFixed(1)}s, $source) - following from here');
+      return;
+    }
+    final jumped = await _jumpToFindHit(
+        decision['href'] as String, decision['excerpt'] as String);
+    verboseLog('[ReadAlong] placed the audio at ${pos.toStringAsFixed(1)}s '
+        'via $source -> ${decision['href']} jumped=$jumped');
+    // The window sat around the playhead, so its middle is where the audio
+    // was. The lines that follow pin it exactly.
+    if (jumped && decision['s'] is num && decision['e'] is num) {
+      final mid = ((decision['s'] as num) + (decision['e'] as num)) / 2;
+      unawaited(_rememberEbookHit(decision, pos, mid, err));
+    }
+  }
+
+  /// A transcript of [window] seconds around [pos], or null when the engine
+  /// can't (busy for too long, nothing downloaded, silence).
+  Future<String?> _transcribeForJump(double pos, double window) async {
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        final r = await TranscriptionService.instance.transcribeAt(
+          itemId: widget.itemId,
+          positionSeconds: pos + window / 2,
+          windowSeconds: window,
+          leadSeconds: window,
+          preferAccuracy: false,
+          feature: TranscriptionFeature.readAlong,
+        );
+        try {
+          final f = File(r.audioPath);
+          if (f.existsSync()) await f.delete();
+        } catch (_) {}
+        final t = r.text.trim();
+        return t.isEmpty ? null : t;
+      } on TranscriptionException catch (e) {
+        if (e.kind == TranscriptionError.busy) {
+          await Future.delayed(const Duration(milliseconds: 700));
+          if (!mounted || !_readAlongOn) return null;
+          continue;
+        }
+        basicLog('[ReadAlong] find place transcription failed: $e');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /// Centre-screen card while read along gets going, like Find in ebook's:
+  /// what it is doing and how far along the runway is.
+  Widget _readAlongPrepCard(Color bg, Color fg, Color accent) {
+    final svc = LyricsService.instance;
+    return AnimatedBuilder(
+      animation: svc,
+      builder: (ctx, _) {
+        final l = AppLocalizations.of(ctx)!;
+        final listening = _readAlongPrep == 'listening';
+        final gate = svc.gateProgress;
+        final text = listening
+            ? (gate != null && gate > 0
+                ? '${l.lyricsListeningAhead} ${(gate * 100).round()}%'
+                : l.lyricsListeningAhead)
+            : l.findInEbookSearching;
+        // An indeterminate bar animates forever, which e-ink hates.
+        final value = listening ? gate : (PlayerSettings.einkMode ? 0.0 : null);
+        return Container(
+          width: 280,
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: fg.withValues(alpha: 0.15)),
+            boxShadow: PlayerSettings.einkMode
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(listening ? Icons.hearing_rounded : Icons.manage_search_rounded,
+                      size: 18, color: fg.withValues(alpha: 0.7)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: fg.withValues(alpha: 0.9)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: value,
+                  minHeight: 5,
+                  backgroundColor: fg.withValues(alpha: 0.1),
+                  valueColor: AlwaysStoppedAnimation(accent),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// The same transcript sync adjuster the player overlay has, for tuning
   /// read along against Bluetooth latency without leaving the reader. Lives
   /// in the bottom chrome, so it is there whenever the controls are.
   Widget _readAlongSyncPill(Color fg) {
     final svc = LyricsService.instance;
+    // The start-up card already says what the pill would, in the middle of
+    // the page; showing both reads as two different things happening.
+    if (_readAlongPrep != null) return const SizedBox.shrink();
     return AnimatedBuilder(
       animation: svc,
       builder: (context, _) {
@@ -3552,7 +4188,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
             ),
           );
         }
-        final gate = svc.gateProgress;
+        // After the gate, a seek can still land outside the transcript; the
+        // next chunk takes a few seconds and until then nothing lights up.
+        final gate = svc.gateProgress ?? (svc.buffering ? 0.0 : null);
         if (gate != null) {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -3574,8 +4212,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${AppLocalizations.of(context)!.lyricsListeningAhead} '
-                  '${(gate * 100).round()}%',
+                  gate > 0
+                      ? '${AppLocalizations.of(context)!.lyricsListeningAhead} '
+                          '${(gate * 100).round()}%'
+                      : AppLocalizations.of(context)!.lyricsListeningAhead,
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -3660,6 +4300,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _readAlongLost = false;
     _readAlongGateArmed = false;
     _readAlongGateWaiting = false;
+    if (_readAlongPrep != null) {
+      _readAlongPrep = null;
+      if (mounted) setState(() {});
+    }
     // Leaving during the wait: put playback back the way it was found, or
     // the book sits paused with nothing on screen to say why.
     if (_readAlongGatePaused) {
@@ -3671,7 +4315,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       }
     }
     LyricsService.instance.readerOwns = false;
-    if (!_autoScroll) ScreenWake.keepOn(false);
+    _syncScreenWake();
     if (_readAlongStartedPipeline) {
       LyricsService.instance.disable();
       _readAlongStartedPipeline = false;
@@ -3718,6 +4362,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       return;
     }
     _readAlongGateArmed = false;
+    if (_readAlongPrep != null && mounted) {
+      setState(() => _readAlongPrep = null);
+    }
     if (_readAlongGatePaused) {
       _readAlongGatePaused = false;
       if (!player.isPlaying) {
@@ -3725,11 +4372,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         await player.play(logDetail: 'read along ready', fromUi: true);
       }
     } else if (_readAlongGateWaiting) {
+      // The card leaving and the first sentence lighting up say it all.
       _readAlongGateWaiting = false;
-      if (!player.isPlaying && mounted) {
-        showOverlayToast(context, AppLocalizations.of(context)!.readAlongReady,
-            icon: Icons.auto_stories_rounded);
-      }
     }
     final pos = player.position.inMilliseconds / 1000.0;
     // Same sync offset the player uses, so headphones don't run the reader's
@@ -3816,12 +4460,32 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           ? min(line.end, line.wordStarts.last + 0.35)
           : line.end - 0.1;
       _readAlongLineWords = line.words.length;
+      var needle = line.text.trim();
+      var needleExact = line.exact;
+      // A line cached before word timing existed can only be followed whole.
+      var wordMode = _readAlongWordMode && line.wordStarts.isNotEmpty;
+      // Whisper's own words are never on the page. Anchored, the previous
+      // sentence simply stays lit until a book line comes. With no anchor
+      // yet (just started, just seeked) that left the reader on the wrong
+      // page for as long as the stretch lasted, so find the next book line
+      // and go to where it is; the audio gets there in a moment.
+      if (!line.exact && _readAlongAt < 0 && _readAlongPageWords == 0) {
+        final nxt = TranscriptLineStore.instance
+            .nextExactLine(widget.itemId, line.end);
+        if (nxt != null) {
+          verboseLog('[ReadAlong] no anchor and this line is not the book\'s '
+              'words - locating the next book line instead');
+          needle = nxt.text.trim();
+          needleExact = true;
+          wordMode = false;
+        }
+      }
       _readAlongLocating = true;
       try {
-        // A line cached before word timing existed can only be followed whole.
-        await _paintReadAlongLine(line.text.trim(),
-            exact: line.exact,
-            wordMode: svc.readAlongMode == 'word' && line.wordStarts.isNotEmpty);
+        await _paintReadAlongLine(needle,
+            exact: needleExact,
+            wordMode: wordMode,
+            lineStart: needleExact && needle == line.text.trim() ? line.start : null);
       } finally {
         _readAlongLocating = false;
       }
@@ -3830,7 +4494,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // Same sentence, later word: a cheap repaint from the cached offsets.
     if (_readAlongLocating ||
         _readAlongPageWords == 0 ||
-        svc.readAlongMode != 'word') {
+        !_readAlongWordMode) {
       return;
     }
     final idx = line.wordIndexAt(heard + 0.15 * player.speed);
@@ -3927,8 +4591,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// line that isn't in the rendered sections (chapter boundary) is found via
   /// the search book when its text is ebook-exact; Whisper-flavored lines
   /// that don't match are skipped - the next exact line re-anchors.
+  /// [lineStart] is the audio time the sentence starts at, when the needle is
+  /// a book line heard at a known moment; every such hit is a sync point.
   Future<void> _paintReadAlongLine(String needle,
-      {required bool exact, required bool wordMode}) async {
+      {required bool exact, required bool wordMode, double? lineStart}) async {
     final wc = _epubController?.webViewController;
     if (wc == null) return;
     final watch = Stopwatch()..start();
@@ -3966,6 +4632,20 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       debugPrint('[ReadAlong] "$head" -> page@$_readAlongAt '
           'words=$_readAlongPageWords visible=${d['visible']} '
           '${watch.elapsedMilliseconds}ms | page: "${d['sentence']}"');
+      if (lineStart != null && d['si'] is num && _readAlongAt >= 0) {
+        unawaited(SyncPointStore.instance.add(
+          widget.itemId,
+          SyncPoint(
+            t: lineStart,
+            si: (d['si'] as num).toInt(),
+            off: _readAlongAt.toDouble(),
+            src: 'r',
+          ),
+          audioDuration: AudioPlayerService().currentItemId == widget.itemId
+              ? AudioPlayerService().displayDuration
+              : null,
+        ));
+      }
       if (d['visible'] == false) {
         _readAlongTurn(d['cfi'], d['dir'], why: 'sentence is off the page');
       }
@@ -3983,10 +4663,14 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // has stayed missing for a couple of seconds, well clear of any turn.
     final now = DateTime.now();
     _readAlongMissSince ??= now;
+    // With no anchor at all (just started, just seeked) the audio can be
+    // anywhere in the book, and the delays below only left the reader on
+    // the wrong page while the book's lines went by. Scan straight away.
+    final unanchored = _readAlongAt < 0 && _readAlongPageWords == 0;
     // Narration runs forward, and the next sentence not being in the rendered
     // pages usually means it starts the next section - which is simply the
     // next page. Step once and look again before paying for a scan.
-    if (!_readAlongStepped) {
+    if (!unanchored && !_readAlongStepped) {
       _readAlongStepped = true;
       _readAlongTurn(null, 1, why: 'sentence is not on this page, trying the next');
       return;
@@ -3994,8 +4678,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final missing = now.difference(_readAlongMissSince!);
     final sinceTurn = now.difference(_readAlongLastTurn);
     final since = now.difference(_readAlongLastScan);
-    if (missing < const Duration(seconds: 2) ||
-        sinceTurn < const Duration(seconds: 3) ||
+    if ((!unanchored &&
+            (missing < const Duration(seconds: 2) ||
+                sinceTurn < const Duration(seconds: 3))) ||
         since < const Duration(seconds: 10)) {
       debugPrint('[ReadAlong] holding the whole-book scan '
           '(missing ${missing.inMilliseconds}ms, turn ${sinceTurn.inSeconds}s ago, '
@@ -4034,16 +4719,23 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       href = (jsonDecode(hraw) as Map<String, dynamic>)['href'] as String? ?? '';
     } catch (_) {}
     if (href.isEmpty) return;
-    // Turn to the section and let the next tick locate and paint through the
-    // normal path.
+    // Land on the sentence itself, the way Find in ebook does, and let the
+    // next tick paint it. Only if the sentence can't be pinned in the live
+    // section does it fall back to the section start, which then costs a
+    // page turn per page to reach the narration.
     wc.evaluateJavascript(source: 'window.__absorbRA && __absorbRA.clear()');
     _readAlongPageWords = 0;
     _readAlongAt = -1;
     _readAlongAllowBack = true;
     _readAlongLastTurn = DateTime.now();
     _readAlongMissSince = null;
-    _epubController?.display(cfi: href);
     _readAlongLineStart = null;
+    final landed = await _jumpToFindHit(href, needle, flash: false);
+    verboseLog('[ReadAlong] whole-book scan -> $href, on the sentence: $landed');
+    if (!landed && mounted && _readAlongOn) {
+      _readAlongLastTurn = DateTime.now();
+      _epubController?.display(cfi: href);
+    }
   }
 
   /// Brief highlight so the user can spot the passage on the page. Strong
@@ -4501,6 +5193,561 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     return '${t}x';
   }
 
+  /// Press-and-hold on the auto scroll button: stop the blind after a while
+  /// and let the screen go dark, for reading yourself to sleep. Picking a
+  /// time starts auto scroll if it isn't running.
+  Future<void> _showAutoScrollSleepSheet() async {
+    final l = AppLocalizations.of(context)!;
+    Timer? ticker;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final tt = Theme.of(ctx).textTheme;
+        return StatefulBuilder(builder: (ctx, setSheet) {
+          // The minutes-left line keeps up while the sheet is open.
+          ticker ??= Timer.periodic(const Duration(seconds: 20), (t) {
+            if (ctx.mounted) {
+              setSheet(() {});
+            } else {
+              t.cancel();
+            }
+          });
+          final end = _autoScrollSleepEnd;
+          final left = end == null
+              ? null
+              : (end.difference(DateTime.now()).inSeconds / 60).ceil().clamp(1, 999);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l.readerAutoScrollSleep,
+                      style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(
+                    left != null
+                        ? l.readerAutoScrollSleepLeft(left)
+                        : l.readerAutoScrollSleepHint,
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    for (final m in const [10, 15, 20, 30, 45, 60])
+                      ChoiceChip(
+                        label: Text(l.readerAutoScrollSleepMinutes(m)),
+                        selected: end != null && _autoScrollSleepMinutes == m,
+                        onSelected: (_) {
+                          Navigator.pop(ctx);
+                          _armAutoScrollSleep(m);
+                        },
+                      ),
+                    if (end != null)
+                      ActionChip(
+                        label: Text(l.off),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _cancelAutoScrollSleep(toast: true);
+                        },
+                      ),
+                  ]),
+                ],
+              ),
+            ),
+          );
+        });
+      },
+    ).whenComplete(() => ticker?.cancel());
+  }
+
+  Future<void> _armAutoScrollSleep(int minutes) async {
+    await PlayerSettings.setEreaderAutoScrollSleepMinutes(minutes);
+    if (!mounted) return;
+    if (!_autoScroll) {
+      await _toggleAutoScroll();
+      if (!mounted || !_autoScroll) return;
+    }
+    _autoScrollSleepTimer?.cancel();
+    _autoScrollSleepMinutes = minutes;
+    _autoScrollSleepEnd = DateTime.now().add(Duration(minutes: minutes));
+    _autoScrollSleepTimer =
+        Timer(Duration(minutes: minutes), _onAutoScrollSleepFired);
+    verboseLog('[AutoScroll] sleep timer armed for ${minutes}m');
+    showOverlayToast(context, AppLocalizations.of(context)!.readerAutoScrollSleepIn(minutes),
+        icon: Icons.nightlight_round_outlined);
+  }
+
+  void _cancelAutoScrollSleep({bool toast = false}) {
+    if (_autoScrollSleepTimer == null) return;
+    _autoScrollSleepTimer?.cancel();
+    _autoScrollSleepTimer = null;
+    _autoScrollSleepEnd = null;
+    _autoScrollSleepMinutes = 0;
+    verboseLog('[AutoScroll] sleep timer cancelled');
+    if (toast && mounted) {
+      showOverlayToast(context, AppLocalizations.of(context)!.readerAutoScrollSleepOff,
+          icon: Icons.nightlight_round_outlined);
+    }
+  }
+
+  Future<void> _onAutoScrollSleepFired() async {
+    _autoScrollSleepTimer = null;
+    _autoScrollSleepEnd = null;
+    _autoScrollSleepMinutes = 0;
+    if (!mounted) return;
+    verboseLog('[AutoScroll] sleep timer fired - stopping the blind and '
+        'letting the screen sleep');
+    _speedToast?.dismiss();
+    _speedToast = null;
+    if (_autoScroll) await _toggleAutoScroll();
+    if (!mounted) return;
+    _screenWakeHeldOff = true;
+    _syncScreenWake();
+    showOverlayToast(context, AppLocalizations.of(context)!.readerAutoScrollSleepEnded,
+        icon: Icons.nightlight_round_outlined);
+  }
+
+  /// The up arrow on the media bar: the audiobook card's controls that make
+  /// sense with the book open, on the app surface like the speed sheet.
+  void _showReaderControls() {
+    final accent = Theme.of(context).colorScheme.primary;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      useSafeArea: true,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).bottomSheetTheme.backgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+                top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1)),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.24),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                LayoutBuilder(builder: (_, constraints) {
+                  const gap = 10.0;
+                  final textScale = MediaQuery.textScalerOf(ctx).scale(1.0);
+                  final cols =
+                      (constraints.maxWidth < 340 || textScale >= 1.3) ? 2 : 3;
+                  final cellW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+                  final cellH =
+                      (cols == 2 ? 72.0 : 80.0) * textScale.clamp(1.0, 1.7) + 8;
+                  return Wrap(spacing: gap, runSpacing: gap, children: [
+                    for (final tile in _readerControlTiles(ctx, accent))
+                      SizedBox(width: cellW, height: cellH, child: tile),
+                  ]);
+                }),
+                const SizedBox(height: 4),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _pickBarAction();
+                  },
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: Text(AppLocalizations.of(ctx)!.readerShortcutButton),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<Widget> _readerControlTiles(BuildContext ctx, Color accent) {
+    Widget tile(String id) {
+      Widget build() {
+        final a = _readerAction(id);
+        return MoreMenuItem(
+          icon: a.icon,
+          label: a.label,
+          accent: a.tint ?? accent,
+          enabled: a.enabled,
+          onTap: () {
+            Navigator.pop(ctx);
+            a.onTap();
+          },
+        );
+      }
+
+      final listenable = _readerActionListenable(id);
+      return listenable == null
+          ? build()
+          : ListenableBuilder(listenable: listenable, builder: (_, __) => build());
+    }
+
+    return [
+      for (final id in _readerActionIds)
+        if (id != _barActionId) tile(id),
+    ];
+  }
+
+  // Cast is Android only; iPhones get the AirPlay route picker instead, same
+  // split as the card.
+  List<String> get _readerActionIds => [
+        'chapters',
+        'speed',
+        'sleep',
+        'bookmarks',
+        'equalizer',
+        Platform.isIOS ? 'airplay' : 'cast',
+        'details',
+        'download',
+      ];
+
+  // A choice restored from the other platform may not exist on this one.
+  String get _barActionId =>
+      _readerActionIds.contains(_barAction) ? _barAction : 'speed';
+
+  Listenable? _readerActionListenable(String id) => switch (id) {
+        'cast' => ChromecastService(),
+        'download' => DownloadService(),
+        _ => null,
+      };
+
+  /// One of the reader's audio controls as it stands right now, for a tile in
+  /// the controls sheet or the player bar's shortcut.
+  _ReaderAction _readerAction(String id) {
+    final l = AppLocalizations.of(context)!;
+    final accent = Theme.of(context).colorScheme.primary;
+    final player = AudioPlayerService();
+    switch (id) {
+      case 'chapters':
+        return (
+          icon: Icons.list_rounded,
+          label: l.chapters,
+          tint: null,
+          enabled: true,
+          onTap: () => _showAudioChapters(accent, Theme.of(context).textTheme),
+        );
+      case 'speed':
+        return (
+          icon: Icons.speed_rounded,
+          label: l.speed,
+          tint: null,
+          enabled: true,
+          onTap: () => showModalBottomSheet(
+                context: context,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                // The sheet sits on the app surface, not the page, so it
+                // keeps the theme accent.
+                builder: (_) => CardSpeedSheet(
+                  player: player,
+                  accent: accent,
+                  itemId: widget.itemId,
+                ),
+              ),
+        );
+      case 'sleep':
+        return (
+          icon: Icons.nightlight_round_outlined,
+          label: l.timer,
+          tint: null,
+          enabled: true,
+          onTap: () => showSleepTimerSheet(context, accent),
+        );
+      case 'bookmarks':
+        return (
+          icon: Icons.bookmark_outline_rounded,
+          label: l.bookmarks,
+          tint: null,
+          enabled: player.hasBook && player.currentItemId == widget.itemId,
+          onTap: () => showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                useSafeArea: true,
+                builder: (_) => DraggableScrollableSheet(
+                  initialChildSize: 0.6,
+                  minChildSize: 0.05,
+                  snap: true,
+                  maxChildSize: 0.9,
+                  expand: false,
+                  builder: (_, sc) => SimpleBookmarkSheet(
+                    itemId: widget.itemId,
+                    player: player,
+                    accent: accent,
+                    scrollController: sc,
+                    onChanged: () {},
+                  ),
+                ),
+              ),
+        );
+      case 'equalizer':
+        return (
+          icon: Icons.equalizer_rounded,
+          label: l.equalizerLabel,
+          tint: null,
+          enabled: true,
+          onTap: () => showEqualizerSheet(context, accent,
+              itemId: widget.itemId, itemTitle: widget.title),
+        );
+      case 'airplay':
+        return (
+          icon: Icons.airplay_rounded,
+          label: 'AirPlay',
+          tint: null,
+          enabled: true,
+          onTap: () => const MethodChannel('com.absorb.audio_output')
+              .invokeMethod('showRoutePicker')
+              .catchError((_) => null),
+        );
+      case 'cast':
+        final cast = ChromecastService();
+        final String label;
+        if (cast.isCasting && cast.castingItemId == widget.itemId) {
+          label = l.castingToDevice(cast.connectedDeviceName ?? 'device');
+        } else if (cast.isConnected) {
+          label = l.castToDeviceNamed(cast.connectedDeviceName ?? 'device');
+        } else {
+          label = l.castToDevice;
+        }
+        return (
+          icon: cast.isConnected
+              ? Icons.cast_connected_rounded
+              : Icons.cast_rounded,
+          label: label,
+          tint: null,
+          enabled: true,
+          onTap: _castFromReader,
+        );
+      case 'details':
+        return (
+          icon: Icons.info_outline_rounded,
+          label: l.bookDetailsLabel,
+          tint: null,
+          enabled: true,
+          onTap: () => showBookDetailSheet(context, widget.itemId),
+        );
+      default:
+        final dl = DownloadService();
+        final downloaded = dl.isDownloaded(widget.itemId);
+        final downloading = dl.isDownloading(widget.itemId);
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return (
+          icon: downloaded
+              ? Icons.download_done_rounded
+              : downloading
+                  ? Icons.downloading_rounded
+                  : Icons.download_outlined,
+          label: downloaded
+              ? l.saved
+              : downloading
+                  ? '${(dl.downloadProgress(widget.itemId) * 100).toStringAsFixed(0)}%'
+                  : l.download,
+          tint: !downloaded
+              ? null
+              : isDark
+                  ? Colors.greenAccent.withValues(alpha: 0.7)
+                  : Colors.green.shade700,
+          enabled: true,
+          onTap: () {
+            if (!downloaded && !downloading) _downloadFromReader();
+          },
+        );
+    }
+  }
+
+  /// The player bar's left slot. Long press swaps what sits there.
+  Widget _barShortcut(Color fg, Color dim) {
+    final id = _barActionId;
+    Widget build() {
+      final a = _readerAction(id);
+      return GestureDetector(
+        onLongPress: _pickBarAction,
+        child: id == 'speed'
+            ? TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: a.onTap,
+                child: Text(_speedLabel(AudioPlayerService().speed),
+                    style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
+              )
+            : IconButton(
+                icon: Icon(a.icon, color: a.enabled ? fg : dim),
+                iconSize: 26,
+                onPressed:
+                    a.enabled ? a.onTap : () => showInactiveToast(context),
+              ),
+      );
+    }
+
+    final listenable = _readerActionListenable(id);
+    return listenable == null
+        ? build()
+        : ListenableBuilder(listenable: listenable, builder: (_, __) => build());
+  }
+
+  Future<void> _pickBarAction() async {
+    final l = AppLocalizations.of(context)!;
+    final current = _barActionId;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(l.readerShortcutButton,
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                ),
+              ),
+              for (final id in _readerActionIds)
+                ListTile(
+                  leading: Icon(
+                      buttonDefById(id)?.icon ?? _readerAction(id).icon),
+                  title: Text(switch (buttonDefById(id)) {
+                    final def? => localizedCardButtonLabel(l, def),
+                    null => _readerAction(id).label,
+                  }),
+                  trailing: id == current
+                      ? Icon(Icons.check_rounded, color: cs.primary)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, id),
+                ),
+              const SizedBox(height: 8),
+            ]),
+          ),
+        );
+      },
+    );
+    if (picked == null || picked == current || !mounted) return;
+    setState(() => _barAction = picked);
+    await ScopedPrefs.setString(_kBarAction, picked);
+  }
+
+  Future<void> _showAudioChapters(Color accent, TextTheme tt) async {
+    final l = AppLocalizations.of(context)!;
+    final player = AudioPlayerService();
+    final cast = ChromecastService();
+    final castingThis = cast.isCasting && cast.castingItemId == widget.itemId;
+    final isActive = player.hasBook && player.currentItemId == widget.itemId;
+    final chapters = castingThis
+        ? cast.castingChapters
+        : (isActive ? player.chapters : _audioChapters);
+    if (chapters.isEmpty) {
+      showOverlayToast(context, l.noChaptersBook, icon: Icons.list_rounded);
+      return;
+    }
+    double pos;
+    if (castingThis) {
+      pos = cast.castPosition.inMilliseconds / 1000.0;
+    } else if (isActive) {
+      pos = player.position.inMilliseconds / 1000.0;
+    } else {
+      pos = await ProgressSyncService().getSavedPosition(widget.itemId);
+    }
+    final speedAdjusted = await PlayerSettings.getSpeedAdjustedTime();
+    if (!mounted) return;
+    showChaptersSheet(
+      context: context,
+      accent: accent,
+      tt: tt,
+      chapters: chapters,
+      totalDuration: castingThis
+          ? cast.castingDuration
+          : (isActive ? player.totalDuration : _audioDuration),
+      currentPosition: pos,
+      isPlaybackActive: isActive || castingThis,
+      isCastingThis: castingThis,
+      displaySpeed: speedAdjusted && isActive ? player.speed : 1.0,
+      player: player,
+      itemId: widget.itemId,
+    );
+  }
+
+  void _castFromReader() {
+    final cast = ChromecastService();
+    final api = context.read<AuthProvider>().apiService;
+    final coverUrl = api?.getCoverUrl(widget.itemId);
+    if (cast.isCasting && cast.castingItemId == widget.itemId) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (_) => CastControlSheet(),
+      );
+    } else if (cast.isConnected) {
+      if (api != null) {
+        cast.castItem(
+          api: api,
+          itemId: widget.itemId,
+          title: widget.title,
+          author: _audioAuthor,
+          coverUrl: coverUrl,
+          totalDuration: _audioDuration,
+          chapters: _audioChapters,
+        );
+      }
+    } else {
+      showCastDevicePicker(
+        context,
+        api: api,
+        itemId: widget.itemId,
+        title: widget.title,
+        author: _audioAuthor,
+        coverUrl: coverUrl,
+        totalDuration: _audioDuration,
+        chapters: _audioChapters,
+      );
+    }
+  }
+
+  Future<void> _downloadFromReader() async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return;
+    final error = await DownloadService().downloadItem(
+      api: api,
+      itemId: widget.itemId,
+      title: widget.title,
+      author: _audioAuthor,
+      coverUrl: api.getCoverUrl(widget.itemId),
+      libraryId: context.read<LibraryProvider>().selectedLibraryId,
+    );
+    if (!mounted) return;
+    showOverlayToast(
+      context,
+      error ?? AppLocalizations.of(context)!.readerDownloadStarted,
+      icon: error != null ? Icons.error_outline_rounded : Icons.download_rounded,
+    );
+  }
+
   /// Playback controls for immersion reading (listen while you read). Drives the
   /// shared player; only shown while a book is loaded.
   Widget _buildMediaBar(Color fg, Color accent) {
@@ -4527,29 +5774,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 width: 64,
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(0, 36),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: () => showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Theme.of(context).colorScheme.surface,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                      ),
-                      // The sheet sits on the app surface, not the page, so
-                      // it keeps the theme accent.
-                      builder: (_) => CardSpeedSheet(
-                        player: player,
-                        accent: Theme.of(context).colorScheme.primary,
-                        itemId: widget.itemId,
-                      ),
-                    ),
-                    child: Text(_speedLabel(player.speed),
-                        style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
-                  ),
+                  child: _barShortcut(fg, dim),
                 ),
               ),
               Expanded(
@@ -4574,7 +5799,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                       onPressed: _startingAudio
                           ? null
                           : (isActive
-                                ? () => player.togglePlayPause(fromUi: true)
+                                ? () {
+                                    final starting = !player.isPlaying;
+                                    player.togglePlayPause(fromUi: true);
+                                    if (starting) {
+                                      _maybeOfferCatchUp(audioStarting: true);
+                                    }
+                                  }
                                 : _startThisBook),
                     ),
                     IconButton(
@@ -4585,7 +5816,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   ],
                 ),
               ),
-              const SizedBox(width: 64), // balance the speed button
+              SizedBox(
+                width: 64,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    icon: Icon(Icons.keyboard_arrow_up_rounded, color: fg),
+                    tooltip: AppLocalizations.of(context)!.readerMoreControls,
+                    onPressed: _showReaderControls,
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -4739,6 +5980,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   _didAutoReadAlong = true;
                   Future.delayed(const Duration(milliseconds: 900), () {
                     if (mounted && !_readAlongOn) _toggleReadAlong();
+                  });
+                }
+                if (!_didScheduleCatchUp) {
+                  _didScheduleCatchUp = true;
+                  // Past the load rescue and settle re-displays.
+                  Future.delayed(const Duration(milliseconds: 2500), () {
+                    if (mounted) _catchUpOnOpen();
                   });
                 }
                 final findText = widget.findText;
@@ -4905,14 +6153,18 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                                   onPressed: _showAnnotationsSheet,
                                 ),
                               ),
+                              // No tooltip here: its long press would take the
+                              // gesture the sleep timer sheet needs.
                               Expanded(
-                                child: IconButton(
-                                  icon: Icon(
-                                    Icons.swap_vert_rounded,
-                                    color: _autoScroll ? accent : fg,
+                                child: GestureDetector(
+                                  onLongPress: _showAutoScrollSleepSheet,
+                                  child: IconButton(
+                                    icon: Icon(
+                                      Icons.swap_vert_rounded,
+                                      color: _autoScroll ? accent : fg,
+                                    ),
+                                    onPressed: _toggleAutoScroll,
                                   ),
-                                  tooltip: AppLocalizations.of(context)!.readerAutoScroll,
-                                  onPressed: _toggleAutoScroll,
                                 ),
                               ),
                               Expanded(
@@ -4938,6 +6190,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               ),
             ),
           ),
+
+          if (_readAlongPrep != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(child: _readAlongPrepCard(bg, fg, accent)),
+              ),
+            ),
 
           // Selection toolbar - appears when text is selected
           if (_selectionRect != null && _selectionCfi != null)

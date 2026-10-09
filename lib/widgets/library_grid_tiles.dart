@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/ebook_cache.dart';
 import 'absorbing_shared.dart';
 import 'stable_cached_network_image.dart';
 import 'book_detail_sheet.dart';
@@ -80,6 +81,7 @@ class _GridBookTileState extends State<GridBookTile> {
     final progress = lib.getProgress(itemId);
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = _dl.isDownloaded(itemId);
+    final hasEbook = PlayerSettings.showEbookBadge && hasEbookFile(widget.item);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
     final dlCounts = isDownloaded ? _dl.chapterDownloadCounts(itemId) : null;
     final isSubscribed = lib.isPodcastLibrary && lib.isPodcastSubscribed(itemId);
@@ -100,7 +102,7 @@ class _GridBookTileState extends State<GridBookTile> {
           return;
         }
         if (itemId.isNotEmpty) {
-          if (lib.isPodcastLibrary) {
+          if (lib.isPodcastItem(widget.item)) {
             EpisodeListSheet.show(context, widget.item);
           } else {
             showBookDetailSheet(context, itemId, initialItem: widget.item);
@@ -208,6 +210,12 @@ class _GridBookTileState extends State<GridBookTile> {
                         ),
                         child: Text(l.libraryGridTilesExplicitBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                       ),
+                    ),
+
+                  if (hasEbook && !widget.selectionMode)
+                    Positioned(
+                      top: widget.sequenceBadge != null ? 24 : 4, left: 4,
+                      child: const EbookCoverBadge(),
                     ),
 
                   // Sequence badge

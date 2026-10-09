@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/app_log.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/wording.dart';
 import '../widgets/absorb_page_header.dart';
+import 'app_shell.dart';
 import '../widgets/overlay_toast.dart';
 import '../l10n/app_localizations.dart';
-import 'app_shell.dart';
 
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
@@ -429,6 +431,55 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
     // No validating reload: these rows are gone by construction.
     if (mounted) _load(validate: false);
+  }
+
+  /// Play a completed download straight from the list, online or offline.
+  /// The session cached in [DownloadInfo.sessionData] supplies the duration
+  /// and chapters playItem needs; playItem itself moves onto the local files.
+  Future<void> _play(DownloadInfo info) async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null || info.localPaths.isEmpty) return;
+    verboseLog('[Downloads] Play ${info.itemId} from the downloads list');
+    final isEpisode = info.itemId.length > 36;
+    final itemId = isEpisode ? info.itemId.substring(0, 36) : info.itemId;
+    final episodeId = isEpisode ? info.itemId.substring(37) : null;
+    double duration = 0;
+    List<dynamic> chapters = const [];
+    final sessionJson = info.sessionData;
+    if (sessionJson != null) {
+      try {
+        final session = jsonDecode(sessionJson) as Map<String, dynamic>;
+        duration = (session['duration'] as num?)?.toDouble() ?? 0;
+        chapters = session['chapters'] as List<dynamic>? ?? const [];
+      } catch (_) {}
+    }
+    final title = info.title ?? '';
+    final lib = context.read<LibraryProvider>();
+    final error = await AudioPlayerService().playItem(
+      api: api,
+      itemId: itemId,
+      title: title,
+      author: info.author ?? '',
+      coverUrl: api.getCoverUrl(itemId),
+      totalDuration: duration,
+      chapters: isEpisode ? const [] : chapters,
+      episodeId: episodeId,
+      episodeTitle: isEpisode ? title : null,
+      libraryId: info.libraryId,
+      fromUi: true,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      showOverlayToast(context, error, icon: Icons.error_outline_rounded);
+      return;
+    }
+    unawaited(lib.rememberStartedInAbsorbing(info.itemId, null));
+    unawaited(lib.syncQueueAutoDownloads());
+    lib.refreshLocalProgress();
+    lib.refresh();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    AppShell.goToAbsorbingGlobal();
   }
 
   Future<void> _openTrackManager(DownloadInfo info) async {
@@ -896,6 +947,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                       onDelete: () => _deleteSingle(info),
                                       onManageTracks: () =>
                                           _openTrackManager(info),
+                                      onPlay: () => _play(info),
                                       formatBytes: _formatBytes,
                                       mediaHeaders: context
                                           .read<LibraryProvider>()
@@ -987,6 +1039,7 @@ class _DownloadCard extends StatelessWidget {
   final VoidCallback onLongPress;
   final VoidCallback onDelete;
   final VoidCallback onManageTracks;
+  final VoidCallback onPlay;
   final String Function(int) formatBytes;
   final Map<String, String> mediaHeaders;
 
@@ -1002,6 +1055,7 @@ class _DownloadCard extends StatelessWidget {
     required this.onLongPress,
     required this.onDelete,
     required this.onManageTracks,
+    required this.onPlay,
     required this.formatBytes,
     required this.mediaHeaders,
   });
@@ -1095,6 +1149,16 @@ class _DownloadCard extends StatelessWidget {
                   ),
                 ),
                 if (!selecting) ...[
+                  if (canManageTracks)
+                    IconButton(
+                      icon: Icon(
+                        Icons.play_circle_outline_rounded,
+                        color: cs.primary,
+                        size: 26,
+                      ),
+                      tooltip: Wording.of(context).absorb,
+                      onPressed: onPlay,
+                    ),
                   if (canManageTracks)
                     IconButton(
                       icon: Icon(

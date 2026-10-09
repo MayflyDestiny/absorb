@@ -80,6 +80,17 @@ class AppLocalizationsEl extends AppLocalizations {
   String get later => 'Later';
 
   @override
+  String get whatsNewTitle => 'Absorb was updated';
+
+  @override
+  String whatsNewContent(String version) {
+    return 'You\'re now on $version.';
+  }
+
+  @override
+  String get whatsNewButton => 'See what\'s new';
+
+  @override
   String get gotIt => 'Got it';
 
   @override
@@ -318,6 +329,14 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get setupLinkSigningIn => 'Checking sign-in link...';
+
+  @override
+  String get loginPlayDownloads => 'Play your downloads';
+
+  @override
+  String signedOutDownloadsNote(String username) {
+    return 'You\'re signed out. Anything you listen to here syncs to $username when you sign back in.';
+  }
 
   @override
   String get loginPasteLink => 'Paste login link';
@@ -728,6 +747,9 @@ class AppLocalizationsEl extends AppLocalizations {
   String get downloadsCompleted => 'Completed';
 
   @override
+  String get downloadsEbooks => 'Ebooks';
+
+  @override
   String get downloadsWaiting => 'Waiting...';
 
   @override
@@ -761,6 +783,26 @@ class AppLocalizationsEl extends AppLocalizations {
   @override
   String downloadsRemovedTitle(String title) {
     return '\"$title\" removed';
+  }
+
+  @override
+  String downloadFailedMissingFile(String title) {
+    return 'Couldn\'t download \"$title\" - one of its files isn\'t on the server. A library scan may fix it.';
+  }
+
+  @override
+  String downloadFailedNoSpace(String title) {
+    return 'Couldn\'t download \"$title\" - not enough storage space';
+  }
+
+  @override
+  String downloadFailedPermission(String title) {
+    return 'Couldn\'t download \"$title\" - check the download location in Settings';
+  }
+
+  @override
+  String downloadFailedGeneric(String title) {
+    return 'Couldn\'t download \"$title\"';
   }
 
   @override
@@ -857,6 +899,26 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get bookmarksNoBookmarks => 'No bookmarks yet';
+
+  @override
+  String get bookmarksSearchHint => 'Search bookmarks';
+
+  @override
+  String get bookmarksNoMatches => 'No bookmarks match your search';
+
+  @override
+  String batchDownloadQueued(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Downloading $count books',
+      one: 'Downloading 1 book',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get batchDownloadNothingNew => 'Already downloaded';
 
   @override
   String bookmarksDeleteCount(int count) {
@@ -3256,6 +3318,13 @@ class AppLocalizationsEl extends AppLocalizations {
   String get ebookOnlyNoAudio => 'eBook Only - No Audio';
 
   @override
+  String get absorbAudioNotDownloaded => 'Audio not downloaded';
+
+  @override
+  String get absorbAudioNotDownloadedEbookOnly =>
+      'Audio not downloaded, ebook only';
+
+  @override
   String get fullyAbsorbed => 'Fully Absorbed';
 
   @override
@@ -3266,6 +3335,21 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get addToAbsorbing => 'Add to Absorbing';
+
+  @override
+  String get absorbNext => 'Absorb Next';
+
+  @override
+  String get absorbNextAdded => 'Up next in Absorbing';
+
+  @override
+  String get absorbLast => 'Absorb Last';
+
+  @override
+  String get absorbNextHint => 'Right after what\'s playing now';
+
+  @override
+  String get absorbLastHint => 'At the end of the list';
 
   @override
   String get removedFromAbsorbing => 'Removed from Absorbing';
@@ -4312,6 +4396,16 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get finishedBadgeModeOff => 'Off';
+
+  @override
+  String get showEbookBadge => 'Show ebook badge';
+
+  @override
+  String get showEbookBadgeOnSubtitle =>
+      'Books with an ebook show a book icon on the cover';
+
+  @override
+  String get showEbookBadgeOffSubtitle => 'Off - ebook badge hidden';
 
   @override
   String get libraryFallback => 'Library';
@@ -7453,6 +7547,31 @@ class AppLocalizationsEl extends AppLocalizations {
       'Playback waits for you to press play';
 
   @override
+  String get sectionCar => 'Android Auto';
+
+  @override
+  String get sectionCarIos => 'CarPlay';
+
+  @override
+  String get carBookOrder => 'Book order in the car';
+
+  @override
+  String get carBookOrderReverse => 'Reverse book order';
+
+  @override
+  String get carBookOrderReverseSubtitle => 'Z to A, or oldest added first';
+
+  @override
+  String get carPodcastOrder => 'Podcast order in the car';
+
+  @override
+  String get carEpisodesOldestFirst => 'Oldest episodes first';
+
+  @override
+  String get carEpisodesOldestFirstSubtitle =>
+      'For shows you listen to from the start';
+
+  @override
   String get androidAutoCatBooks => 'Books';
 
   @override
@@ -7460,6 +7579,12 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get androidAutoCatAuthors => 'Authors';
+
+  @override
+  String get androidAutoCatCollections => 'Collections';
+
+  @override
+  String get androidAutoCatPlaylists => 'Playlists';
 
   @override
   String get showTipsAgain => 'Show tips again';
@@ -7668,17 +7793,63 @@ class AppLocalizationsEl extends AppLocalizations {
   String get chapterShowSeconds => 'Show seconds';
 
   @override
+  String chapterWindowMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get chapterLoopCut => 'Loop the cut';
+
+  @override
+  String get chapterFindStart => 'Find the start';
+
+  @override
+  String get chapterFindStartListening => 'Listening around the marker';
+
+  @override
+  String get chapterFindStartNone => 'Nothing here sounds like a chapter start';
+
+  @override
+  String get chapterFindStartWider => 'Search wider';
+
+  @override
+  String get chapterFindStartCeiling =>
+      'Searched half an hour around the marker. The start is further off than that, or there\'s no chapter announcement to hear.';
+
+  @override
+  String get chapterFindStartStrong => 'Sounds like this chapter';
+
+  @override
+  String get chapterFindStartMaybe => 'Chapter-like words';
+
+  @override
+  String chapterFindStartGap(String seconds) {
+    return '${seconds}s gap';
+  }
+
+  @override
+  String chapterFindStartRange(String from, String to) {
+    return 'Searched $from to $to';
+  }
+
+  @override
+  String get chapterFindStartNeedsModel =>
+      'Turn on transcription in Settings and download a model first';
+
+  @override
+  String get chapterFindStartUseThis => 'Use this';
+
+  @override
+  String chapterFindStartTitle(String title) {
+    return 'Title: $title';
+  }
+
+  @override
   String get chapterShiftBySeconds => 'Shift by (seconds)';
 
   @override
   String get chapterShiftHint =>
       'Shifts every unlocked chapter. Use a negative value to move them earlier.';
-
-  @override
-  String get chapterBack1Second => 'Back 1 second';
-
-  @override
-  String get chapterForward1Second => 'Forward 1 second';
 
   @override
   String get chapterTitleHint => 'Chapter title';
@@ -7690,18 +7861,12 @@ class AppLocalizationsEl extends AppLocalizations {
   String get chapterPreviewFromHere => 'Preview from here';
 
   @override
-  String get chapterScrubHint => 'Scrub to the exact spot, then set';
+  String get chapterScrubHint => 'Drag or nudge to move the start';
 
   @override
   String chapterStartAt(String time) {
     return 'Start at $time';
   }
-
-  @override
-  String get chapterSetStartHere => 'Set start here';
-
-  @override
-  String get chapterMore => 'More';
 
   @override
   String get chapterUnlock => 'Unlock';
@@ -8795,6 +8960,13 @@ class AppLocalizationsEl extends AppLocalizations {
       'Pins them above the page instead of showing them on tap. The page gets a little shorter so no text is covered.';
 
   @override
+  String get readerKeepAwake => 'Keep the screen on';
+
+  @override
+  String get readerKeepAwakeHint =>
+      'Stops the screen timing out while you read at your own pace. Auto scroll and read along always keep it on.';
+
+  @override
   String get readerLayoutAuto => 'Auto';
 
   @override
@@ -8846,6 +9018,102 @@ class AppLocalizationsEl extends AppLocalizations {
   @override
   String readerAutoScrollSpeed(int percent) {
     return 'Speed $percent%';
+  }
+
+  @override
+  String get readerMoreControls => 'More controls';
+
+  @override
+  String get readerAutoScrollSleep => 'Auto scroll sleep timer';
+
+  @override
+  String get readerAutoScrollSleepHint =>
+      'Stops the scrolling after a while and lets the screen go dark.';
+
+  @override
+  String readerAutoScrollSleepMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String readerAutoScrollSleepLeft(int minutes) {
+    return '$minutes min left';
+  }
+
+  @override
+  String readerAutoScrollSleepIn(int minutes) {
+    return 'Auto scroll stops in $minutes min';
+  }
+
+  @override
+  String get readerAutoScrollSleepOff => 'Auto scroll sleep timer off';
+
+  @override
+  String get readerAutoScrollSleepEnded => 'Sleep timer - auto scroll off';
+
+  @override
+  String get readerDownloadStarted => 'Download started';
+
+  @override
+  String get detailChaptersJumpTitle => 'Jump to this chapter?';
+
+  @override
+  String detailChaptersJumpContent(String title) {
+    return 'Playback moves to \"$title\".';
+  }
+
+  @override
+  String get detailChaptersJump => 'Jump';
+
+  @override
+  String detailChaptersFinished(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chapters finished',
+      one: '1 chapter finished',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String detailOtherListeners(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count other listeners',
+      one: '1 other listener',
+      zero: 'No other listeners',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seriesUpNext => 'Up next';
+
+  @override
+  String get seriesJumpToUpNext => 'Jump to up next';
+
+  @override
+  String get seriesStatsFinished => 'Finished';
+
+  @override
+  String get seriesStatsListened => 'Listened';
+
+  @override
+  String get seriesStatsLeft => 'Left';
+
+  @override
+  String seriesFinishedOf(int done, int total) {
+    return '$done of $total';
+  }
+
+  @override
+  String get detailSessionsNone => 'No listening sessions yet';
+
+  @override
+  String detailSessionsAll(int count) {
+    return 'All $count sessions';
   }
 
   @override
@@ -9339,7 +9607,7 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get transcriptionNotDownloadedBook =>
-      'Download this book first to transcribe its bookmarks.';
+      'Download this book or connect to your server to transcribe it.';
 
   @override
   String get transcriptionNoMetadataMsg =>
@@ -9460,9 +9728,6 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get readAlongLost => 'Can\'t find the narration on the page';
-
-  @override
-  String get readAlongReady => 'Read along is ready';
 
   @override
   String get findInEbook => 'Find in ebook';
@@ -9827,5 +10092,71 @@ class AppLocalizationsEl extends AppLocalizations {
   @override
   String playerErrorGeneric(String error) {
     return 'Playback failed: $error';
+  }
+
+  @override
+  String get catchUpAudioAhead =>
+      'The audiobook is further along. Tap to go there.';
+
+  @override
+  String get catchUpPageAhead =>
+      'This page is ahead of the audiobook. Tap to move the audiobook here.';
+
+  @override
+  String get readerShortcutButton => 'Shortcut button';
+
+  @override
+  String get keepScreenOn => 'Keep screen on';
+
+  @override
+  String get keepScreenOnUntilClosed =>
+      'Screen stays on until you close the app';
+
+  @override
+  String get keepScreenOnOff => 'Screen can turn off again';
+
+  @override
+  String get keepScreenOnAlwaysHint => 'Already on in Settings';
+
+  @override
+  String get keepScreenOnPlayer => 'Keep the screen on in the player';
+
+  @override
+  String get keepScreenOnPlayerSubtitle =>
+      'The screen stays on while the player is open';
+
+  @override
+  String get keepScreenOnCarMode => 'Keep the screen on in car mode';
+
+  @override
+  String get keepScreenOnCarModeSubtitle =>
+      'The screen stays on while car mode is open';
+
+  @override
+  String get cardButtonFill => 'Button background';
+
+  @override
+  String get cardButtonFillSubtitle =>
+      'How the buttons on the player card are filled';
+
+  @override
+  String get cardButtonFillClear => 'Clear';
+
+  @override
+  String get cardButtonFillSubtle => 'Subtle';
+
+  @override
+  String get cardButtonFillSolid => 'Solid';
+
+  @override
+  String get signedOutTapToSignIn => 'Signed out. Tap to sign in again.';
+
+  @override
+  String get authSignedOutKeepListening =>
+      'You\'ve been signed out. Downloads still play. Tap the red cloud to sign in again.';
+
+  @override
+  String signedOutSyncNote(String username, String server) {
+    return 'What you listen to while signed out is kept on this phone and syncs when you sign back in as $username on $server. Any way of signing in to that account works.';
   }
 }

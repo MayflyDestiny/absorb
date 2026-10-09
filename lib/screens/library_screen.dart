@@ -35,7 +35,7 @@ import 'admin_podcasts_screen.dart';
 import 'app_shell.dart';
 import 'upcoming_releases_screen.dart';
 import '../widgets/audible_series_sheet.dart' show showAudibleRegionPicker;
-import '../widgets/books_sheet_shared.dart' show coverGridCount;
+import '../widgets/books_sheet_shared.dart' show coverGridCount, CoverGridScope;
 import '../widgets/offline_status_icon.dart';
 import '../widgets/rmab_config_sheet.dart'
     show kRmabBaseUrlKey, kRmabApiTokenKey;
@@ -3313,8 +3313,17 @@ lib.registerHasCoverFromItem(id, r);
               canQuickMatch: auth.isAdmin && !libWatch.isPodcastLibrary,
               canMarkProgress: !libWatch.isPodcastLibrary,
               canDelete: auth.canDelete,
+              canDownload: !libWatch.isPodcastLibrary,
               onSelectAll: _toggleSelectAll,
               onClear: _clearSelection,
+              onDownload: () => _runBatchAction(
+                () => DesktopBatchActions.download(
+                  context,
+                  _selectableVisibleItems()
+                      .where((i) => _selectedItemIds.contains(i['id']))
+                      .toList(),
+                ),
+              ),
               onQuickMatch: () => _runBatchAction(
                 () => DesktopBatchActions.quickMatch(
                   context,
@@ -4121,6 +4130,8 @@ lib.registerHasCoverFromItem(id, r);
     // it never blinks while the content swaps underneath it.
     return FadeTransition(
       opacity: _tabTransition,
+      // Beside a navigation rail the grid gets less than the screen's width.
+      child: CoverGridScope(
       child: IndexedStack(
         index: effectiveTab,
         children: [
@@ -4130,6 +4141,7 @@ lib.registerHasCoverFromItem(id, r);
           _buildNarratorsGrid(headerFor(3)),
           _buildListsGrid(headerFor(4)),
         ],
+      ),
       ),
     );
   }

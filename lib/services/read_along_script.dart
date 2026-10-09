@@ -15,12 +15,15 @@ String cssHex(int argb) =>
 
 /// Installs `window.__absorbRA` in the reader page. Safe to run more than
 /// once; a second run just refreshes the color.
-String readAlongBootstrap(int argb) {
+String readAlongBootstrap(int argb,
+    {bool eink = false, int fgArgb = 0xFF000000, int bgArgb = 0xFFFFFFFF}) {
   final hex = cssHex(argb);
   final r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
   return '(function() {'
       'var RA = window.__absorbRA = window.__absorbRA || {};'
       "RA.color = '$hex'; RA.rgb = '$r, $g, $b';"
+      "RA.eink = ${eink ? 'true' : 'false'};"
+      "RA.fg = '${cssHex(fgArgb)}'; RA.bg = '${cssHex(bgArgb)}';"
       '$_body'
       '})();';
 }
@@ -43,6 +46,14 @@ const String _body = r'''
   RA.css = function() {
     var c = RA.color, rgb = RA.rgb;
     var dim = 'rgba(' + rgb + ', 0.8)';
+    // E-ink shows a colored roll as a grey smear, and every repaint costs a
+    // flash, so the sentence gets one underline and nothing else changes.
+    // Bold is out too: it reflows the line and the whole paragraph redraws.
+    if (RA.eink) {
+      return '' +
+        '.absorb-ra-w, .absorb-ra-s { text-decoration: underline;' +
+        ' text-decoration-thickness: 2px; text-underline-offset: 3px; }';
+    }
     return '' +
       '.absorb-ra-w { color: transparent !important;' +
       ' background-image: linear-gradient(' + c + ', ' + c + '),' +
@@ -413,6 +424,7 @@ const String _body = r'''
         out.visible = true;
         out.dir = 0;
         out.at = sStart;
+        out.si = c.sectionIndex;
         out.sentence = raw.slice(sStart, Math.min(sEnd, sStart + 90)).replace(/\s+/g, ' ');
         // The old sentence only goes once the new one is found, so a miss
         // leaves the last sentence lit. Unwrapping merges text nodes, so the
@@ -455,13 +467,22 @@ const String _body = r'''
         RA.cur.painted = start;
         // The spans arrive in their "in" state (page color); dropping it on
         // the next frame lets the tint fade in rather than snap.
+        // Scheduled on the reader page, never on the book's own frame: the
+        // book sits in a sandboxed iframe with scripting off, and WebKit on
+        // newer iOS does not run frame callbacks for such a document. The
+        // spans then kept the page color for good - pages turned, nothing
+        // was ever tinted. The timer covers a frame callback that is paused.
         var fresh = spans;
-        var win = doc.defaultView || window;
-        (win.requestAnimationFrame || function(f) { setTimeout(f, 16); })(function() {
+        var dropped = false;
+        var dropIn = function() {
+          if (dropped) return;
+          dropped = true;
           for (var a = 0; a < fresh.length; a++) {
             for (var b2 = 0; b2 < fresh[a].length; b2++) fresh[a][b2].classList.remove('absorb-ra-in');
           }
-        });
+        };
+        try { window.requestAnimationFrame(dropIn); } catch (e2) {}
+        setTimeout(dropIn, 60);
         break;
       }
     } catch (e) { out.err = String(e); }

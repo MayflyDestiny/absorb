@@ -7,6 +7,7 @@ import 'package:vibration/vibration.dart';
 import 'scoped_prefs.dart';
 import 'audio_player_service.dart';
 import 'chromecast_service.dart';
+import 'app_log.dart';
 
 enum SleepTimerMode { off, time, chapters, episodes }
 
@@ -289,7 +290,7 @@ class SleepTimerService extends ChangeNotifier {
     // Reschedule in case we jumped between slow/fast tick zones
     if (_timer?.isActive == true) _scheduleNextTick();
     notifyListeners();
-    debugPrint('[SleepTimer] Added ${extra.inMinutes}m — now ${_timeRemaining.inMinutes}m');
+    verboseLog('[SleepTimer] Added ${extra.inMinutes}m — now ${_timeRemaining.inMinutes}m');
   }
 
   // ── Chapter-based sleep ──
@@ -382,14 +383,14 @@ class SleepTimerService extends ChangeNotifier {
     if (_mode != SleepTimerMode.chapters) return;
     final chapters = _chapterList();
     if (_targetChapterIndex + 1 >= chapters.length) {
-      debugPrint('[SleepTimer] Already targeting the last chapter — nothing to add');
+      verboseLog('[SleepTimer] Already targeting the last chapter — nothing to add');
       return;
     }
     _targetChapterIndex++;
     _targetEndSeconds = _chapterEnd(_targetChapterIndex);
     _chaptersRemaining++;
     notifyListeners();
-    debugPrint('[SleepTimer] Added 1 chapter — now $_chaptersRemaining remaining');
+    verboseLog('[SleepTimer] Added 1 chapter — now $_chaptersRemaining remaining');
   }
 
   // ── Episode-based sleep (podcasts) ──
@@ -512,7 +513,7 @@ class SleepTimerService extends ChangeNotifier {
       return;
     }
     _isTriggeringSleep = true;
-    debugPrint('[SleepTimer] Triggering sleep — pausing playback');
+    verboseLog('[SleepTimer] Triggering sleep — pausing playback');
     try {
       if (_cast.isCastEngaged) {
         await _cast.pauseNowOrOnReconnect();
@@ -707,7 +708,7 @@ class SleepTimerService extends ChangeNotifier {
     // If an auto-started timer is running, tear it down so the new duration /
     // mode / window can take effect on re-evaluation.
     if (_autoStarted && isActive) {
-      debugPrint('[SleepTimer] Settings changed — restarting auto-started timer');
+      verboseLog('[SleepTimer] Settings changed — restarting auto-started timer');
       cancel();
     }
     // Re-evaluate with new settings if playing, or schedule boundary
@@ -721,7 +722,7 @@ class SleepTimerService extends ChangeNotifier {
   /// Cancel the sleep timer because the user chose to.
   /// Suppresses auto sleep re-triggering until the window resets.
   void cancelByUser() {
-    debugPrint('[SleepTimer] Cancelled by user — suppressing auto sleep for this window');
+    verboseLog('[SleepTimer] Cancelled by user — suppressing auto sleep for this window');
     _autoSleepDismissed = true;
     _windowBoundaryTimer?.cancel();
     _windowBoundaryTimer = null;
@@ -758,12 +759,12 @@ class SleepTimerService extends ChangeNotifier {
       _windowBoundaryTimer = null;
       if (!isActive && !_autoSleepDismissed) {
         if (settings.useEndOfChapter) {
-          debugPrint('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
+          verboseLog('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
               'starting end-of-chapter timer');
           setChapterSleep(1);
           onToast?.call('Auto sleep: end of chapter timer started');
         } else {
-          debugPrint('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
+          verboseLog('[SleepTimer] Auto sleep: in window ${settings.startLabel}–${settings.endLabel}, '
               'starting ${settings.durationMinutes}m timer');
           setTimeSleep(Duration(minutes: settings.durationMinutes));
           onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
@@ -792,11 +793,11 @@ class SleepTimerService extends ChangeNotifier {
       if (_isPlaybackActive && !isActive && !_autoSleepDismissed) {
         _wasInWindow = true;
         if (settings.useEndOfChapter) {
-          debugPrint('[SleepTimer] Window boundary hit — starting end-of-chapter timer');
+          verboseLog('[SleepTimer] Window boundary hit — starting end-of-chapter timer');
           setChapterSleep(1);
           onToast?.call('Auto sleep: end of chapter timer started');
         } else {
-          debugPrint('[SleepTimer] Window boundary hit — starting ${settings.durationMinutes}m timer');
+          verboseLog('[SleepTimer] Window boundary hit — starting ${settings.durationMinutes}m timer');
           setTimeSleep(Duration(minutes: settings.durationMinutes));
           onToast?.call('Auto sleep: ${settings.durationMinutes}m timer started');
         }

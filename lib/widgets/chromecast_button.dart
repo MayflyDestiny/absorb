@@ -3,6 +3,7 @@ import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import '../l10n/app_localizations.dart';
 import '../services/chromecast_service.dart';
 import '../services/api_service.dart';
+import '../services/app_log.dart';
 
 /// Shows a device picker. If castAfter params are provided, automatically
 /// casts the book after connecting to the selected device.
@@ -106,7 +107,7 @@ Future<void> _waitAndCast(
       if (cast.isConnected) break;
     }
     if (!cast.isConnected) {
-      debugPrint('[Cast] Connection timeout — giving up auto-cast');
+      basicLog('[Cast] Connection timeout — giving up auto-cast');
       return;
     }
   }
