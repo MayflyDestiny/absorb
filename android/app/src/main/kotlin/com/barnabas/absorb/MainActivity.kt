@@ -246,6 +246,7 @@ class MainActivity : AudioServiceActivity() {
                     "migrateMarkers" -> handleMigrateMarkers(call, result)
                     "scanSafDirectory" -> handleScanSafDirectory(call, result)
                     "checkSafFiles" -> handleCheckSafFiles(call, result)
+                    "getSafFileSizes" -> handleGetSafFileSizes(call, result)
                     "pruneSafBookDirs" -> handlePruneSafBookDirs(call, result)
                     "saveEbookToSaf" -> handleSaveEbookToSaf(call, result)
                     else -> result.notImplemented()
@@ -1021,21 +1022,68 @@ val audioExts = setOf(
         val uris = call.argument<List<String>>("uris") ?: emptyList()
         Thread {
             try {
-                val exists = HashMap<String, Boolean>()
+                val out = HashMap<String, Map<String, Any>>()
                 for (u in uris) {
-                    val ok = try {
-                        Uri.parse(u).let { uri ->
-                            contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                    var exists = false
+                    var size = 0L
+                    val uri = Uri.parse(u)
+                    try {
+                        contentResolver.openFileDescriptor(uri, "r")?.use { exists = true }
+                    } catch (e: Exception) {
+                        exists = false
+                    }
+                    try {
+                        contentResolver.query(
+                            uri, arrayOf(OpenableColumns.SIZE), null, null, null
+                        )?.use { c ->
+                            if (c.moveToFirst()) {
+                                val idx = c.getColumnIndex(OpenableColumns.SIZE)
+                                if (idx >= 0 && !c.isNull(idx)) size = c.getLong(idx)
+                            }
                         }
                     } catch (e: Exception) {
-                        false
+                        size = 0L
                     }
-                    exists[u] = ok
+                    out[u] = mapOf("exists" to exists, "size" to size)
                 }
-                runOnUiThread { result.success(exists) }
+                runOnUiThread { result.success(out) }
             } catch (e: Exception) {
                 Log.e(TAG, "checkSafFiles failed: ${e.message}", e)
                 runOnUiThread { result.error("CHECK_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Byte sizes of SAF (content://) files, which Dart side can't stat. Queries
+    // OpenableColumns.SIZE through the DocumentsProvider the same way the rest
+    // of the SAF flow does. Runs off the main thread. Unknown/failed files
+    // report 0 so the download-space tally stays conservative, never fake-large.
+    private fun handleGetSafFileSizes(call: MethodCall, result: MethodChannel.Result) {
+        val uris = call.argument<List<String>>("uris") ?: emptyList()
+        Thread {
+            try {
+                val sizes = HashMap<String, Long>()
+                for (u in uris) {
+                    var size = 0L
+                    try {
+                        val uri = Uri.parse(u)
+                        contentResolver.query(
+                            uri, arrayOf(OpenableColumns.SIZE), null, null, null
+                        )?.use { c ->
+                            if (c.moveToFirst()) {
+                                val idx = c.getColumnIndex(OpenableColumns.SIZE)
+                                if (idx >= 0 && !c.isNull(idx)) size = c.getLong(idx)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        size = 0L
+                    }
+                    sizes[u] = size
+                }
+                runOnUiThread { result.success(sizes) }
+            } catch (e: Exception) {
+                Log.e(TAG, "getSafFileSizes failed: ${e.message}", e)
+                runOnUiThread { result.error("SIZE_ERROR", e.message, null) }
             }
         }.start()
     }

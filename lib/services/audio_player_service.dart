@@ -1591,15 +1591,50 @@ class AudioPlayerService extends ChangeNotifier {
 
   bool get _offline => _knownOffline || _manualOffline;
 
+  /// Offline while the ACTIVE source is served over the network: every resume,
+  /// chapter jump or seek would pull network bytes that offline mode must not
+  /// request (GH: playing a non-cached episode, toggling offline, then still
+  /// loading episodes 8/9/10 online). Note [_streamIsRemote] cannot decide
+  /// this: a PARTIALLY downloaded book still has a `downloaded` record, so a
+  /// streamed episode of it reads as "downloaded" and the guard would never
+  /// fire. Transport actions are inert until the connection is back; the pause
+  /// taken on going offline is resumed by [_onOfflineStateChanged].
+  bool get _offlineRemoteStream => _offline && _sourceIsNetwork;
+
+  /// Whether the ACTIVE audio source is served over the network (server
+  /// session URLs, or direct file URLs), as opposed to local downloaded
+  /// files. Set at every source setup: streaming starts true, a local play
+  /// flips it false, and [_clearState] resets it. This - not
+  /// [_streamIsRemote] - is what an offline guard must ask, because a
+  /// partially downloaded book is both.
+  bool _sourceIsNetwork = false;
+
+  /// True while offline (manual toggle or known network loss), for UIs that
+  /// need to present the player's offline state (e.g. dim non-downloaded
+  /// chapters in the chapters sheet).
+  bool get offlineActive => _offline;
+
+  /// Chapter indices of the current item whose audio is actually on disk
+  /// (empty when nothing is downloaded). Lets the UI highlight / dim which
+  /// chapters are reachable offline.
+  List<int> get downloadedChapterIndices =>
+      _downloadedChapterSubset() ?? const [];
+
   void setKnownOffline(bool offline) {
     if (_knownOffline == offline) return;
     _knownOffline = offline;
+    // Listener-driven UI (the chapter sheet's downloaded-only filter, offline
+    // badges) reads offlineActive. Without this notify the sheet keeps the
+    // snapshot it took while offline until the next unrelated player tick -
+    // while paused, forever.
+    notifyListeners();
     unawaited(_onOfflineStateChanged());
   }
 
   void setManualOffline(bool offline) {
     if (_manualOffline == offline) return;
     _manualOffline = offline;
+    notifyListeners();
     unawaited(_onOfflineStateChanged());
   }
 
@@ -1609,8 +1644,19 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _onOfflineStateChanged() async {
     if (_offline) {
       if (_pausedForOffline) return;
-      if (_player == null || !_player!.playing) return;
-      if (!_streamIsRemote) return;
+      if (_player == null) return;
+      // Network-sourced only: a downloaded book keeps playing offline. A
+      // streamed episode of a PARTIALLY downloaded book counts as network
+      // here — its download record exists but its audio comes from the wire.
+      if (!_sourceIsNetwork) return;
+      // Buffering counts as active: a stream still loading when the toggle
+      // arrives must stop too, not just one already audible.
+      final state = _player!.processingState;
+      if (!_player!.playing &&
+          state != ProcessingState.loading &&
+          state != ProcessingState.buffering) {
+        return;
+      }
       _stuckCheckTimer?.cancel();
       _stuckCheckTimer = null;
       _resetStuckDetection();
@@ -1723,6 +1769,54 @@ class AudioPlayerService extends ChangeNotifier {
   // full-book chapter index of each downloaded track (local index -> chapter
   // index). Empty = not a 1:1 layout (time-based lookup stays in charge).
   List<int> _localTrackChapterIdx = const [];
+
+  /// Full-book chapter indices that are PLAYABLE in the current local-session
+  /// play. Non-empty only for a PARTIAL download (files missing): chapters
+  /// whose start falls inside a downloaded track — the only subset prev/next
+  /// navigation may move between. Jumping at an un-downloaded chapter start
+  /// lands in a gap (dead seek) or past the local coverage end (phantom
+  /// completion showing the last episode's title), so those chapters are cut
+  /// from navigation while playback is limited to the download.
+  List<int> _localPlayableChapterIndices = const [];
+
+  /// Prev/next navigation subset for a PARTIAL download: the chapters whose
+  /// start is covered by a downloaded track — moving only between them keeps
+  /// a jump from seeking into a gap (dead seek) or past the local coverage end
+  /// (phantom completion with the last episode's title). Offline - or online
+  /// with no API to stream from - the subset is the only reachable content;
+  /// when streaming IS available this is empty so the full book is reachable
+  /// and uncovered chapters continue via streaming ([_partialJumpGate]).
+  /// Empty for full plays.
+  List<int> get _navPlayableChapters =>
+      !_offline && _api != null ? const [] : _localPlayableChapterIndices;
+
+  /// True when the current play is a PARTIAL download (files missing), so the
+  /// local audio ends before the book does. Guards the completion path from
+  /// marking a half-downloaded book as finished, and navigation from crossing
+  /// into chapters that have no local audio.
+  bool _isPartialLocalPlay = false;
+
+  /// Set when playback parks at the end of a partial download's local range
+  /// (natural completion, or a forward skip that would cross it). While parked,
+  /// the current chapter reports the LAST downloaded chapter (the boundary is
+  /// also the next chapter's start, which would otherwise show "episode 5" with
+  /// no audio behind it), and play() restarts from that chapter's beginning.
+  bool _parkedAtBoundary = false;
+  int? _parkedBoundaryChapterIdx;
+
+  /// Absolute end of the locally covered range (end of the last downloaded
+  /// file in the full-book timeline). Non-null while [_isPartialLocalPlay];
+  /// reaching it means "the download is done, the book is not".
+  double? _localCoverageEndSec;
+
+  /// Memo for [_downloadedChapterSubset]: the raw session string instance and
+  /// chapter list instance last decoded. The store returns the same string
+  /// until the record changes and _chapters is reassigned on any list change,
+  /// so identity checks skip the whole-session jsonDecode — which otherwise
+  /// runs on every position tick while the chapters sheet is open offline.
+  String? _subsetMemoJson;
+  List<dynamic>? _subsetMemoChapters;
+  List<int>? _subsetMemo;
 
   /// Chapter index meant by [track] when the layout is 1:1 (one file per
   /// chapter): partial downloads via the persisted map, full books by identity
@@ -2239,6 +2333,8 @@ class AudioPlayerService extends ChangeNotifier {
   void _maybePreloadNextBook() {
     if (_nextBookPreloading) return;
     if (_preloadedNextBook != null) return;
+    // Never pull the next book's audio while offline (manual or dropped).
+    if (_offline) return;
     if (_activeConcatSource == null) return;
     if (_currentBookTrackCount == 0) return;
     if (_totalDuration <= 0) return;
@@ -3333,6 +3429,10 @@ class AudioPlayerService extends ChangeNotifier {
     int? pinChapterIndex,
   }) async {
     if (_player == null) return;
+    // Any real seek leaves the parked-at-boundary state (play() also restarts
+    // from the last downloaded chapter via its own seek).
+    _parkedAtBoundary = false;
+    _parkedBoundaryChapterIdx = null;
     // Any non-chapter-jump seek clears a stale latch; the position logic goes
     // back to plain metadata lookup.
     if (!chapterJump) _chapterJumpLatchIndex = -1;
@@ -3354,6 +3454,27 @@ class AudioPlayerService extends ChangeNotifier {
     if (_shortLocalDurationSec != null &&
         absoluteSeconds > _shortLocalDurationSec!) {
       absoluteSeconds = _shortLocalDurationSec!;
+    }
+
+    // Multi-file concat (partial download, or a local book rebuilt into
+    // segments): the last file has audio only up to its own end while
+    // _totalDuration is the WHOLE book on the server. Clamp to the reachable
+    // end of the concatenation so a request at an undownloaded/tail position
+    // lands on the concat's final sample instead of pinning a raw book-end
+    // target — activeSeekTarget would keep resolving every chapter lookup to
+    // the LAST chapter until position catches up (which it never will),
+    // flashing the wrong title and spuriously completing the book.
+    if (_trackStartOffsets.length > 1) {
+      final lastTrack = _trackStartOffsets.length - 2;
+      final reachEnd =
+          _trackStartOffsets[lastTrack] + _trackDurationAt(lastTrack);
+      if (reachEnd > 0 && absoluteSeconds > reachEnd) {
+        verboseLog(
+          '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s exceeds '
+          'concat reach ${reachEnd.toStringAsFixed(1)}s - clamping',
+        );
+        absoluteSeconds = reachEnd;
+      }
     }
 
     // Record seek target so UI can snap immediately
@@ -4316,6 +4437,12 @@ class AudioPlayerService extends ChangeNotifier {
     // for downloaded items. Without this it leaks from a prior downloaded play
     // into a following streaming play and misroutes the listening time.
     _localSessionMode = false;
+    _localPlayableChapterIndices = const [];
+    _isPartialLocalPlay = false;
+    _localCoverageEndSec = null;
+    _parkedAtBoundary = false;
+    _parkedBoundaryChapterIdx = null;
+    _sourceIsNetwork = false;
     _pendingLoadOnlySession = null;
     _currentEpisodeTitle = episodeTitle;
     _currentTitle = title;
@@ -4882,6 +5009,9 @@ class AudioPlayerService extends ChangeNotifier {
 
     _logEvent(PlaybackEventType.sessionEnd, detail: 'stream hot-swap');
     _localSessionMode = true;
+    // The stream was swapped for local files: the source no longer touches
+    // the network, so offline guards must stop treating it as remote.
+    _sourceIsNetwork = false;
     _playbackSessionId = null;
     _activeStreamUrls = const [];
     _activeStreamHeaders = const {};
@@ -4969,6 +5099,9 @@ class AudioPlayerService extends ChangeNotifier {
     // reconcile the start position against the server's saved progress (when
     // online) the way the /play response used to, sourced from GET /me/progress.
     _localSessionMode = true;
+    _sourceIsNetwork = false;
+    _parkedAtBoundary = false;
+    _parkedBoundaryChapterIdx = null;
     _logEvent(PlaybackEventType.sessionStart, detail: 'local-session');
     // `itemId` here is the progress key (already `id-episodeId` for a podcast),
     // so build the key from the raw parts to avoid double-appending the episode.
@@ -4980,6 +5113,9 @@ class AudioPlayerService extends ChangeNotifier {
     // (GH #321) - unless this phone has no position for it at all, where
     // starting from zero would be the wrong guess and there is nothing to
     // preserve. Whatever position we start with, we keep - no seeking after.
+    // Downloads (a local-session play) are themselves excluded: the queue is
+    // this device's own recent listening, so an older server copy of the item
+    // must not override where the downloaded content resumed.
     if (forceStartTime) {
       verboseLog(
         '[Player] Forced start time: ${startTime}s — skipping server/local position comparison',
@@ -4988,7 +5124,10 @@ class AudioPlayerService extends ChangeNotifier {
       verboseLog(
         '[Player] Skipping progress reconcile - not started from the app screen, playing local position ${startTime.toStringAsFixed(1)}s now',
       );
-    } else if (_api != null && !manualOffline && !_knownOffline) {
+    } else if (_api != null &&
+        !manualOffline &&
+        !_knownOffline &&
+        !_localSessionMode) {
       try {
         final serverProgress = await _api!
             .getItemProgress(pKey)
@@ -5132,6 +5271,31 @@ class AudioPlayerService extends ChangeNotifier {
       final localCoverageEnd = _trackStartOffsets.length > 1
           ? _trackStartOffsets.last
           : totalDuration;
+      // Boundary bookkeeping for the completion / navigation guards: reaching
+      // `localCoverageEnd` ends the DOWNLOAD, not the book.
+      _isPartialLocalPlay = isPartialDownload;
+      _localCoverageEndSec = isPartialDownload ? localCoverageEnd : null;
+
+      // Partial download: only the chapters whose start is covered by a
+      // downloaded track can be reached by prev/next navigation. Jumping at an
+      // un-downloaded chapter start seeks into a gap or past the local
+      // coverage end (dead seek / phantom "last episode" title), so navigation
+      // during the download stays on this subset. Empty for full plays.
+      final playableChapters = <int>[];
+      if (isPartialDownload && _trackStartOffsets.length > 2) {
+        for (var i = 0; i < _chapters.length; i++) {
+          final s = ChapterLookup.metaStart(_chapters, i);
+          if (_positionCoveredLocally(s)) playableChapters.add(i);
+        }
+      }
+      _localPlayableChapterIndices = playableChapters;
+      if (playableChapters.isNotEmpty) {
+        verboseLog(
+          '[Player] Partial download: ${playableChapters.length}/'
+          '${_chapters.length} chapters playable locally '
+          '(${playableChapters.join(',')})',
+        );
+      }
 
       // The requested position can sit past the last downloaded track or in a
       // gap between downloaded tracks. There is no local audio to seek to -
@@ -5147,6 +5311,10 @@ class AudioPlayerService extends ChangeNotifier {
           '- ${canStream ? 'streaming instead' : 'clamping to nearest downloaded track'}',
         );
         if (canStream) {
+          // Handing off to streaming: the download-boundary navigation subset
+          // must not constrain a full-book stream (it would leave next/prev
+          // locked to the downloaded chapters).
+          _localPlayableChapterIndices = const [];
           return await _playFromServer(
             _api!,
             _currentItemId!,
@@ -5960,6 +6128,20 @@ class AudioPlayerService extends ChangeNotifier {
     verboseLog('[Player] Streaming from server: $title');
     _isOfflineMode = false;
     _localSessionMode = false;
+    _sourceIsNetwork = true;
+    _parkedAtBoundary = false;
+    _parkedBoundaryChapterIdx = null;
+    // A real stream session has no download boundary: drop the partial-play
+    // bookkeeping so a hand-off stops treating streamed positions past the
+    // download end as "the boundary" — the boundary override would pin the last
+    // downloaded chapter's title/progress onto the streamed episode, the stale
+    // short-audio clamp would snap scrubs back to the download end, and
+    // navigation skips would keep gating on a coverage end that no longer
+    // means anything. Mirrors playItem's clears for fresh plays.
+    _isPartialLocalPlay = false;
+    _localCoverageEndSec = null;
+    _shortLocalDurationSec = null;
+    _localPlayableChapterIndices = const [];
     // Still this start's episode: nothing has awaited since the check above.
     // Reading the shared field later asked the server for whatever a newer
     // start had set, which is how one episode got two sessions.
@@ -6076,8 +6258,11 @@ class AudioPlayerService extends ChangeNotifier {
           _clearState();
           return _l10n()?.playerErrorTranscodeStart ??
               'Could not start transcoded playback';
-        }
+}
         _playbackSessionId = ownSessionId;
+        // The stream is real now; the DOWNLOAD-boundary bookkeeping was already
+        // cleared at the top of _playFromServer, so this transcoded retry runs
+        // in the same clean full-stream state.
         audioTracks = retrySession['audioTracks'] as List<dynamic>? ?? [];
         sessionPlayMethod = (retrySession['playMethod'] as num?)?.toInt();
         if (audioTracks.isEmpty) {
@@ -6390,6 +6575,14 @@ class AudioPlayerService extends ChangeNotifier {
   }) async {
     verboseLog('[Player] Playing from direct files: $title');
     _isOfflineMode = false;
+    // Full-item direct streaming is a stream session (network source, whole
+    // book): the partial-download boundary bookkeeping means nothing here and
+    // would re-label positions past the download end if a hand-off landed in
+    // this fallback — clear it like _playFromServer does.
+    _isPartialLocalPlay = false;
+    _localCoverageEndSec = null;
+    _shortLocalDurationSec = null;
+    _localPlayableChapterIndices = const [];
 
     final offlineError = _abortIfOffline();
     if (offlineError != null) return offlineError;
@@ -6432,6 +6625,9 @@ class AudioPlayerService extends ChangeNotifier {
       );
     }
     _localSessionMode = true;
+    // Direct-file streaming REPORTS via the local session model but still
+    // fetches over HTTP — the offline guard must keep treating it remote.
+    _sourceIsNetwork = true;
     _playbackSessionId = null;
     _logEvent(PlaybackEventType.sessionStart, detail: 'direct-file');
 
@@ -6996,6 +7192,12 @@ class AudioPlayerService extends ChangeNotifier {
     _trackDurations = [];
     _currentTrackIndex = 0;
     _localTrackChapterIdx = const [];
+    _localPlayableChapterIndices = const [];
+    _isPartialLocalPlay = false;
+    _localCoverageEndSec = null;
+    _parkedAtBoundary = false;
+    _parkedBoundaryChapterIdx = null;
+    _sourceIsNetwork = false;
     _lastNotifiedChapterIndex = -1;
     _chapterJumpLatchIndex = -1;
     _lastSeekTargetSeconds = null;
@@ -7474,17 +7676,23 @@ class AudioPlayerService extends ChangeNotifier {
           // already pushed and [_lastNotifiedChapterIndex] set, so the change
           // guard below stays silent. Release once the position truly passes
           // the latched chapter's end.
-          if (_chapterJumpLatchIndex >= 0) {
-            final lEnd =
-                (_chapters[_chapterJumpLatchIndex]['end'] as num?)
-                    ?.toDouble() ??
-                _totalDuration;
-            if (resolveSec < lEnd) {
-              chapterIdx = _chapterJumpLatchIndex;
-            } else {
-              _chapterJumpLatchIndex = -1;
+if (_chapterJumpLatchIndex >= 0) {
+              final lEnd =
+                  (_chapters[_chapterJumpLatchIndex]['end'] as num?)
+                      ?.toDouble() ??
+                  _totalDuration;
+              if (resolveSec < lEnd) {
+                chapterIdx = _chapterJumpLatchIndex;
+                chapterTitle =
+                    (_chapters[_chapterJumpLatchIndex]['title'] as String?)
+                        ?.isEmpty ==
+                        true
+                    ? null
+                    : _chapters[_chapterJumpLatchIndex]['title'] as String?;
+              } else {
+                _chapterJumpLatchIndex = -1;
+              }
             }
-          }
 
           // Fast path: check if still in the cached chapter
           if (_lastNotifiedChapterIndex >= 0 &&
@@ -7531,6 +7739,21 @@ class AudioPlayerService extends ChangeNotifier {
               chapterStart = (ch['start'] as num?)?.toDouble() ?? 0;
               chapterEnd = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
             }
+          }
+
+          // At the download boundary: the resolve position sits exactly on
+          // the next (undownloaded) chapter's start, which the scans above
+          // happily report — and during the window before the async park
+          // lands, nothing else would correct a push made in between. Keep
+          // the last downloaded chapter on the lock screen / Android Auto
+          // until the user navigates or plays on.
+          final boundaryIdx = _boundaryChapterOverride(resolveSec);
+          if (boundaryIdx != null) {
+            final ch = _chapters[boundaryIdx] as Map<String, dynamic>;
+            chapterIdx = boundaryIdx;
+            chapterTitle = ch['title'] as String?;
+            chapterStart = ChapterLookup.metaStart(_chapters, boundaryIdx);
+            chapterEnd = (ch['end'] as num?)?.toDouble() ?? _totalDuration;
           }
 
           if (chapterIdx < 0 && _lastNotifiedChapterIndex >= 0) {
@@ -7955,26 +8178,90 @@ class AudioPlayerService extends ChangeNotifier {
     // completion signal (iOS AVPlayer can fire completed on audio interruptions,
     // buffer errors, etc.). Save current position and stop - don't mark finished
     // or advance the queue.
+    //
+// Partial downloads get their own case: playback ended AT the download
+      // boundary (the last downloaded file ran out, or the next/prev button sat
+      // on the boundary). The bytes are done but the BOOK isn't, so this must
+      // never reach the "finished" branch below — no isFinished, no
+      // ReviewService, no auto-advance. Online, the completion hands straight
+      // over to a streaming session (the boundary is the next chapter's start);
+      // offline it parks on the boundary and the next-button continues by
+      // streaming once the connection is back.
+    final coverageEnd = _localCoverageEndSec;
+    // Decide on whichever position is AHEAD: the live getter (fresh at the
+    // engine's ENDED state — it composes the last file's end for a boundary
+    // completion) or _lastKnownPositionSec. The cached value lags by a whole
+    // position tick after a seek into the file end and is reset to 0 by every
+    // source (re)load, so trusting it alone misreads the download boundary as
+    // a mid-book completion — which parks nothing, leaves the position
+    // resolving to the next (undownloaded) chapter, and on a fully stale/zero
+    // value falls through to the book-finished branch that clears all state
+    // (position drops to 0).
+    final liveSec = position.inMilliseconds / 1000.0;
+    final posAtEnd =
+        _lastKnownPositionSec > liveSec ? _lastKnownPositionSec : liveSec;
+    final atLocalBoundary = _isPartialLocalPlay &&
+        coverageEnd != null &&
+        posAtEnd >= coverageEnd - 2.0 &&
+        posAtEnd <= coverageEnd + 60.0;
     if (!userRequested &&
-        _totalDuration > 0 &&
-        _lastKnownPositionSec > 0 &&
-        _lastKnownPositionSec < _totalDuration * 0.9 &&
-        _lastKnownPositionSec < _totalDuration - 30) {
+        (atLocalBoundary ||
+            (_totalDuration > 0 &&
+                posAtEnd > 0 &&
+                posAtEnd < _totalDuration * 0.9 &&
+                posAtEnd < _totalDuration - 30))) {
       verboseLog(
-        '[Player] Spurious completion at ${_lastKnownPositionSec.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s — saving position instead of marking finished',
+        '[Player] ${atLocalBoundary ? 'Download boundary reached' : 'Spurious completion'} at ${posAtEnd.toStringAsFixed(1)}s / ${_totalDuration.toStringAsFixed(1)}s — saving position instead of marking finished',
       );
-      _logEvent(PlaybackEventType.pause, detail: 'Spurious completion blocked');
+      _logEvent(
+        PlaybackEventType.pause,
+        detail: atLocalBoundary ? 'Download boundary reached' : 'Spurious completion blocked',
+      );
       _syncSub?.cancel();
       _syncSub = null;
       _completionSub?.cancel();
       _completionSub = null;
       _bgSaveTimer?.cancel();
       _bgSaveTimer = null;
-      await _player?.stop();
-      await _saveProgressLocal(
-        Duration(milliseconds: (_lastKnownPositionSec * 1000).round()),
-      );
+      // A download-queue play hit the end of its last downloaded file. stop()
+      // resets the position so the next Play would replay from the start;
+      // pause() parks the queue at its endpoint so a later Play continues
+      // where the downloaded content stopped instead of jumping elsewhere.
+      if (_localSessionMode) {
+        await _player?.pause();
+      } else {
+        await _player?.stop();
+      }
+      if (atLocalBoundary) {
+        // Persist the boundary itself (clamped to it), not a stale cached
+        // position — a backward save here would throw away real progress.
+        final boundarySave = posAtEnd > coverageEnd ? coverageEnd : posAtEnd;
+        await _saveProgressLocal(
+          Duration(milliseconds: (boundarySave * 1000).round()),
+        );
+        _lastKnownPositionSec = boundarySave;
+      } else {
+        await _saveProgressLocal(
+          Duration(milliseconds: (_lastKnownPositionSec * 1000).round()),
+        );
+      }
       _isCompletingBook = false;
+      // Parked at the end of the download: the boundary position is ALSO the
+      // start of the next (non-downloaded) chapter, so keep reporting the last
+      // downloaded chapter until the user seeks / plays / jumps on.
+      if (atLocalBoundary) {
+        // Online the download ended but the book continues: hand straight over
+        // to a streaming session at the boundary instead of parking — reach
+        // the boundary while online and the next chapter simply starts, no
+        // dead pause. Start a hair past the boundary so the reopened stream
+        // never lands exactly on a track-end seam (an end-for-end start could
+        // instantly re-fire completion); offline (or a failed hand-off) falls
+        // back to parking.
+        if (await _streamContinueIfUncovered(coverageEnd + 0.3)) {
+          return;
+        }
+        _setParkedAtBoundary(coverageEnd);
+      }
       notifyListeners();
       return;
     }
@@ -8449,6 +8736,95 @@ class AudioPlayerService extends ChangeNotifier {
   static const _playInFlightCap = Duration(seconds: 30);
 
   Future<void> _playNow({String? logDetail, bool fromUi = false}) async {
+    // Offline + a source that isn't downloaded: resuming would re-engage the
+    // stream (fresh session, fresh buffers) that offline mode exists to stop.
+    // Stay paused until the connection is back, which resumes via
+    // _onOfflineStateChanged.
+    if (_offlineRemoteStream) {
+      final posSec = position.inMilliseconds / 1000.0;
+      // The current position may sit inside a DOWNLOADED chapter of the book
+      // (user paused a stream, went offline, pressed play): re-enter LOCAL
+      // playback there - real audio, no network - and resume it directly. The
+      // full play tail's server-adopt seek and resume auto-rewind don't belong
+      // to an offline re-root.
+      if (await _reenterLocalPlayIfCovered(posSec)) {
+        _pausedForOffline = false;
+        _lastPauseTime = null;
+        _lastServerSync = DateTime.now();
+        _lastAccrual = DateTime.now();
+        _lastAccrualPos = null;
+        _seekedWhilePaused = false;
+        if (_player != null && !_player!.playing) {
+          await _player!.play();
+        }
+        notifyListeners();
+        return;
+      }
+      verboseLog(
+        '[Service] play() blocked — offline, current item is a stream and '
+        '${posSec.toStringAsFixed(1)}s has no downloaded audio; staying '
+        'paused until reconnect',
+      );
+      return;
+    }
+    // The boundary completion path cancels the position/completion listeners;
+    // if no listener was alive when the engine hit the end of the download,
+    // that completion went unhandled: the engine sits ENDED at the boundary
+    // with no parked state, so the title resolves to the next (undownloaded)
+    // chapter and a bare play() would resume a dead end position. Adopt the
+    // same parked bookkeeping first so the restart below picks the last
+    // downloaded chapter and this play gets real audio.
+    if (!_parkedAtBoundary &&
+        _isPartialLocalPlay &&
+        _currentItemId != null &&
+        _player?.processingState == ProcessingState.completed) {
+      verboseLog(
+        '[Service] play() — engine ended at the download boundary unhandled; parking first',
+      );
+      await _onPlaybackComplete();
+    }
+    // Parked at the end of a partial download (natural completion or a forward
+    // skip that hit the boundary): restart from the last downloaded chapter's
+    // START rather than resuming the parked boundary position, which sits on
+    // the next chapter's start spot with no audio behind it.
+    if (_parkedAtBoundary) {
+      final resumeIdx = _parkedBoundaryChapterIdx;
+      _parkedAtBoundary = false;
+      _parkedBoundaryChapterIdx = null;
+      if (resumeIdx != null &&
+          resumeIdx >= 0 &&
+          resumeIdx < _chapters.length && _player != null) {
+        var restartStart = ChapterLookup.metaStart(_chapters, resumeIdx);
+        // Belt and braces: a restart target with no audio behind it (drift put
+        // the parked chapter's start ON the boundary) would seek to the file's
+        // end, instantly complete and park the very state we just cleared.
+        // Start at the last downloaded file's own beginning instead.
+        final cEnd = _localCoverageEndSec;
+        if (cEnd != null &&
+            restartStart >= cEnd - 0.5 &&
+            _trackStartOffsets.length > 1) {
+          restartStart = _trackStartOffsets[_trackStartOffsets.length - 2];
+        }
+        verboseLog(
+          '[Service] play() at download boundary — restarting from chapter '
+          '$resumeIdx (${restartStart.toStringAsFixed(1)}s)',
+        );
+        _logEvent(
+          PlaybackEventType.seek,
+          detail: 'restart at download boundary from chapter ${resumeIdx + 1}',
+        );
+        // Resetting pause bookkeeping here keeps the play tail's resume
+        // auto-rewind from pulling the fresh restart back into a gap.
+        _lastPauseTime = null;
+        _seekedWhilePaused = false;
+        await _seekAbsolute(
+          restartStart,
+          chapterJump: true,
+          pinChapterIndex: resumeIdx,
+        );
+        _seekedWhilePaused = false;
+      }
+    }
     verboseLog(
       '[Service] play() called — lastPause=${_lastPauseTime != null} fromUi=$fromUi',
     );
@@ -8525,9 +8901,20 @@ class AudioPlayerService extends ChangeNotifier {
         _setupSync();
       }
     }
-    // BookOrbit audio streams through the in-app proxy, which a long
+// BookOrbit audio streams through the in-app proxy, which a long
     // suspension can take down; a lock screen play doesn't foreground the app.
     if (_api?.isBookOrbit == true) await _api!.ensureMediaReady();
+
+    // Play paths that don't go through playItem (plain resume, restart from
+    // the download boundary) must still have the position/completion
+    // listeners alive: the boundary completion cancels them while parked, and
+    // without re-attaching here the NEXT boundary end is never handled — the
+    // engine stays ENDED with playWhenReady=true and the card keeps reading
+    // "playing" forever, with nothing saving or parking anything.
+    if (_currentItemId != null && (_syncSub == null || _completionSub == null)) {
+      verboseLog('[Service] play() — re-attaching sync/completion listeners');
+      _setupSync();
+    }
     // A source streaming through a session the server no longer has (closed
     // by the pause timeout, or replaced since) would play from the cache
     // until that runs out, then die with a 404 and a five-second retry.
@@ -8776,6 +9163,10 @@ class AudioPlayerService extends ChangeNotifier {
     // reconciles the start position itself.
     if (_player!.processingState == ProcessingState.idle) return false;
     if (_knownOffline || _isOfflineMode) return false;
+    // A downloaded play is this device's freshest listening on the item; a
+    // server copy of an older session must not teleport the queue to an old
+    // position on resume (resume-vs-download position mismatch).
+    if (_localSessionMode) return false;
     if (ChromecastService().isCasting) return false;
     final lastPause = _lastPauseTime;
     // BookOrbit has no live progress push to cover a short pause, so check
@@ -9097,12 +9488,35 @@ class AudioPlayerService extends ChangeNotifier {
     // the exact position.
     bool chapterJump = false,
   }) async {
+    // Offline + non-downloaded source: a scrub seeks the stream, fetching the
+    // network bytes offline mode must not request — unless the seek target sits
+    // inside a DOWNLOADED chapter, in which case re-enter local playback there.
+    if (_offlineRemoteStream) {
+      final targetSec = pos.inMilliseconds / 1000.0;
+      if (await _reenterLocalPlayIfCovered(targetSec)) return;
+      verboseLog(
+        '[Service] seekTo blocked — offline, current item is a stream and '
+        '${targetSec.toStringAsFixed(1)}s has no downloaded audio',
+      );
+      return;
+    }
     await _forwardSeekToCast(pos);
     _resetStuckDetection();
     if (_player != null && !_player!.playing) _seekedWhilePaused = true;
     _lastUserSeekTime = DateTime.now();
     final from = position;
     await _seekAbsolute(pos.inMilliseconds / 1000.0, chapterJump: chapterJump);
+    // A scrub that reached the download boundary parks there (pause + last
+    // downloaded chapter) instead of leaving the engine completed at the file
+    // end with the next chapter's title — and unlike waiting for the
+    // completion signal, this parks even when no completion listener is alive
+    // to see the boundary.
+    final coverageEnd = _localCoverageEndSec;
+    if (_isPartialLocalPlay &&
+        coverageEnd != null &&
+        (pos.inMilliseconds / 1000.0) > coverageEnd - 0.5) {
+      await _parkAtPartialBoundary();
+    }
     _logEvent(
       logAs,
       detail: logDetail ?? '${_formatPos(from)} → ${_formatPos(pos)}',
@@ -9128,6 +9542,26 @@ class AudioPlayerService extends ChangeNotifier {
     if (chapterIndex < 0 || chapterIndex >= _chapters.length) return false;
     final ch = _chapters[chapterIndex] as Map<String, dynamic>;
     final start = (ch['start'] as num?)?.toDouble() ?? 0;
+    // Offline + network source: only the DOWNLOADED chapters are reachable.
+    // Tap one to re-enter local playback; anything else is a no-op (its audio
+    // isn't on disk).
+    if (_offlineRemoteStream) {
+      final subset = _downloadedChapterSubset();
+      if (subset == null || !subset.contains(chapterIndex)) {
+        verboseLog(
+          '[Service] Chapter jump blocked — offline and chapter '
+          '${chapterIndex + 1} is not downloaded',
+        );
+        return false;
+      }
+      return _reenterLocalPlayIfCovered(start);
+    }
+    // Partial download: a chapter with no local audio continues the book via
+    // streaming when online; offline the tap is a clean no-op instead of a
+    // dead seek into the gap (or a clamp into a neighbouring file that
+    // phantom-completes with the wrong chapter's title).
+    final gate = await _partialJumpGate(start);
+    if (gate != null) return gate;
     // Land DIRECTLY at the intro-skip point when enabled, instead of seeking
     // to the chapter start and letting the post-landing position tick catch up.
     // A raw chapter-start jump sets _lastUserSeekTime, which suppresses the
@@ -9196,8 +9630,20 @@ class AudioPlayerService extends ChangeNotifier {
     );
   }
 
+  /// Offline on a network source: the current item isn't downloaded and there
+  /// is no stream to jump through, so [action] (a skip that would seek the
+  /// streaming engine) must not run. Logs the block under that name.
+  bool _offlineRemoteTransportBlocked(String action) {
+    if (!_offlineRemoteStream) return false;
+    verboseLog(
+      '[Service] $action blocked — offline and the current item is not downloaded',
+    );
+    return true;
+  }
+
   Future<void> skipForward([int seconds = 30]) async {
     if (_player == null) return;
+    if (_offlineRemoteTransportBlocked('skipForward')) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
     // Multiply by speed so the skip feels like the configured amount of real time
@@ -9207,7 +9653,19 @@ class AudioPlayerService extends ChangeNotifier {
       '[Service] skipForward(${seconds}s × ${speed}x = ${adjusted}s) — playing=${_player!.playing}',
     );
     final newPos = position + Duration(seconds: adjusted);
-    await _seekAbsolute(newPos.inMilliseconds / 1000.0);
+    final newPosS = newPos.inMilliseconds / 1000.0;
+    // A partial download's local audio ends at the download boundary. A forward
+    // skip that would cross it has no audio to land on (the engine's seek past
+    // the concatenation clamps to the end and "jumps" into the next chapter's
+    // title). Online the book continues as a stream at the target; offline,
+    // park at the boundary instead.
+    final coverageEnd = _localCoverageEndSec;
+    if (_isPartialLocalPlay && coverageEnd != null && newPosS > coverageEnd - 0.5) {
+      if (await _streamContinueIfUncovered(newPosS)) return;
+      await _parkAtPartialBoundary();
+      return;
+    }
+    await _seekAbsolute(newPosS);
     _logEvent(
       PlaybackEventType.skipForward,
       detail: '+${seconds}s (${adjusted}s @ ${speed}x)',
@@ -9217,6 +9675,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> skipBackward([int seconds = 10]) async {
     if (_player == null) return;
+    if (_offlineRemoteTransportBlocked('skipBackward')) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
     // Multiply by speed so the skip feels like the configured amount of real time
@@ -9265,15 +9724,446 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> skipToNextChapter() =>
       _chapterJumpThenAutoPlay(_skipToNextChapterImpl);
 
+  /// Continue a PARTIAL-download play past its last local audio by switching
+  /// to a streaming session at [targetSec] — the standard playItem entry, so
+  /// progress reporting, session ids and the media widget all follow the
+  /// regular stream model. Only when the target has NO local audio (a gap or
+  /// past coverage) AND the server is reachable; otherwise the caller keeps its
+  /// local-session fallback (offline park) untouched. Returns true when the
+  /// switch actually happened.
+  Future<bool> _streamContinueIfUncovered(double targetSec) async {
+    // Only meaningful while a PARTIAL download confines the audio: a full
+    // stream already covers every position, so a seek must stay in-session —
+    // a "continue" here would tear the running session down and start a fresh
+    // one (loading gap + re-fetched track URLs), and the stale pre-teardown
+    // position (often the book's tail) would flash the LAST chapter's title
+    // while the new session buffers.
+    if (!_isPartialLocalPlay) return false;
+    if (targetSec < 0 || _positionCoveredLocally(targetSec)) return false;
+    final api = _api;
+    if (api == null || _offline) return false;
+    final itemId = _currentItemId;
+    if (itemId == null || _player == null) return false;
+    // After the hand-off the session is a full-book STREAM: navigation must
+    // stop being confined to the downloaded subset.
+    _localPlayableChapterIndices = const [];
+    // The hand-off is a session restart: pin the seek target (like a real
+    // seek does) so the loading gap resolves the chapter from the intended
+    // target instead of the stale pre-teardown position.
+    _lastSeekTargetSeconds = targetSec;
+    _lastSeekTime = DateTime.now();
+    verboseLog(
+      '[Service] Jump target ${targetSec.toStringAsFixed(1)}s has no local '
+      'audio — continuing this book via streaming',
+    );
+    final err = await _playFromServer(
+      api,
+      itemId,
+      _currentTitle ?? '',
+      _currentAuthor ?? '',
+      _currentCoverUrl,
+      _totalDuration,
+      _chapters,
+      targetSec,
+      forceStartTime: true,
+    );
+    return err == null;
+  }
+
+  /// Partial-download guard for a chapter jump to [targetSec].
+  ///
+  /// Returns null when the caller may seek locally (target has local audio,
+  /// or this isn't a partial play). Returns true when the jump was HANDLED
+  /// here - the target sits outside the downloaded range and the book was
+  /// continued via streaming. Returns false when the jump must be ABORTED
+  /// (offline / no API): a raw seek into that gap would dead-seek or clamp
+  /// into a neighbouring file and phantom-complete with the wrong chapter.
+  Future<bool?> _partialJumpGate(double targetSec) async {
+    if (!_isPartialLocalPlay) return null;
+    if (await _streamContinueIfUncovered(targetSec)) return true;
+    if (_positionCoveredLocally(targetSec)) return null;
+    verboseLog(
+      '[Service] Chapter jump to ${targetSec.toStringAsFixed(1)}s blocked - '
+      'outside the downloaded range and no stream available',
+    );
+    return false;
+  }
+
+  /// Chapter to report while parked at [coverageEnd] (the end of the last
+  /// downloaded file): the chapter the LAST DOWNLOADED FILE belongs to,
+  /// anchored on that file's own start. Preferring the playable subset's last
+  /// entry misfires when metadata-vs-file drift leaves the NEXT chapter's
+  /// metadata start a few seconds inside the last file — that chapter is then
+  /// "covered" by the subset even though its audio isn't on disk, so the
+  /// boundary would report (and play() restart into) a chapter with no audio:
+  /// title on the undownloaded episode, a silent seek that instantly completes
+  /// again, position pinned on the next chapter's start.
+  int? _boundaryParkedChapterIdx(double coverageEnd) {
+    if (_chapters.isEmpty) return null;
+    double startOf(int i) => ChapterLookup.metaStart(_chapters, i);
+    // 0) The downloader's own 1:1 track→chapter map (when the session records
+    //    one): the LAST entry IS the chapter the last downloaded file carries
+    //    — recorded when the file was fetched, immune to any metadata-vs-file
+    //    drift that makes the position math below ambiguous.
+    final map = _localTrackChapterIdx;
+    if (map.isNotEmpty) {
+      final mapped = map[map.length - 1];
+      if (mapped >= 0 && mapped < _chapters.length) {
+        verboseLog(
+          '[Player] Boundary chapter from track map: idx=$mapped '
+          '"${_chapters[mapped]['title']}" '
+          '(coverageEnd=${coverageEnd.toStringAsFixed(1)}s)',
+        );
+        return mapped;
+      }
+    }
+    // 1) The chapter containing the last file's start IS the chapter that file
+    //    carries, whatever the drift did to later chapter starts. Only require
+    //    real audio behind the boundary here — NOT that the chapter's own
+    //    metadata start be file-covered: a metadata start drifting before its
+    //    file's start would reject the file's OWN chapter and fall through to
+    //    the NEXT (undownloaded) one below.
+    final nTracks = _trackStartOffsets.length - 1;
+    if (nTracks >= 1) {
+      final anchor = ChapterLookup.indexAtWithGrace(
+        _chapters,
+        _trackStartOffsets[nTracks - 1] + 0.5,
+        _totalDuration,
+      );
+      if (anchor != null && anchor >= 0 && anchor < _chapters.length) {
+        if (coverageEnd - startOf(anchor) >= 5.0) return anchor;
+      }
+    }
+    // 2) Fallback: last playable chapter that still has real audio behind it.
+    final playable = _localPlayableChapterIndices;
+    for (var k = playable.length - 1; k >= 0; k--) {
+      if (coverageEnd - startOf(playable[k]) >= 5.0) return playable[k];
+    }
+    if (playable.isNotEmpty) return playable.first;
+    // 3) No subset (single downloaded track): plain lookup a hair before the
+    //    boundary, so the boundary itself can't resolve to the next chapter.
+    return _resolveChapterIndex(coverageEnd - 1.0);
+  }
+
+  /// Chapter override for any position-based chapter resolution while a
+  /// partial download sits at its boundary. Non-null as soon as [posSec]
+  /// reaches the download boundary — NOT only once the async park has
+  /// completed: the engine lands on the boundary (and a scrub clears the
+  /// parked flag while its own park is still in flight) several operations
+  /// BEFORE [_parkedAtBoundary] flips, and during that window every raw
+  /// containment resolves to the next (undownloaded) chapter — the visible
+  /// title flash this exists to prevent.
+  int? _boundaryChapterOverride(double posSec) {
+    if (_chapters.isEmpty) return null;
+    if (_parkedAtBoundary) {
+      final i = _parkedBoundaryChapterIdx;
+      if (i != null && i >= 0 && i < _chapters.length) return i;
+    }
+    final cEnd = _localCoverageEndSec;
+    if (_isPartialLocalPlay &&
+        cEnd != null &&
+        posSec >= cEnd - 0.5 &&
+        posSec <= cEnd + 60.0) {
+      final i = _boundaryParkedChapterIdx(cEnd);
+      if (i != null && i >= 0 && i < _chapters.length) return i;
+    }
+    return null;
+  }
+
+  /// Shared park bookkeeping at [coverageEnd]. Resolves the parked chapter
+  /// BEFORE setting the flag — [_boundaryParkedChapterIdx]'s last-resort
+  /// fallback reads the parked flag back through [_resolveChapterIndex], so
+  /// resolving after would hand back a stale index on a re-park. Sets the
+  /// flags, pushes the chapter to the lock screen right now (the position
+  /// tick that would normally correct the title is about to be cancelled by
+  /// the completion path) and logs the whole decision — the completion path
+  /// is the one shot at that log, its subs are cancelled.
+  int? _setParkedAtBoundary(double coverageEnd) {
+    final parkedIdx = _boundaryParkedChapterIdx(coverageEnd);
+    _parkedAtBoundary = true;
+    _parkedBoundaryChapterIdx = parkedIdx;
+    verboseLog(
+      '[Player] Parked at download boundary: idx=$parkedIdx '
+      '"${parkedIdx != null && parkedIdx < _chapters.length ? (_chapters[parkedIdx]['title'] ?? '') : ''}" '
+      'coverageEnd=${coverageEnd.toStringAsFixed(1)}s '
+      'offsets=$_trackStartOffsets '
+      'playable=$_localPlayableChapterIndices '
+      'trackMap=$_localTrackChapterIdx',
+    );
+    if (parkedIdx != null) _pinChapterLatch(parkedIdx);
+    return parkedIdx;
+  }
+
+  /// Park at the end of a partial download's local range (used by forward
+  /// skips that would cross it): pause and save the boundary position instead
+  /// of seeking into chapters whose audio isn't on disk. Unlike the natural
+  /// completion path this keeps the position/completion listeners alive - the
+  /// session is still live and the user can seek back / play on.
+  Future<void> _parkAtPartialBoundary() async {
+    if (!_isPartialLocalPlay) return;
+    final coverageEnd = _localCoverageEndSec;
+    if (coverageEnd == null || _player == null) return;
+    verboseLog(
+      '[Player] Download boundary (${coverageEnd.toStringAsFixed(1)}s) '
+      'reached by skip — parking instead of crossing into non-downloaded audio',
+    );
+    _logEvent(PlaybackEventType.pause, detail: 'Download boundary reached');
+    _seekedWhilePaused = false;
+    await _player!.pause();
+    _setParkedAtBoundary(coverageEnd);
+    _lastKnownPositionSec = coverageEnd;
+    await _saveProgressLocal(
+      Duration(milliseconds: (coverageEnd * 1000).round()),
+    );
+    notifyListeners();
+  }
+
+  /// Chapter indices of the CURRENT item whose audio is really on disk, read
+  /// from the download service's cached session rather than the player's
+  /// offsets — a streaming session paints its offsets across the whole book,
+  /// so [_positionCoveredLocally] would call every chapter "covered". Returns
+  /// null when the item has no usable local session.
+  List<int>? _downloadedChapterSubset() {
+    final itemId = _currentItemId;
+    if (itemId == null || _chapters.isEmpty) return null;
+    final cachedJson = _downloadService.getCachedSessionData(itemId);
+    if (cachedJson == null) return null;
+    if (identical(cachedJson, _subsetMemoJson) &&
+        identical(_chapters, _subsetMemoChapters)) {
+      return _subsetMemo;
+    }
+    try {
+      final session = jsonDecode(cachedJson) as Map<String, dynamic>;
+      final audioTracks = session['audioTracks'] as List<dynamic>?;
+      if (audioTracks == null || audioTracks.isEmpty) return null;
+      final absoluteStarts = (session['trackStartOffsets'] as List<dynamic>?)
+          ?.map((e) => (e as num).toDouble())
+          .toList();
+      final starts = <double>[];
+      if (absoluteStarts != null &&
+          absoluteStarts.length == audioTracks.length) {
+        starts.addAll(absoluteStarts);
+      } else {
+        var acc = 0.0;
+        for (final t in audioTracks) {
+          starts.add(acc);
+          acc += (t['duration'] as num?)?.toDouble() ?? 0;
+        }
+      }
+      final subset = <int>[];
+      for (var i = 0; i < _chapters.length; i++) {
+        final s = ChapterLookup.metaStart(_chapters, i);
+        for (var t = 0; t < audioTracks.length; t++) {
+          final d = (audioTracks[t]['duration'] as num?)?.toDouble() ?? 0;
+          final end = starts[t] + d;
+          if (s >= starts[t] - 0.5 && s < end - 0.5) {
+            subset.add(i);
+            break;
+          }
+        }
+      }
+      _subsetMemoJson = cachedJson;
+      _subsetMemoChapters = _chapters;
+      _subsetMemo = subset;
+      return subset;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Offline + network source + [targetSec] inside a downloaded chapter of the
+  /// current item: re-enter LOCAL playback from there (the full
+  /// [playItem]/[_playFromLocal] path), so offline navigation lands on real
+  /// audio and [_sourceIsNetwork] flips back. Returns whether the switch
+  /// happened.
+  Future<bool> _reenterLocalPlayIfCovered(double targetSec) async {
+    if (!_offlineRemoteStream || targetSec < 0) return false;
+    final itemId = _currentItemId;
+    final api = _api;
+    if (itemId == null || api == null) return false;
+    final subset = _downloadedChapterSubset();
+    if (subset == null || subset.isEmpty) return false;
+    var covered = false;
+    for (final i in subset) {
+      final start = ChapterLookup.metaStart(_chapters, i);
+      final nextStart = i + 1 < _chapters.length
+          ? ((_chapters[i + 1] as Map)['start'] as num?)?.toDouble() ??
+              _totalDuration
+          : _totalDuration;
+      if (targetSec >= start - 0.5 && targetSec < nextStart - 0.5) {
+        covered = true;
+        break;
+      }
+    }
+    if (!covered) return false;
+    verboseLog(
+      '[Service] Offline: ${targetSec.toStringAsFixed(1)}s is a downloaded '
+      'chapter — re-entering local playback',
+    );
+    final err = await playItem(
+      api: api,
+      itemId: itemId,
+      title: _currentTitle ?? '',
+      author: _currentAuthor ?? '',
+      coverUrl: _currentCoverUrl,
+      totalDuration: _totalDuration,
+      chapters: _chapters,
+      episodeId: _currentEpisodeId,
+      episodeTitle: _currentEpisodeTitle,
+      libraryId: _currentLibraryId,
+      seriesId: _currentSeriesId,
+      startTime: targetSec,
+      forceStartTime: true,
+      fromUi: true,
+    );
+    if (err == null) {
+      verboseLog('[Service] Offline re-root into local playback succeeded');
+      return true;
+    }
+    verboseLog('[Service] Offline re-root failed: $err');
+    return false;
+  }
+
+  /// Prev/next among the DOWNLOADED chapters of the current item while the
+  /// player is an offline remote stream. Picks the neighbouring downloaded
+  /// chapter and re-roots into local playback there; at the ends of the
+  /// download the press is a no-op (nothing more is available offline).
+  Future<bool> _offlineChapterNav(bool back) async {
+    final subset = _downloadedChapterSubset();
+    if (subset == null || subset.isEmpty) {
+      verboseLog(
+        '[Service] Offline chapter nav: no downloaded chapters — staying put',
+      );
+      return false;
+    }
+    final posS = chapterResolvePosSec;
+    double? target;
+    if (back) {
+      for (var k = subset.length - 1; k >= 0; k--) {
+        final i = subset[k];
+        final start = ChapterLookup.metaStart(_chapters, i);
+        if (start < posS - 3.0) {
+          target = start;
+          break;
+        }
+      }
+      target ??= ChapterLookup.metaStart(_chapters, subset.first);
+    } else {
+      for (final i in subset) {
+        final start = ChapterLookup.metaStart(_chapters, i);
+        if (start > posS + 1.0) {
+          target = start;
+          break;
+        }
+      }
+      if (target == null) {
+        verboseLog(
+          '[Service] Offline chapter nav: at the last downloaded chapter — '
+          'staying put',
+        );
+        return false;
+      }
+    }
+    return _reenterLocalPlayIfCovered(target);
+  }
+
   Future<bool> _skipToNextChapterImpl() async {
     if (_player == null || _chapters.isEmpty) return false;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
+    // Offline + network source: only the DOWNLOADED chapters exist. Step to
+    // the next downloaded chapter by re-entering local playback; past the last
+    // download the press is a no-op (no more offline audio).
+    if (_offlineRemoteStream) return _offlineChapterNav(false);
     // Resolve against the pending-start / active-seek target, NOT the raw
     // stream position: every chapter class here is its own audio file, so a
     // jump is a session upgrade during which `position` collapses to the stale
     // local offset (~0s) and next-chapter resolution would scan from chapter 0.
     final posS = chapterResolvePosSec;
+    final playable = _navPlayableChapters;
+    Future<void> jumpTo(double start) async {
+      // Crossing into a genuinely DIFFERENT chapter keeps the intro skip armed -
+      // pre-jump straight to the intro-skip point so the chapter's opening words
+      // aren't briefly played while the skip waits for the first post-landing
+      // position tick. Mirrors the prev-chapter handler.
+      double? preJumpTarget;
+      final chapterIdx = ChapterLookup.indexAtWithGrace(
+        _chapters,
+        start,
+        _totalDuration,
+      );
+      if (chapterIdx != null) {
+        preJumpTarget = await _crossChapterIntroSkipTarget(chapterIdx);
+      }
+      if (preJumpTarget != null) {
+        await _seekAbsoluteAlignedRepair(
+          preJumpTarget,
+          clampMaxSec: preJumpTarget + 8.0,
+          chapterJump: false,
+          pinChapterIndex: chapterIdx,
+        );
+      } else {
+        await _seekAbsolute(
+          start,
+          // Snap to the file boundary when landing exactly on the chapter
+          // start; an intro-skip pre-jump is offset into the chapter and stays
+          // precise.
+          chapterJump: true,
+          pinChapterIndex: null,
+        );
+      }
+      _logEvent(
+        PlaybackEventType.seek,
+        detail: preJumpTarget != null
+            ? 'next chapter to ${preJumpTarget.toStringAsFixed(1)}s (intro skip)'
+            : 'next chapter',
+      );
+      notifyListeners();
+    }
+
+    if (playable.isNotEmpty) {
+      for (final i in playable) {
+        final s = ChapterLookup.metaStart(_chapters, i);
+        if (s > posS + 1.0) {
+          verboseLog('[Service] skipToNextChapter → $s s');
+          await jumpTo(s);
+          return true;
+        }
+      }
+      // End of the DOWNLOADED content (not the book). Online, continue the
+      // book by streaming from the next chapter — a real continuation, not a
+      // dead seek into audio that isn't local (phantom completion showing the
+      // wrong chapter's title). Offline, the chapter boundary has no audio:
+      // never cross it (no seek into the next chapter, no park at the file end
+      // that re-labels the position as the next chapter) — the jump is simply a
+      // no-op.
+      final streamTarget = ChapterLookup.nextSkipTarget(
+        _chapters,
+        posS,
+        _totalDuration,
+      );
+      if (streamTarget != null && streamTarget.finishesItem) {
+        // Downloaded content reached the END OF THE BOOK itself — genuine
+        // completion; the completion path owns the "finished" state.
+        verboseLog(
+          '[Service] skipToNextChapter → end of the whole book at '
+          '${streamTarget.seconds.toStringAsFixed(1)}s',
+        );
+        _lastKnownPositionSec = streamTarget.seconds;
+        _logEvent(PlaybackEventType.seek, detail: 'next chapter to end');
+        await _onPlaybackComplete(userRequested: true);
+        return false;
+      }
+      if (streamTarget != null &&
+          await _streamContinueIfUncovered(streamTarget.seconds)) {
+        return true;
+      }
+      verboseLog(
+        '[Service] skipToNextChapter → offline (or no stream) past the local '
+        'end — staying put (last playable chapter ${playable.last})',
+      );
+      return false;
+    }
     final target = ChapterLookup.nextSkipTarget(
       _chapters,
       posS,
@@ -9281,7 +10171,9 @@ class AudioPlayerService extends ChangeNotifier {
     );
     if (target == null) return false;
     if (target.finishesItem) {
-      verboseLog('[Service] skipToNextChapter → end at ${target.seconds}s');
+      verboseLog(
+        '[Service] skipToNextChapter → end at ${target.seconds.toStringAsFixed(1)}s',
+      );
       _lastKnownPositionSec = target.seconds;
       _logEvent(PlaybackEventType.seek, detail: 'next chapter to end');
       // NOT a chapter jump: this is the end of the BOOK. Whether playback
@@ -9290,43 +10182,24 @@ class AudioPlayerService extends ChangeNotifier {
       await _onPlaybackComplete(userRequested: true);
       return false;
     }
-    verboseLog('[Service] skipToNextChapter → ${target.seconds}s');
-    // Crossing into a genuinely DIFFERENT chapter keeps the intro skip armed -
-    // pre-jump straight to the intro-skip point so the chapter's opening words
-    // aren't briefly played while the skip waits for the first post-landing
-    // position tick. Mirrors the prev-chapter handler.
-    double? preJumpTarget;
-    final chapterIdx = ChapterLookup.indexAtWithGrace(
-      _chapters,
-      target.seconds,
-      _totalDuration,
-    );
-    if (chapterIdx != null) {
-      preJumpTarget = await _crossChapterIntroSkipTarget(chapterIdx);
+    verboseLog('[Service] skipToNextChapter → ${target.seconds.toStringAsFixed(1)}s');
+    // A PARTIAL download has a boundary: a target past it continues via
+    // streaming (online) or stays put (offline); a target within the local
+    // range lands in-session below. A FULL stream covers every position, so
+    // the plain in-session seek below is always right — it must never consult
+    // the "no local audio" check (a stream whose track map doesn't span the
+    // target would falsely re-start the whole session).
+    if (_isPartialLocalPlay) {
+      if (await _streamContinueIfUncovered(target.seconds)) return true;
+      if (!_positionCoveredLocally(target.seconds)) {
+        verboseLog(
+          '[Service] skipToNextChapter → target has no local audio and no '
+          'stream available — staying put',
+        );
+        return false;
+      }
     }
-    if (preJumpTarget != null) {
-      await _seekAbsoluteAlignedRepair(
-        preJumpTarget,
-        clampMaxSec: preJumpTarget + 8.0,
-        chapterJump: false,
-        pinChapterIndex: chapterIdx,
-      );
-    } else {
-      await _seekAbsolute(
-        target.seconds,
-        // Snap to the file boundary when landing exactly on the chapter start;
-        // an intro-skip pre-jump is offset into the chapter and stays precise.
-        chapterJump: true,
-        pinChapterIndex: null,
-      );
-    }
-    _logEvent(
-      PlaybackEventType.seek,
-      detail: preJumpTarget != null
-          ? 'next chapter to ${preJumpTarget.toStringAsFixed(1)}s (intro skip)'
-          : 'next chapter',
-    );
-    notifyListeners();
+    await jumpTo(target.seconds);
     return true;
   }
 
@@ -9337,38 +10210,62 @@ class AudioPlayerService extends ChangeNotifier {
     if (_player == null || _chapters.isEmpty) return false;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
+    // Offline + network source: only the DOWNLOADED chapters exist. Step to
+    // the previous downloaded chapter by re-entering local playback; before
+    // the first download the press restarts it there.
+    if (_offlineRemoteStream) return _offlineChapterNav(true);
     // Same session-upgrade caveat as skipToNextChapter: every chapter is its
     // own audio file, so a rewind is a session upgrade during which `position`
     // collapses to the stale local offset (~0s). Reading it raw would resolve
     // to chapter 0 and fall through to a seek(0) — "jumps to chapter one".
     // Resolve against the pending-start / active-seek target instead.
     final posS = chapterResolvePosSec;
+    final playable = _navPlayableChapters;
+    // Hoisted: both restart paths (direct-mode at the first chapter, iterative
+    // mode at the very start) restart the same target.
+    final restartStart = playable.isNotEmpty
+        ? ChapterLookup.metaStart(_chapters, playable.first)
+        : 0.0;
+    final restartIdx = playable.isNotEmpty ? playable.first : null;
     final directJump = await PlayerSettings.getPrevChapterDirectJump();
     if (directJump) {
-      // Direct mode: always jump straight to the previous chapter. At the first
+      // Direct mode: always jump straight to the previous PLAYABLE chapter
+      // (for partial downloads) / previous chapter (full plays). At the first
       // chapter (or when the position isn't inside any chapter), restart.
       final currentIdx = ChapterLookup.indexAtWithGrace(
         _chapters,
         posS,
         _totalDuration,
       );
-      if (currentIdx != null && currentIdx > 0) {
-        final i = currentIdx - 1;
-        final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+      int? prevIdx;
+      if (playable.isNotEmpty) {
+        for (final i in playable.reversed) {
+          if (i < (currentIdx ?? -1)) {
+            prevIdx = i;
+            break;
+          }
+        }
+      } else if (currentIdx != null && currentIdx > 0) {
+        prevIdx = currentIdx - 1;
+      }
+      if (prevIdx != null) {
+        final start = ChapterLookup.metaStart(_chapters, prevIdx);
+        final gate = await _partialJumpGate(start);
+        if (gate != null) return gate;
         verboseLog(
-          '[Service] skipToPreviousChapter (direct) → chapter $i at ${start}s',
+          '[Service] skipToPreviousChapter (direct) → chapter $prevIdx at ${start}s',
         );
         // Crossing into a genuinely DIFFERENT chapter keeps the intro skip
         // armed - pre-jump straight to the intro-skip point so the chapter's
         // opening words aren't briefly played while the skip waits for the
         // first post-landing position tick before jumping.
-        final preJumpTarget = await _crossChapterIntroSkipTarget(i);
+        final preJumpTarget = await _crossChapterIntroSkipTarget(prevIdx);
         if (preJumpTarget != null) {
           await _seekAbsoluteAlignedRepair(
             preJumpTarget,
             clampMaxSec: preJumpTarget + 8.0,
             chapterJump: false,
-            pinChapterIndex: i,
+            pinChapterIndex: prevIdx,
           );
         } else {
           await _seekAbsolute(
@@ -9386,16 +10283,33 @@ class AudioPlayerService extends ChangeNotifier {
         notifyListeners();
         return true;
       }
-      _disarmIntroForSameChapterRewind(posS, 0);
-      await _seekAbsolute(0);
+      // Restart: at the FIRST playable chapter (partial download) restart it,
+      // not absolute 0 — chapter 0 may be an un-downloaded preview whose audio
+      // isn't local. Full plays restart from their own chapter 0 as before.
+      final gate = await _partialJumpGate(restartStart);
+      if (gate != null) return gate;
+      _disarmIntroForSameChapterRewind(posS, restartStart);
+      await _seekAbsolute(
+        restartStart,
+        chapterJump: true,
+        pinChapterIndex: restartIdx,
+      );
       notifyListeners();
       return true;
     }
     // If more than 3s into current chapter, go to start of current chapter
-    // Otherwise go to previous chapter
-    for (int i = _chapters.length - 1; i >= 0; i--) {
-      final start = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+    // Otherwise go to previous chapter. Full-book plays iterate the book's
+    // chapters; partial-download plays iterate the playable subset only
+    // (target indices are still full-book indices into `_chapters`).
+    final ordered = playable.isNotEmpty ? playable : null;
+    for (int k = ordered != null ? ordered.length - 1 : _chapters.length - 1;
+        k >= 0;
+        k--) {
+      final i = ordered != null ? ordered[k] : k;
+      final start = ChapterLookup.metaStart(_chapters, i);
       if (start < posS - 3.0) {
+        final gate = await _partialJumpGate(start);
+        if (gate != null) return gate;
         verboseLog('[Service] skipToPreviousChapter → chapter $i at ${start}s');
         // Landing on our OWN chapter start is a deliberate rewind to re-hear
         // the opening - the intro skip must not fire there (it would drag the
@@ -9438,9 +10352,17 @@ class AudioPlayerService extends ChangeNotifier {
         return true;
       }
     }
-    // If at the very start, seek to 0
-    _disarmIntroForSameChapterRewind(posS, 0);
-    await _seekAbsolute(0);
+    // If at the very start, seek to the first playable chapter (partial
+    // download) or 0 (full play). Chapter 0 may be an un-downloaded preview,
+    // so a partial download restarts its own first chapter, not absolute 0.
+    final gate = await _partialJumpGate(restartStart);
+    if (gate != null) return gate;
+    _disarmIntroForSameChapterRewind(posS, restartStart);
+    await _seekAbsolute(
+      restartStart,
+      chapterJump: true,
+      pinChapterIndex: restartIdx,
+    );
     notifyListeners();
     return true;
   }
@@ -9462,6 +10384,10 @@ class AudioPlayerService extends ChangeNotifier {
   /// next chapter, or next-past-the-end - can't be the thing that starts
   /// playback.
   Future<void> _chapterJumpThenAutoPlay(Future<bool> Function() jump) async {
+    // Offline mode is handled INSIDE each jump (skipToNext/PreviousChapter and
+    // seekToChapterIndex re-enter local playback for downloaded chapters and
+    // no-op otherwise), so a blanket block here would also wall off the
+    // downloaded chapters that are perfectly playable offline.
     final wasPaused = _player != null && !_player!.playing;
     if (!await jump()) return;
     if (!wasPaused || _player == null || _player!.playing) return;
@@ -9702,6 +10628,23 @@ class AudioPlayerService extends ChangeNotifier {
       if (_player?.processingState != ProcessingState.ready) break;
       final landed = position.inMilliseconds / 1000.0;
       if ((landed - absoluteSeconds).abs() > 30.0) break;
+      // A fresh source/session swap reports its new track's file start (in-file
+      // 0) as the current position until the first seek is applied to a
+      // buffered frame. Reading that as a landed sample turns every intro-skip
+      // seek into a bogus "short = whole request", and the +shortfall+1
+      // re-request would overshoot past the intro (chapterStart + 2*intro + 1).
+      // A real sync-frame undershoot (the only failure repair exists for) has
+      // already left the track's start - a VBR coarse TOC never snaps a 20s
+      // target back to frame 0. So a requested in-file offset larger than
+      // tolerance that lands back on (or before) the track start means the seek
+      // never took effect: bail out and trust the source's own start position
+      // instead of compounding the stale reading into an overshoot.
+      final trackStart = (_trackStartOffsets.isNotEmpty &&
+              _currentTrackIndex < _trackStartOffsets.length)
+          ? _trackStartOffsets[_currentTrackIndex]
+          : 0.0;
+      final requestedInFile = request - trackStart;
+      if (requestedInFile > tolerance && landed - trackStart <= 0.05) break;
       final shortfall = request - landed;
       // Good enough: landed within tolerance of THIS request, or already at-or-
       // past the true target (a later pass's request grows, so the request-
@@ -9782,6 +10725,26 @@ class AudioPlayerService extends ChangeNotifier {
     final bounds = _chapterSkipBounds(chapterIdx);
     final chapterStart = bounds.start;
     final chapterEnd = bounds.end;
+
+    // Partial download: the outro-skip must never act beyond the last
+    // downloaded file's real audio. The file timeline produced by a truncated
+    // concat collapses every chapter from the last file's start onward onto the
+    // same degenerate (zero-width) file window, so a position near the concat
+    // tail can resolve to the book's LAST chapter even though the audible file
+    // is an early one - and the "skip to end" branch would then seek
+    // _totalDuration, which the seek clamp snaps back to the concat end and
+    // reports as a spurious completion mid-handoff. Leave the tail entirely to
+    // the boundary logic (_partialJumpGate / _streamContinueIfUncovered).
+    final coverageEnd = _localCoverageEndSec;
+    if (_isPartialLocalPlay && coverageEnd != null) {
+      final lastCovered = _boundaryParkedChapterIdx(coverageEnd);
+      if (lastCovered == null ||
+          lastCovered >= _chapters.length ||
+          chapterIdx > lastCovered) {
+        return;
+      }
+      if (posSec >= coverageEnd - 0.5) return;
+    }
 
     // A new "entry" begins whenever playback crosses into a different chapter
     // (prev/next nav, or switching back to an already-played chapter). Reset
@@ -9877,9 +10840,23 @@ class AudioPlayerService extends ChangeNotifier {
         // exactly on the rollover. A single file keeps the next chapter's
         // metadata start instead: its `end` may sit inside a trailing gap, and
         // jumping into that gap would leave the position with no chapter.
-        final nextStart = _useFileTimelineBounds
-            ? chapterEnd
-            : _chapterMetaStart(chapterIdx + 1);
+final nextStart = _useFileTimelineBounds
+          ? chapterEnd
+          : _chapterMetaStart(chapterIdx + 1);
+        // Partial download: the "next chapter" begins at/past the last
+        // downloaded file's end; jumping there inside an auto-skip would cross
+        // the boundary. Leave the tail to the boundary/handoff logic.
+        final coverageEnd = _localCoverageEndSec;
+        if (_isPartialLocalPlay &&
+            coverageEnd != null &&
+            nextStart > coverageEnd - 0.5) {
+          verboseLog(
+            '[ChapterSkip] Outro next-start ${nextStart.toStringAsFixed(1)}s '
+            'past coverage end ${coverageEnd.toStringAsFixed(1)}s - leaving '
+            'to boundary logic',
+          );
+          return;
+        }
         if (nextStart - posSec >= 1.0) {
           verboseLog(
             '[ChapterSkip] Skipping outro: pos=${posSec.toStringAsFixed(1)}s chapterEnd=${chapterEnd.toStringAsFixed(1)}s nextChapterStart=${nextStart.toStringAsFixed(1)}s',
@@ -9894,6 +10871,16 @@ class AudioPlayerService extends ChangeNotifier {
       } else {
         // Last chapter - skip to end of book when the jump is meaningful
         // (completion handler takes over from there).
+        // Partial download: the whole-book tail is not on disk; seeking
+        // _totalDuration would clamp to the concat end mid-handoff and report
+        // a spurious completion. Leave the tail to the boundary logic.
+        if (_isPartialLocalPlay && _localCoverageEndSec != null) {
+          verboseLog(
+            '[ChapterSkip] Skipping to end suppressed on partial download '
+            '(pos=${posSec.toStringAsFixed(1)}s) - leaving to boundary logic',
+          );
+          return;
+        }
         if (_totalDuration > 0 && _totalDuration - posSec >= 1.0) {
           verboseLog(
             '[ChapterSkip] Skipping to end: pos=${posSec.toStringAsFixed(1)}s totalDuration=${_totalDuration.toStringAsFixed(1)}s',
@@ -9969,6 +10956,23 @@ class AudioPlayerService extends ChangeNotifier {
     return idx;
   }
 
+  /// True while parked at the end of a partial download: the position sits
+  /// EXACTLY on the next (undownloaded) chapter's start, so any display that
+  /// resolves chapters by raw position containment reports that phantom
+  /// chapter. Such displays (the progress pill resolves its own containment
+  /// for fill/name consistency) must prefer [currentChapterIndex] while this
+  /// is set.
+  bool get parkedAtBoundary => _parkedAtBoundary;
+
+  /// Public form of the boundary chapter override for displays that resolve
+  /// chapters from their OWN position sample (the progress pill's smoothed
+  /// position): returns the last downloaded chapter's index while parked OR
+  /// as soon as [posSec] reaches the download boundary — covering the window
+  /// where the position is already at the boundary but the async park has
+  /// not landed yet (raw containment would flash the undownloaded chapter).
+  int? boundaryChapterOverride(double posSec) =>
+      _boundaryChapterOverride(posSec);
+
   /// Chapter index for [posSec], mirroring the notification tick's semantics
   /// so the card/expanded title agrees with the lock screen:
   /// 1. a held chapter-jump latch is authoritative until the position passes
@@ -9978,6 +10982,13 @@ class AudioPlayerService extends ChangeNotifier {
   /// 3. otherwise the trailing grace window past the last chapter end.
   int? _resolveChapterIndex(double posSec) {
     if (_chapters.isEmpty) return null;
+    // Parked at the end of a partial download — or the position has already
+    // landed on the boundary while the async park is still in flight: the
+    // boundary is the NEXT chapter's start, so plain lookup would report a
+    // chapter with no audio (and flash it during the pre-park window).
+    // Keep the last downloaded chapter until the user navigates / plays on.
+    final boundaryIdx = _boundaryChapterOverride(posSec);
+    if (boundaryIdx != null) return boundaryIdx;
     if (_chapterJumpLatchIndex >= 0 &&
         _chapterJumpLatchIndex < _chapters.length) {
       final lEnd =

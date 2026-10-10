@@ -107,6 +107,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   @override
   void initState() {
     super.initState();
+    _syncOfflineFilter();
     _recomputeVisibleIndices();
     widget.player.addListener(_onPlayerChanged);
     // Open the list at the currently-playing chapter so the selection badge
@@ -130,12 +131,16 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   void _onPlayerChanged() {
     if (!mounted) return;
     final live = widget.player.chapters;
-    if (ChapterLookup.equivalent(_chapters, live)) return;
-    final countChanged = live.length != _chapters.length;
+    // Offline mode rebuilds the list (only downloaded chapters are shown), so
+    // a flipper needs to reach the recompute even when the chapter list itself
+    // didn't change. [_syncOfflineFilter] re-reads the snapshot and reports
+    // whether it actually changed; position ticks return false - the downloaded
+    // set doesn't move with the clock (and the player memoizes the decode).
+    final offlineFlip = _syncOfflineFilter();
+    if (ChapterLookup.equivalent(_chapters, live) && !offlineFlip) return;
+    final countChanged = live.length != _chapters.length || offlineFlip;
     setState(() {
       _chapters = live;
-      // A changed count invalidates every stored index; titles-only edits keep
-      // the mapping valid and skip the O(n) filter rebuild.
       if (countChanged) _recomputeVisibleIndices();
     });
   }
@@ -150,17 +155,42 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   /// was pure allocation churn for thousand-chapter books.
   List<int> _visibleIndices = const [];
 
+  /// Offline state snapshot backing [_visibleIndices]: while offline the sheet
+  /// shows ONLY the downloaded chapters (jumping a non-downloaded chapter would
+  /// just no-op, so it is better the list simply doesn't show it). Updated only
+  /// when [widget.player.offlineActive] flips, keeping position ticks cheap.
+  bool _offlineShown = false;
+  Set<int> _downloadedShown = const {};
+
+  /// Re-reads the offline snapshot backing [_visibleIndices] and returns
+  /// whether it CHANGED, so [_onPlayerChanged] knows a rebuild is needed.
+  /// While offline the sheet shows ONLY the downloaded chapters (jumping a
+  /// non-downloaded chapter would just no-op, so it is better the list simply
+  /// doesn't show it). Position ticks run this every frame and mostly return
+  /// false; the snapshot copy is only rebuilt on an actual change.
+  bool _syncOfflineFilter() {
+    final offline = widget.player.offlineActive;
+    final downloaded =
+        offline ? widget.player.downloadedChapterIndices : const <int>[];
+    if (_offlineShown == offline &&
+        _downloadedShown.length == downloaded.length &&
+        downloaded.every(_downloadedShown.contains)) {
+      return false;
+    }
+    _offlineShown = offline;
+    _downloadedShown = offline ? Set.of(downloaded) : const <int>{};
+    return true;
+  }
+
   void _recomputeVisibleIndices() {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) {
-      _visibleIndices = [for (int i = 0; i < _chapters.length; i++) i];
-      return;
-    }
     _visibleIndices = [
-      for (int i = 0; i < _chapters.length; i++)
-        if (((_chapters[i] as Map<String, dynamic>)['title'] as String? ?? '')
-            .toLowerCase()
-            .contains(q))
+      for (var i = 0; i < _chapters.length; i++)
+        if ((!_offlineShown || _downloadedShown.contains(i)) &&
+            (q.isEmpty ||
+                ((_chapters[i] as Map<String, dynamic>)['title'] as String? ?? '')
+                    .toLowerCase()
+                    .contains(q)))
           i,
     ];
   }
@@ -556,7 +586,9 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
               children: [
                 Expanded(
                   child: Text(
-                    l.chaptersCount(_chapters.length),
+                    l.chaptersCount(
+                      _offlineShown ? _downloadedShown.length : _chapters.length,
+                    ),
                     style: widget.tt.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -570,13 +602,18 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
                   active: _searchOpen,
                   onTap: () => setState(() => _searchOpen = !_searchOpen),
                 ),
-                const SizedBox(width: 4),
-                _IconLabelButton(
-                  icon: Icons.format_list_numbered_rounded,
-                  label: l.chapterIndex,
-                  accent: widget.accent,
-                  onTap: _openIndexSheet,
-                ),
+                // The range-jump index only makes sense over the FULL chapter
+                // list; offline (downloaded subset only) it would page through
+                // gaps, so hide it.
+                if (!_offlineShown) ...[
+                  const SizedBox(width: 4),
+                  _IconLabelButton(
+                    icon: Icons.format_list_numbered_rounded,
+                    label: l.chapterIndex,
+                    accent: widget.accent,
+                    onTap: _openIndexSheet,
+                  ),
+                ],
               ],
             ),
           ),
@@ -610,7 +647,8 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
             ),
           if (_searchOpen) const SizedBox(height: 8),
           const SizedBox(height: 8),
-          if (visible.isEmpty && _query.trim().isNotEmpty)
+          if (visible.isEmpty &&
+              (_query.trim().isNotEmpty || _offlineShown))
             Expanded(
               child: Center(
                 child: Padding(

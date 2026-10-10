@@ -270,7 +270,14 @@ class _AppShellState extends State<AppShell>
           _currentIndex = index;
         });
         _syncPlayerOnScreen();
-        _fadeController.forward();
+        // The new tab's first build/layout/paint is its most expensive frame.
+        // Let it commit while the fade is still at opacity 0, then fade in over
+        // the already-ready frame so the animation itself never hitches.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _currentIndex == index) {
+            _fadeController.forward();
+          }
+        });
       });
     }
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -9,6 +10,7 @@ import '../providers/library_provider.dart';
 import '../services/app_log.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/offline_source.dart';
 import '../services/wording.dart';
 import '../widgets/absorb_page_header.dart';
 import 'app_shell.dart';
@@ -66,22 +68,71 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     // deleted externally (SAF content URIs especially) drop off the list.
     if (validate) await dl.validateDownloads();
     final items = dl.downloadedItems;
-    final sizes = <String, int>{};
-    final times = <String, DateTime>{};
-    final pods = <String, bool>{};
+    // Size / newest-timestamp are per-file synchronous stat calls. Run them on
+    // a background isolate: opening a large download library used to block the
+    // route animation on the main isolate for hundreds of stat round-trips.
+    final statTasks = <List<Object?>>[];
+    final cachedIds = <String>{};
+    final safByItem = <String, List<String>>{};
     for (final item in items) {
       // After our own delete, surviving rows already have their size / timestamp
       // / podcast flag cached. Re-stat-ing every remaining file is what made
       // removing one book out of a large library feel like a freeze.
       final cached = !validate && _itemIds.contains(item.itemId);
-      sizes[item.itemId] = cached
-          ? (_fileSizes[item.itemId] ?? 0)
-          : dl.getItemFileSize(item.itemId);
-      final t = cached ? _downloadedTimes[item.itemId] : _latestFileTime(item);
-      if (t != null) times[item.itemId] = t;
-      pods[item.itemId] =
-          _isPodcast[item.itemId] ?? _sessionIsPodcast(item.sessionData);
+      if (cached) {
+        cachedIds.add(item.itemId);
+      } else {
+        statTasks.add(<Object?>[item.itemId, item.localPaths]);
+        // SAF (content://) files can't be stat-ed from Dart; the native resolver
+        // reports their sizes separately below.
+        final uris = item.localPaths.where(isContentUri).toList();
+        if (uris.isNotEmpty) safByItem[item.itemId] = uris;
+      }
     }
+    final sizes = <String, int>{
+      for (final id in cachedIds) id: _fileSizes[id] ?? 0,
+    };
+    final times = <String, DateTime>{
+      for (final id in cachedIds)
+        if (_downloadedTimes[id] != null) id: _downloadedTimes[id]!,
+    };
+    if (statTasks.isNotEmpty) {
+      final results = await compute(_statDownloadsInBackground, statTasks);
+      for (final r in results) {
+        final id = r[0] as String;
+        sizes[id] = r[1] as int;
+        final iso = r[2] as String?;
+        if (iso != null) times[id] = DateTime.parse(iso);
+      }
+    }
+    // SAF audio lives behind content:// URIs the Dart isolate can't stat, so
+    // the native probe (checkSafFiles) also returns their byte sizes. Reuse
+    // those so a huge library never gets a second native walk of the same URIs;
+    // fall back to a size-only probe for any URI the validate pass didn't see.
+    if (safByItem.isNotEmpty) {
+      final all = {for (final list in safByItem.values) ...list}.toList();
+      final probe = dl.probedSafSizes;
+      final missing =
+          all.where((uri) => !probe.containsKey(uri)).toList();
+      Map<String, int> extra = const {};
+      if (missing.isNotEmpty) {
+        extra = await dl.getSafFileSizes(missing);
+      }
+      for (final item in items) {
+        final list = safByItem[item.itemId];
+        if (list == null) continue;
+        var totalSize = sizes[item.itemId] ?? 0;
+        for (final uri in list) {
+          totalSize += probe[uri] ?? extra[uri] ?? 0;
+        }
+        sizes[item.itemId] = totalSize;
+      }
+    }
+    final pods = <String, bool>{
+      for (final item in items)
+        item.itemId:
+            _isPodcast[item.itemId] ?? _sessionIsPodcast(item.sessionData),
+    };
     final merge = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted) {
       setState(() {
@@ -184,6 +235,33 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       } catch (_) {}
     }
     return latest;
+  }
+
+  /// Runs on a background isolate (see [_load]). [payload] is a list of
+  /// `[itemId, localPaths]` pairs; the result is `[itemId, size, isoTime?]`
+  /// triplets matching [DownloadService.getItemFileSize] / [_latestFileTime].
+  static List<List<Object?>> _statDownloadsInBackground(List<Object?> payload) {
+    final out = <List<Object?>>[];
+    for (final entry in payload) {
+      final e = entry as List<Object?>;
+      final itemId = e[0] as String;
+      final paths = (e[1] as List<Object?>).cast<String>();
+      int size = 0;
+      DateTime? latest;
+      for (final p in paths) {
+        if (p.startsWith('content://')) continue; // SAF audio is not stat-able
+        try {
+          final f = File(p);
+          if (f.existsSync()) {
+            size += f.lengthSync();
+            final t = f.lastModifiedSync();
+            if (latest == null || t.isAfter(latest)) latest = t;
+          }
+        } catch (_) {}
+      }
+      out.add(<Object?>[itemId, size, latest?.toIso8601String()]);
+    }
+    return out;
   }
 
   static bool _sessionIsPodcast(String? sessionData) {
@@ -443,6 +521,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final isEpisode = info.itemId.length > 36;
     final itemId = isEpisode ? info.itemId.substring(0, 36) : info.itemId;
     final episodeId = isEpisode ? info.itemId.substring(37) : null;
+    // Play the download itself, not a resume of the book: for a book, force
+    // the start onto the first downloaded track so a "Play" on the row starts
+    // what is actually there instead of re-entering the book's last-listened
+    // position (which may sit on an un-downloaded stretch).
+    final localTracks = DownloadService().getLocalTracks(info.itemId);
+    final firstTrackStart = !isEpisode && localTracks.isNotEmpty
+        ? localTracks.first.absoluteStart
+        : 0.0;
     double duration = 0;
     List<dynamic> chapters = const [];
     final sessionJson = info.sessionData;
@@ -465,6 +551,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       chapters: isEpisode ? const [] : chapters,
       episodeId: episodeId,
       episodeTitle: isEpisode ? title : null,
+      startTime: firstTrackStart,
+      forceStartTime: !isEpisode && localTracks.isNotEmpty,
       libraryId: info.libraryId,
       fromUi: true,
     );
@@ -1503,6 +1591,32 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
   bool _deleting = false;
   bool _selecting = false;
   final Set<int> _selected = {};
+  // Real byte sizes of SAF tracks, resolved natively (Dart can't stat
+  // content:// files). Empty until the probe lands.
+  Map<String, int> _safSizes = const {};
+  bool _safSizesLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final uris = widget.info.localPaths.where(isContentUri).toList();
+    if (uris.isEmpty) {
+      _safSizesLoaded = true;
+      return;
+    }
+    DownloadService().getSafFileSizes(uris).then((sizes) {
+      if (!mounted) return;
+      setState(() {
+        _safSizes = sizes;
+        _safSizesLoaded = true;
+      });
+    });
+  }
+
+  int _trackBytes(LocalTrackInfo t) {
+    if (!t.isSaf) return t.sizeBytes;
+    return t.sizeBytes + (_safSizes[t.path] ?? 0);
+  }
 
   static String _fmtDuration(double seconds) {
     if (seconds <= 0) return '';
@@ -1702,10 +1816,15 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
           var totalBytes = 0;
           var selectedBytes = 0;
           for (final t in tracks) {
-            totalBytes += t.sizeBytes;
-            if (_selected.contains(t.index)) selectedBytes += t.sizeBytes;
+            totalBytes += _trackBytes(t);
+            if (_selected.contains(t.index)) selectedBytes += _trackBytes(t);
           }
           final anySaf = tracks.any((t) => t.isSaf);
+          // Per-track SAF sizes are resolvable now; the "no per-file size" hint
+          // stays only for tracks the native probe couldn't measure.
+          final anyUncountedSaf = _safSizesLoaded &&
+              anySaf &&
+              tracks.any((t) => t.isSaf && _trackBytes(t) <= 0);
           final canSelect = tracks.length > 1;
           final showGap = _hasGap(tracks);
           return Column(
@@ -1768,7 +1887,7 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
                   ],
                 ),
               ),
-              if (anySaf)
+              if (anyUncountedSaf)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                   child: Row(
@@ -1857,11 +1976,14 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
                         style: tt.bodyMedium,
                       ),
                       subtitle: Text(
-                        t.isSaf
-                            ? l.downloadsStoredExternally
-                            : (meta.isEmpty
+                        !t.isSaf
+                            ? (meta.isEmpty
                                   ? widget.formatBytes(t.sizeBytes)
-                                  : meta),
+                                  : meta)
+                            : (_trackBytes(t) > 0
+                                  ? '${widget.formatBytes(_trackBytes(t))}'
+                                        ' · ${l.downloadsStoredExternally}'
+                                  : l.downloadsStoredExternally),
                         style: tt.bodySmall?.copyWith(
                           color: cs.onSurfaceVariant,
                         ),

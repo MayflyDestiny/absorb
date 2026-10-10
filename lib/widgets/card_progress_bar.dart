@@ -324,6 +324,23 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
             }
           }
         }
+        // At the download boundary: posS sits EXACTLY on the next
+        // (undownloaded) chapter's start — plain containment above resolves
+        // to that phantom chapter (and the unresolved-position fallback even
+        // forces chapterSource.last, also the undownloaded one). The override
+        // also covers the window BEFORE the async park lands (engine just
+        // ended / scrub cleared the flag) — otherwise the title flashes the
+        // undownloaded chapter for a beat and then snaps back.
+        if (!_isCastMode && widget.isActive) {
+          final boundaryIdx = player.boundaryChapterOverride(posS);
+          if (boundaryIdx != null && boundaryIdx < chapterSource.length) {
+            final m = chapterSource[boundaryIdx] as Map<String, dynamic>;
+            chapterStart = (m['start'] as num?)?.toDouble() ?? 0;
+            chapterEnd = (m['end'] as num?)?.toDouble() ?? totalDur;
+            resolvedChapterName = m['title'] as String?;
+            resolvedChapterIdx = boundaryIdx;
+          }
+        }
         final chapterUnresolved =
             chapterSource.isNotEmpty && resolvedChapterIdx < 0 && posS > 0;
         final chapterDur = chapterEnd - chapterStart;

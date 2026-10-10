@@ -212,6 +212,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   bool _isLoading = true;
   bool _seededFromCache = false;
   bool _bookmarksExpanded = false;
+  bool _chaptersExpanded = false;
   BookmarkPreviewPlayer? _preview;
   bool? _loggedPreviewVisible;
   List<Bookmark> _bookmarks = [];
@@ -253,8 +254,37 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   late final Animation<double> _schemeCurve = CurvedAnimation(
       parent: _schemeAnim, curve: Curves.easeInOutCubic)
     ..addListener(() {
-      if (mounted) setState(() {});
+      if (mounted && !_dismissing) setState(() {});
     });
+
+  /// Set once the sheet starts closing (drag past a slack, or the modal route
+  /// reversing). Stops the cover cross-fade mid-flight so exiting never
+  /// rebuilds the whole sheet every frame while the dismiss animation plays —
+  /// which otherwise hitches the exit right after the palette resolves.
+  bool _dismissing = false;
+  Animation<double>? _routeAnim;
+  bool _routeHooked = false;
+
+  void _beginDismissal() {
+    if (_dismissing) return;
+    _dismissing = true;
+    _coverSchemeTimer?.cancel();
+    if (_schemeAnim.isAnimating) _schemeAnim.stop();
+  }
+
+  void _onRouteAnimChanged() {
+    if (!_dismissing && _routeAnim?.status == AnimationStatus.reverse) {
+      _beginDismissal();
+    }
+  }
+
+  void _onSheetScroll() {
+    if (_dismissing) return;
+    final sc = widget.scrollController;
+    // Pulling the sheet down past a slack is the drag-to-dismiss gesture; stop
+    // the fade rebuilds during the drag, before the route reverse commits.
+    if (sc.hasClients && sc.offset < -48) _beginDismissal();
+  }
 
   double get _displaySpeed {
     if (!_speedAdjustedTime) return 1.0;
@@ -280,7 +310,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   /// shown before), so switching between books always starts from the theme
   /// color instead of bleeding the previous book's palette into the fade.
   void _applyCoverScheme(ColorScheme? target) {
-    if (target == null || !mounted) return;
+    if (target == null || !mounted || _dismissing) return;
     if (!_schemeAnim.isAnimating && target == _coverScheme) return;
     setState(() {
       _rawCoverScheme = target;
@@ -310,6 +340,19 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     _warmStats();
     SocketService().addItemUpdatedListener(_onSocketItemUpdated);
     _loadQuickSettings().whenComplete(_markSettingsDone);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeHooked) return;
+    _routeHooked = true;
+    // Watch the modal route so exit-during-cross-fade stops the tint animation
+    // instead of rebuilding the whole sheet every frame of the dismiss.
+    final route = ModalRoute.of(context);
+    _routeAnim = route?.animation;
+    _routeAnim?.addListener(_onRouteAnimChanged);
+    widget.scrollController.addListener(_onSheetScroll);
   }
 
   /// Lightweight per-item settings/state reads. Each result only paints
@@ -355,6 +398,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     _coverSchemeTimer?.cancel();
     _preview?.removeListener(_onPreviewChanged);
     _preview?.dispose();
+    _routeAnim?.removeListener(_onRouteAnimChanged);
+    widget.scrollController.removeListener(_onSheetScroll);
     super.dispose();
     _schemeAnim.dispose();
   }
@@ -739,10 +784,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     }
     final ImageProvider provider;
     if (url.startsWith('/')) {
-      provider = FileImage(File(url));
+      // Bound the decode: the palette only needs a coarse tint, and decoding
+      // the full-res cover here stalls the main isolate right about when the
+      // sheet settles and the user starts scrolling.
+      provider = ResizeImage(FileImage(File(url)), width: 240, height: 240);
     } else {
       final lib = context.read<LibraryProvider>();
-      provider = CachedNetworkImageProvider(url, headers: lib.mediaHeaders);
+      provider = ResizeImage(
+          CachedNetworkImageProvider(url, headers: lib.mediaHeaders),
+          width: 240,
+          height: 240);
     }
     final t0 = DateTime.now();
     debugPrint('[BookDetail] _deriveCoverScheme start url=$url');
@@ -750,14 +801,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         .then((palette) {
       debugPrint('[BookDetail] PaletteGenerator ok in ${DateTime.now().difference(t0).inMilliseconds}ms');
       final seedColor = accentFromCoverPalette(palette);
-      if (seedColor == null || !mounted) return;
+      if (seedColor == null || !mounted || _dismissing) return;
       final scheme = ColorScheme.fromSeed(
           seedColor: seedColor, brightness: brightness);
       _coverSchemeCache[cacheKey] = scheme;
       _applyCoverScheme(scheme);
     }).catchError((e) {
       debugPrint('[BookDetail] PaletteGenerator error after ${DateTime.now().difference(t0).inMilliseconds}ms: $e');
-      if (!mounted) return;
+      if (!mounted || _dismissing) return;
       setState(() => _coverSchemeUrl = null);
       _applyCoverScheme(ColorScheme.fromSeed(
         seedColor: Theme.of(context).colorScheme.primary,
@@ -1442,11 +1493,20 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         _personalNoteBlock(cs, tt, auth),
       ],
       if (chapters.isNotEmpty) ...[const SizedBox(height: 16),
-        Text(l.chaptersCount(chapters.length), style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        // Always open, laid out like the card's chapter list: the chapter
+        GestureDetector(onTap: () => setState(() => _chaptersExpanded = !_chaptersExpanded),
+          child: Row(children: [
+            Expanded(child: Text(l.chaptersCount(chapters.length), style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))),
+            const SizedBox(width: 4),
+            AnimatedRotation(
+                turns: _chaptersExpanded ? 0.5 : 0,
+                duration: PlayerSettings.einkMode ? Duration.zero : const Duration(milliseconds: 250),
+                child: Icon(Icons.expand_more_rounded, size: 18, color: cs.onSurfaceVariant)),
+          ])),
+        // Collapsed by default so the list opens on the book, not the chapter
+        // index; expanding lays out like the card's chapter list: the chapter
         // you're in is lit, the ones behind you are ticked, and a tap jumps
         // there after a confirmation.
+        if (_chaptersExpanded) ...[const SizedBox(height: 4),
         ListenableBuilder(
           listenable: AudioPlayerService(),
           builder: (context, _) {
@@ -1502,6 +1562,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
             ]);
           },
         ),
+        ],
       ],
       if (_bookmarks.isNotEmpty) ...[const SizedBox(height: 16),
         GestureDetector(onTap: () => setState(() => _bookmarksExpanded = !_bookmarksExpanded),

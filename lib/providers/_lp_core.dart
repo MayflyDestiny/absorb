@@ -324,12 +324,23 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (!reachable) {
         basicLog('[Library] Manual offline off but server unreachable — staying offline');
         _networkOffline = true;
+        // Mirror: the player's offline flag is `known || manual`. With manual
+        // now off, only this keeps it offline — otherwise the UI shows the
+        // offline shelves while the player thinks it may stream (and vice
+        // versa the other branch below).
+        AudioPlayerService().setKnownOffline(true);
         _buildOfflineSections();
         notifyListeners();
         if (_deviceHasConnectivity) _startServerPingTimer();
         return;
       }
       _networkOffline = false;
+      // Mirror back: anything that flipped known-offline during the offline
+      // period (network drop, server ping failure) is cleared here, or the
+      // player stays offline forever after this toggle. setKnownOffline(false)
+      // notifies listeners, so the chapter sheet leaves its downloaded-only
+      // snapshot and navigation opens back up to the whole book.
+      AudioPlayerService().setKnownOffline(false);
       if (_api != null) {
         verboseLog('[Library] Manual offline off — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);

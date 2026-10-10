@@ -1146,6 +1146,37 @@ class DownloadService extends ChangeNotifier {
     return total;
   }
 
+  /// Byte sizes of SAF (content://) files, which Dart can't stat. Mirrors the
+  /// chunked probe in [_validateDownloadsNow] so a huge registry stays within a
+  /// comfortable channel-batch size. Unknown/failed files report 0.
+  Future<Map<String, int>> getSafFileSizes(List<String> uris) async {
+    final out = <String, int>{};
+    const chunkSize = 400;
+    for (var start = 0; start < uris.length; start += chunkSize) {
+      final end = (start + chunkSize).clamp(0, uris.length);
+      final chunk = uris.sublist(start, end);
+      try {
+        final res = await _storageChannel
+            .invokeMethod<Map>('getSafFileSizes', {'uris': chunk})
+            .timeout(const Duration(seconds: 8));
+        if (res != null) {
+          for (final e in res.entries) {
+            out[e.key as String] = (e.value as num).toInt();
+          }
+        }
+      } catch (e) {
+        basicLog('[Download] SAF size probe incomplete: $e');
+      }
+    }
+    return out;
+  }
+
+  // Sizes observed by the most recent [validateDownloads] SAF existence probe;
+  // empty when no probe ran (e.g. nothing to validate). Lets the downloads UI
+  // tally SAF space without a second native walk of the same content:// URIs.
+  Map<String, int> _lastProbedSafSizes = const {};
+  Map<String, int> get probedSafSizes => _lastProbedSafSizes;
+
   static const _storageChannel = MethodChannel('com.absorb.storage');
   static const _widgetChannel = MethodChannel('com.absorb.widget');
 
@@ -1958,6 +1989,10 @@ class DownloadService extends ChangeNotifier {
         if (uris.isNotEmpty) safByItem[entry.key] = uris;
       }
       final safExists = <String, bool>{};
+      // Sizes collected by the same probe that checks existence, so callers
+      // (the manage-downloads screen) don't have to walk the same content://
+      // URIs a second time to tally space.
+      final safSizes = <String, int>{};
       if (safByItem.isNotEmpty) {
         final all = {for (final uris in safByItem.values) ...uris}.toList();
         // Probe in chunks so a huge registry (many books x tracks) stays within
@@ -1975,7 +2010,16 @@ class DownloadService extends ChangeNotifier {
                 .timeout(const Duration(seconds: 8));
             if (res != null) {
               for (final e in res.entries) {
-                safExists[e.key as String] = e.value == true;
+                final key = e.key as String;
+                final v = e.value;
+                if (v is Map) {
+                  safExists[key] = v['exists'] == true;
+                  final s = v['size'];
+                  if (s is num) safSizes[key] = s.toInt();
+                } else if (v is bool) {
+                  // Old-style native reply: existence only.
+                  safExists[key] = v;
+                }
               }
             }
           } catch (e) {
@@ -1985,6 +2029,7 @@ class DownloadService extends ChangeNotifier {
             basicLog('[Download] SAF existence probe incomplete: $e');
           }
         }
+        _lastProbedSafSizes = safSizes;
       }
 
       final orphanIds = <String>[];
@@ -3522,7 +3567,11 @@ class DownloadService extends ChangeNotifier {
             'uris': [uri],
           })
           .timeout(const Duration(seconds: 8));
-      return res == null || res[uri] == true;
+      if (res == null) return true;
+      final v = res[uri];
+      // New native replies carry {exists, size}; older ones were bare booleans.
+      if (v is Map) return v['exists'] == true;
+      return v == true;
     } catch (e) {
       return true; // conservative when the probe itself fails
     }
