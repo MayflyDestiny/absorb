@@ -17,6 +17,7 @@ import '../services/server_backend.dart';
 import '../services/settings_sync_service.dart';
 import '../services/setup_link_service.dart';
 import '../services/user_account_service.dart';
+import '../utils/ping_failure_text.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/server_address_field.dart'
@@ -329,7 +330,14 @@ class _LoginScreenState extends State<LoginScreen>
         _serverChecking = false;
         _serverValid = ok;
         _serverError = ok ? null : AppLocalizations.of(context)!.loginCouldNotReachServer;
-        _serverErrorDetail = ok ? null : result.detail;
+        _serverErrorDetail = ok
+            ? null
+            : pingFailureText(
+                AppLocalizations.of(context)!,
+                result.failure,
+                statusCode: result.statusCode,
+                raw: result.raw,
+              );
         if (ok) {
           _lastValidatedServer = fullUrl;
         } else {

@@ -1522,7 +1522,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       customHeaders: auth.customHeaders,
     ).timeout(
       const Duration(seconds: 6),
-      onTimeout: () => (ok: false, detail: 'no answer within 6s'),
+      onTimeout: () => (ok: false, failure: PingFailure.timeout, statusCode: null, raw: 'no answer within 6s'),
     );
     final reachable = probe.ok;
 
@@ -1533,11 +1533,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       } else {
         _localProbeFailures++;
         if (_localProbeFailures >= _localProbeFailuresToFlip) {
-          verboseLog('[Library] Local probe failed ${_localProbeFailures}x — switching to remote (${probe.detail})');
+          verboseLog('[Library] Local probe failed ${_localProbeFailures}x — switching to remote (${probe.raw ?? probe.failure.name})');
           auth.clearLocalOverride();
           _localProbeFailures = 0;
         } else {
-          verboseLog('[Library] Local probe miss $_localProbeFailures/$_localProbeFailuresToFlip (${probe.detail})');
+          verboseLog('[Library] Local probe miss $_localProbeFailures/$_localProbeFailuresToFlip (${probe.raw ?? probe.failure.name})');
         }
       }
     } else if (reachable) {
@@ -1554,9 +1554,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         final gap = _localProbeInterval * (1 << steps.clamp(0, 4));
         final wait = gap < _remoteProbeMaxGap ? gap : _remoteProbeMaxGap;
         _nextRemoteProbeAt = DateTime.now().add(wait);
-        verboseLog('[Library] Local probe miss while on remote (${probe.detail}), next in ${wait.inSeconds}s');
+        verboseLog('[Library] Local probe miss while on remote (${probe.raw ?? probe.failure.name}), next in ${wait.inSeconds}s');
       } else {
-        verboseLog('[Library] Local probe miss while on remote (${probe.detail})');
+        verboseLog('[Library] Local probe miss while on remote (${probe.raw ?? probe.failure.name})');
       }
     }
   }

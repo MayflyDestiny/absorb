@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../utils/ping_failure_text.dart';
 
 /// Builds the effective URL for [input] under [protocol].
 ///
@@ -376,7 +377,14 @@ class ServerAddressFieldState extends State<ServerAddressField> {
         _error = result.ok
             ? null
             : AppLocalizations.of(context)!.loginCouldNotReachServer;
-        _errorDetail = result.ok ? null : result.detail;
+        _errorDetail = result.ok
+            ? null
+            : pingFailureText(
+                AppLocalizations.of(context)!,
+                result.failure,
+                statusCode: result.statusCode,
+                raw: result.raw,
+              );
         _lastValidated = result.ok ? url : '';
       });
 

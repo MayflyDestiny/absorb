@@ -177,6 +177,43 @@ class AppLocalizationsJa extends AppLocalizations {
   String get loginCouldNotReachServer => 'Could not reach server';
 
   @override
+  String get pingFailureTimeout =>
+      'Timed out after 15s. The server is slow to respond, or something on the way is dropping the connection.';
+
+  @override
+  String get pingFailureDns =>
+      'Could not resolve the domain (DNS). Check the address is spelled right.';
+
+  @override
+  String get pingFailureTls =>
+      'Secure connection (TLS) failed. If your server uses a self-signed certificate, turn on Trust all certificates above. Otherwise the server may be blocking non-browser apps.';
+
+  @override
+  String get pingFailureRefused =>
+      'Connection refused — nothing is listening on that address or port.';
+
+  @override
+  String get pingFailureEarlyClose =>
+      'The server closed the connection early. This can happen when a proxy only speaks HTTP/2.';
+
+  @override
+  String get pingFailureReset =>
+      'The connection was reset, which usually means a proxy or firewall is blocking the app even though browsers get through.';
+
+  @override
+  String pingFailureHttpStatus(int status) {
+    return 'Server returned HTTP $status instead of 200.';
+  }
+
+  @override
+  String get pingFailureNotBookOrbit =>
+      'The server answered, but it does not look like BookOrbit.';
+
+  @override
+  String get pingFailurePasswordLoginOff =>
+      'Password sign-in is turned off on this BookOrbit server.';
+
+  @override
   String get loginAdvanced => 'Advanced';
 
   @override

@@ -260,7 +260,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   /// A BookOrbit server answers its public login options with a JSON object
   /// carrying `passwordLoginEnabled`; nothing else does.
-  static Future<({bool ok, String? detail})> probe(
+  static Future<({bool ok, PingFailure failure, int? statusCode, String? raw})> probe(
     String serverUrl, {
     Map<String, String> customHeaders = const {},
     Duration timeout = const Duration(seconds: 10),
@@ -271,21 +271,21 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
               headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(timeout);
       if (r.statusCode != 200) {
-        return (ok: false, detail: 'Server returned HTTP ${r.statusCode} for the BookOrbit login options.');
+        return (ok: false, failure: PingFailure.httpStatus, statusCode: r.statusCode, raw: null);
       }
       final data = jsonDecode(r.body);
       if (data is Map && data.containsKey('passwordLoginEnabled')) {
         final sso = (data['oidcProviders'] as List<dynamic>? ?? const []).isNotEmpty;
         if (data['passwordLoginEnabled'] == false && !sso) {
-          return (ok: false, detail: 'Password sign-in is turned off on this BookOrbit server.');
+          return (ok: false, failure: PingFailure.passwordLoginOff, statusCode: null, raw: null);
         }
-        return (ok: true, detail: null);
+        return (ok: true, failure: PingFailure.none, statusCode: null, raw: null);
       }
-      return (ok: false, detail: 'The server answered, but it does not look like BookOrbit.');
+      return (ok: false, failure: PingFailure.notBookOrbit, statusCode: null, raw: null);
     } on FormatException {
-      return (ok: false, detail: 'The server answered, but it does not look like BookOrbit.');
+      return (ok: false, failure: PingFailure.notBookOrbit, statusCode: null, raw: null);
     } catch (e) {
-      return (ok: false, detail: ApiService._describePingError(e));
+      return (ok: false, failure: ApiService._classifyPingError(e), statusCode: null, raw: e.toString());
     }
   }
 

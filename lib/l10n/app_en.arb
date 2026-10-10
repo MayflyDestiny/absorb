@@ -59,6 +59,20 @@
   "loginServerHint": "my.server.com",
   "loginServerHelper": "IP defaults to port 13378; add :port after the address for a custom port (e.g. 192.168.1.5:3000)",
   "loginCouldNotReachServer": "Could not reach server",
+  "pingFailureTimeout": "Timed out after 15s. The server is slow to respond, or something on the way is dropping the connection.",
+  "pingFailureDns": "Could not resolve the domain (DNS). Check the address is spelled right.",
+  "pingFailureTls": "Secure connection (TLS) failed. If your server uses a self-signed certificate, turn on Trust all certificates above. Otherwise the server may be blocking non-browser apps.",
+  "pingFailureRefused": "Connection refused — nothing is listening on that address or port.",
+  "pingFailureEarlyClose": "The server closed the connection early. This can happen when a proxy only speaks HTTP/2.",
+  "pingFailureReset": "The connection was reset, which usually means a proxy or firewall is blocking the app even though browsers get through.",
+  "pingFailureHttpStatus": "Server returned HTTP {status} instead of 200.",
+  "@pingFailureHttpStatus": {
+    "placeholders": {
+      "status": { "type": "int" }
+    }
+  },
+  "pingFailureNotBookOrbit": "The server answered, but it does not look like BookOrbit.",
+  "pingFailurePasswordLoginOff": "Password sign-in is turned off on this BookOrbit server.",
   "loginAdvanced": "Advanced",
   "loginCustomHttpHeaders": "Custom HTTP Headers",
   "loginCustomHeadersDescription": "For Cloudflare tunnels or reverse proxies that require extra headers. Add headers before entering your server URL.",

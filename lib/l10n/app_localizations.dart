@@ -442,6 +442,60 @@ abstract class AppLocalizations {
   /// **'Could not reach server'**
   String get loginCouldNotReachServer;
 
+  /// No description provided for @pingFailureTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Timed out after 15s. The server is slow to respond, or something on the way is dropping the connection.'**
+  String get pingFailureTimeout;
+
+  /// No description provided for @pingFailureDns.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not resolve the domain (DNS). Check the address is spelled right.'**
+  String get pingFailureDns;
+
+  /// No description provided for @pingFailureTls.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure connection (TLS) failed. If your server uses a self-signed certificate, turn on Trust all certificates above. Otherwise the server may be blocking non-browser apps.'**
+  String get pingFailureTls;
+
+  /// No description provided for @pingFailureRefused.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection refused — nothing is listening on that address or port.'**
+  String get pingFailureRefused;
+
+  /// No description provided for @pingFailureEarlyClose.
+  ///
+  /// In en, this message translates to:
+  /// **'The server closed the connection early. This can happen when a proxy only speaks HTTP/2.'**
+  String get pingFailureEarlyClose;
+
+  /// No description provided for @pingFailureReset.
+  ///
+  /// In en, this message translates to:
+  /// **'The connection was reset, which usually means a proxy or firewall is blocking the app even though browsers get through.'**
+  String get pingFailureReset;
+
+  /// No description provided for @pingFailureHttpStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Server returned HTTP {status} instead of 200.'**
+  String pingFailureHttpStatus(int status);
+
+  /// No description provided for @pingFailureNotBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'The server answered, but it does not look like BookOrbit.'**
+  String get pingFailureNotBookOrbit;
+
+  /// No description provided for @pingFailurePasswordLoginOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Password sign-in is turned off on this BookOrbit server.'**
+  String get pingFailurePasswordLoginOff;
+
   /// No description provided for @loginAdvanced.
   ///
   /// In en, this message translates to:

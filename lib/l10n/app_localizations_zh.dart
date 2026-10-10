@@ -174,6 +174,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginCouldNotReachServer => '无法连接到服务器';
 
   @override
+  String get pingFailureTimeout => '连接超时（15 秒）。服务器响应过慢，或中间有网络设备中断了连接。';
+
+  @override
+  String get pingFailureDns => '无法解析域名（DNS）。请检查地址是否拼写正确。';
+
+  @override
+  String get pingFailureTls =>
+      '安全连接（TLS）失败。如果你的服务器使用自签名证书，请打开上方的“信任所有证书”。否则可能是服务器拦截了非浏览器应用。';
+
+  @override
+  String get pingFailureRefused => '连接被拒绝——该地址或端口上没有服务在监听。';
+
+  @override
+  String get pingFailureEarlyClose => '服务器提前关闭了连接。当代理只支持 HTTP/2 时可能出现这种情况。';
+
+  @override
+  String get pingFailureReset => '连接被重置，通常是因为代理或防火墙拦截了该应用，即使浏览器能正常访问。';
+
+  @override
+  String pingFailureHttpStatus(int status) {
+    return '服务器返回 HTTP $status（而非 200）。';
+  }
+
+  @override
+  String get pingFailureNotBookOrbit => '服务器有响应，但看起来不是 BookOrbit 服务器。';
+
+  @override
+  String get pingFailurePasswordLoginOff => '该 BookOrbit 服务器已关闭密码登录。';
+
+  @override
   String get loginAdvanced => '高级';
 
   @override
@@ -529,13 +559,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get numberOfBooks => '书籍数量';
 
   @override
-  String get sortTotalDuration => 'Total duration';
+  String get sortTotalDuration => '总时长';
 
   @override
-  String get sortLastBookAdded => 'Last book added';
+  String get sortLastBookAdded => '最近添加';
 
   @override
-  String get sortLastBookUpdated => 'Last book updated';
+  String get sortLastBookUpdated => '最近更新';
 
   @override
   String get publishedYear => '出版年份';
@@ -7339,10 +7369,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get carConnectAutoplayOffSubtitle => '播放等待您按下播放键';
 
   @override
-  String get sectionCar => 'Android Auto';
+  String get sectionCar => '车载控制';
 
   @override
-  String get sectionCarIos => 'CarPlay';
+  String get sectionCarIos => '车载控制';
 
   @override
   String get carBookOrder => '车内的书籍顺序';
@@ -8115,43 +8145,41 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get adminUploadAddToExistingTitle => 'Folder already exists';
+  String get adminUploadAddToExistingTitle => '文件夹已存在';
 
   @override
   String adminUploadAddToExisting(String title) {
-    return 'That folder belongs to \"$title\". Add the files to it? The server picks them up on its next scan.';
+    return '该文件夹属于《$title》。将文件添加到这里吗？服务器会在下次扫描时收录它们。';
   }
 
   @override
-  String get adminUploadAddToExistingNoItem =>
-      'That folder already exists on the server. Add the files to it?';
+  String get adminUploadAddToExistingNoItem => '服务器上已存在该文件夹。要将文件添加进去吗？';
 
   @override
-  String get adminUploadAddToBook => 'Add to an existing book';
+  String get adminUploadAddToBook => '添加到已有图书';
 
   @override
-  String get adminUploadAddToBookHint => 'Search this library';
+  String get adminUploadAddToBookHint => '搜索此图书馆';
 
   @override
-  String get adminUploadNoBooksFound => 'No books found';
+  String get adminUploadNoBooksFound => '未找到图书';
 
   @override
   String adminUploadAddingTo(String title) {
-    return 'Adding files to \"$title\"';
+    return '正在向《$title》添加文件';
   }
 
   @override
   String adminUploadAddedTo(String title) {
-    return 'Added files to \"$title\"';
+    return '已向《$title》添加文件';
   }
 
   @override
-  String get adminUploadTargetNoFolder =>
-      'Couldn\'t find that book\'s folder on the server.';
+  String get adminUploadTargetNoFolder => '在服务器上找不到该图书的文件夹。';
 
   @override
   String adminUploadTargetFolderMismatch(String preview, String folder) {
-    return 'The server would put these files in \"$preview\", not in that book\'s folder \"$folder\". Nothing was uploaded.';
+    return '服务器会把这些文件放到《$preview》，而不是该图书的文件夹《$folder》。未上传任何内容。';
   }
 
   @override
@@ -9867,101 +9895,97 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keepScreenOnCarModeSubtitle => '车载模式打开时屏幕保持常亮';
 
   @override
-  String get loginServerType => 'Server type';
+  String get loginServerType => '服务器类型';
 
   @override
   String get authBookOrbitDefaultPassword =>
-      'This account still has its default password. Change it in BookOrbit, then sign in again.';
+      '该账户仍在使用默认密码。请先在 BookOrbit 中修改密码，再重新登录。';
 
   @override
   String get authServerIsBookOrbit =>
-      'This is a BookOrbit server. Choose BookOrbit above the server address.';
+      '这是一台 BookOrbit 服务器，请在服务器地址上方选择“BookOrbit”。';
 
   @override
   String get authServerIsAudiobookshelf =>
-      'This is an Audiobookshelf server. Choose Audiobookshelf above the server address.';
+      '这是一台 Audiobookshelf 服务器，请在服务器地址上方选择“Audiobookshelf”。';
 
   @override
-  String get castNotAvailableBookOrbit =>
-      'Casting is not available with BookOrbit servers';
+  String get castNotAvailableBookOrbit => 'BookOrbit 服务器不支持投屏';
 
   @override
-  String get loginMagicLink => 'Magic link';
+  String get loginMagicLink => '魔法链接';
 
   @override
-  String get loginMagicLinkDescription =>
-      'Sign in with a BookOrbit magic link instead of a password.';
+  String get loginMagicLinkDescription => '使用 BookOrbit 魔法链接登录，无需密码。';
 
   @override
-  String get collectionPublicTitle => 'Public';
+  String get collectionPublicTitle => '公开';
 
   @override
-  String get collectionPublicSubtitle =>
-      'Everyone on this server can see this collection';
+  String get collectionPublicSubtitle => '此服务器上的所有用户都能看到此收藏';
 
   @override
   String loginSignInWithProvider(String provider) {
-    return 'Sign in with $provider';
+    return '使用 $provider 登录';
   }
 
   @override
-  String get loginSignInWithSso => 'Sign in with SSO';
+  String get loginSignInWithSso => '使用单点登录(SSO)';
 
   @override
-  String get loginChooseSsoProvider => 'Choose how to sign in';
+  String get loginChooseSsoProvider => '选择登录方式';
 
   @override
   String get loginRedirectUriBookOrbit =>
-      'Redirect URI: bookorbit://oauth2-callback';
+      '重定向 URI: bookorbit://oauth2-callback';
 
   @override
-  String get readStatusTitle => 'Reading status';
+  String get readStatusTitle => '阅读状态';
 
   @override
-  String get readStatusHint =>
-      'BookOrbit keeps a status you pick here until you change it.';
+  String get readStatusHint => 'BookOrbit 会保留你在此选择的状态，直到你再次修改。';
 
   @override
-  String get readStatusUnread => 'Unread';
+  String get readStatusUnread => '未读';
 
   @override
-  String get readStatusWantToRead => 'Want to read';
+  String get readStatusWantToRead => '想读';
 
   @override
-  String get readStatusReading => 'Reading';
+  String get readStatusReading => '在读';
 
   @override
-  String get readStatusOnHold => 'On hold';
+  String get readStatusOnHold => '搁置';
 
   @override
-  String get readStatusRereading => 'Rereading';
+  String get readStatusRereading => '重读';
 
   @override
-  String get readStatusRead => 'Read';
+  String get readStatusRead => '已读';
 
   @override
-  String get readStatusSkimmed => 'Skimmed';
+  String get readStatusSkimmed => '略读';
 
   @override
-  String get readStatusAbandoned => 'Abandoned';
+  String get readStatusAbandoned => '弃读';
 
   @override
-  String get personalNoteTitle => 'Your note';
+  String get personalNoteTitle => '你的笔记';
 
   @override
-  String get personalNoteAdd => 'Add a private note';
+  String get personalNoteAdd => '添加私人笔记';
 
   @override
-  String get personalNoteHint => 'Only you can see this note.';
+  String get personalNoteHint => '只有你自己能看到这条笔记。';
 
   @override
-  String get moreLikeThis => 'More like this';
+  String get moreLikeThis => '更多类似';
 
   @override
-  String get coverSlotAudiobook => 'Audiobook cover';
+  String get coverSlotAudiobook => '有声书封面';
 
   @override
-  String get coverSlotBook => 'Book cover';
+  String get coverSlotBook => '图书封面';
 
   @override
   String get cardButtonFill => '按钮背景';
@@ -9980,7 +10004,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get loginBookOrbitPreview =>
-      'BookOrbit support is new. Playback, downloads and browsing work, but some screens may still look or act like Audiobookshelf. Follow the progress on GitHub, and let us know if something seems off.';
+      'BookOrbit 支持目前还是新功能。播放、下载和浏览都已可用，但部分界面可能仍与 Audiobookshelf 相似。欢迎在 GitHub 上关注进展，也请告诉我们使用中发现的问题。';
 
   @override
   String get signedOutTapToSignIn => '已退出登录，点按重新登录。';
@@ -9994,18 +10018,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get comicReadingDirection => 'Reading direction';
+  String get comicReadingDirection => '阅读方向';
 
   @override
-  String get comicLeftToRight => 'Left to right';
+  String get comicLeftToRight => '从左到右';
 
   @override
-  String get comicRightToLeft => 'Right to left (manga)';
+  String get comicRightToLeft => '从右到左（漫画）';
 
   @override
-  String get comicNeedsConnection =>
-      'This comic opens page by page from your server, so it needs a connection.';
+  String get comicNeedsConnection => '该漫画会从你的服务器逐页加载，因此需要连接网络。';
 
   @override
-  String get comicNoPages => 'No pages found in this comic.';
+  String get comicNoPages => '这本漫画中没有找到页面。';
 }

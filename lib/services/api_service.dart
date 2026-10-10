@@ -188,6 +188,23 @@ class PasswordChangeResult {
   const PasswordChangeResult(this.status, {this.message});
 }
 
+/// Why a server reachability probe failed. Kept as a machine-readable code so
+/// the UI can localize the explanation; the raw exception text travels
+/// separately in [pingServerDetailed]'s `raw` field for diagnostics.
+enum PingFailure {
+  none,
+  timeout,
+  dns,
+  tls,
+  refused,
+  earlyClose,
+  reset,
+  httpStatus,
+  notBookOrbit,
+  passwordLoginOff,
+  unknown,
+}
+
 class ApiService {
   /// Remove sidecar metadata files from every item in a library (admin only).
   /// [extension] is the server-supported sidecar type: `json` or `abs`.
@@ -1155,7 +1172,7 @@ class ApiService {
 
   /// Classify a network-level login exception (socket, TLS, timeout). The http
   /// package flattens socket and TLS errors into ClientException, so we match
-  /// on message text the same way [_describePingError] does.
+  /// on message text the same way [_classifyPingError] does.
   static ApiLoginFailure _classifyNetworkFailure(Object error) {
     if (error is TimeoutException) return ApiLoginFailure.timeout;
     final lower = error.toString().toLowerCase();
@@ -1317,7 +1334,7 @@ class ApiService {
   /// connect in the app - usually a proxy/CDN treating the app's request
   /// differently than a browser. Kept separate so the connectivity hot paths
   /// keep their lean bool + short timeouts. [detail] is null on success.
-  static Future<({bool ok, String? detail})> pingServerDetailed(
+  static Future<({bool ok, PingFailure failure, int? statusCode, String? raw})> pingServerDetailed(
     String serverUrl, {
     Map<String, String> customHeaders = const {},
     ServerBackend? backend,
@@ -1334,40 +1351,39 @@ class ApiService {
       final response = await http
           .get(Uri.parse(url), headers: customHeaders.isNotEmpty ? customHeaders : null)
           .timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) return (ok: true, detail: null);
-      return (ok: false, detail: 'Server returned HTTP ${response.statusCode} instead of 200.');
+      if (response.statusCode == 200) {
+        return (ok: true, failure: PingFailure.none, statusCode: null, raw: null);
+      }
+      return (ok: false, failure: PingFailure.httpStatus, statusCode: response.statusCode, raw: null);
     } catch (e) {
-      return (ok: false, detail: _describePingError(e));
+      return (ok: false, failure: _classifyPingError(e), statusCode: null, raw: e.toString());
     }
   }
 
-  /// Turn a raw ping exception into a plain-language reason. Classifies by
-  /// message text rather than type because the http package flattens socket
+  /// Classify a raw ping exception into a machine-readable reason. Classifies
+  /// by message text rather than type because the http package flattens socket
   /// and TLS errors into ClientException, hiding the original class.
-  static String _describePingError(Object e) {
-    if (e is TimeoutException) {
-      return 'Timed out after 15s. The server is slow to respond, or something on the way is dropping the connection.';
-    }
-    final msg = e.toString();
-    final lower = msg.toLowerCase();
+  static PingFailure _classifyPingError(Object e) {
+    if (e is TimeoutException) return PingFailure.timeout;
+    final lower = e.toString().toLowerCase();
     if (lower.contains('failed host lookup') || lower.contains('nodename nor servname')) {
-      return 'Could not resolve the domain (DNS). Check the address is spelled right. ($msg)';
+      return PingFailure.dns;
     }
     if (lower.contains('handshake') || lower.contains('certificate') || lower.contains('tls')) {
-      return 'Secure connection (TLS) failed. If your server uses a self-signed certificate, turn on Trust all certificates above. Otherwise the server may be blocking non-browser apps. ($msg)';
+      return PingFailure.tls;
     }
     if (lower.contains('connection refused')) {
-      return 'Connection refused - nothing is listening on that address or port. ($msg)';
+      return PingFailure.refused;
     }
     if (lower.contains('connection closed before full header') ||
         lower.contains('http/2') ||
         lower.contains('protocol error')) {
-      return 'The server closed the connection early. This can happen when a proxy only speaks HTTP/2. ($msg)';
+      return PingFailure.earlyClose;
     }
     if (lower.contains('connection reset') || lower.contains('connection terminated')) {
-      return 'The connection was reset, which usually means a proxy or firewall is blocking the app even though browsers get through. ($msg)';
+      return PingFailure.reset;
     }
-    return msg;
+    return PingFailure.unknown;
   }
 
   /// Get the server version via the /status endpoint (no auth needed).
