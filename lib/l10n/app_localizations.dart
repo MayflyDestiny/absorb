@@ -565,7 +565,7 @@ abstract class AppLocalizations {
   /// No description provided for @loginRedirectUri.
   ///
   /// In en, this message translates to:
-  /// **'Redirect URI: audiobookshelf://oauth'**
+  /// **'Redirect URI: absorb://oauth'**
   String get loginRedirectUri;
 
   /// No description provided for @loginOrSignInManually.
@@ -15507,6 +15507,24 @@ abstract class AppLocalizations {
   /// **'Line Spacing'**
   String get readerLineSpacing;
 
+  /// No description provided for @readerTextAlignment.
+  ///
+  /// In en, this message translates to:
+  /// **'Alignment'**
+  String get readerTextAlignment;
+
+  /// No description provided for @readerAlignJustified.
+  ///
+  /// In en, this message translates to:
+  /// **'Justified'**
+  String get readerAlignJustified;
+
+  /// No description provided for @readerAlignLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get readerAlignLeft;
+
   /// No description provided for @readerSideMargins.
   ///
   /// In en, this message translates to:
@@ -17457,6 +17475,12 @@ abstract class AppLocalizations {
   /// **'Keep screen on'**
   String get keepScreenOn;
 
+  /// No description provided for @keepScreenOnActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen stays on'**
+  String get keepScreenOnActive;
+
   /// No description provided for @keepScreenOnUntilClosed.
   ///
   /// In en, this message translates to:
@@ -17469,11 +17493,11 @@ abstract class AppLocalizations {
   /// **'Screen can turn off again'**
   String get keepScreenOnOff;
 
-  /// No description provided for @keepScreenOnAlwaysHint.
+  /// No description provided for @keepScreenOnOffUntilRestart.
   ///
   /// In en, this message translates to:
-  /// **'Already on in Settings'**
-  String get keepScreenOnAlwaysHint;
+  /// **'Off until the app restarts. The Settings switch stays on'**
+  String get keepScreenOnOffUntilRestart;
 
   /// No description provided for @keepScreenOnPlayer.
   ///

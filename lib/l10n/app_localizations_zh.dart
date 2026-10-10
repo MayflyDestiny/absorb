@@ -8755,6 +8755,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerLineSpacing => '行距';
 
   @override
+  String get readerTextAlignment => 'Alignment';
+
+  @override
+  String get readerAlignJustified => 'Justified';
+
+  @override
+  String get readerAlignLeft => 'Left';
+
+  @override
   String get readerSideMargins => '侧边距';
 
   @override
@@ -9874,13 +9883,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keepScreenOn => '保持屏幕常亮';
 
   @override
+  String get keepScreenOnActive => 'Screen stays on';
+
+  @override
   String get keepScreenOnUntilClosed => '屏幕保持常亮，直到你关闭应用';
 
   @override
   String get keepScreenOnOff => '屏幕可以再次熄灭';
 
   @override
-  String get keepScreenOnAlwaysHint => '设置中已开启';
+  String get keepScreenOnOffUntilRestart =>
+      'Off until the app restarts. The Settings switch stays on';
 
   @override
   String get keepScreenOnPlayer => '在播放器中保持屏幕常亮';

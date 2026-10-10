@@ -251,7 +251,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get loginWaitingForSso => 'Waiting for SSO...';
 
   @override
-  String get loginRedirectUri => 'Redirect URI: audiobookshelf://oauth';
+  String get loginRedirectUri => 'Redirect URI: absorb://oauth';
 
   @override
   String get loginOrSignInManually => 'or sign in manually';
@@ -9035,6 +9035,15 @@ class AppLocalizationsRu extends AppLocalizations {
   String get readerLineSpacing => 'Line Spacing';
 
   @override
+  String get readerTextAlignment => 'Alignment';
+
+  @override
+  String get readerAlignJustified => 'Justified';
+
+  @override
+  String get readerAlignLeft => 'Left';
+
+  @override
   String get readerSideMargins => 'Side margins';
 
   @override
@@ -10200,6 +10209,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get keepScreenOn => 'Keep screen on';
 
   @override
+  String get keepScreenOnActive => 'Screen stays on';
+
+  @override
   String get keepScreenOnUntilClosed =>
       'Screen stays on until you close the app';
 
@@ -10207,7 +10219,8 @@ class AppLocalizationsRu extends AppLocalizations {
   String get keepScreenOnOff => 'Screen can turn off again';
 
   @override
-  String get keepScreenOnAlwaysHint => 'Already on in Settings';
+  String get keepScreenOnOffUntilRestart =>
+      'Off until the app restarts. The Settings switch stays on';
 
   @override
   String get keepScreenOnPlayer => 'Keep the screen on in the player';

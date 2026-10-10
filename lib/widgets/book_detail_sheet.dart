@@ -1441,7 +1441,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         if (chapters.isNotEmpty) _chip(Icons.list_rounded, l.chaptersChip(chapters.length)),
         ..._audioInfoChips(media),
         if (publisher.isNotEmpty) _chip(Icons.business_rounded, publisher),
-        ...genres.take(3).map((g) => _chip(
+        ...genres.map((g) => _chip(
               Icons.tag_rounded,
               g,
               onTap: () {
@@ -1449,7 +1449,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
                 AppShell.openLibraryWithGenreFilterGlobal(g);
               },
             )),
-        ...tags.take(5).map((t) => _chip(
+        ...tags.map((t) => _chip(
               Icons.local_offer_outlined,
               t,
               onTap: () {
