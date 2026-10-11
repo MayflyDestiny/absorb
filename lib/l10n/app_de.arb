@@ -57,7 +57,7 @@
   "loginApiKey": "API-Schlüssel",
   "loginApiKeyDescription": "Verwende einen vom Admin generierten API-Schlüssel statt Benutzername/Passwort. Praktisch, wenn die Token-Erneuerung für dein Konto fehlschlägt.",
   "loginWaitingForSso": "Warte auf SSO...",
-  "loginRedirectUri": "Redirect-URI: audiobookshelf://oauth",
+  "loginRedirectUri": "Redirect-URI: absorb://oauth",
   "loginOrSignInManually": "oder manuell anmelden",
   "loginUsername": "Benutzername",
   "loginUsernameRequired": "Bitte gib deinen Benutzernamen ein",
@@ -910,14 +910,6 @@
   "timerDuration": "Timer-Dauer",
   "timer": "Timer",
   "endOfChapter": "Kapitelende",
-  "startMinTimer": "{minutes}-Min.-Timer starten",
-  "@startMinTimer": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
   "sleepAfterChapters": "Sleep nach {count} {label}",
   "@sleepAfterChapters": {
     "placeholders": {
@@ -1216,7 +1208,6 @@
       }
     }
   },
-  "editServerAddressField": "Serveradresse",
   "editServerAddressUpdated": "Serveradresse aktualisiert",
   "editServerAddressFailed": "Serveradresse konnte nicht aktualisiert werden",
   "editServerAddressAction": "Serveradresse bearbeiten",

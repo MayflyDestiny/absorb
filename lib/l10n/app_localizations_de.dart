@@ -252,7 +252,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get loginWaitingForSso => 'Warte auf SSO...';
 
   @override
-  String get loginRedirectUri => 'Redirect-URI: audiobookshelf://oauth';
+  String get loginRedirectUri => 'Redirect-URI: absorb://oauth';
 
   @override
   String get loginOrSignInManually => 'oder manuell anmelden';
@@ -831,6 +831,19 @@ class AppLocalizationsDe extends AppLocalizations {
   String downloadsRemoveContent(String title) {
     return '\"$title\" von diesem Gerät löschen?';
   }
+
+  @override
+  String get downloadsRemoveEbookClause => 'Includes the downloaded ebook.';
+
+  @override
+  String get downloadsRemoveEbookTitle => 'Remove ebook?';
+
+  @override
+  String get downloadsRemoveEbookBody =>
+      'Delete the downloaded ebook from this device? The audio files stay.';
+
+  @override
+  String get downloadsSwipeHint => 'Swipe left on a row to delete it';
 
   @override
   String downloadsRemovedTitle(String title) {
@@ -2041,11 +2054,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get endOfChapter => 'Kapitelende';
 
   @override
-  String startMinTimer(int minutes) {
-    return '$minutes-Min.-Timer starten';
-  }
-
-  @override
   String sleepAfterChapters(int count, String label) {
     return 'Sleep nach $count $label';
   }
@@ -2223,7 +2231,10 @@ class AppLocalizationsDe extends AppLocalizations {
       'Delete every paused download from this device?';
 
   @override
-  String get downloadsManageFiles => 'Manage audio files';
+  String get downloadsManageFiles => 'Manage files';
+
+  @override
+  String get downloadsAudioFiles => 'Audio files';
 
   @override
   String get downloadsPlayFromHere => 'Play from this episode';
@@ -2814,9 +2825,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String editServerAddressSubtitle(String username) {
     return 'Aktualisiere die Adresse für $username. Nutze diese Option, wenn sich lediglich die URL geändert hat - es aber noch immer der gleiche Server ist. Deine Statistiken und Downloads werden beibehalten.';
   }
-
-  @override
-  String get editServerAddressField => 'Serveradresse';
 
   @override
   String get editServerAddressUpdated => 'Serveradresse aktualisiert';

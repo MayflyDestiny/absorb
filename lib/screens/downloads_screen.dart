@@ -10,9 +10,11 @@ import '../providers/library_provider.dart';
 import '../services/app_log.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/ebook_cache.dart';
 import '../services/offline_source.dart';
 import '../services/wording.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/ebook_router.dart';
 import 'app_shell.dart';
 import '../widgets/overlay_toast.dart';
 import '../l10n/app_localizations.dart';
@@ -30,6 +32,17 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   Map<String, int> _fileSizes = {};
   Map<String, DateTime> _downloadedTimes = {};
   Map<String, bool> _isPodcast = {};
+
+  /// Ebooks on the phone that no record lists: cached copies the reader made
+  /// when an ebook was opened (the reader-only path can fail to write a record
+  /// offline or on a server hiccup) and copies the user exported to the device
+  /// ("save to device"). Resolved from the item cache so the row carries the
+  /// book's real title instead of a file name.
+  List<DownloadInfo> _ebookOnlyItems = [];
+
+  /// Item ids whose ebook was exported to the device's download folder. Kept
+  /// so the rows can offer "read" and so a delete sweeps the real file too.
+  Set<String> _exportedEbookIds = {};
 
   /// Rows dropped from the list ahead of their delete landing. DownloadService
   /// still reports them until the delete finishes, and this screen ticks on
@@ -64,6 +77,10 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   /// queued IO for information we don't need.
   Future<void> _load({bool validate = true}) async {
     final dl = DownloadService();
+    // Warm the ebook cache directory handle: the kept-ebook rows below (and
+    // their share of the summary) read their sizes through the synchronous
+    // accessor, which sees nothing until the handle exists.
+    await hydrateEbookCacheDir();
     // Re-check downloaded files before rendering so entries whose audio was
     // deleted externally (SAF content URIs especially) drop off the list.
     if (validate) await dl.validateDownloads();
@@ -133,6 +150,60 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         item.itemId:
             _isPodcast[item.itemId] ?? _sessionIsPodcast(item.sessionData),
     };
+    // Ebooks on the phone that no record lists (see [_ebookOnlyItems]).
+    // Metadata comes from the item cache first, then the server, so the row
+    // shows the book's title rather than a cache file name.
+    final api = context.read<AuthProvider>().apiService;
+    final recordIds = <String>{
+      for (final item in items) item.itemId,
+      for (final kept in dl.keptEbooks) kept.itemId,
+    };
+    final cachedEbookIds = cachedEbookItemIdsSync();
+    final exportedEbookIds = await dl.savedEbookItemIds();
+    // Any ebook on the device the records don't already cover: cached copies
+    // the reader made, plus copies exported to the download folder.
+    final onDeviceEbookIds = <String>{
+      ...cachedEbookIds,
+      ...exportedEbookIds,
+    };
+    final ebookOnly = <DownloadInfo>[
+      for (final r in _ebookOnlyItems)
+        if (onDeviceEbookIds.contains(r.itemId) && !recordIds.contains(r.itemId))
+          r,
+    ];
+    final knownIds = <String>{
+      ...recordIds,
+      for (final r in ebookOnly) r.itemId,
+    };
+    if (api != null) {
+      for (final id in onDeviceEbookIds) {
+        if (knownIds.contains(id)) continue;
+        try {
+          final item =
+              await api.getCachedLibraryItem(id) ?? await api.getLibraryItem(id);
+          if (item == null) continue;
+          final media = item['media'] as Map<String, dynamic>?;
+          final metadata = media?['metadata'] as Map<String, dynamic>?;
+          ebookOnly.add(
+            DownloadInfo(
+              itemId: id,
+              status: DownloadStatus.downloaded,
+              sessionData: jsonEncode({
+                'libraryItem': item,
+                'mediaMetadata': metadata,
+                'duration': 0,
+                'chapters': const <dynamic>[],
+              }),
+              title: metadata?['title'] as String?,
+              author: metadata?['authorName'] as String?,
+              libraryId: item['libraryId'] as String?,
+            ),
+          );
+        } catch (e) {
+          verboseLog('[Downloads] ebook row metadata failed for $id: $e');
+        }
+      }
+    }
     final merge = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted) {
       setState(() {
@@ -141,6 +212,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         _fileSizes = sizes;
         _downloadedTimes = times;
         _isPodcast = pods;
+        _ebookOnlyItems = ebookOnly;
+        _exportedEbookIds = exportedEbookIds;
         _mergeLibraries = merge;
         _loading = false;
         // Live state is authoritative again, so the optimistic-drop guard has
@@ -333,17 +406,27 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     });
   }
 
-  /// The completed downloads currently visible, honoring the same library
-  /// filter as the list - select-all must never grab hidden items or a bulk
-  /// delete would remove downloads the user can't see.
+  /// The completed rows currently visible, honoring the same library filter as
+  /// the list - select-all must never grab hidden items or a bulk delete would
+  /// remove downloads the user can't see. Mirrors the rendered set, so ebook-only
+  /// books (kept ebooks and lone cached copies) are selectable too.
   List<DownloadInfo> _visibleCompleted() {
     final lib = context.read<LibraryProvider>();
     final activeLibId = lib.selectedLibraryId;
     final shouldFilter =
         !lib.isOffline && !_mergeLibraries && activeLibId != null;
-    final completed = DownloadService().downloadedItems;
-    if (!shouldFilter) return completed;
-    return completed
+    final ds = DownloadService();
+    final seenIds = <String>{};
+    final rows = <DownloadInfo>[
+      for (final r in <DownloadInfo>[
+        ...ds.downloadedItems,
+        ...ds.keptEbooks,
+        ..._ebookOnlyItems,
+      ])
+        if (seenIds.add(r.itemId)) r,
+    ];
+    if (!shouldFilter) return rows;
+    return rows
         .where((d) => d.libraryId == null || d.libraryId == activeLibId)
         .toList();
   }
@@ -396,19 +479,47 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       icon: Icons.delete_outline_rounded,
     );
     for (final itemId in ids) {
-      await DownloadService().deleteDownload(itemId, byUser: true);
+      await _deleteArtifacts(itemId);
     }
     if (mounted) _load(validate: false);
   }
 
-  Future<bool> _confirmDelete(DownloadInfo info) async {
+  /// Removes every on-device artifact for one row: the download record (audio),
+  /// a kept ebook, or a lone cached copy, plus any file exported to the download
+  /// folder.
+  Future<void> _deleteArtifacts(String itemId) async {
+    final ds = DownloadService();
+    if (ds.isDownloaded(itemId)) {
+      await ds.deleteDownload(itemId, byUser: true);
+    } else if (ds.keptEbook(itemId) != null) {
+      // An ebook the reader keeps has no download record to remove.
+      await ds.deleteKeptEbook(itemId);
+    } else {
+      // Nothing but a cached copy: drop it, and remember that so the catch-up
+      // does not fetch it straight back.
+      await ds.deleteEbookCopy(itemId);
+    }
+    // An exported copy (the real file in the download folder) goes with the
+    // row too, not just the app's cache.
+    if (_exportedEbookIds.contains(itemId)) {
+      await ds.deleteSavedEbook(itemId);
+    }
+  }
+
+  /// Confirms deleting a completed row. [hasEbook] adds a line saying the
+  /// cached ebook goes with it, since the row shows both halves of the book.
+  Future<bool> _confirmDelete(DownloadInfo info, {bool hasEbook = false}) async {
     final l = AppLocalizations.of(context)!;
+    final content = hasEbook
+        ? '${l.downloadsRemoveContent(info.title ?? '')}\n'
+              '${l.downloadsRemoveEbookClause}'
+        : l.downloadsRemoveContent(info.title ?? '');
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
         title: Text(l.downloadsRemoveTitle),
-        content: Text(l.downloadsRemoveContent(info.title ?? '')),
+        content: Text(content),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -457,13 +568,113 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       l.downloadsRemovedTitle(info.title ?? ''),
       icon: Icons.delete_outline_rounded,
     );
-    await DownloadService().deleteDownload(info.itemId, byUser: true);
+    await _deleteArtifacts(info.itemId);
     // Cheap refresh: our own delete needs no revalidation.
     if (mounted) _load(validate: false);
   }
 
-  Future<void> _deleteSingle(DownloadInfo info) async {
-    if (await _confirmDelete(info)) await _performDelete(info);
+  /// Opens an ebook that is on the device. Both shapes end up here: a copy the
+  /// reader cached beside its audio, and an ebook-only book (no audio at all).
+  /// When only an exported copy exists the reader gets the item's ebookFile so
+  /// it can fetch and open the book itself.
+  Future<void> _openEbook(DownloadInfo info) async {
+    final l = AppLocalizations.of(context)!;
+    var ebookFile = await cachedEbookFileFor(info.itemId);
+    ebookFile ??= resolveEbookFile(_sessionLibraryItem(info.sessionData));
+    if (!mounted) return;
+    if (ebookFile == null) {
+      showOverlayToast(
+        context,
+        l.noEbookFileFound,
+        icon: Icons.menu_book_outlined,
+      );
+      return;
+    }
+    await openEbookReader(
+      context,
+      itemId: info.itemId,
+      title: info.title ?? '',
+      ebookFile: ebookFile,
+    );
+  }
+
+  /// The stored library item from a record's session JSON, needed to open an
+  /// ebook whose file only lives as an export (no cached copy to synthesize
+  /// an ebookFile from).
+  Map<String, dynamic>? _sessionLibraryItem(String? sessionJson) {
+    if (sessionJson == null) return null;
+    try {
+      final session = jsonDecode(sessionJson) as Map<String, dynamic>;
+      return session['libraryItem'] as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The cover URL to fall back on when a record carries none of its own: the
+  /// reader-made ebook-only records never store one, and without this their rows
+  /// would show placeholder artwork even though the server has a cover.
+  String? _fallbackCoverUrl(DownloadInfo info) {
+    if (info.coverUrl != null && info.coverUrl!.isNotEmpty) return null;
+    return context.read<AuthProvider>().apiService?.getCoverUrl(info.itemId);
+  }
+
+  /// One row of the completed list. A book can carry audio files, an ebook, or
+  /// both: play is offered when there is audio, read when the ebook is on the
+  /// phone, and tapping the row opens the file manager (audio) or the reader
+  /// (ebook only). Every row can join multi-select.
+  Widget _completedRow(DownloadInfo info, Set<String> ebookIds) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final hasAudio = info.localPaths.isNotEmpty;
+    final hasEbook = ebookIds.contains(info.itemId);
+    return Dismissible(
+      // Swiping takes the whole row: the audio files and, for a book that has
+      // one, the cached ebook (deleteDownload decides what may stay behind).
+      key: ValueKey('dismiss_${info.itemId}'),
+      direction: _selecting
+          ? DismissDirection.none
+          : DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: cs.errorContainer,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(
+          Icons.delete_outline_rounded,
+          color: cs.onErrorContainer,
+        ),
+      ),
+      confirmDismiss: (_) => _confirmDelete(info, hasEbook: hasEbook),
+      onDismissed: (_) => unawaited(_performDelete(info)),
+      child: _DownloadCard(
+        info: info,
+        // The ebook half of the book counts here as well, matching the summary.
+        // An ebook-only row has no audio to measure.
+        fileSize: (hasAudio ? (_fileSizes[info.itemId] ?? 0) : 0) +
+            (hasEbook ? cachedEbookBytesSync(info.itemId) : 0),
+        cs: cs,
+        tt: tt,
+        selecting: _selecting,
+        isSelected: _selected.contains(info.itemId),
+        hasEbook: hasEbook,
+        onToggle: () => _toggleSelect(info.itemId),
+        onLongPress: () => _enterSelection(info.itemId),
+        onOpen: _selecting
+            ? null
+            : (hasAudio || hasEbook
+                  ? () => _openTrackManager(info, hasEbook)
+                  : null),
+        onPlay: hasAudio ? () => _play(info) : null,
+        onRead: hasEbook ? () => _openEbook(info) : null,
+        fallbackCoverUrl: _fallbackCoverUrl(info),
+        formatBytes: _formatBytes,
+        mediaHeaders: context.read<LibraryProvider>().mediaHeaders,
+      ),
+    );
   }
 
   Future<void> _resumeAllPaused(List<DownloadInfo> paused) async {
@@ -570,7 +781,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     AppShell.goToAbsorbingGlobal();
   }
 
-  Future<void> _openTrackManager(DownloadInfo info) async {
+  Future<void> _openTrackManager(DownloadInfo info, bool hasEbook) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -579,6 +790,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       builder: (_) => _TrackManagementSheet(
         info: info,
         isPodcast: _isPodcast[info.itemId] ?? false,
+        hasEbook: hasEbook,
         formatBytes: _formatBytes,
       ),
     );
@@ -689,7 +901,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                   ),
                                 ],
                               ),
-                            if (_items.isNotEmpty)
+                            if (_visibleCompleted().isNotEmpty)
                               IconButton(
                                 icon: Icon(
                                   Icons.checklist_rounded,
@@ -779,12 +991,34 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           final completedAll = filterByLibrary(
                             ds.downloadedItems,
                           );
+                          // One row per book: download records, the ebooks the
+                          // app keeps for offline reading, and cached copies no
+                          // record lists. The first source to claim an id wins.
+                          final seenIds = <String>{};
+                          final rows = <DownloadInfo>[
+                            for (final r in <DownloadInfo>[
+                              ...completedAll,
+                              ...filterByLibrary(ds.keptEbooks),
+                              ...filterByLibrary(_ebookOnlyItems),
+                            ])
+                              if (seenIds.add(r.itemId)) r,
+                          ];
                           final completed = _sortedCompleted(
-                            completedAll.where(_matchesQuery).toList(),
+                            rows.where(_matchesQuery).toList(),
                           );
+                          // Books whose ebook is on the device - cached or
+                          // exported - get the badge and the read button, and
+                          // their cached bytes count toward the row and summary.
+                          final ebookIds = <String>{
+                            ...cachedEbookItemIdsSync(),
+                            ..._exportedEbookIds,
+                          };
                           int completedBytes = 0;
-                          for (final d in completedAll) {
+                          for (final d in rows) {
                             completedBytes += _fileSizes[d.itemId] ?? 0;
+                            if (ebookIds.contains(d.itemId)) {
+                              completedBytes += cachedEbookBytesSync(d.itemId);
+                            }
                           }
                           final hasAny =
                               active.isNotEmpty ||
@@ -832,7 +1066,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                 ),
                                 child: Text(
                                   l.downloadsSummary(
-                                    completedAll.length,
+                                    rows.length,
                                     _formatBytes(completedBytes),
                                   ),
                                   style: tt.bodySmall?.copyWith(
@@ -840,6 +1074,36 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                   ),
                                 ),
                               ),
+                              // The rows no longer carry a delete button, so
+                              // say the gesture once, at the top.
+                              if (completed.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 4,
+                                    bottom: 10,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.swipe_left_rounded,
+                                        size: 16,
+                                        color: cs.onSurfaceVariant.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          l.downloadsSwipeHint,
+                                          style: tt.bodySmall?.copyWith(
+                                            color: cs.onSurfaceVariant
+                                                .withValues(alpha: 0.7),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               // Active downloads
                               if (active.isNotEmpty) ...[
                                 Padding(
@@ -996,52 +1260,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                     ),
                                   ),
                                 for (final info in completed)
-                                  Dismissible(
-                                    key: ValueKey('dismiss_${info.itemId}'),
-                                    direction: _selecting
-                                        ? DismissDirection.none
-                                        : DismissDirection.endToStart,
-                                    background: Container(
-                                      alignment: Alignment.centerRight,
-                                      padding: const EdgeInsets.only(right: 20),
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      decoration: BoxDecoration(
-                                        color: cs.errorContainer,
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: Icon(
-                                        Icons.delete_outline_rounded,
-                                        color: cs.onErrorContainer,
-                                      ),
-                                    ),
-                                    confirmDismiss: (_) => _confirmDelete(info),
-                                    onDismissed: (_) =>
-                                        unawaited(_performDelete(info)),
-                                    child: _DownloadCard(
-                                      info: info,
-                                      fileSize: _fileSizes[info.itemId] ?? 0,
-                                      cs: cs,
-                                      tt: tt,
-                                      selecting: _selecting,
-                                      isSelected: _selected.contains(
-                                        info.itemId,
-                                      ),
-                                      isPodcast:
-                                          _isPodcast[info.itemId] ?? false,
-                                      onToggle: () =>
-                                          _toggleSelect(info.itemId),
-                                      onLongPress: () =>
-                                          _enterSelection(info.itemId),
-                                      onDelete: () => _deleteSingle(info),
-                                      onManageTracks: () =>
-                                          _openTrackManager(info),
-                                      onPlay: () => _play(info),
-                                      formatBytes: _formatBytes,
-                                      mediaHeaders: context
-                                          .read<LibraryProvider>()
-                                          .mediaHeaders,
-                                    ),
-                                  ),
+                                  _completedRow(info, ebookIds),
                               ],
                             ],
                           );
@@ -1122,14 +1341,21 @@ class _DownloadCard extends StatelessWidget {
   final TextTheme tt;
   final bool selecting;
   final bool isSelected;
-  final bool isPodcast;
+  /// The book's ebook is on the phone: draw the badge and offer "read".
+  final bool hasEbook;
   final VoidCallback onToggle;
-  final VoidCallback onLongPress;
-  final VoidCallback onDelete;
-  final VoidCallback onManageTracks;
-  final VoidCallback onPlay;
+  final VoidCallback? onLongPress;
+  /// Tap action: the file manager for a download, the reader for an ebook-only
+  /// book. Null when the row has nothing to open.
+  final VoidCallback? onOpen;
+  /// Play this download. Null for a book with no audio files.
+  final VoidCallback? onPlay;
+  /// Read the cached ebook. Null when there is no ebook on the phone.
+  final VoidCallback? onRead;
   final String Function(int) formatBytes;
   final Map<String, String> mediaHeaders;
+  /// Used when the record carries no cover URL of its own.
+  final String? fallbackCoverUrl;
 
   const _DownloadCard({
     required this.info,
@@ -1138,22 +1364,24 @@ class _DownloadCard extends StatelessWidget {
     required this.tt,
     required this.selecting,
     required this.isSelected,
-    this.isPodcast = false,
+    this.hasEbook = false,
     required this.onToggle,
-    required this.onLongPress,
-    required this.onDelete,
-    required this.onManageTracks,
-    required this.onPlay,
+    this.onLongPress,
+    this.onOpen,
+    this.onPlay,
+    this.onRead,
     required this.formatBytes,
     required this.mediaHeaders,
+    this.fallbackCoverUrl,
   });
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    // Open the per-file / per-episode manager for any completed download, so a
-    // single-file (e.g. one podcast episode) can still be managed or removed.
-    final canManageTracks = info.localPaths.isNotEmpty;
+    // A record with no cover URL of its own still has one on the server.
+    final coverUrl = (info.coverUrl == null || info.coverUrl!.isEmpty)
+        ? fallbackCoverUrl
+        : info.coverUrl;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Card(
@@ -1162,27 +1390,12 @@ class _DownloadCard extends StatelessWidget {
         color: cs.surfaceContainerHigh,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         child: InkWell(
-          onTap: selecting
-              ? onToggle
-              : (canManageTracks ? onManageTracks : null),
+          onTap: selecting ? onToggle : onOpen,
           onLongPress: !selecting ? onLongPress : null,
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                if (selecting)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: Icon(
-                      isSelected
-                          ? Icons.check_circle_rounded
-                          : Icons.circle_outlined,
-                      size: 22,
-                      color: isSelected
-                          ? cs.primary
-                          : cs.onSurfaceVariant.withValues(alpha: 0.5),
-                    ),
-                  ),
                 // Cover art
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
@@ -1192,7 +1405,7 @@ class _DownloadCard extends StatelessWidget {
                     child: _DownloadCover(
                       cs: cs,
                       localCoverPath: info.localCoverPath,
-                      coverUrl: info.coverUrl,
+                      coverUrl: coverUrl,
                       mediaHeaders: mediaHeaders,
                     ),
                   ),
@@ -1203,13 +1416,29 @@ class _DownloadCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        info.title ?? l.unknown,
-                        style: tt.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              info.title ?? l.unknown,
+                              style: tt.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // A quiet mark so the ebook half of a row is visible
+                          // at a glance; the read button is its action.
+                          if (hasEbook) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.menu_book_rounded,
+                              size: 14,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ],
+                        ],
                       ),
                       if (info.author != null && info.author!.isNotEmpty)
                         Padding(
@@ -1237,7 +1466,7 @@ class _DownloadCard extends StatelessWidget {
                   ),
                 ),
                 if (!selecting) ...[
-                  if (canManageTracks)
+                  if (onPlay != null)
                     IconButton(
                       icon: Icon(
                         Icons.play_circle_outline_rounded,
@@ -1247,28 +1476,30 @@ class _DownloadCard extends StatelessWidget {
                       tooltip: Wording.of(context).absorb,
                       onPressed: onPlay,
                     ),
-                  if (canManageTracks)
+                  if (onRead != null)
                     IconButton(
                       icon: Icon(
-                        Icons.library_music_rounded,
-                        color: cs.onSurfaceVariant,
-                        size: 22,
+                        Icons.menu_book_rounded,
+                        color: cs.primary,
+                        size: 26,
                       ),
-                      tooltip: isPodcast
-                          ? l.downloadsManageTracks
-                          : l.downloadsManageFiles,
-                      onPressed: onManageTracks,
+                      tooltip: l.readEbook,
+                      onPressed: onRead,
                     ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.delete_outline_rounded,
-                      color: cs.error,
-                      size: 22,
-                    ),
-                    tooltip: l.delete,
-                    onPressed: onDelete,
-                  ),
                 ],
+                if (selecting)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      size: 22,
+                      color: isSelected
+                          ? cs.primary
+                          : cs.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1575,11 +1806,16 @@ class _DownloadCover extends StatelessWidget {
 class _TrackManagementSheet extends StatefulWidget {
   final DownloadInfo info;
   final bool isPodcast;
+  // Whether the book has an ebook on the device, known synchronously by the
+  // list from the cached/exported id sets. Passing it in lets the sheet lay out
+  // the audio/ebook split on its first frame instead of probing and re-flowing.
+  final bool hasEbook;
   final String Function(int) formatBytes;
 
   const _TrackManagementSheet({
     required this.info,
     this.isPodcast = false,
+    this.hasEbook = false,
     required this.formatBytes,
   });
 
@@ -1591,21 +1827,50 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
   bool _deleting = false;
   bool _selecting = false;
   final Set<int> _selected = {};
+  /// Which half of the download the selector shows (audio files or the ebook).
+  _SheetPane _pane = _SheetPane.audio;
   // Real byte sizes of SAF tracks, resolved natively (Dart can't stat
   // content:// files). Empty until the probe lands.
   Map<String, int> _safSizes = const {};
   bool _safSizesLoaded = false;
+  // The ebook cached or exported for this book, when it has one. Loaded once -
+  // it only disappears with the whole download, which closes the sheet.
+  Map<String, dynamic>? _ebookFile;
+  int _ebookBytes = 0;
+  // The ebook's real file name (what the user sees in their folder), resolved
+  // from the stored item or a fresh fetch - never the book's title.
+  String? _ebookName;
+  // Whether this book has an ebook on the device at all (cached or exported).
+  // Drives the audio/ebook split. Seeded from the list (which knows
+  // synchronously) so the split is right on the very first frame.
+  bool _hasEbook = false;
+  bool _ebookReady = false;
 
   @override
   void initState() {
     super.initState();
+    _hasEbook = widget.hasEbook;
+    // An ebook-only book opens straight on the ebook half.
+    if (widget.hasEbook && widget.info.localPaths.isEmpty) {
+      _pane = _SheetPane.ebook;
+    }
+    unawaited(_loadEbook());
     final uris = widget.info.localPaths.where(isContentUri).toList();
     if (uris.isEmpty) {
       _safSizesLoaded = true;
       return;
     }
+    // Seed from the sizes the list's last validate already probed, so rows and
+    // the total don't visibly fill in a beat after the sheet opens. A fresh
+    // probe then refines them, only repainting when something actually changed.
+    final seeded = DownloadService().probedSafSizes;
+    if (uris.every(seeded.containsKey)) {
+      _safSizes = seeded;
+      _safSizesLoaded = true;
+    }
     DownloadService().getSafFileSizes(uris).then((sizes) {
       if (!mounted) return;
+      if (_safSizesLoaded && mapEquals(sizes, _safSizes)) return;
       setState(() {
         _safSizes = sizes;
         _safSizesLoaded = true;
@@ -1616,6 +1881,149 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
   int _trackBytes(LocalTrackInfo t) {
     if (!t.isSaf) return t.sizeBytes;
     return t.sizeBytes + (_safSizes[t.path] ?? 0);
+  }
+
+  /// Loads the ebook half of this download, if the book has one on the phone.
+  /// The sheet only reads it: an audiobook opens that same cached file for
+  /// offline reading, so it leaves with the whole download, not on its own. An
+  /// exported copy (in the download folder) counts too, so it can be read or
+  /// deleted from here even when no cached copy exists.
+  ///
+  /// This never blocks the first frame: the split is laid out from
+  /// [widget.hasEbook], and the name/size fill in as they resolve.
+  Future<void> _loadEbook() async {
+    final api = context.read<AuthProvider>().apiService;
+    final cached = await cachedEbookFileFor(widget.info.itemId);
+    // The list already told us whether an ebook is on the device, so when none
+    // is cached it must be the exported copy - no SAF probe needed here.
+    final exported = cached == null && widget.hasEbook;
+    final hasEbook = cached != null || exported;
+    final ebookFile =
+        cached ??
+        (exported
+            ? resolveEbookFile(_sessionLibraryItem(widget.info.sessionData))
+            : null);
+    // The pane shows the file's real name, never the book title. The stored
+    // session is the cheap source; an audiobook's session can omit the ebook
+    // metadata, so fall back to the item's disk cache. A network refresh (if
+    // any) is fired in the background so the sheet never waits on it.
+    var name = _ebookNameFromItem(_sessionLibraryItem(widget.info.sessionData));
+    if (hasEbook && name == null && api != null) {
+      name = _ebookNameFromItem(
+        await api.getCachedLibraryItem(widget.info.itemId),
+      );
+      if (name == null && mounted) {
+        unawaited(
+          api.getLibraryItem(widget.info.itemId).then((item) {
+            final fresh = _ebookNameFromItem(item);
+            if (fresh != null && mounted && _ebookName == null) {
+              setState(() => _ebookName = fresh);
+            }
+          }),
+        );
+      }
+    }
+    var bytes = cached == null ? 0 : cachedEbookBytesSync(widget.info.itemId);
+    if (exported) {
+      bytes += await DownloadService().savedEbookBytes(widget.info.itemId);
+    }
+    if (!mounted) return;
+    setState(() {
+      _ebookFile = ebookFile;
+      _ebookName = name;
+      _hasEbook = hasEbook;
+      _ebookBytes = bytes;
+      _ebookReady = true;
+      if (!_hasEbook) _pane = _SheetPane.audio;
+    });
+  }
+
+  /// The ebook's real file name from a library item, or null when it has none.
+  String? _ebookNameFromItem(Map<String, dynamic>? item) {
+    if (item == null) return null;
+    final ebookFile = resolveEbookFile(item);
+    final name =
+        ((ebookFile?['metadata'] as Map<String, dynamic>?)?['filename']
+                as String?) ??
+            ebookFile?['name'] as String?;
+    final trimmed = name?.trim();
+    return (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
+  }
+
+  /// The stored library item from this record's session JSON, used to open an
+  /// ebook that only exists as an exported copy.
+  Map<String, dynamic>? _sessionLibraryItem(String? sessionJson) {
+    if (sessionJson == null) return null;
+    try {
+      final session = jsonDecode(sessionJson) as Map<String, dynamic>;
+      return session['libraryItem'] as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _openEbook() async {
+    final l = AppLocalizations.of(context)!;
+    final ebookFile =
+        _ebookFile ?? await cachedEbookFileFor(widget.info.itemId);
+    if (!mounted) return;
+    if (ebookFile == null) {
+      showOverlayToast(
+        context,
+        l.noEbookFileFound,
+        icon: Icons.menu_book_outlined,
+      );
+      return;
+    }
+    await openEbookReader(
+      context,
+      itemId: widget.info.itemId,
+      title: widget.info.title ?? '',
+      ebookFile: ebookFile,
+    );
+  }
+
+  /// Removes the ebook copy at the user's request, keeping the audio files. The
+  /// service remembers the id so the startup catch-up does not fetch it back.
+  Future<void> _deleteEbookCopy() async {
+    final l = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_outline_rounded),
+        title: Text(l.downloadsRemoveEbookTitle),
+        content: Text(l.downloadsRemoveEbookBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ds = DownloadService();
+    await ds.deleteEbookCopy(widget.info.itemId);
+    // Sweep the exported copy too: the "download" the user sees in their
+    // folder is the real file, not just this cache.
+    await ds.deleteSavedEbook(widget.info.itemId);
+    if (!mounted) return;
+    setState(() {
+      _ebookFile = null;
+      _ebookName = null;
+      _ebookBytes = 0;
+      _hasEbook = false;
+      _pane = _SheetPane.audio;
+    });
+    showOverlayToast(
+      context,
+      l.downloadsRemovedTitle(widget.info.title ?? ''),
+      icon: Icons.delete_outline_rounded,
+    );
   }
 
   static String _fmtDuration(double seconds) {
@@ -1648,6 +2056,18 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
     setState(() {
       _selecting = false;
       _selected.clear();
+    });
+  }
+
+  void _toggleSelectAll(List<LocalTrackInfo> tracks) {
+    setState(() {
+      if (tracks.isNotEmpty && _selected.length == tracks.length) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(tracks.map((t) => t.index));
+      }
     });
   }
 
@@ -1703,11 +2123,10 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
     );
     if (confirmed != true || !mounted) return;
     setState(() => _deleting = true);
-    // Removing by index shifts every later entry, so delete from the end.
-    final indices = _selected.toList()..sort((a, b) => b.compareTo(a));
-    for (final i in indices) {
-      await DownloadService().deleteLocalTrack(widget.info.itemId, i);
-    }
+    await DownloadService().deleteLocalTracks(
+      widget.info.itemId,
+      _selected.toList(),
+    );
     if (!mounted) return;
     setState(() {
       _deleting = false;
@@ -1806,11 +2225,14 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
         listenable: DownloadService(),
         builder: (context, _) {
           final tracks = DownloadService().getLocalTracks(widget.info.itemId);
-          if (tracks.isEmpty) {
-            // The last episode was removed: the download is gone.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) Navigator.pop(context);
-            });
+          if (tracks.isEmpty && !_hasEbook) {
+            // The last episode was removed: the download is gone. Wait for the
+            // ebook probe before popping in case the list missed an ebook.
+            if (_ebookReady) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) Navigator.pop(context);
+              });
+            }
             return const SizedBox(height: 200);
           }
           var totalBytes = 0;
@@ -1826,7 +2248,205 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
               anySaf &&
               tracks.any((t) => t.isSaf && _trackBytes(t) <= 0);
           final canSelect = tracks.length > 1;
+          final allSelected =
+              tracks.isNotEmpty && _selected.length == tracks.length;
           final showGap = _hasGap(tracks);
+          // The two halves of the sheet. The ebook opens on a tap of its name,
+          // mirroring the audio files where tapping a row plays it.
+          final ebookPane = <Widget>[
+            if (_hasEbook)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: _openEbook,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.menu_book_rounded,
+                              color: cs.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _ebookName ?? l.downloadsEbooks,
+                                style: tt.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28),
+                      child: Text(
+                        widget.formatBytes(_ebookBytes),
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        label: Text(l.delete),
+                        style: TextButton.styleFrom(
+                          foregroundColor: cs.error,
+                        ),
+                        onPressed: _deleteEbookCopy,
+                      ),
+                    ),
+                    const Divider(height: 1),
+                  ],
+                ),
+              ),
+          ];
+          // The audio files, plus the two hints for tracks the app could not
+          // measure.
+          final audioPane = <Widget>[
+            if (anyUncountedSaf)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        l.downloadsNoPerTrackSaf,
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (showGap)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.content_cut_rounded,
+                      size: 18,
+                      color: cs.tertiary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        l.downloadsGapSkipped,
+                        style: tt.bodySmall?.copyWith(color: cs.tertiary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.55,
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: tracks.length,
+                itemBuilder: (context, i) {
+                  final t = tracks[i];
+                  final selected = _selected.contains(t.index);
+                  final meta = <String>[
+                    if (t.durationSeconds > 0) _fmtDuration(t.durationSeconds),
+                    if (t.sizeBytes > 0) widget.formatBytes(t.sizeBytes),
+                    if (t.downloadedAt != null) _fmtDate(t.downloadedAt!),
+                  ].join(' · ');
+                  return ListTile(
+                    dense: true,
+                    selected: _selecting && selected,
+                    leading: _selecting
+                        ? Icon(
+                            selected
+                                ? Icons.check_circle_rounded
+                                : Icons.circle_outlined,
+                            size: 22,
+                            color: selected
+                                ? cs.primary
+                                : cs.onSurfaceVariant.withValues(alpha: 0.5),
+                          )
+                        : SizedBox(
+                            width: 28,
+                            child: Text(
+                              '${t.index + 1}',
+                              textAlign: TextAlign.center,
+                              style: tt.labelMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                    title: Text(
+                      t.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.bodyMedium,
+                    ),
+                    subtitle: Text(
+                      !t.isSaf
+                          ? (meta.isEmpty
+                                ? widget.formatBytes(t.sizeBytes)
+                                : meta)
+                          : (_trackBytes(t) > 0
+                                ? '${widget.formatBytes(_trackBytes(t))}'
+                                      ' · ${l.downloadsStoredExternally}'
+                                : l.downloadsStoredExternally),
+                      style: tt.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    onTap: _selecting
+                        ? () => _toggleSelect(t.index)
+                        : (_deleting ? null : () => _playFrom(t)),
+                    onLongPress: canSelect && !_selecting
+                        ? () => setState(() {
+                            _selecting = true;
+                            _selected.add(t.index);
+                          })
+                        : null,
+                    trailing: _selecting
+                        ? null
+                        : IconButton(
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              color: cs.error,
+                              size: 22,
+                            ),
+                            tooltip: l.delete,
+                            onPressed: _deleting
+                                ? null
+                                : () => _deleteTrack(t),
+                          ),
+                  );
+                },
+              ),
+            ),
+          ];
+          // The split only appears when the book has both halves. With a single
+          // half the pane for it is shown directly, no selector. Multi-select
+          // belongs to the audio files, so flipping to the ebook leaves it.
+          final showEbook =
+              _hasEbook && (tracks.isEmpty || _pane == _SheetPane.ebook);
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1850,8 +2470,10 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
                             _selecting
                                 ? '${l.downloadsSelectedCount(_selected.length)}'
                                       ' · ${widget.formatBytes(selectedBytes)}'
-                                : '${tracks.length} · '
-                                      '${widget.formatBytes(totalBytes)}',
+                                : (showEbook
+                                      ? widget.formatBytes(_ebookBytes)
+                                      : '${tracks.length} · '
+                                            '${widget.formatBytes(totalBytes)}'),
                             style: tt.bodySmall?.copyWith(
                               color: cs.onSurfaceVariant,
                             ),
@@ -1859,161 +2481,91 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
                         ],
                       ),
                     ),
-                    if (canSelect && !_selecting)
-                      IconButton(
+                    if (_selecting) ...[
+                      TextButton.icon(
                         icon: Icon(
-                          Icons.checklist_rounded,
+                          allSelected
+                              ? Icons.deselect_rounded
+                              : Icons.select_all_rounded,
+                          size: 18,
                           color: cs.onSurfaceVariant,
                         ),
-                        tooltip: l.downloadsSelect,
-                        onPressed: () => setState(() => _selecting = true),
+                        label: Text(
+                          allSelected ? l.deselectAll : l.selectAll,
+                        ),
+                        onPressed: () => _toggleSelectAll(tracks),
                       ),
-                    IconButton(
-                      icon: Icon(
-                        _selecting
-                            ? Icons.deselect_rounded
-                            : Icons.close_rounded,
-                        color: cs.onSurfaceVariant,
+                      IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        tooltip: l.downloadsCancelSelection,
+                        onPressed: _exitSelection,
                       ),
-                      tooltip: _selecting
-                          ? l.downloadsCancelSelection
-                          : MaterialLocalizations.of(
-                              context,
-                            ).closeButtonTooltip,
-                      onPressed: _selecting
-                          ? _exitSelection
-                          : () => Navigator.pop(context),
-                    ),
+                    ] else ...[
+                      if (canSelect && !showEbook)
+                        IconButton(
+                          icon: Icon(
+                            Icons.checklist_rounded,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          tooltip: l.downloadsSelect,
+                          onPressed: () => setState(() {
+                            _pane = _SheetPane.audio;
+                            _selecting = true;
+                          }),
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).closeButtonTooltip,
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              if (anyUncountedSaf)
+              // A download with both an audio copy and an ebook has two halves
+              // to look at, so let the user pick one. A single half shows on its
+              // own without this selector, and multi-select shows a single pane.
+              if (tracks.isNotEmpty && _hasEbook && !_selecting)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline_rounded,
-                        size: 18,
-                        color: cs.onSurfaceVariant,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: SegmentedButton<_SheetPane>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: [
+                      ButtonSegment(
+                        value: _SheetPane.audio,
+                        icon: const Icon(Icons.graphic_eq_rounded, size: 16),
+                        label: Text(l.downloadsAudioFiles),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          l.downloadsNoPerTrackSaf,
-                          style: tt.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
+                      ButtonSegment(
+                        value: _SheetPane.ebook,
+                        icon: const Icon(Icons.menu_book_rounded, size: 16),
+                        label: Text(l.downloadsEbooks),
                       ),
                     ],
+                    selected: {_pane},
+                    onSelectionChanged: (sel) {
+                      setState(() {
+                        _pane = sel.first;
+                        if (_pane == _SheetPane.ebook) {
+                          _selecting = false;
+                          _selected.clear();
+                        }
+                      });
+                    },
                   ),
                 ),
-              if (showGap)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.content_cut_rounded,
-                        size: 18,
-                        color: cs.tertiary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          l.downloadsGapSkipped,
-                          style: tt.bodySmall?.copyWith(color: cs.tertiary),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.55,
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: tracks.length,
-                  itemBuilder: (context, i) {
-                    final t = tracks[i];
-                    final selected = _selected.contains(t.index);
-                    final meta = <String>[
-                      if (t.durationSeconds > 0)
-                        _fmtDuration(t.durationSeconds),
-                      if (t.sizeBytes > 0) widget.formatBytes(t.sizeBytes),
-                      if (t.downloadedAt != null) _fmtDate(t.downloadedAt!),
-                    ].join(' · ');
-                    return ListTile(
-                      dense: true,
-                      selected: _selecting && selected,
-                      leading: _selecting
-                          ? Icon(
-                              selected
-                                  ? Icons.check_circle_rounded
-                                  : Icons.circle_outlined,
-                              size: 22,
-                              color: selected
-                                  ? cs.primary
-                                  : cs.onSurfaceVariant.withValues(alpha: 0.5),
-                            )
-                          : SizedBox(
-                              width: 28,
-                              child: Text(
-                                '${t.index + 1}',
-                                textAlign: TextAlign.center,
-                                style: tt.labelMedium?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                      title: Text(
-                        t.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tt.bodyMedium,
-                      ),
-                      subtitle: Text(
-                        !t.isSaf
-                            ? (meta.isEmpty
-                                  ? widget.formatBytes(t.sizeBytes)
-                                  : meta)
-                            : (_trackBytes(t) > 0
-                                  ? '${widget.formatBytes(_trackBytes(t))}'
-                                        ' · ${l.downloadsStoredExternally}'
-                                  : l.downloadsStoredExternally),
-                        style: tt.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                      onTap: _selecting
-                          ? () => _toggleSelect(t.index)
-                          : (_deleting ? null : () => _playFrom(t)),
-                      onLongPress: canSelect && !_selecting
-                          ? () => setState(() {
-                              _selecting = true;
-                              _selected.add(t.index);
-                            })
-                          : null,
-                      trailing: _selecting || t.isSaf || !t.exists
-                          ? null
-                          : IconButton(
-                              icon: Icon(
-                                Icons.delete_outline_rounded,
-                                color: cs.error,
-                                size: 22,
-                              ),
-                              tooltip: l.delete,
-                              onPressed: _deleting
-                                  ? null
-                                  : () => _deleteTrack(t),
-                            ),
-                    );
-                  },
-                ),
-              ),
+              ...(showEbook ? ebookPane : audioPane),
               if (_selecting)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
@@ -2024,23 +2576,6 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
                           '${l.downloadsSelectedCount(_selected.length)}'
                           ' · ${widget.formatBytes(selectedBytes)}',
                           style: tt.bodyMedium?.copyWith(color: cs.onSurface),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(() {
-                          final all = tracks.length > 1;
-                          if (all && _selected.length == tracks.length) {
-                            _selected.clear();
-                          } else {
-                            _selected
-                              ..clear()
-                              ..addAll(tracks.map((t) => t.index));
-                          }
-                        }),
-                        child: Text(
-                          _selected.length == tracks.length
-                              ? l.deselectAll
-                              : l.selectAll,
                         ),
                       ),
                       FilledButton.tonalIcon(
@@ -2070,3 +2605,7 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
 }
 
 enum _DownloadSort { recent, title, size }
+
+/// Which half of a download the file manager shows. Only used when the book has
+/// an ebook: the selector then flips between the audio files and the copy.
+enum _SheetPane { audio, ebook }

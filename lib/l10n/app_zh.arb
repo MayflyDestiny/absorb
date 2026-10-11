@@ -81,7 +81,7 @@
   },
   "loginSignInWithSso": "使用单点登录(SSO)",
   "loginBookOrbitPreview": "BookOrbit 支持目前还是新功能。播放、下载和浏览都已可用，但部分界面可能仍与 Audiobookshelf 相似。欢迎在 GitHub 上关注进展，也请告诉我们使用中发现的问题。",
-  "loginRedirectUri": "重定向 URI: audiobookshelf://oauth",
+  "loginRedirectUri": "重定向 URI: absorb://oauth",
   "loginRedirectUriBookOrbit": "重定向 URI: bookorbit://oauth2-callback",
   "loginOrSignInManually": "或手动登录",
   "loginUsername": "用户名",
@@ -300,6 +300,10 @@
   },
   "downloadsRemoveTitle": "移除下载？",
   "downloadsRemoveContent": "从本设备中删除 \"{title}\"？",
+  "downloadsRemoveEbookClause": "包含已下载的电子书。",
+  "downloadsRemoveEbookTitle": "删除电子书？",
+  "downloadsRemoveEbookBody": "从本设备中删除已下载的电子书？音频文件会保留。",
+  "downloadsSwipeHint": "左滑可删除",
   "@downloadsRemoveContent": {
     "placeholders": {
       "title": {
@@ -642,14 +646,6 @@
   "timerDuration": "定时器时长",
   "timer": "定时器",
   "endOfChapter": "章节结束",
-  "startMinTimer": "启动 {minutes} 分钟定时器",
-  "@startMinTimer": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
   "sleepAfterChapters": "在 {count} {label}后睡眠",
   "@sleepAfterChapters": {
     "placeholders": {
@@ -740,7 +736,8 @@
   "downloadsResumeAll": "全部继续",
   "downloadsDeleteAll": "全部删除",
   "downloadsDeleteAllContent": "要将所有已暂停的下载从本机移除吗？",
-  "downloadsManageFiles": "音频文件管理",
+  "downloadsManageFiles": "文件管理",
+  "downloadsAudioFiles": "音频文件",
   "downloadsPlayFromHere": "从这一集开始播放",
   "downloadsGapSkipped": "已删除的集在播放时会跳过",
   "downloadsDeleteTracksCount": "删除 {count} 集？",
@@ -1959,7 +1956,6 @@
   "podcastScheduleServerTimeUnknown": "更新计划使用服务器时间",
   "editServerAddressTitle": "编辑服务器地址",
   "editServerAddressSubtitle": "更新 {username} 的地址。如果您的服务器地址发生变化，请使用此选项 - 它仍是同一台服务器，只是换了个 URL。您的统计和下载会保留。",
-  "editServerAddressField": "服务器地址",
   "editServerAddressUpdated": "服务器地址已更新",
   "editServerAddressFailed": "无法更新服务器地址",
   "editServerAddressAction": "编辑服务器地址",
@@ -3786,7 +3782,7 @@
   "showEbookBadge": "显示电子书徽章",
   "showEbookBadgeOnSubtitle": "含电子书的书籍会在封面上显示书本图标",
   "showEbookBadgeOffSubtitle": "已关闭 - 不显示电子书徽章",
-"sectionCar": "车载控制",
+  "sectionCar": "车载控制",
   "sectionCarIos": "车载控制",
   "carBookOrder": "车内的书籍顺序",
   "carBookOrderReverse": "反转书籍顺序",
@@ -3876,7 +3872,6 @@
   "keepScreenOn": "保持屏幕常亮",
   "keepScreenOnUntilClosed": "屏幕保持常亮，直到你关闭应用",
   "keepScreenOnOff": "屏幕可以再次熄灭",
-  "keepScreenOnAlwaysHint": "设置中已开启",
   "keepScreenOnPlayer": "在播放器中保持屏幕常亮",
   "keepScreenOnPlayerSubtitle": "播放器打开时屏幕保持常亮",
   "keepScreenOnCarMode": "在车载模式中保持屏幕常亮",

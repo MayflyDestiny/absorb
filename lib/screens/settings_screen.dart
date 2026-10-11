@@ -1371,6 +1371,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _ebookCacheBytes +
       _exportCacheBytes;
 
+  /// Download footprint for the storage tile: the audio downloads plus the
+  /// cached ebooks, which sit on the device too and are dropped by the same
+  /// cache sheet.
+  int get _downloadStorageBytes => _totalDownloadSizeBytes + _ebookCacheBytes;
+
   /// First external cache directory, or null when none is available (iOS).
   Future<Directory?> _externalCacheDir() async {
     try {
@@ -1704,6 +1709,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     await _clearTempFiles();
                     await TranscriptLineStore.instance.clearAll();
                     await clearEbookCache();
+                    // The kept-ebook records point at the files just deleted;
+                    // drop them too or the offline shelves keep listing books
+                    // whose ebook is gone.
+                    await DownloadService().forgetKeptEbooks();
                     await _deleteLooseEbooks();
                     if (mounted) {
                       setState(() {
@@ -1796,6 +1805,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await CoverCacheManager.instance.clear();
     await _deleteCoverDirs();
     await clearEbookCache();
+    await DownloadService().forgetKeptEbooks();
     await _deleteLooseEbooks();
     await SessionCache.clearAll();
     await TranscriptLineStore.instance.clearAll();
@@ -5113,18 +5123,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 trailing: const Icon(Icons.chevron_right),
                         onTap: () => _pickDownloadLocation(context, cs, tt),
                               ),
-                      if (_totalDownloadSizeBytes > 0 || _deviceTotalBytes > 0) ...[
+                      if (_downloadStorageBytes > 0 || _deviceTotalBytes > 0) ...[
                               const Divider(height: 1, indent: 16, endIndent: 16),
                               ListTile(
                           leading: Icon(Icons.data_usage_rounded, color: cs.onSurfaceVariant),
                                 title: Text(l.storageUsed),
                                 subtitle: Text(
                                   [
-                              if (_totalDownloadSizeBytes > 0) l.storageUsedByDownloads(_formatBytes(_totalDownloadSizeBytes)),
+                              if (_downloadStorageBytes > 0) l.storageUsedByDownloads(_formatBytes(_downloadStorageBytes)),
                               if (_deviceTotalBytes > 0) l.storageFreeOfTotal(_formatBytes(_deviceAvailableBytes), _formatBytes(_deviceTotalBytes)),
                                   ].join('\n'),
                             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                          isThreeLine: _totalDownloadSizeBytes > 0 && _deviceTotalBytes > 0,
+                          isThreeLine: _downloadStorageBytes > 0 && _deviceTotalBytes > 0,
                               ),
                             ],
                             const Divider(height: 1, indent: 16, endIndent: 16),

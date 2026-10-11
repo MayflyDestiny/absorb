@@ -381,6 +381,10 @@
   },
   "downloadsRemoveTitle": "Remove download?",
   "downloadsRemoveContent": "Delete \"{title}\" from this device?",
+  "downloadsRemoveEbookClause": "Includes the downloaded ebook.",
+  "downloadsRemoveEbookTitle": "Remove ebook?",
+  "downloadsRemoveEbookBody": "Delete the downloaded ebook from this device? The audio files stay.",
+  "downloadsSwipeHint": "Swipe left on a row to delete it",
   "@downloadsRemoveContent": {
     "placeholders": {
       "title": {
@@ -989,14 +993,6 @@
   "timerDuration": "Timer duration",
   "timer": "Timer",
   "endOfChapter": "End of Chapter",
-  "startMinTimer": "Start {minutes} min timer",
-  "@startMinTimer": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
   "sleepAfterChapters": "Sleep after {count} {label}",
   "@sleepAfterChapters": {
     "placeholders": {
@@ -1099,7 +1095,8 @@
   "downloadsResumeAll": "Resume all",
   "downloadsDeleteAll": "Delete all",
   "downloadsDeleteAllContent": "Delete every paused download from this device?",
-  "downloadsManageFiles": "Manage audio files",
+  "downloadsManageFiles": "Manage files",
+  "downloadsAudioFiles": "Audio files",
   "downloadsPlayFromHere": "Play from this episode",
   "downloadsGapSkipped": "Removed episodes are skipped during playback",
   "downloadsDeleteTracksCount": "Delete {count} episode(s)?",
@@ -1386,7 +1383,6 @@
       }
     }
   },
-  "editServerAddressField": "Server Address",
   "editServerAddressUpdated": "Server address updated",
   "editServerAddressFailed": "Couldn't update server address",
   "editServerAddressAction": "Edit server address",

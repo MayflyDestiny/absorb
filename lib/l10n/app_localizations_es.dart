@@ -828,6 +828,19 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
+  String get downloadsRemoveEbookClause => 'Includes the downloaded ebook.';
+
+  @override
+  String get downloadsRemoveEbookTitle => 'Remove ebook?';
+
+  @override
+  String get downloadsRemoveEbookBody =>
+      'Delete the downloaded ebook from this device? The audio files stay.';
+
+  @override
+  String get downloadsSwipeHint => 'Swipe left on a row to delete it';
+
+  @override
   String downloadsRemovedTitle(String title) {
     return '\"$title\" removed';
   }
@@ -2022,11 +2035,6 @@ class AppLocalizationsEs extends AppLocalizations {
   String get endOfChapter => 'End of Chapter';
 
   @override
-  String startMinTimer(int minutes) {
-    return 'Start $minutes min timer';
-  }
-
-  @override
   String sleepAfterChapters(int count, String label) {
     return 'Sleep after $count $label';
   }
@@ -2201,7 +2209,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'Delete every paused download from this device?';
 
   @override
-  String get downloadsManageFiles => 'Manage audio files';
+  String get downloadsManageFiles => 'Manage files';
+
+  @override
+  String get downloadsAudioFiles => 'Audio files';
 
   @override
   String get downloadsPlayFromHere => 'Play from this episode';
@@ -2781,9 +2792,6 @@ class AppLocalizationsEs extends AppLocalizations {
   String editServerAddressSubtitle(String username) {
     return 'Update the address for $username. Use this if your server\'s address changed - it\'s still the same server, just a new URL. Your stats and downloads are kept.';
   }
-
-  @override
-  String get editServerAddressField => 'Server Address';
 
   @override
   String get editServerAddressUpdated => 'Server address updated';

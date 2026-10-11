@@ -61,7 +61,7 @@
   "loginApiKey": "Clé API",
   "loginApiKeyDescription": "Utiliser une clé API générée par l’administrateur plutôt qu’un nom d’utilisateur et un mot de passe. Utile lorsque le rafraîchissement du jeton échoue pour votre compte.",
   "loginWaitingForSso": "En attente du SSO...",
-  "loginRedirectUri": "URI de redirection : audiobookshelf://oauth",
+  "loginRedirectUri": "URI de redirection : absorb://oauth",
   "loginOrSignInManually": "ou se connecter manuellement",
   "loginUsername": "Utilisateur",
   "loginUsernameRequired": "Entrez votre nom d'utilisateur",
@@ -952,14 +952,6 @@
   "timerDuration": "Durée du minuteur",
   "timer": "Minuteur",
   "endOfChapter": "Fin du chapitre",
-  "startMinTimer": "Démarrer le minuteur de {minutes} min",
-  "@startMinTimer": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
   "sleepAfterChapters": "Mise en veille après {count} {label}",
   "@sleepAfterChapters": {
     "placeholders": {
@@ -1264,7 +1256,6 @@
       }
     }
   },
-  "editServerAddressField": "Adresse du serveur",
   "editServerAddressUpdated": "Adresse du serveur mise à jour",
   "editServerAddressFailed": "Impossible de mettre à jour l'adresse du serveur",
   "editServerAddressAction": "Modifier l'adresse du serveur",

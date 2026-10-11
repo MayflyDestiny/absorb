@@ -8,10 +8,11 @@ import ImageIO
 private let appGroup = "group.com.barnabas.absorb"
 
 // Deep-link URL used only by the play button when no session is loaded, so
-// the app launches and can cold-resume the last-played item. Must use the
-// registered URL scheme (audiobookshelf://) and include ?homeWidget so the
-// home_widget Flutter plugin intercepts the URL on launch.
-private let playPauseURL = URL(string: "audiobookshelf://widget/play_pause?homeWidget")!
+// the app launches and can cold-resume the last-played item. Must use a URL
+// scheme the app registers in Info.plist (absorb://; the audiobookshelf://
+// one went away with the app's own sign-in scheme) and include ?homeWidget
+// so the home_widget Flutter plugin intercepts the URL on launch.
+private let playPauseURL = URL(string: "absorb://widget/play_pause?homeWidget")!
 
 // Intents (AbsorbPlayPauseIntent / AbsorbSkipBackIntent /
 // AbsorbSkipForwardIntent) live in the AbsorbPlayerCore Swift package so

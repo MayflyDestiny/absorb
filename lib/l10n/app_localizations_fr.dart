@@ -253,7 +253,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get loginWaitingForSso => 'En attente du SSO...';
 
   @override
-  String get loginRedirectUri => 'URI de redirection : audiobookshelf://oauth';
+  String get loginRedirectUri => 'URI de redirection : absorb://oauth';
 
   @override
   String get loginOrSignInManually => 'ou se connecter manuellement';
@@ -833,6 +833,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String downloadsRemoveContent(String title) {
     return 'Supprimer \"$title\" de cet appareil ?';
   }
+
+  @override
+  String get downloadsRemoveEbookClause => 'Includes the downloaded ebook.';
+
+  @override
+  String get downloadsRemoveEbookTitle => 'Remove ebook?';
+
+  @override
+  String get downloadsRemoveEbookBody =>
+      'Delete the downloaded ebook from this device? The audio files stay.';
+
+  @override
+  String get downloadsSwipeHint => 'Swipe left on a row to delete it';
 
   @override
   String downloadsRemovedTitle(String title) {
@@ -2047,11 +2060,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String get endOfChapter => 'Fin du chapitre';
 
   @override
-  String startMinTimer(int minutes) {
-    return 'Démarrer le minuteur de $minutes min';
-  }
-
-  @override
   String sleepAfterChapters(int count, String label) {
     return 'Mise en veille après $count $label';
   }
@@ -2231,7 +2239,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Delete every paused download from this device?';
 
   @override
-  String get downloadsManageFiles => 'Manage audio files';
+  String get downloadsManageFiles => 'Manage files';
+
+  @override
+  String get downloadsAudioFiles => 'Audio files';
 
   @override
   String get downloadsPlayFromHere => 'Play from this episode';
@@ -2825,9 +2836,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String editServerAddressSubtitle(String username) {
     return 'Mettre à jour l\'adresse de $username. Utilisez ceci si l\'adresse de votre serveur a changé - c\'est toujours le même serveur, juste une nouvelle URL. Vos statistiques et vos téléchargements sont conservés.';
   }
-
-  @override
-  String get editServerAddressField => 'Adresse du serveur';
 
   @override
   String get editServerAddressUpdated => 'Adresse du serveur mise à jour';

@@ -669,19 +669,26 @@ class _DownloadedChaptersSheetState extends State<_DownloadedChaptersSheet> {
               TextButton(
                 onPressed: _removing ? null : _selectAll,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.select_all, size: 18, color: widget.accent),
+                  Icon(
+                    _saved.isNotEmpty && _selected.length == _saved.length
+                        ? Icons.deselect_rounded
+                        : Icons.select_all_rounded,
+                    size: 18, color: widget.accent),
                   const SizedBox(width: 4),
-                  Text(l.selectAll,
+                  Text(
+                    _saved.isNotEmpty && _selected.length == _saved.length
+                        ? l.deselectAll
+                        : l.selectAll,
                     style: TextStyle(fontWeight: FontWeight.w600, color: widget.accent, fontSize: 13)),
                 ]),
               ),
             TextButton(
               onPressed: _removing ? null : _toggleSelecting,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (!_selecting)
-                  Icon(_selecting ? Icons.check_rounded : Icons.checklist_rounded,
-                    size: 18, color: widget.accent),
-                if (!_selecting) const SizedBox(width: 4),
+                Icon(
+                  _selecting ? Icons.check_rounded : Icons.checklist_rounded,
+                  size: 18, color: widget.accent),
+                const SizedBox(width: 4),
                 Text(_selecting ? l.downloadedDone : l.downloadedSelect,
                   style: TextStyle(fontWeight: FontWeight.w600, color: widget.accent, fontSize: 13)),
               ]),

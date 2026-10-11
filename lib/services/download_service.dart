@@ -1294,6 +1294,10 @@ class DownloadService extends ChangeNotifier {
   // record: the player must not think the audio is on the phone.
   final Map<String, DownloadInfo> _keptEbooks = {};
 
+  /// Ebooks the user deleted from this device on purpose (the file manager's
+  /// delete). Kept so the startup catch-up does not fetch those copies back.
+  final Set<String> _ebookRemovedIds = {};
+
   List<DownloadInfo> get keptEbooks => _keptEbooks.values.toList();
 
   DownloadInfo? keptEbook(String itemId) => _keptEbooks[itemId];
@@ -1338,6 +1342,8 @@ class DownloadService extends ChangeNotifier {
       localCoverPath: coverPath,
       libraryId: stored['libraryId'] as String?,
     );
+    // The copy is on the phone again, so the catch-up may keep it fresh.
+    _ebookRemovedIds.remove(itemId);
     await _save();
     notifyListeners();
       verboseLog('[Download] ebook kept for offline: $itemId');
@@ -1351,6 +1357,92 @@ class DownloadService extends ChangeNotifier {
     } else {
       await deleteCachedEbook(itemId);
     }
+    await _save();
+    notifyListeners();
+  }
+
+  /// Drops the ebook copy kept for [itemId] at the user's request, leaving any
+  /// downloaded audio alone: the kept record goes, the cached files go, and a
+  /// download record stops advertising the ebook so offline reading stops
+  /// offering it. The id is remembered so the startup catch-up does not fetch
+  /// the copy straight back.
+  Future<void> deleteEbookCopy(String itemId) async {
+    _keptEbooks.remove(itemId);
+    final info = _downloads[itemId];
+    if (info != null) {
+      if (info.localPaths.isEmpty) {
+        // An ebook-only record is the copy: nothing is left to keep.
+        _downloads.remove(itemId);
+      } else if (info.sessionData != null) {
+        final stripped = _sessionWithoutEbook(info.sessionData!);
+        if (stripped != null) {
+          _downloads[itemId] = DownloadInfo(
+            itemId: info.itemId,
+            status: info.status,
+            progress: info.progress,
+            localPaths: info.localPaths,
+            sessionData: stripped,
+            title: info.title,
+            author: info.author,
+            coverUrl: info.coverUrl,
+            localCoverPath: info.localCoverPath,
+            localDirPath: info.localDirPath,
+            libraryId: info.libraryId,
+          );
+        }
+      }
+    }
+    _ebookRemovedIds.add(itemId);
+    // deleteCachedEbook sweeps the book's files and the kept cover for the id.
+    await deleteCachedEbook(itemId);
+    await _save();
+    notifyListeners();
+  }
+
+  /// [sessionJson] with the ebook taken out of the stored library item, so a
+  /// book whose copy the user deleted stops offering it offline. Null when
+  /// there was no ebook in it.
+  String? _sessionWithoutEbook(String sessionJson) {
+    try {
+      final session = jsonDecode(sessionJson) as Map<String, dynamic>;
+      final item = session['libraryItem'] as Map<String, dynamic>?;
+      if (item == null) return null;
+      var touched = false;
+      final media = item['media'] as Map<String, dynamic>?;
+      if (media != null && media.remove('ebookFile') != null) touched = true;
+      final files = item['libraryFiles'];
+      if (files is List) {
+        final kept = files.where((f) => !_isEbookLibraryFile(f)).toList();
+        if (kept.length != files.length) {
+          item['libraryFiles'] = kept;
+          touched = true;
+        }
+      }
+      if (!touched) return null;
+      session['libraryItem'] = item;
+      return jsonEncode(session);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// True when a `libraryFiles` entry is the book's ebook rather than one of its
+  /// audio files.
+  bool _isEbookLibraryFile(Object? file) {
+    if (file is! Map) return false;
+    final ext = ebookExtFromFile(Map<String, dynamic>.from(file));
+    return allEbookFormats.contains(ext.replaceFirst('.', '').toLowerCase());
+  }
+
+  /// Drops every kept-ebook record without touching any files, for when the
+  /// cached ebooks are removed wholesale (Settings > clear cache wipes the
+  /// whole ebook_cache directory, covers included). Without this the records
+  /// outlive the files they point at: the offline shelves keep offering books
+  /// whose ebook is no longer on the phone, and the record cannot be removed
+  /// one by one because the reader's keep is the only writer of it.
+  Future<void> forgetKeptEbooks() async {
+    if (_keptEbooks.isEmpty) return;
+    _keptEbooks.clear();
     await _save();
     notifyListeners();
   }
@@ -1374,6 +1466,11 @@ class DownloadService extends ChangeNotifier {
     String? libraryId,
     bool onlyIfNoAudio = false,
   }) async {
+    // Never demote a real download: this call writes a record with
+    // localPaths: [] over whatever is stored for the id, which would orphan the
+    // downloaded audio files on disk.
+    final existing = _downloads[itemId];
+    if (existing != null && existing.localPaths.isNotEmpty) return false;
     Map<String, dynamic>? fullItem;
     try {
       fullItem = await api.getLibraryItem(itemId);
@@ -1414,6 +1511,7 @@ class DownloadService extends ChangeNotifier {
       localCoverPath: localCoverPath,
       libraryId: libraryId ?? stored['libraryId'] as String?,
     );
+    _ebookRemovedIds.remove(itemId);
     await _save();
     notifyListeners();
         verboseLog('[Download] ebook-only book kept for offline: $itemId');
@@ -1501,6 +1599,7 @@ class DownloadService extends ChangeNotifier {
       }
     }
     final json = prefs.getString('downloads');
+    _ebookRemovedIds.addAll(prefs.getStringList('removed_ebooks') ?? const []);
     if (json != null) {
       try {
         final map = jsonDecode(json) as Map<String, dynamic>;
@@ -2256,6 +2355,7 @@ class DownloadService extends ChangeNotifier {
     await prefs.setString('kept_ebooks', jsonEncode({
       for (final e in _keptEbooks.entries) e.key: e.value.toJson(),
     }));
+    await prefs.setStringList('removed_ebooks', _ebookRemovedIds.toList());
   }
 
   List<String>? getLocalPaths(String itemId) {
@@ -2519,6 +2619,8 @@ class DownloadService extends ChangeNotifier {
     try {
       final f = await fetchEbookToCache(api, itemId, ebookFile, title);
       await _excludeFromBackup(f.path);
+      // The copy landed again; let the catch-up keep it fresh from now on.
+      _ebookRemovedIds.remove(itemId);
       verboseLog('[Download] cached ebook for offline: $itemId');
     } catch (e) {
       basicLog('[Download] ebook offline cache failed for $itemId: $e');
@@ -2533,6 +2635,7 @@ class DownloadService extends ChangeNotifier {
     // that lists it. Give those a record once, so they show offline.
     for (final id in await cachedEbookItemIds()) {
       if (_downloads.containsKey(id) || _keptEbooks.containsKey(id)) continue;
+      if (_ebookRemovedIds.contains(id)) continue;
       if (!_ebookRecheckDone.add('kept:$id')) continue;
       await keepEbook(api: api, itemId: id);
     }
@@ -2546,6 +2649,12 @@ class DownloadService extends ChangeNotifier {
         var item = session['libraryItem'] as Map<String, dynamic>?;
         var ebookFile = resolveEbookFile(item);
         final apiItemId = session['libraryItemId'] as String? ?? info.itemId;
+        // The user deleted this copy on purpose: do not repair the session or
+        // fetch the file back.
+        if (_ebookRemovedIds.contains(entry.key) ||
+            _ebookRemovedIds.contains(apiItemId)) {
+          continue;
+        }
         if (ebookFile == null) {
           // The record was written when the book was downloaded. An epub
           // dropped into the folder later never reaches it, so offline Read
@@ -3537,6 +3646,14 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Item ids with an exported ebook copy recorded on the device. The export
+  /// lives in the user's download folder (SAF `ebooks/` on Android, a real path
+  /// elsewhere) and is tracked separately from the offline ebook cache.
+  Future<Set<String>> savedEbookItemIds() async {
+    final saved = await ScopedPrefs.getStringList('saved_ebooks');
+    return saved.toSet();
+  }
+
   /// Drop the exported-copy state for [itemId] (called after the copy files
   /// were deleted). Leaves the actual files to the caller.
   Future<void> clearSavedEbook(String itemId) async {
@@ -3596,6 +3713,36 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Byte size of the exported ebook copy for [itemId], or 0 when there is none
+  /// or its size can't be read. SAF content:// files are measured by the native
+  /// probe; real paths are stat-ed directly.
+  Future<int> savedEbookBytes(String itemId) async {
+    final ref = await savedEbookRef(itemId);
+    final uri = ref?.uri;
+    if (uri == null || uri.isEmpty) return 0;
+    if (isContentUri(uri)) {
+      try {
+        final res = await _storageChannel
+            .invokeMethod<Map>('checkSafFiles', {
+              'uris': [uri],
+            })
+            .timeout(const Duration(seconds: 8));
+        final v = res?[uri];
+        if (v is Map) {
+          final s = v['size'];
+          if (s is num) return s.toInt();
+        }
+      } catch (_) {}
+      return 0;
+    }
+    try {
+      final f = File(uri);
+      return f.existsSync() ? f.lengthSync() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Delete a saved ebook copy ([ref] is a content:// URI or a real file path)
   /// that [saveEbookCopyToSaf] or the manual save dialog produced earlier.
   /// Returns whether the file existed and was removed.
@@ -3612,6 +3759,24 @@ class DownloadService extends ChangeNotifier {
       basicLog('[Download] deleting saved ebook copy failed: $e');
       return false;
     }
+  }
+
+  /// Delete the exported ebook copy for [itemId]: the file (and its metadata
+  /// sidecar) on the device plus the recorded state. Mirrors the detail sheet's
+  /// "delete export" so the downloads screen can drop it too. Returns whether a
+  /// copy was recorded.
+  Future<bool> deleteSavedEbook(String itemId) async {
+    final ref = await savedEbookRef(itemId);
+    if (ref != null) {
+      if (ref.uri != null && ref.uri!.isNotEmpty) {
+        await deleteBookFileAt(ref.uri!);
+      }
+      if (ref.meta != null && ref.meta!.isNotEmpty) {
+        await deleteBookFileAt(ref.meta!);
+      }
+    }
+    await clearSavedEbook(itemId);
+    return ref != null;
   }
 
   Future<void> _finalizeSuccess(String itemId) async {
@@ -4081,6 +4246,15 @@ class DownloadService extends ChangeNotifier {
   /// Whether any other download keeps files in [dirPath]. Downloads made
   /// before folders were made unique can still share one, and removing the
   /// whole folder then deletes books the user never touched.
+  /// True when [path] lies directly under the book folder [dirPath]. Covers
+  /// real paths (`dir/file`) and SAF document URIs, where a child appends its
+  /// encoded name to the folder URI (`dir%2Ffile`).
+  bool _isUnderDir(String path, String dirPath) {
+    if (path == dirPath) return false;
+    if (path.startsWith('$dirPath/')) return true;
+    return path.startsWith('$dirPath%2F') || path.startsWith('$dirPath%2f');
+  }
+
   bool _dirSharedWithOther(String dirPath, String itemId) {
     final prefix = dirPath.endsWith('/') ? dirPath : '$dirPath/';
     for (final e in _downloads.entries) {
@@ -4334,8 +4508,17 @@ class DownloadService extends ChangeNotifier {
       for (final e in _downloads.entries)
         if (e.key != itemId) ...e.value.localPaths,
     };
+    // When the book's own folder is ours and the block below removes it, that
+    // single unlink already takes every file under it: a SAF tree folder drops
+    // its whole subtree, and _cleanupBookDir recurses. So anything inside it is
+    // skipped here - otherwise a full book is hundreds of channel round trips
+    // (one FileDownloader().uri.deleteFile per file) for nothing, which is what
+    // made deletes sit there for a moment.
+    final dirPath = info.localDirPath;
+    final dirCovers = dirPath != null && !_dirSharedWithOther(dirPath, itemId);
     for (final path in info.localPaths) {
       if (sharedPaths.contains(path)) continue;
+      if (dirCovers && _isUnderDir(path, dirPath)) continue;
       try {
         if (isContentUri(path)) {
           await FileDownloader().uri.deleteFile(Uri.parse(path));
@@ -4353,11 +4536,10 @@ class DownloadService extends ChangeNotifier {
     // `audiobooks/<Author>/<Title>` nesting collapses instead of leaving the
     // Author (and book) folder behind.
     try {
-      final dirPath = info.localDirPath;
       if (dirPath != null && _dirSharedWithOther(dirPath, itemId)) {
         // Other books still have files here: only this book's files go.
       } else if (dirPath != null && isContentUri(dirPath)) {
-        // SAF book folder: best-effort delete (harmless if already emptied).
+        // SAF book folder: one unlink takes the whole subtree.
         try {
           await FileDownloader().uri.deleteFile(Uri.parse(dirPath));
         } catch (_) {}
@@ -4432,8 +4614,11 @@ class DownloadService extends ChangeNotifier {
     }
 
     // Drop a companion ebook the fire-and-forget fetch may have already
-    // landed, so a cancelled download doesn't orphan it.
-    unawaited(deleteCachedEbook(itemId));
+    // landed, so a cancelled download doesn't orphan it. A copy the reader
+    // kept stays: cancelling a download must not take that claim away.
+    if (!_keptEbooks.containsKey(itemId)) {
+      unawaited(deleteCachedEbook(itemId));
+    }
 
     // Instant UI feedback (cleanup paths also notify).
     _downloads.remove(itemId);
@@ -4898,45 +5083,59 @@ class DownloadService extends ChangeNotifier {
   /// offline playback maps 1:1). Deleting the last remaining track removes the
   /// whole download. SAF (content URI) tracks are removed per-file too, via the
   /// same helper [deleteDownload] uses.
-  Future<void> deleteLocalTrack(String itemId, int index) async {
+  Future<void> deleteLocalTrack(String itemId, int index) =>
+      deleteLocalTracks(itemId, [index]);
+
+  /// Deletes several audio files of a completed download in one pass, trimming
+  /// `localPaths` and the session's parallel arrays together and saving the
+  /// registry once. [indices] may be in any order and may omit the removed
+  /// neighbours; deleting every track still there removes the whole download.
+  Future<void> deleteLocalTracks(String itemId, List<int> indices) async {
     final info = _downloads[itemId];
     if (info == null || info.status != DownloadStatus.downloaded) return;
-    if (index < 0 || index >= info.localPaths.length) return;
-
-    if (info.localPaths.length <= 1) {
+    final total = info.localPaths.length;
+    final remove = <int>{
+      for (final i in indices)
+        if (i >= 0 && i < total) i,
+    };
+    if (remove.isEmpty) return;
+    if (remove.length >= total) {
       await deleteDownload(itemId, skipStopCheck: true, byUser: true);
       return;
     }
 
-    try {
-      final path = info.localPaths[index];
-      if (isContentUri(path)) {
-        await FileDownloader().uri.deleteFile(Uri.parse(path));
-      } else {
-        final file = File(path);
-        if (file.existsSync()) await file.delete();
-      }
-    } catch (_) {}
+    for (final i in remove) {
+      final path = info.localPaths[i];
+      try {
+        if (isContentUri(path)) {
+          await FileDownloader().uri.deleteFile(Uri.parse(path));
+        } else {
+          final file = File(path);
+          if (file.existsSync()) await file.delete();
+        }
+      } catch (_) {}
+    }
 
-    final newPaths = List<String>.from(info.localPaths)..removeAt(index);
+    final newPaths = <String>[
+      for (var i = 0; i < total; i++)
+        if (!remove.contains(i)) info.localPaths[i],
+    ];
     var newSession = info.sessionData;
     if (newSession != null) {
       try {
         final s = jsonDecode(newSession) as Map<String, dynamic>;
-        final tracks = s['audioTracks'] as List<dynamic>?;
-        if (tracks != null && index < tracks.length) {
-          tracks.removeAt(index);
-          s['audioTracks'] = tracks;
-        }
-        final starts = s['trackStartOffsets'] as List<dynamic>?;
-        if (starts != null && index < starts.length) {
-          starts.removeAt(index);
-          s['trackStartOffsets'] = starts;
-        }
-        final chapterIdx = s['downloadedChapters'] as List<dynamic>?;
-        if (chapterIdx != null && index < chapterIdx.length) {
-          chapterIdx.removeAt(index);
-          s['downloadedChapters'] = chapterIdx;
+        for (final key in const [
+          'audioTracks',
+          'trackStartOffsets',
+          'downloadedChapters',
+        ]) {
+          final list = s[key];
+          if (list is List) {
+            s[key] = <dynamic>[
+              for (var i = 0; i < list.length; i++)
+                if (!remove.contains(i)) list[i],
+            ];
+          }
         }
         newSession = jsonEncode(s);
       } catch (_) {}

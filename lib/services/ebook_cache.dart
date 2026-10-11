@@ -78,18 +78,49 @@ Future<Directory> _ebookCacheDir() async {
 Future<void> hydrateEbookCacheDir() => _ebookCacheDir();
 
 /// Size in bytes of the cached ebook for [itemId], or 0 when there is none or
-/// the directory handle hasn't been warmed yet.
+/// the directory handle hasn't been warmed yet. Only real ebook files count:
+/// the `<id>.<ext>.locations.json` sidecar and a leftover `<id>.<ext>.part`
+/// share the name prefix but are not the book.
 int cachedEbookBytesSync(String itemId) {
   final dir = _ebookCacheDirHandle;
   if (dir == null || !dir.existsSync()) return 0;
+  var total = 0;
   try {
     for (final f in dir.listSync()) {
-      if (f is File && f.uri.pathSegments.last.startsWith('$itemId.')) {
-        return f.lengthSync();
+      if (f is! File) continue;
+      final name = f.uri.pathSegments.last;
+      if (!name.startsWith('$itemId.')) continue;
+      final dot = name.lastIndexOf('.');
+      if (dot <= 0) continue;
+      if (!allEbookFormats.contains(name.substring(dot + 1).toLowerCase())) {
+        continue;
       }
+      total += f.lengthSync();
     }
   } catch (_) {}
-  return 0;
+  return total;
+}
+
+/// Item ids with a cached ebook file, read through the warmed directory handle.
+/// The synchronous twin of [cachedEbookItemIds], for widget builds: an ebook
+/// fetched beside a download (or opened from a streamed book) is only in the
+/// cache, with no record that lists it.
+Set<String> cachedEbookItemIdsSync() {
+  final dir = _ebookCacheDirHandle;
+  if (dir == null || !dir.existsSync()) return const <String>{};
+  final ids = <String>{};
+  try {
+    for (final f in dir.listSync()) {
+      if (f is! File) continue;
+      final name = f.uri.pathSegments.last;
+      final dot = name.lastIndexOf('.');
+      if (dot <= 0) continue;
+      final ext = name.substring(dot + 1).toLowerCase();
+      if (!allEbookFormats.contains(ext)) continue;
+      ids.add(name.substring(0, dot));
+    }
+  } catch (_) {}
+  return ids;
 }
 
 /// Total bytes of all cached ebook files. Regenerable from the server, so this

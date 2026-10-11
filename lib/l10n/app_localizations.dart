@@ -1594,6 +1594,30 @@ abstract class AppLocalizations {
   /// **'Delete \"{title}\" from this device?'**
   String downloadsRemoveContent(String title);
 
+  /// No description provided for @downloadsRemoveEbookClause.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes the downloaded ebook.'**
+  String get downloadsRemoveEbookClause;
+
+  /// No description provided for @downloadsRemoveEbookTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove ebook?'**
+  String get downloadsRemoveEbookTitle;
+
+  /// No description provided for @downloadsRemoveEbookBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete the downloaded ebook from this device? The audio files stay.'**
+  String get downloadsRemoveEbookBody;
+
+  /// No description provided for @downloadsSwipeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Swipe left on a row to delete it'**
+  String get downloadsSwipeHint;
+
   /// No description provided for @downloadsRemovedTitle.
   ///
   /// In en, this message translates to:
@@ -3718,12 +3742,6 @@ abstract class AppLocalizations {
   /// **'End of Chapter'**
   String get endOfChapter;
 
-  /// No description provided for @startMinTimer.
-  ///
-  /// In en, this message translates to:
-  /// **'Start {minutes} min timer'**
-  String startMinTimer(int minutes);
-
   /// No description provided for @sleepAfterChapters.
   ///
   /// In en, this message translates to:
@@ -4033,8 +4051,14 @@ abstract class AppLocalizations {
   /// No description provided for @downloadsManageFiles.
   ///
   /// In en, this message translates to:
-  /// **'Manage audio files'**
+  /// **'Manage files'**
   String get downloadsManageFiles;
+
+  /// No description provided for @downloadsAudioFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio files'**
+  String get downloadsAudioFiles;
 
   /// No description provided for @downloadsPlayFromHere.
   ///
@@ -5037,12 +5061,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Update the address for {username}. Use this if your server\'s address changed - it\'s still the same server, just a new URL. Your stats and downloads are kept.'**
   String editServerAddressSubtitle(String username);
-
-  /// No description provided for @editServerAddressField.
-  ///
-  /// In en, this message translates to:
-  /// **'Server Address'**
-  String get editServerAddressField;
 
   /// No description provided for @editServerAddressUpdated.
   ///

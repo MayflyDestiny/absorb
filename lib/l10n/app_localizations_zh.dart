@@ -239,7 +239,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginWaitingForSso => '正在等待单点登录(SSO)...';
 
   @override
-  String get loginRedirectUri => '重定向 URI: audiobookshelf://oauth';
+  String get loginRedirectUri => '重定向 URI: absorb://oauth';
 
   @override
   String get loginOrSignInManually => '或手动登录';
@@ -800,6 +800,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String downloadsRemoveContent(String title) {
     return '从本设备中删除 \"$title\"？';
   }
+
+  @override
+  String get downloadsRemoveEbookClause => '包含已下载的电子书。';
+
+  @override
+  String get downloadsRemoveEbookTitle => '删除电子书？';
+
+  @override
+  String get downloadsRemoveEbookBody => '从本设备中删除已下载的电子书？音频文件会保留。';
+
+  @override
+  String get downloadsSwipeHint => '左滑可删除';
 
   @override
   String downloadsRemovedTitle(String title) {
@@ -1951,11 +1963,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get endOfChapter => '章节结束';
 
   @override
-  String startMinTimer(int minutes) {
-    return '启动 $minutes 分钟定时器';
-  }
-
-  @override
   String sleepAfterChapters(int count, String label) {
     return '在 $count $label后睡眠';
   }
@@ -2124,7 +2131,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadsDeleteAllContent => '要将所有已暂停的下载从本机移除吗？';
 
   @override
-  String get downloadsManageFiles => '音频文件管理';
+  String get downloadsManageFiles => '文件管理';
+
+  @override
+  String get downloadsAudioFiles => '音频文件';
 
   @override
   String get downloadsPlayFromHere => '从这一集开始播放';
@@ -2665,9 +2675,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String editServerAddressSubtitle(String username) {
     return '更新 $username 的地址。如果您的服务器地址发生变化，请使用此选项 - 它仍是同一台服务器，只是换了个 URL。您的统计和下载会保留。';
   }
-
-  @override
-  String get editServerAddressField => '服务器地址';
 
   @override
   String get editServerAddressUpdated => '服务器地址已更新';
