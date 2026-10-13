@@ -1814,14 +1814,38 @@ class _ExpandedCardState extends State<ExpandedCard> {
     onReadAlongTap: _openReadAlong,
   );
 
+  // The freshest resolved version wins: the minified shelf item's inline
+  // media.ebookFile is stale after a server-side default change (or an ebook
+  // added/removed while the app is open), but _fetchedEbookFile was re-resolved
+  // from the full item by the socket-triggered refetch. Preferring the inline
+  // copy here is what kept Read/Read-along on the previous default.
   Map<String, dynamic>? get _ebookFile =>
-      (_media['ebookFile'] as Map<String, dynamic>?) ?? _fetchedEbookFile;
+      _fetchedEbookFile ?? (_media['ebookFile'] as Map<String, dynamic>?);
   String? get _ebookExt {
     final ext = ebookExt(_ebookFile);
     return ext.isEmpty ? null : ext;
   }
 
-  void _openReader() async {
+  /// The freshest local version of this item's ebook for a read action.
+  ///
+  /// The minified shelf item's inline `media.ebookFile` goes stale when the
+  /// server's default version is changed in the detail sheet, but that sheet
+  /// writes the fresh full item to the disk cache as it reloads, so the cached
+  /// copy is preferred here. Falls back to the inline / locally cached file
+  /// when nothing has been fetched yet or offline.
+  Future<Map<String, dynamic>?> _resolveEbookForAction() async {
+    final auth = context.read<AuthProvider>();
+    final api = auth.apiService;
+    if (api != null) {
+      try {
+        final fresh = await api.getCachedLibraryItem(_itemId);
+        final ef = resolveEbookFile(fresh);
+        if (ef != null) {
+          if (mounted) setState(() => _fetchedEbookFile = ef);
+          return ef;
+        }
+      } catch (_) {}
+    }
     var ef = _ebookFile;
     // A downloaded book's ebook may already sit in the reader cache - check
     // that before any network retry, so offline Read opens instantly instead
@@ -1834,6 +1858,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
       await _fetchChaptersIfNeeded();
       ef = _ebookFile;
     }
+    return ef;
+  }
+
+  void _openReader() async {
+    final ef = await _resolveEbookForAction();
     if (!mounted) return;
     if (ef == null) {
       showOverlayToast(
@@ -1847,12 +1876,7 @@ class _ExpandedCardState extends State<ExpandedCard> {
   }
 
   void _openReadAlong() async {
-    var ef = _ebookFile;
-    ef ??= await cachedEbookFileFor(_itemId);
-    if (ef == null) {
-      await _fetchChaptersIfNeeded();
-      ef = _ebookFile;
-    }
+    final ef = await _resolveEbookForAction();
     if (!mounted) return;
     if (ef == null) {
       showOverlayToast(
@@ -1874,13 +1898,16 @@ class _ExpandedCardState extends State<ExpandedCard> {
   }
 
   void _findInEbook() async {
-    var ef = _ebookFile;
-    ef ??= await cachedEbookFileFor(_itemId);
-    if (ef == null) {
-      await _fetchChaptersIfNeeded();
-      ef = _ebookFile;
-    }
+    final ef = await _resolveEbookForAction();
     if (!mounted) return;
+    if (ef == null) {
+      showOverlayToast(
+        context,
+        AppLocalizations.of(context)!.noEbookFileFound,
+        icon: Icons.menu_book_outlined,
+      );
+      return;
+    }
     launchFindInEbook(context, itemId: _itemId, title: _title, ebookFile: ef);
   }
 

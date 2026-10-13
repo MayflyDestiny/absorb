@@ -1086,6 +1086,8 @@
       }
     }
   },
+  "downloadsEbookOnlyCached": "Cached only",
+  "downloadsEbookExported": "Exported",
   "downloadsSort": "Sort",
   "downloadsSortTitle": "Title",
   "downloadsSortSize": "Size",
@@ -1120,10 +1122,10 @@
   },
   "streamingCache": "Streaming cache",
   "streamingCacheInfoTitle": "Streaming Cache",
-  "streamingCacheInfoContent": "Caches streamed audio to disk so it doesn't need to be re-downloaded if you seek back or re-listen to sections. The cache is automatically managed - oldest files are removed when the size limit is reached. This is separate from fully downloaded books.",
+  "streamingCacheInfoContent": "Caches streamed audio and ebook page blocks to disk so seeking back doesn't re-download them; oldest files are dropped at the size limit. Off keeps nothing. Separate from fully downloaded books.",
   "streamingCacheOff": "Off",
-  "streamingCacheOffSubtitle": "Off - audio is streamed without caching",
-  "streamingCacheOnSubtitle": "{size} MB - recently streamed audio is cached to disk",
+  "streamingCacheOffSubtitle": "Off - streamed audio isn't cached; ebook blocks last the session",
+  "streamingCacheOnSubtitle": "{size} MB - recently streamed audio and ebook pages are cached to disk",
   "@streamingCacheOnSubtitle": {
     "placeholders": {
       "size": {
@@ -1150,7 +1152,7 @@
   "cacheCovers": "Cover cache",
   "cacheCoversHint": "Downloaded cover art plus widget/home-screen cover copies.",
   "cacheAppDataHint": "Cached shelves, grids, progress snapshots and playback sessions.",
-  "cacheStreamingHint": "Recently streamed audio kept on disk for instant replay.",
+  "cacheStreamingHint": "Recently streamed audio and ebook page blocks are cached locally to avoid re-downloading.",
   "clearAllCaches": "Clear all",
   "clearAllCachesConfirm": "Delete every cache? They rebuild automatically as you use the app.",
   "cacheAllCleared": "All caches cleared",
@@ -1816,6 +1818,8 @@
   "localMetadataCleared": "Local metadata cleared",
   "saveEbook": "Save eBook",
   "noEbookFileFound": "No ebook file found",
+  "readerFailedToOpen": "Couldn't open the PDF",
+  "readerStreamHint": "Streaming a PDF needs a connection to your server. Check the connection, then try again.",
   "bookmark": "Bookmark",
   "bookmarks": "Bookmarks",
   "bookmarksWithCount": "Bookmarks ({count})",
@@ -1922,6 +1926,14 @@
     "placeholders": {
       "title": {
         "type": "String"
+      }
+    }
+  },
+  "chapterDownloadConfirm": "{count, plural, =1{Download 1 chapter to this device?} other{Download {count} chapters to this device?}}",
+  "@chapterDownloadConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -5041,6 +5053,14 @@
   "libRemoveFoldersBody": "Removing a folder deletes its items from the library. This can't be undone.",
 
   "readEbook": "Read",
+  "chooseEbookVersion": "Choose ebook version",
+  "ebookPrimaryVersion": "server default",
+  "ebookChooseHoldHint": "Long-press a version to make it your default",
+  "ebookLocalDefault": "your default",
+  "ebookDefaultSet": "Default version set: {name}",
+  "ebookDefaultCleared": "Back to the server default version",
+  "ebookAlreadyDefault": "Already the default version",
+  "fileSize": "Size",
   "homeTapCardToResume": "Tap a card to resume. Press and hold to see details.",
   "libraryTabLists": "Lists",
   "statsYearInReview": "Year in Review",

@@ -30,6 +30,7 @@ import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import '../widgets/overlay_toast.dart';
 import '../services/ebook_cache.dart';
+import '../services/ebook_progress_store.dart';
 import '../services/screen_wake.dart';
 
 part '_lp_state.dart';

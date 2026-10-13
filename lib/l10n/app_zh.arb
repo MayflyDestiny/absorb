@@ -727,6 +727,8 @@
       }
     }
   },
+  "downloadsEbookOnlyCached": "仅缓存",
+  "downloadsEbookExported": "已导出",
   "downloadsSort": "排序",
   "downloadsSortTitle": "标题",
   "downloadsSortSize": "大小",
@@ -761,10 +763,10 @@
   },
   "streamingCache": "流式缓存",
   "streamingCacheInfoTitle": "流式缓存",
-  "streamingCacheInfoContent": "将流式播放的音频缓存到磁盘，以便在快退或重复收听时无需重新下载。缓存会自动管理 - 达到大小限制时，最旧的文件会被移除。这与完全下载的书籍是分开的",
+  "streamingCacheInfoContent": "将流式播放的音频和电子书页面块缓存到磁盘，快退或回看时无需重新下载；达到大小限制时移除最旧文件。关闭时不保留，与完全下载的书籍分开。",
   "streamingCacheOff": "关闭",
-  "streamingCacheOffSubtitle": "关闭 - 音频直接流式播放，不缓存",
-  "streamingCacheOnSubtitle": "{size} MB - 最近流式播放的音频将缓存到磁盘",
+  "streamingCacheOffSubtitle": "关闭 - 音频不缓存，电子书块仅本次会话保留",
+  "streamingCacheOnSubtitle": "{size} MB - 最近流式播放的音频与电子书页面将缓存到磁盘",
   "@streamingCacheOnSubtitle": {
     "placeholders": {
       "size": {
@@ -791,7 +793,7 @@
   "cacheCovers": "封面缓存",
   "cacheCoversHint": "已下载的书籍、系列、作者封面及桌面组件封面副本。",
   "cacheAppDataHint": "书架、网格、阅读进度和播放会话缓存。",
-  "cacheStreamingHint": "最近流式播放的音频保存在本地，便于即时重播。",
+  "cacheStreamingHint": "近期流式播放的音频和电子书页面块会缓存到本地避免重复下载。",
   "clearAllCaches": "全部清除",
   "clearAllCachesConfirm": "要清除全部缓存吗？它们会在使用时自动重新生成。",
   "cacheAllCleared": "全部缓存已清除",
@@ -804,6 +806,9 @@
   "cacheExports": "残留缓存",
   "cacheExportsHint": "分享卡片、剪辑音频、转录文件、电子书文件、更新包等。",
   "exportsCleared": "残留缓存已清除",
+  "cachePdfStream": "PDF 流式缓存",
+  "cachePdfStreamHint": "滚动阅读流式 PDF 时按需下载的页面块,可自动重建。容量上限跟随「流式缓存」设置;设为 0 时页面块仅保留到本次会话结束。",
+  "cachePdfStreamCleared": "PDF 缓存已清除",
   "sectionLibrary": "媒体库",
   "hideEbookOnlyTitles": "隐藏仅含电子书的标题",
   "hideEbookOnlyOnSubtitle": "隐藏没有音频文件的书籍",
@@ -1152,6 +1157,8 @@
   "localMetadataCleared": "本地元数据已清除",
   "saveEbook": "保存电子书",
   "noEbookFileFound": "未找到电子书文件",
+  "readerFailedToOpen": "无法打开 PDF",
+  "readerStreamHint": "流式阅读 PDF 需要连接你的服务器。请检查网络后重试。",
   "bookmark": "书签",
   "bookmarks": "书签",
   "bookmarksWithCount": "书签 ({count})",
@@ -1253,6 +1260,14 @@
     "placeholders": {
       "title": {
         "type": "String"
+      }
+    }
+  },
+  "chapterDownloadConfirm": "下载 {count} 个章节？",
+  "@chapterDownloadConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -1685,9 +1700,9 @@
   "chapterProgressInNotification": "通知中显示章节进度",
   "chapterProgressOnSubtitle": "开启 - 锁屏显示章节进度",
   "chapterProgressOffSubtitle": "关闭 - 锁屏显示全书进度",
-  "downloadOverWifiOnly": "仅在 Wi-Fi 下下载",
-  "downloadOverWifiOnSubtitle": "开启 - 禁止使用移动数据下载",
-  "downloadOverWifiOffSubtitle": "关闭 - 任何网络均可下载",
+  "downloadOverWifiOnly": "下载所用网络",
+  "downloadOverWifiOnSubtitle": "仅限 Wi-Fi 下载",
+  "downloadOverWifiOffSubtitle": "任意网络下载",
   "autoDownloadOnWifi": "Wi-Fi 下自动下载",
   "autoDownloadOnWifiInfoTitle": "Wi-Fi 下自动下载",
   "autoDownloadOnWifiOnSubtitle": "在 Wi-Fi 下开始流式播放时，书籍将在后台下载",
@@ -3195,6 +3210,14 @@
   "libRemoveFoldersTitle": "移除文件夹？",
   "libRemoveFoldersBody": "移除文件夹会将该文件夹中的项目从媒体库中删除。此操作无法撤销。",
   "readEbook": "阅读",
+  "chooseEbookVersion": "选择电子书版本",
+  "ebookPrimaryVersion": "服务端默认",
+  "ebookChooseHoldHint": "长按某个版本可设为默认",
+  "ebookLocalDefault": "本地默认",
+  "ebookDefaultSet": "已设为默认版本：{name}",
+  "ebookDefaultCleared": "已恢复为服务端默认版本",
+  "ebookAlreadyDefault": "已是默认版本",
+  "fileSize": "大小",
   "homeTapCardToResume": "点按卡片继续收听，长按查看详情。",
   "libraryTabLists": "书单",
   "statsYearInReview": "年度回顾",

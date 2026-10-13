@@ -1,21 +1,22 @@
 import 'dart:io';
-import 'package:flutter/services.dart' show rootBundle;
 
-/// Tiny loopback HTTP server that hosts the foliate-js reader. foliate-js needs
-/// a real HTTP origin (ES modules + fetch), so assets can't be loaded via
-/// file:// - they're served from the bundle here, plus the book file itself.
+import 'package:flutter/services.dart';
+import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
+
+/// Tiny loopback HTTP server that serves the foliate reader shell plus the
+/// book itself, which is read lazily through a [BookSource] (a cached file, an
+/// exported plain path, or a held Android SAF descriptor read positionally with
+/// no copy).
 class FoliateBookServer {
-  HttpServer? _server;
-  File? _bookFile;
+  BookSource? _source;
   String _bookMime = 'application/octet-stream';
-
-  int get port => _server?.port ?? 0;
+  HttpServer? _server;
 
   Future<int> start({
-    required File bookFile,
+    required BookSource source,
     required String mime,
   }) async {
-    _bookFile = bookFile;
+    _source = source;
     _bookMime = mime;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server = server;
@@ -42,7 +43,7 @@ class FoliateBookServer {
         }
         await _serveAsset(res, 'assets/foliate/foliate-js/$rel', 'text/javascript; charset=utf-8');
       } else if (path.startsWith('/book/')) {
-        await _serveBook(res);
+        await _serveBook(res, range: req.headers.value('range'));
       } else {
         res.statusCode = HttpStatus.notFound;
         await res.close();
@@ -62,20 +63,45 @@ class FoliateBookServer {
     await res.close();
   }
 
-  Future<void> _serveBook(HttpResponse res) async {
-    final f = _bookFile;
-    if (f == null || !f.existsSync()) {
+  Future<void> _serveBook(HttpResponse res, {String? range}) async {
+    final source = _source;
+    if (source == null) {
+      res.statusCode = HttpStatus.notFound;
+      await res.close();
+      return;
+    }
+    final length = await source.length();
+    if (length <= 0) {
       res.statusCode = HttpStatus.notFound;
       await res.close();
       return;
     }
     res.headers.contentType = ContentType.parse(_bookMime);
     res.headers.set('Accept-Ranges', 'bytes');
-    await f.openRead().pipe(res);
+    // Always answer with a Content-Length (and honour a Range if the WebView
+    // asks for one) so the client gets a sized body instead of a chunked
+    // stream it can't turn into a Blob - a chunked response makes foliate-js's
+    // `fetch(url)` hang or yield an empty file for MOBI/AZW3.
+    final resolved = resolveByteRange(range, length);
+    if (resolved == null) {
+      res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+      await res.close();
+      return;
+    }
+    final start = resolved.start;
+    final end = resolved.end;
+    if (resolved.partial) {
+      res.statusCode = HttpStatus.partialContent;
+      res.headers.set('Content-Range', 'bytes $start-$end/$length');
+    }
+    res.contentLength = end - start + 1;
+    // Stream the range in chunks, reading only what the client asks for.
+    await streamBookRange(res, source, start, end);
   }
 
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
+    _source = null;
   }
 }

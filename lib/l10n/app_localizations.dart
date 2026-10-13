@@ -1327,7 +1327,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileSize.
   ///
   /// In en, this message translates to:
-  /// **'File Size'**
+  /// **'Size'**
   String get fileSize;
 
   /// No description provided for @lastUpdated.
@@ -3994,6 +3994,18 @@ abstract class AppLocalizations {
   /// **'{count} downloads · {size}'**
   String downloadsSummary(int count, String size);
 
+  /// No description provided for @downloadsEbookOnlyCached.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached only'**
+  String get downloadsEbookOnlyCached;
+
+  /// No description provided for @downloadsEbookExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported'**
+  String get downloadsEbookExported;
+
   /// No description provided for @downloadsSort.
   ///
   /// In en, this message translates to:
@@ -4099,7 +4111,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamingCacheInfoContent.
   ///
   /// In en, this message translates to:
-  /// **'Caches streamed audio to disk so it doesn\'t need to be re-downloaded if you seek back or re-listen to sections. The cache is automatically managed - oldest files are removed when the size limit is reached. This is separate from fully downloaded books.'**
+  /// **'Caches streamed audio and ebook page blocks to disk so seeking back doesn\'t re-download them; oldest files are dropped at the size limit. Off keeps nothing. Separate from fully downloaded books.'**
   String get streamingCacheInfoContent;
 
   /// No description provided for @streamingCacheOff.
@@ -4111,13 +4123,13 @@ abstract class AppLocalizations {
   /// No description provided for @streamingCacheOffSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Off - audio is streamed without caching'**
+  /// **'Off - streamed audio isn\'t cached; ebook blocks last the session'**
   String get streamingCacheOffSubtitle;
 
   /// No description provided for @streamingCacheOnSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'{size} MB - recently streamed audio is cached to disk'**
+  /// **'{size} MB - recently streamed audio and ebook pages are cached to disk'**
   String streamingCacheOnSubtitle(int size);
 
   /// No description provided for @clearCache.
@@ -4195,7 +4207,7 @@ abstract class AppLocalizations {
   /// No description provided for @cacheStreamingHint.
   ///
   /// In en, this message translates to:
-  /// **'Recently streamed audio kept on disk for instant replay.'**
+  /// **'Recently streamed audio and ebook page blocks are cached locally to avoid re-downloading.'**
   String get cacheStreamingHint;
 
   /// No description provided for @clearAllCaches.
@@ -6436,6 +6448,18 @@ abstract class AppLocalizations {
   /// **'No ebook file found'**
   String get noEbookFileFound;
 
+  /// No description provided for @readerFailedToOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the PDF'**
+  String get readerFailedToOpen;
+
+  /// No description provided for @readerStreamHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming a PDF needs a connection to your server. Check the connection, then try again.'**
+  String get readerStreamHint;
+
   /// No description provided for @bookmark.
   ///
   /// In en, this message translates to:
@@ -6753,6 +6777,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Download “{title}” to this device?'**
   String downloadConfirmContent(String title);
+
+  /// No description provided for @chapterDownloadConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Download 1 chapter to this device?} other{Download {count} chapters to this device?}}'**
+  String chapterDownloadConfirm(int count);
 
   /// No description provided for @deleteDownload.
   ///
@@ -15014,6 +15044,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Read'**
   String get readEbook;
+
+  /// No description provided for @chooseEbookVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose ebook version'**
+  String get chooseEbookVersion;
+
+  /// No description provided for @ebookPrimaryVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'server default'**
+  String get ebookPrimaryVersion;
+
+  /// No description provided for @ebookChooseHoldHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Long-press a version to make it your default'**
+  String get ebookChooseHoldHint;
+
+  /// No description provided for @ebookLocalDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'your default'**
+  String get ebookLocalDefault;
+
+  /// No description provided for @ebookDefaultSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Default version set: {name}'**
+  String ebookDefaultSet(Object name);
+
+  /// No description provided for @ebookDefaultCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to the server default version'**
+  String get ebookDefaultCleared;
+
+  /// No description provided for @ebookAlreadyDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Already the default version'**
+  String get ebookAlreadyDefault;
 
   /// No description provided for @homeTapCardToResume.
   ///

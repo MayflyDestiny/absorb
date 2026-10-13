@@ -9,6 +9,7 @@ import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
 import '../utils/series_id.dart';
 import 'absorbing_shared.dart';
+import 'download_confirm.dart';
 
 /// True when [live] and [previous] hold the same indices.
 bool _sameIndices(Set<int> live, Iterable<int> previous) =>
@@ -187,6 +188,27 @@ class _ChapterDownloadSheetState extends State<_ChapterDownloadSheet> {
     });
   }
 
+  // "Start download": resolve the selection's footprint against the same
+  // tracks the download will pull. The size lookup hits the network, so it runs
+  // as a future the dialog fills in when it lands - the dialog itself opens at
+  // once (no stall), and pop only happens after the user confirms.
+  Future<void> _confirmAndStart() async {
+    final l = AppLocalizations.of(context)!;
+    final indices = _selected.toList()..sort();
+    final api = context.read<AuthProvider>().apiService;
+    final sizeFuture = api == null
+        ? null
+        : DownloadService().selectedChapterBytes(api, widget.downloadKey, indices);
+    final go = await confirmDownload(
+      context,
+      widget.title,
+      contentText: l.chapterDownloadConfirm(indices.length),
+      sizeFuture: sizeFuture,
+    );
+    if (!go || !mounted) return;
+    Navigator.pop(context, ChapterDownloadSheetResult(selectedIndices: indices));
+  }
+
   void _openRangePicker() {
     final l = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
@@ -359,13 +381,7 @@ class _ChapterDownloadSheetState extends State<_ChapterDownloadSheet> {
               child: FilledButton(
                 onPressed: _selectedCount == 0
                     ? null
-                    : () {
-                        final indices = _selected.toList()..sort();
-                        Navigator.pop(
-                            context,
-                            ChapterDownloadSheetResult(
-                                selectedIndices: indices));
-                      },
+                    : _confirmAndStart,
                 style: FilledButton.styleFrom(
                   backgroundColor: widget.accent,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

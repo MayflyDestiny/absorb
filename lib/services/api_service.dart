@@ -548,18 +548,37 @@ class ApiService {
 
   String get _cleanBaseUrl => normalizeServerUrl(baseUrl);
 
+  /// Logs response body size so cold-start traffic can be attributed to a
+  /// specific endpoint straight from the verbose log (`[NET]`).
+  void _netLog(String method, Uri url, http.Response r) {
+    if (!verboseDiagnostics) return;
+    verboseLog('[NET] $method ${url.path} ${r.statusCode} ${r.bodyBytes.length}B');
+  }
+
   Future<http.Response> _get(Uri url, {Map<String, String>? headers}) {
-    return _httpClient?.get(url, headers: headers) ?? http.get(url, headers: headers);
+    final f = _httpClient?.get(url, headers: headers) ?? http.get(url, headers: headers);
+    return f.then((r) {
+      _netLog('GET', url, r);
+      return r;
+    });
   }
 
   Future<http.Response> _post(Uri url, {Map<String, String>? headers, Object? body}) {
-    return _httpClient?.post(url, headers: headers, body: body) ??
+    final f = _httpClient?.post(url, headers: headers, body: body) ??
         http.post(url, headers: headers, body: body);
+    return f.then((r) {
+      _netLog('POST', url, r);
+      return r;
+    });
   }
 
   Future<http.Response> _patch(Uri url, {Map<String, String>? headers, Object? body}) {
-    return _httpClient?.patch(url, headers: headers, body: body) ??
+    final f = _httpClient?.patch(url, headers: headers, body: body) ??
         http.patch(url, headers: headers, body: body);
+    return f.then((r) {
+      _netLog('PATCH', url, r);
+      return r;
+    });
   }
 
   /// Run a request on a client this call owns so the transfer can be aborted
@@ -965,6 +984,7 @@ class ApiService {
     } else if (response.statusCode == 401) {
       _checkRevokedApiKey();
     }
+    _netLog('GET', url, response);
     return response;
   }
 
@@ -4499,6 +4519,27 @@ class ApiService {
       verboseLog('[API] updateItemMedia $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
     } catch (e) { verboseLog('updateItemMedia error: $e'); }
+    return false;
+  }
+
+  /// Make one of a book's ebook files the server-side primary, so every
+  /// Audiobookshelf client (not just this device) reads it by default.
+  /// PATCH /api/items/:id/ebook/:fileid/status *toggles* primary/supplementary:
+  /// it promotes a supplementary file to primary (and marks the others
+  /// supplementary), so callers must only call it for a version that is not
+  /// already the primary - calling it on the current primary would demote it
+  /// and leave the item with no primary. Requires the "update" permission.
+  /// BookOrbit exposes no equivalent route, so it reports failure and callers
+  /// keep their local override instead.
+  Future<bool> updateEbookFileStatus(String itemId, String fileId) async {
+    if (isBookOrbit) return false;
+    try {
+      final r = await _authPatch(
+        Uri.parse('$_cleanBaseUrl/api/items/$itemId/ebook/$fileId/status'),
+      );
+      verboseLog('[API] updateEbookFileStatus $itemId/$fileId -> ${r.statusCode}');
+      return r.statusCode == 200;
+    } catch (e) { verboseLog('updateEbookFileStatus error: $e'); }
     return false;
   }
 

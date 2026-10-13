@@ -23,6 +23,8 @@ import '../services/cover_cache_manager.dart';
 import '../services/session_cache.dart';
 import '../services/transcript_line_store.dart';
 import '../services/ebook_cache.dart';
+import '../services/pdf_cache_manager.dart';
+import '../services/ebook_stream_cache.dart';
 import '../services/inflight_temp_writes.dart';
 import '../services/quick_actions_service.dart';
 import '../services/scoped_prefs.dart';
@@ -225,6 +227,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _sessionCacheBytes = 0;
   int _ebookCacheBytes = 0;
   int _exportCacheBytes = 0;
+  int _pdfStreamCacheBytes = 0;
+  int _ebookStreamCacheBytes = 0;
   int? _systemCacheBytes;
   int? _systemDataBytes;
   int? _systemCodeCacheBytes;
@@ -1059,7 +1063,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PlayerSettings.getThemeMode(),                          // 22
       PlayerSettings.getSnappyTransitions(),                  // 23
       DownloadService().downloadLocationLabel,                // 24
-      DownloadService().totalDownloadSize,                    // 25
+      DownloadService().totalDownloadSizeOnDevice,            // 25
       DownloadService.getDeviceStorage(),                     // 26
       AutoSleepSettings.load(),                               // 27
       UpdateCheckerService.currentInstalledVersion(),         // 29
@@ -1204,6 +1208,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }));
     unawaited(_measureExportBytes().then((b) {
       if (mounted) setState(() => _exportCacheBytes = b);
+    }));
+    unawaited(pdfStreamCacheUsageBytes().then((b) {
+      if (mounted) setState(() => _pdfStreamCacheBytes = b);
+    }));
+    unawaited(ebookStreamCacheUsageBytes().then((b) {
+      if (mounted) setState(() => _ebookStreamCacheBytes = b);
     }));
     unawaited(DownloadService.getStorageStats().then((s) {
       if (mounted && s != null) {
@@ -1369,6 +1379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _streamingCacheBytes +
       _sessionCacheBytes +
       _ebookCacheBytes +
+      _ebookStreamCacheBytes +
       _exportCacheBytes;
 
   /// Download footprint for the storage tile: the audio downloads plus the
@@ -1502,6 +1513,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'just_audio_streaming_cache',
       'json_cache',
       'absorbCoverCache',
+      // The PDF and streamed-ebook caches have their own tile measures
+      // (pdfStreamCacheUsageBytes / ebookStreamCacheUsageBytes); without this
+      // they were also counted here as "leftovers", double-counting them.
+      'pdfrx.cache',
+      'ebook_stream_cache',
     };
     try {
       for (final root in await _cacheRoots()) {
@@ -1541,6 +1557,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final exportBytes = await _measureExportBytes();
     final systemStats = await DownloadService.getStorageStats();
     final ebookBytes = await _measureEbookBytes();
+    final ebookStreamBytes = await ebookStreamCacheUsageBytes();
     if (!mounted) return;
     setState(() {
       _jsonCacheBytes = jsonBytes;
@@ -1549,6 +1566,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _streamingCacheBytes = streamBytes;
       _sessionCacheBytes = sessionBytes;
       _ebookCacheBytes = ebookBytes;
+      _ebookStreamCacheBytes = ebookStreamBytes;
       _exportCacheBytes = exportBytes;
       _systemCacheBytes = systemStats?['cacheBytes'];
       _systemDataBytes = systemStats?['dataBytes'];
@@ -1677,16 +1695,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.download_for_offline_outlined,
                   title: l.streamingCache,
                   subtitle: l.cacheStreamingHint,
-                  sizeBytes: _streamingCacheBytes,
-                  enabled: _streamingCacheBytes > 0,
+                  sizeBytes:
+                      _streamingCacheBytes + _pdfStreamCacheBytes + _ebookStreamCacheBytes,
+                  enabled:
+                      _streamingCacheBytes + _pdfStreamCacheBytes + _ebookStreamCacheBytes > 0,
                   clearedMessage: l.streamingCacheCleared,
                   onClear: () async {
                     try {
                       await AudioPlayer.clearStreamingCache();
                     } catch (_) {}
-                    final remaining = await _measureStreamingCacheBytes();
+                    await clearPdfStreamCache();
+                    await clearEbookStreamCache();
                     if (mounted) {
-                      setState(() => _streamingCacheBytes = remaining);
+                      setState(() {
+                        _streamingCacheBytes = 0;
+                        _pdfStreamCacheBytes = 0;
+                        _ebookStreamCacheBytes = 0;
+                      });
                     }
                   },
                   onChanged: refresh,
@@ -1805,6 +1830,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await CoverCacheManager.instance.clear();
     await _deleteCoverDirs();
     await clearEbookCache();
+    await clearPdfStreamCache();
+    await clearEbookStreamCache();
     await DownloadService().forgetKeptEbooks();
     await _deleteLooseEbooks();
     await SessionCache.clearAll();
@@ -1823,6 +1850,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _sessionCacheBytes = 0;
       _ebookCacheBytes = 0;
       _exportCacheBytes = 0;
+      _pdfStreamCacheBytes = 0;
+      _ebookStreamCacheBytes = 0;
     });
     showOverlayToast(context, l.cacheAllCleared,
         icon: Icons.delete_outline_rounded);
@@ -1867,6 +1896,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'aa_covers',
     'streaming_cache',
     'just_audio_streaming_cache',
+    'ebook_stream_cache',
     'json_cache',
     'absorbCoverCache',
   };
@@ -5169,7 +5199,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 PlayerSettings.setStreamingCacheSizeMb(v.first);
                                       },
                             )),
-                            const SizedBox(height: 12),
+                                    const SizedBox(height: 8),
                             ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                               leading: Icon(Icons.cleaning_services_outlined, color: cs.primary),
@@ -6243,8 +6273,11 @@ const Divider(height: 1, indent: 16, endIndent: 16),
                   await dl.setCustomDownloadUri(treeUri);
                   // One-off scan of the chosen folder: recognize previously
                   // downloaded books (via the .absorb marker) and surface them.
+                  // The api lets the service re-fetch covers lost to a data wipe.
                   final scan = await dl.scanAndRegisterExistingDownloads(
-                      treeUri.toString());
+                    treeUri.toString(),
+                    api: mounted ? context.read<AuthProvider>().apiService : null,
+                  );
                   if (scan.recognized > 0 || scan.unknown > 0) {
                     if (mounted) {
                       await _askAboutExistingDownloads(

@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelFileDescriptor
 import android.os.StatFs
 
 import android.util.Log
@@ -224,7 +225,7 @@ class MainActivity : AudioServiceActivity() {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             try {
                                 val storageManager = getSystemService(
-                                    Context.STORAGE_SERVICE) as android.app.usage.StorageStatsManager
+                                    Context.STORAGE_STATS_SERVICE) as android.app.usage.StorageStatsManager
                                 val stats = storageManager.queryStatsForPackage(
                                     android.os.storage.StorageManager.UUID_DEFAULT,
                                     packageName,
@@ -249,6 +250,10 @@ class MainActivity : AudioServiceActivity() {
                     "getSafFileSizes" -> handleGetSafFileSizes(call, result)
                     "pruneSafBookDirs" -> handlePruneSafBookDirs(call, result)
                     "saveEbookToSaf" -> handleSaveEbookToSaf(call, result)
+                    "openSafFileDescriptor" -> handleOpenSafFileDescriptor(call, result)
+                    "closeSafFileDescriptor" -> handleCloseSafFileDescriptor(call, result)
+                    "readSafFileDescriptor" -> handleReadSafFileDescriptor(call, result)
+                    "materializeSafFile" -> handleMaterializeSafFile(call, result)
                     else -> result.notImplemented()
                 }
             }
@@ -839,6 +844,123 @@ val audioExts = setOf(
             } catch (e: Exception) {
                 Log.e(TAG, "saveEbookToSaf failed: ${e.message}", e)
                 runOnUiThread { result.error("SAF_SAVE_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    // Open an exported ebook straight from its SAF copy without copying it into
+    // app storage: hand Dart a `/proc/self/fd/<n>` path, which re-opens to a
+    // real, seekable file. Fails (returns null) for providers that only expose a
+    // non-seekable pipe (e.g. cloud drives), so the caller falls back to a copy.
+    private val openSafEbookFds =
+        java.util.concurrent.ConcurrentHashMap<Int, ParcelFileDescriptor>()
+
+    private fun handleOpenSafFileDescriptor(call: MethodCall, result: MethodChannel.Result) {
+        val uri = call.argument<String>("uri")
+        if (uri == null) {
+            result.error("SAF_ARGS", "uri required", null)
+            return
+        }
+        Thread {
+            try {
+                val pfd = contentResolver.openFileDescriptor(Uri.parse(uri), "r")
+                    ?: throw IllegalStateException("Could not open $uri")
+                val length = pfd.statSize
+                if (length <= 0) {
+                    // Non-seekable (pipe) or empty - not readable as a local file.
+                    try { pfd.close() } catch (_: Exception) {}
+                    runOnUiThread { result.success(null) }
+                    return@Thread
+                }
+                val fd = pfd.fd
+                openSafEbookFds[fd] = pfd
+                runOnUiThread {
+                    result.success(mapOf(
+                        "fd" to fd,
+                        "length" to length,
+                        "path" to "/proc/self/fd/$fd"
+                    ))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "openSafFileDescriptor failed: ${e.message}", e)
+                runOnUiThread { result.success(null) }
+            }
+        }.start()
+    }
+
+    private fun handleCloseSafFileDescriptor(call: MethodCall, result: MethodChannel.Result) {
+        val fd = call.argument<Int>("fd")
+        if (fd != null) {
+            openSafEbookFds.remove(fd)?.let { try { it.close() } catch (_: Exception) {} }
+        }
+        result.success(null)
+    }
+
+    // Positional read of a held SAF descriptor. This lets a reader seek around an
+    // exported book and read just the bytes it needs, without the app copying the
+    // whole file into its own storage: the descriptor opened through SAF stays
+    // readable and seekable, unlike a re-opened /proc/self/fd path. Fills the
+    // whole request unless EOF is reached. Returns the bytes read (empty at/after
+    // EOF), or null on failure.
+    private fun handleReadSafFileDescriptor(call: MethodCall, result: MethodChannel.Result) {
+        val fd = (call.argument<Number>("fd"))?.toInt()
+        val offset = (call.argument<Number>("offset"))?.toLong()
+        val count = (call.argument<Number>("count"))?.toInt()
+        if (fd == null || offset == null || count == null || count < 0 || offset < 0) {
+            result.error("SAF_ARGS", "fd, offset and count required", null)
+            return
+        }
+        Thread {
+            try {
+                val pfd = openSafEbookFds[fd] ?: throw IllegalStateException("Unknown fd $fd")
+                if (count == 0) {
+                    runOnUiThread { result.success(ByteArray(0)) }
+                    return@Thread
+                }
+                val buffer = ByteArray(count)
+                var read = 0
+                while (read < count) {
+                    val n = android.system.Os.pread(
+                        pfd.fileDescriptor, buffer, read, count - read, offset + read)
+                    if (n <= 0) break
+                    read += n
+                }
+                val out = if (read == count) buffer else buffer.copyOf(read)
+                runOnUiThread { result.success(out) }
+            } catch (e: Exception) {
+                Log.e(TAG, "readSafFileDescriptor failed: ${e.message}", e)
+                runOnUiThread { result.success(null) }
+            }
+        }.start()
+    }
+
+    // Copy an exported ebook out of the SAF tree into a real app-private file the
+    // readers can open as a normal (seekable) File. Used when the exported
+    // document can't be re-opened in place through `/proc/self/fd` (providers
+    // whose descriptor isn't a plain re-openable file). The caller deletes the
+    // copy once the reader closes, so only one permanent copy of the book exists.
+    // Returns the byte count, or null on failure.
+    private fun handleMaterializeSafFile(call: MethodCall, result: MethodChannel.Result) {
+        val uri = call.argument<String>("uri")
+        val destPath = call.argument<String>("destPath")
+        if (uri == null || destPath == null) {
+            result.error("SAF_ARGS", "uri and destPath required", null)
+            return
+        }
+        Thread {
+            try {
+                val dest = File(destPath)
+                dest.parentFile?.mkdirs()
+                contentResolver.openInputStream(Uri.parse(uri))?.use { input ->
+                    dest.outputStream().use { output ->
+                        input.copyTo(output, 64 * 1024)
+                    }
+                } ?: throw IllegalStateException("Could not read $uri")
+                runOnUiThread { result.success(dest.length()) }
+            } catch (e: Exception) {
+                Log.e(TAG, "materializeSafFile failed: ${e.message}", e)
+                try { File(destPath).delete() } catch (_: Exception) {}
+                runOnUiThread { result.success(null) }
             }
         }.start()
     }

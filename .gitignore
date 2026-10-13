@@ -81,6 +81,8 @@ android/key.properties
 **/macos/Flutter/ephemeral/
 packages/audio_service/pubspec.lock
 packages/audio_service/example/pubspec.lock
+packages/flutter_epub_viewer/pubspec.lock
+packages/flutter_epub_viewer/example/pubspec.lock
 
 # Native build intermediates Gradle writes inside vendored plugins
 packages/*/android/.cxx/

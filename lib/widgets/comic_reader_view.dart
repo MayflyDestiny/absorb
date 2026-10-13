@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -12,7 +13,9 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/ebook_progress_store.dart';
 import '../services/progress_sync_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/volume_key_service.dart';
@@ -125,6 +128,10 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
   String? _error;
   bool _loading = true;
 
+  // Where a locally-read CBZ came from (exported copy or reader cache). Released
+  // on dispose so an exported/SAF source's file descriptor doesn't leak.
+  EbookOpenSource? _openSource;
+
   int _page = 1;
   bool _rtl = false;
   bool _zoomed = false;
@@ -170,6 +177,8 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
     _setFullscreen(false);
     _flushProgress();
     _controller?.dispose();
+    final source = _openSource;
+    if (source != null) unawaited(source.release());
     super.dispose();
   }
 
@@ -183,11 +192,19 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
 
   /// The saved page: the location when it is a page number, otherwise the
   /// progress fraction (a CBZ last read in the old reader saved neither).
-  int _savedPage(int count) {
+  /// Resolved per version so a re-uploaded comic doesn't inherit another
+  /// version's page.
+  Future<int> _resolveSavedPage(int count) async {
     final data = _lib?.getProgressData(widget.itemId);
-    final loc = int.tryParse((data?['ebookLocation'] as String?)?.trim() ?? '');
+    final resolved = await EbookProgressStore.instance.resolve(
+      widget.itemId,
+      ebookVersionKey(widget.ebookFile),
+      itemLocation: data?['ebookLocation'] as String?,
+      itemProgress: (data?['ebookProgress'] as num?)?.toDouble(),
+    );
+    final loc = int.tryParse((resolved.location ?? '').trim());
     if (loc != null && loc >= 1) return loc.clamp(1, count);
-    final frac = (data?['ebookProgress'] as num?)?.toDouble() ?? 0;
+    final frac = resolved.progress ?? 0;
     if (frac > 0 && frac < 1) return (frac * count).round().clamp(1, count);
     return 1;
   }
@@ -199,8 +216,15 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
     final offline = _lib?.isOffline ?? true;
     try {
       _ComicPages? pages;
-      if (ext == 'cbz' && await isEbookCached(widget.itemId, widget.ebookFile)) {
-        pages = await _unpack(await ebookCacheFileFor(widget.itemId, widget.ebookFile));
+      if (ext == 'cbz') {
+        // Read the local copy in place when there is one (exported or cached);
+        // it never forces a download, so an online device still prefers the
+        // streamed server pages below.
+        final local = await resolveLocalEbookSource(widget.itemId, widget.ebookFile, needFile: true);
+        if (local != null) {
+          _openSource = local;
+          pages = await _unpack(local.file!);
+        }
       }
       final fileId = widget.ebookFile['ino'] as String?;
       if (pages == null && api != null && fileId != null && !offline) {
@@ -208,9 +232,21 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
         if (count != null && count > 0) pages = _ServerPages(api, fileId, count);
       }
       if (pages == null && ext == 'cbz' && api != null && !offline) {
-        pages = await _unpack(await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title));
+        // Nothing local and no streamed pages: download the archive once.
+        final source = await resolveEbookOpenSource(api, widget.itemId, widget.ebookFile, widget.title, needFile: true);
+        final prev = _openSource;
+        _openSource = source;
+        if (prev != null) unawaited(prev.release());
+        pages = await _unpack(source.file!);
       }
-      if (!mounted) return;
+      if (!mounted) {
+        // The widget was disposed while (un)packing; release what we opened so
+        // nothing is left dangling (dispose already ran with a null source).
+        final opened = _openSource;
+        _openSource = null;
+        if (opened != null) unawaited(opened.release());
+        return;
+      }
       if (pages == null) {
         setState(() {
           _error = ext == 'cbz' ? l.noEbookFileFound : l.comicNeedsConnection;
@@ -225,7 +261,8 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
         });
         return;
       }
-      final start = _savedPage(pages.count);
+      final start = await _resolveSavedPage(pages.count);
+      if (!mounted) return;
       setState(() {
         _pages = pages;
         _page = start;
@@ -301,6 +338,8 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
     final frac = (page / count).clamp(0.0, 1.0);
     ProgressSyncService().pushEbookProgress(api, widget.itemId, location: '$page', progress: frac);
     _lib?.applyLocalEbookProgress(widget.itemId, location: '$page', progress: frac);
+    unawaited(EbookProgressStore.instance.record(
+        widget.itemId, ebookVersionKey(widget.ebookFile), '$page', frac));
     _lastSync = DateTime.now();
     _lastSyncedPage = page;
     _pendingPage = null;

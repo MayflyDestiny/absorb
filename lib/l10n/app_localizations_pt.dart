@@ -681,7 +681,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get desc => 'DESC';
 
   @override
-  String get fileSize => 'File Size';
+  String get fileSize => 'Size';
 
   @override
   String get lastUpdated => 'Last Updated';
@@ -2180,6 +2180,12 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get downloadsEbookOnlyCached => 'Cached only';
+
+  @override
+  String get downloadsEbookExported => 'Exported';
+
+  @override
   String get downloadsSort => 'Sort';
 
   @override
@@ -2238,18 +2244,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get streamingCacheInfoContent =>
-      'Caches streamed audio to disk so it doesn\'t need to be re-downloaded if you seek back or re-listen to sections. The cache is automatically managed - oldest files are removed when the size limit is reached. This is separate from fully downloaded books.';
+      'Caches streamed audio and ebook page blocks to disk so seeking back doesn\'t re-download them; oldest files are dropped at the size limit. Off keeps nothing. Separate from fully downloaded books.';
 
   @override
   String get streamingCacheOff => 'Off';
 
   @override
   String get streamingCacheOffSubtitle =>
-      'Off - audio is streamed without caching';
+      'Off - streamed audio isn\'t cached; ebook blocks last the session';
 
   @override
   String streamingCacheOnSubtitle(int size) {
-    return '$size MB - recently streamed audio is cached to disk';
+    return '$size MB - recently streamed audio and ebook pages are cached to disk';
   }
 
   @override
@@ -2297,7 +2303,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get cacheStreamingHint =>
-      'Recently streamed audio kept on disk for instant replay.';
+      'Recently streamed audio and ebook page blocks are cached locally to avoid re-downloading.';
 
   @override
   String get clearAllCaches => 'Clear all';
@@ -3606,6 +3612,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get noEbookFileFound => 'No ebook file found';
 
   @override
+  String get readerFailedToOpen => 'Couldn\'t open the PDF';
+
+  @override
+  String get readerStreamHint =>
+      'Streaming a PDF needs a connection to your server. Check the connection, then try again.';
+
+  @override
   String get bookmark => 'Bookmark';
 
   @override
@@ -3781,6 +3794,17 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String downloadConfirmContent(String title) {
     return 'Download “$title” to this device?';
+  }
+
+  @override
+  String chapterDownloadConfirm(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Download $count chapters to this device?',
+      one: 'Download 1 chapter to this device?',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -8766,6 +8790,30 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get readEbook => 'Read';
+
+  @override
+  String get chooseEbookVersion => 'Choose ebook version';
+
+  @override
+  String get ebookPrimaryVersion => 'server default';
+
+  @override
+  String get ebookChooseHoldHint =>
+      'Long-press a version to make it your default';
+
+  @override
+  String get ebookLocalDefault => 'your default';
+
+  @override
+  String ebookDefaultSet(Object name) {
+    return 'Default version set: $name';
+  }
+
+  @override
+  String get ebookDefaultCleared => 'Back to the server default version';
+
+  @override
+  String get ebookAlreadyDefault => 'Already the default version';
 
   @override
   String get homeTapCardToResume =>

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +9,9 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/ebook_progress_store.dart';
 import '../services/progress_sync_service.dart';
 import '../services/foliate_book_server.dart';
 import '../services/volume_key_service.dart';
@@ -61,6 +64,11 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
   int _port = 0;
   String _bookUrlName = 'book.epub';
 
+  // Where the readable bytes came from (exported copy or reader cache). An
+  // exported/SAF source is released on dispose; its file descriptor is held for
+  // the whole session because the book server reads the file lazily.
+  EbookOpenSource? _openSource;
+
   String? _initialCfi;
   String? _cfi;
   double _progress = 0;
@@ -90,7 +98,6 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
     _api = context.read<AuthProvider>().apiService;
     _lib = context.read<LibraryProvider>();
     _lib?.setReaderQuiet(true);
-    _loadInitialCfi();
     _prepare();
     _volumeNav.attach();
   }
@@ -114,6 +121,8 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
     _setFullscreen(false);
     _flushProgress();
     _server.stop();
+    final source = _openSource;
+    if (source != null) unawaited(source.release());
     super.dispose();
   }
 
@@ -128,14 +137,25 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
     }
   }
 
-  void _loadInitialCfi() {
+  Future<void> _loadInitialCfi() async {
     final lib = context.read<LibraryProvider>();
-    final loc = lib.getProgressData(widget.itemId)?['ebookLocation'] as String?;
+    final data = lib.getProgressData(widget.itemId);
+    // The item-level location is shared by every ebook version of this book;
+    // resolve it per version so a MOBI/AZW3 never resumes at another version's
+    // position.
+    final resolved = await EbookProgressStore.instance.resolve(
+      widget.itemId,
+      ebookVersionKey(widget.ebookFile),
+      itemLocation: data?['ebookLocation'] as String?,
+      itemProgress: (data?['ebookProgress'] as num?)?.toDouble(),
+    );
+    if (!mounted) return;
+    final loc = resolved.location;
     if (loc != null && loc.isNotEmpty) {
       _initialCfi = loc;
       _cfi = loc;
     }
-    final p = (lib.getProgressData(widget.itemId)?['ebookProgress'] as num?)?.toDouble();
+    final p = resolved.progress;
     if (p != null) _progress = p.clamp(0.0, 1.0);
   }
 
@@ -168,17 +188,32 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
         setState(() { _error = 'Not connected to server'; _loading = false; });
         return;
       }
+      await _loadInitialCfi();
+      if (!mounted) return;
       _log('prepare ext=$_ext playing=${AudioPlayerService().isPlaying}');
-      final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
+      // Prefer the exported copy (read in place, no second copy); otherwise the
+      // shared persistent cache, downloading it if needed.
+      final source = await resolveEbookOpenSource(api, widget.itemId, widget.ebookFile, widget.title);
+      _openSource = source;
       final ext = _ext.isEmpty ? '.epub' : _ext;
       _bookUrlName = 'book$ext';
-      final port = await _server.start(bookFile: file, mime: _mimeFor(ext));
-      final len = file.existsSync() ? await file.length() : 0;
+      final port = await _server.start(source: source.source, mime: _mimeFor(ext));
+      final len = await source.source.length();
       _log('server up port=$port bytes=$len mime=${_mimeFor(ext)}');
-      if (!mounted) return;
+      if (!mounted) {
+        _openSource = null;
+        await source.release();
+        return;
+      }
       setState(() { _port = port; _loading = false; });
     } catch (e) {
       _log('prepare error $e');
+      // The server may have started before the failure; stop it so a mounted
+      // error view doesn't keep a loopback server (and its source) alive.
+      _server.stop();
+      final source = _openSource;
+      _openSource = null;
+      if (source != null) unawaited(source.release());
       if (mounted) setState(() { _error = '$e'; _loading = false; });
     }
   }
@@ -272,6 +307,8 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
     if (api == null || cfi == null || cfi == _lastSyncedCfi) return;
     ProgressSyncService().pushEbookProgress(api, widget.itemId, location: cfi, progress: _progress);
     _lib?.applyLocalEbookProgress(widget.itemId, location: cfi, progress: _progress);
+    unawaited(EbookProgressStore.instance.record(
+        widget.itemId, ebookVersionKey(widget.ebookFile), cfi, _progress));
     _lastSync = DateTime.now();
     _lastSyncedCfi = cfi;
   }
@@ -389,6 +426,11 @@ class _FoliateReaderViewState extends State<FoliateReaderView> with WidgetsBindi
                     allowFileAccessFromFileURLs: true,
                     allowUniversalAccessFromFileURLs: true,
                     mediaPlaybackRequiresUserGesture: false,
+                    // Texture (virtual display) rendering instead of hybrid
+                    // composition: the latter stacks the native WebView over
+                    // the Flutter surface, so disposing it on pop flashes a
+                    // black frame.
+                    useHybridComposition: false,
                   ),
                   onWebViewCreated: (c) {
                     _controller = c;

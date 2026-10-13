@@ -58,6 +58,10 @@ class _LoginScreenState extends State<LoginScreen>
   // Set briefly while the protocol dropdown is changed by hand so the
   // auto-inference below (IP -> HTTP) doesn't override the explicit choice.
   bool _skipAutoProtocol = false;
+  // True once the user has explicitly chosen a protocol - via the dropdown or
+  // by typing/pasting a URL with a scheme. Auto-inference then stops touching
+  // it, so a hand-picked http:// survives switching from an IP to a domain.
+  bool _protocolManual = false;
   ServerBackend _backend = ServerBackend.audiobookshelf;
 
   // Server validation state
@@ -209,6 +213,7 @@ class _LoginScreenState extends State<LoginScreen>
     if (scheme != null) {
       final protocol = '${scheme.group(1)!.toLowerCase()}://';
       final host = stripDefaultPort(scheme.group(2) ?? '', protocol);
+      _protocolManual = true;
       if (protocol != _protocol) {
         setState(() => _protocol = protocol);
       }
@@ -230,6 +235,8 @@ class _LoginScreenState extends State<LoginScreen>
         _serverError = null;
         _serverErrorDetail = null;
         _lastValidatedServer = '';
+        // Clearing the field re-arms auto-inference for the next entry.
+        _protocolManual = false;
       });
       _debounce?.cancel();
       return;
@@ -240,11 +247,17 @@ class _LoginScreenState extends State<LoginScreen>
     // added implicitly when the effective URL is built (see _buildServerUrl).
     // Domains keep the scheme's implicit port (https 443 / http 80); an
     // explicit ":port" typed into the field always wins.
+    //
+    // The inference is symmetric: an IP forces http, a domain drops back to
+    // https. Without the second half, entering an IP once pinned http:// and it
+    // never reverted when the field was changed to a domain. A protocol the
+    // user picked by hand is left alone.
     final hostPart = text.split(RegExp(r'[\/?#]')).first;
-    if (_isIpWithoutPort(hostPart) &&
-        !_skipAutoProtocol &&
-        _protocol != 'http://') {
-      setState(() => _protocol = 'http://');
+    if (!_skipAutoProtocol && !_protocolManual) {
+      final target = _isIpHost(hostPart) ? 'http://' : 'https://';
+      if (target != _protocol) {
+        setState(() => _protocol = target);
+      }
     }
 
     // Only invalidate if the server text actually changed from what we validated
@@ -276,6 +289,16 @@ class _LoginScreenState extends State<LoginScreen>
       return true;
     }
     return false;
+  }
+
+  /// True when [hostPort] is an IP literal, whether or not it carries an
+  /// explicit `:port`. Used to decide the auto protocol, so that appending a
+  /// port to a bare IP (`192.168.1.5` -> `192.168.1.5:13378`) keeps HTTP
+  /// instead of flipping to HTTPS as an unknown host would.
+  bool _isIpHost(String hostPort) {
+    if (_isIpWithoutPort(hostPort)) return true;
+    final m = RegExp(r'^(.+):\d+$').firstMatch(hostPort);
+    return m != null && _isIpWithoutPort(m.group(1)!);
   }
 
   /// Effective URL for the address typed into the field. Bare IP literals pick
@@ -723,6 +746,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           onChanged: (v) {
                                             if (v != null) {
                                               _skipAutoProtocol = true;
+                                              _protocolManual = true;
                                               setState(() {
                                                 _protocol = v;
                                                 _serverValid = false;

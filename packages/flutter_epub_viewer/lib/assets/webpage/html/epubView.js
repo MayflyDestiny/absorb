@@ -13,10 +13,24 @@ function setCachedLocations(json) {
 }
 function handBackLocations() {
   try {
+    // Never ship an empty index back: the app would store "[]" beside the
+    // epub and every later open would load it, leaving progress stuck at 0.
+    if (!book.locations.length()) return;
     window.flutter_inappwebview.callHandler('locationsGenerated', book.locations.save());
   } catch (e) {
     console.error('Error handing locations back:', e);
   }
+}
+// Walk the whole book to build the location index, yielding on a plain
+// timeout instead of requestAnimationFrame and without the default ~100ms
+// per-section pause. With both throttles in place a 700-chapter book took
+// over a minute to index - long enough that readers closed it before the
+// index existed (so it never got cached) and the progress bar never left 0%.
+// This finishes in a couple of seconds; the result is cached beside the epub.
+function fastGenerateLocations() {
+  book.locations.pause = 0;
+  book.locations.q.tick = function (cb) { setTimeout(cb, 0); };
+  return book.locations.generate(1600).then(handBackLocations);
 }
 var xpathDisplayInProgress = false; // Flag to prevent multiple XPath displays
 var initialPositionLoading = false; // Flag to track if initial position is being loaded
@@ -103,8 +117,10 @@ var bookPartsLen = 0;
 // A loopback URL the page fetches the book from itself; set by Flutter for
 // file sources right before loadBook(null, ...).
 var bookUrl = null;
-function setBookUrl(url) {
+var bookUrlDirectory = false;
+function setBookUrl(url, directory) {
   bookUrl = url;
+  bookUrlDirectory = !!directory;
 }
 function beginBookData() {
   bookParts = [];
@@ -132,8 +148,13 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
   document.getElementById('viewer').style.height = viewportHeight;
   if (bookUrl) {
     var url = bookUrl;
+    var directory = bookUrlDirectory;
     bookUrl = null;
-    book.open(url);
+    bookUrlDirectory = false;
+    // Directory mode (no .epub URL): the entries are served over HTTP, so the
+    // page fetches only the container, the OPF and the current section instead
+    // of pulling the whole archive in and unpacking it in JavaScript.
+    book.open(url, directory ? 'directory' : undefined);
   } else {
     var uint8Array;
     if (data) {
@@ -1142,11 +1163,12 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
           book.locations.load(cached);
         } catch (e) {
           console.error('Cached locations unusable, regenerating:', e);
-          return book.locations.generate(1600).then(handBackLocations);
         }
+        // A cache that parses to an empty index is as bad as none: rebuild.
+        return book.locations.length() ? null : fastGenerateLocations();
       });
     } else {
-      locationsReady = book.locations.generate(1600).then(handBackLocations);
+      locationsReady = fastGenerateLocations();
     }
     locationsReady.then(() => {
       // Handle initial position after locations are generated

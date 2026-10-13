@@ -745,9 +745,48 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   }
 
   /// The ebook's own reading progress, apart from any audio progress.
-  double getEbookProgress(String? itemId) {
+  ///
+  /// The server only knows one `ebookProgress` per item, which for a
+  /// multi-version book is whichever version is furthest along and therefore
+  /// misrepresents the one being read (see [EbookProgressStore]).
+  ///
+  /// Pass [versionId] - the version the caller would open, i.e. the server
+  /// primary / chosen default - and that version's own recorded progress is
+  /// shown, so the detail sheet reflects the *default* version rather than
+  /// whichever version was read last on this device.
+  ///
+  /// The server stores only one `ebookProgress` per item, so it cannot be
+  /// attributed to a specific version. For a multi-version book ([multiVersion])
+  /// a version with no saved position therefore reports 0 instead of inheriting
+  /// another version's item-level value - otherwise reading the 161 MB EPUB (or
+  /// the PDF) on another device would fill the default EPUB's bar. A single
+  /// version still falls back to the shared value, so the button doesn't go
+  /// blank. Without [versionId] the previous behavior is kept (the most recently
+  /// read version, else the item-level value).
+  double getEbookProgress(String? itemId, {String? versionId, bool multiVersion = false}) {
     if (itemId == null) return 0;
-    return (_progressMap[itemId]?['ebookProgress'] as num?)?.toDouble() ?? 0;
+    final itemLevel =
+        ((_progressMap[itemId]?['ebookProgress'] as num?)?.toDouble() ?? 0)
+            .clamp(0.0, 1.0);
+    if (versionId == null || versionId.isEmpty) {
+      final local = EbookProgressStore.instance.lastProgress(itemId);
+      if (local != null && local > 0) return local.clamp(0.0, 1.0);
+      return itemLevel;
+    }
+    final versioned =
+        EbookProgressStore.instance.progressForVersion(itemId, versionId);
+    if (versioned != null && versioned > 0) return versioned.clamp(0.0, 1.0);
+    // No position for this version on this device, and the shared item-level
+    // value can't be trusted to belong to it. Only when a *different* version
+    // has actually written here do we know the shared value isn't ours and
+    // return 0. A device with no local record at all (fresh install) mirrors
+    // [EbookProgressStore.resolve]: it trusts the item-level value, so the
+    // button shows the same position the reader opens at.
+    final lastVersion = EbookProgressStore.instance.lastVersion(itemId);
+    if (multiVersion && lastVersion != null && lastVersion != versionId) {
+      return 0;
+    }
+    return itemLevel;
   }
 
   /// Reflect ebook reading progress in the in-memory map right away, so covers
@@ -1011,6 +1050,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _progressMap.remove(itemId);
     _localProgressOverrides.remove(itemId);
     _locallyFinishedItems.remove(itemId);
+    unawaited(EbookProgressStore.instance.clear(itemId));
     _resetItems.add(itemId);
     notifyListeners();
   }
@@ -1033,6 +1073,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     // Overlay queued-offline ebook positions (their PATCH never landed), so a
     // cold start can't resume the reader behind the last page read offline.
     _overlayPendingEbookProgress();
+    // Load per-version ebook positions so [getEbookProgress] can report the
+    // version last read on this device; rebuild once they're in.
+    unawaited(EbookProgressStore.instance.ensureLoaded().then((_) {
+      notifyListeners();
+    }));
   }
 
   // Once overlaid here, the position lives in _progressMap like any local

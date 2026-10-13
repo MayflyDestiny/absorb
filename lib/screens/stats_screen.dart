@@ -733,8 +733,8 @@ class _StatsScreenState extends State<StatsScreen>
                         if (values[i] > 0)
                           Padding(
                               padding: const EdgeInsets.only(bottom: 4),
-                              child: Text(_formatDuration(values[i]),
-                                  textAlign: TextAlign.center,
+                              child: _AutoFitText(_formatDuration(values[i]),
+                                  minFontSize: 6,
                                   style: TextStyle(
                                       color: cs.onSurface.withValues(alpha: 0.35),
                                       fontSize: 8,
@@ -1038,9 +1038,10 @@ class _StatsScreenState extends State<StatsScreen>
             style: tt.titleSmall
                 ?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
         const SizedBox(height: 2),
-        Text(
+        _AutoFitText(
           l.statsGoalProgress(
               _formatDuration(elapsedSeconds), _formatDuration(targetSeconds)),
+          minFontSize: 10,
           style:
               tt.bodySmall?.copyWith(color: reached ? doneColor : cs.onSurfaceVariant),
         ),
@@ -1264,7 +1265,7 @@ class _StatsScreenState extends State<StatsScreen>
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(value,
+          _AutoFitText(value,
               style: tt.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700, color: cs.onSurface, height: 1)),
           const SizedBox(height: 2),
@@ -1308,7 +1309,8 @@ class _StatsScreenState extends State<StatsScreen>
         border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
       ),
       child: Column(children: [
-        Text(_formatDuration(seconds),
+        _AutoFitText(_formatDuration(seconds),
+            minFontSize: 12,
             style: tt.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700, color: cs.onSurface, height: 1)),
         const SizedBox(height: 4),
@@ -1769,6 +1771,58 @@ class _StatsScreenState extends State<StatsScreen>
     return l.statsScreenDurationShortM(m);
   }
 
+}
+
+/// Renders [text] on a single line, shrinking the font just enough to fit the
+/// available width but never below [minFontSize] (ellipsis only if even that
+/// cannot fit). Keeps localized duration strings like "24 小时 41 分" from
+/// wrapping inside narrow stat cards without touching the shared formatter.
+class _AutoFitText extends StatelessWidget {
+  const _AutoFitText(this.text, {required this.style, this.minFontSize = 12});
+
+  final String text;
+  final TextStyle? style;
+  final double minFontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final baseStyle = style ?? const TextStyle();
+    final baseSize = baseStyle.fontSize ?? 14;
+    return LayoutBuilder(builder: (context, constraints) {
+      var size = baseSize;
+      final maxWidth = constraints.maxWidth;
+      if (maxWidth.isFinite && maxWidth > 0) {
+        // Measure with the style the Text actually renders with: the widget
+        // style merged over the ambient DefaultTextStyle (which carries the
+        // theme's fontFamilyFallback). The bare style under-reports CJK width.
+        final resolved = DefaultTextStyle.of(context).style.merge(baseStyle);
+        final painter = TextPainter(
+          text: TextSpan(
+              text: text, style: resolved.copyWith(fontSize: baseSize)),
+          maxLines: 1,
+          textScaler: MediaQuery.textScalerOf(context),
+          textDirection: Directionality.of(context),
+        )..layout();
+        if (painter.width > maxWidth) {
+          size = (baseSize * maxWidth / painter.width)
+              .clamp(minFontSize, baseSize)
+              .toDouble();
+        }
+      }
+      // Pre-shrinking picks the size (honouring the floor); the FittedBox then
+      // does the final, glyph-accurate fit so measurement rounding can never
+      // leave the rendered line overflowing into an ellipsis.
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          text,
+          maxLines: 1,
+          softWrap: false,
+          style: baseStyle.copyWith(fontSize: size),
+        ),
+      );
+    });
+  }
 }
 
 class _DayData {

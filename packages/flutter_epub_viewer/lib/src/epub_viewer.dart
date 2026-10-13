@@ -9,6 +9,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../flutter_epub_viewer.dart';
 import 'local_book_server.dart';
+import 'zip_book_server.dart';
 import 'utils.dart';
 
 /// Callback for text selection events with WebView-relative coordinates.
@@ -225,6 +226,12 @@ class _EpubViewerState extends State<EpubViewer> {
     javaScriptEnabled: true,
     mediaPlaybackRequiresUserGesture: false,
     transparentBackground: true,
+    // Render the Android WebView into a texture (virtual display) instead of
+    // stacking the native view over the Flutter surface (hybrid composition).
+    // With hybrid composition, disposing the platform view while the reader
+    // page is popped flashes a black frame; the texture path has no native
+    // surface to tear down, so the exit is clean.
+    useHybridComposition: false,
     supportZoom: false,
     allowsInlineMediaPlayback: true,
     disableLongPressContextMenuOnLinks: false,
@@ -239,6 +246,7 @@ class _EpubViewerState extends State<EpubViewer> {
   );
 
   LocalBookServer? _bookServer;
+  ZipBookServer? _zipServer;
 
   @override
   void initState() {
@@ -623,20 +631,37 @@ class _EpubViewerState extends State<EpubViewer> {
 
     String xpathParam = initialXPath != null ? '"$initialXPath"' : 'null';
 
-    final sourceFile = widget.epubSource.file;
+    final bookSource = widget.epubSource.source;
     final started = DateTime.now();
-    if (sourceFile != null) {
-      // A file on disk is served to the page over loopback and fetched by
-      // the page itself: no Dart-side copy, no base64, no bridge round trips.
-      // A 322MB book spent about twelve seconds in that transfer.
+    if (bookSource != null) {
+      // A local byte source (a file on disk or a held SAF descriptor) is served
+      // to the page over loopback and fetched by the page itself: no Dart-side
+      // copy, no base64, no bridge round trips.
       await _bookServer?.stop();
-      final server = LocalBookServer(sourceFile);
-      _bookServer = server;
-      final url = await server.start();
-      await webViewController?.evaluateJavascript(
-        source: 'setBookUrl(${jsonEncode(url)})',
-      );
-      debugPrint('[EpubViewer] serving book over loopback (${await sourceFile.length()} bytes)');
+      await _zipServer?.stop();
+      // Prefer serving the zip's entries as if it were an unzipped directory,
+      // so the page opens in epub.js directory mode and fetches only the OPF
+      // and the current section. That replaces pulling the whole (sometimes
+      // hundreds of MB) archive into JavaScript and unpacking it there.
+      final zipServer = await ZipBookServer.create(bookSource);
+      if (zipServer != null) {
+        _zipServer = zipServer;
+        final url = await zipServer.start();
+        await webViewController?.evaluateJavascript(
+          source: 'setBookUrl(${jsonEncode(url)}, true)',
+        );
+        debugPrint('[EpubViewer] serving book as a zip directory '
+            '(${await bookSource.length()} bytes)');
+      } else {
+        final server = LocalBookServer(bookSource);
+        _bookServer = server;
+        final url = await server.start();
+        await webViewController?.evaluateJavascript(
+          source: 'setBookUrl(${jsonEncode(url)})',
+        );
+        debugPrint('[EpubViewer] serving book over loopback '
+            '(${await bookSource.length()} bytes)');
+      }
     } else {
       // Bytes from a URL or an asset: stream them into the page in base64
       // chunks and assemble there. Serializing the whole book into the script
@@ -787,6 +812,8 @@ class _EpubViewerState extends State<EpubViewer> {
     _stopSelectionMonitoring();
     _bookServer?.stop();
     _bookServer = null;
+    _zipServer?.stop();
+    _zipServer = null;
     super.dispose();
   }
 }

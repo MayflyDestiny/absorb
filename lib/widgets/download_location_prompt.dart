@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../providers/auth_provider.dart';
 import '../services/download_service.dart';
 import '../utils/settle_frames.dart';
 import 'overlay_toast.dart';
@@ -90,8 +92,12 @@ class _LocationPromptDialogState extends State<_LocationPromptDialog> {
       final dl = DownloadService();
       await dl.setCustomDownloadUri(treeUri);
       // Recognize any previously downloaded content already in this folder and
-      // restore it into the downloads registry (offline, marker-based).
-      final scan = await dl.scanAndRegisterExistingDownloads(treeUri.toString());
+      // restore it into the downloads registry (offline, marker-based). The api
+      // lets the service re-fetch any covers lost to a data wipe.
+      final scan = await dl.scanAndRegisterExistingDownloads(
+        treeUri.toString(),
+        api: context.read<AuthProvider>().apiService,
+      );
       if (!mounted) return;
       Navigator.of(context).pop();
       if (scan.recognized > 0 || scan.unknown > 0) {

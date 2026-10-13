@@ -3,14 +3,59 @@ import '../l10n/app_localizations.dart';
 import '../services/download_service.dart';
 
 /// Shows a confirm dialog before starting a user-triggered download.
-/// Returns true when the user confirms.
-Future<bool> confirmDownload(BuildContext context, String title) async {
+/// Returns true when the user confirms. When [sizeBytes] is known up front
+/// (an ebook being exported or kept offline), it's shown in the confirm so a
+/// large file doesn't come as a surprise.
+///
+/// [sizeFuture] is the same thing for a size that still has to be resolved
+/// (an audio download's real file footprint). The dialog opens immediately and
+/// the size row fills in when the future completes, so a network lookup never
+/// stalls the dialog. [contentText] replaces the default "{title}?" line when a
+/// caller has a better sentence than the book title (e.g. "Download 3
+/// chapters to this device?").
+Future<bool> confirmDownload(
+  BuildContext context,
+  String title, {
+  int? sizeBytes,
+  Future<int?>? sizeFuture,
+  String? contentText,
+}) async {
   final l = AppLocalizations.of(context)!;
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(l.downloadConfirmTitle),
-      content: Text(l.downloadConfirmContent(title)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(contentText ?? l.downloadConfirmContent(title)),
+          if (sizeFuture != null)
+            FutureBuilder<int?>(
+              future: sizeFuture,
+              builder: (ctx, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Row(children: [
+                      SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 8),
+                      Text('···'),
+                    ]),
+                  );
+                }
+                final b = snap.data;
+                if (b == null || b <= 0) return const SizedBox.shrink();
+                return _sizeRow(ctx, l.fileSize, b);
+              },
+            )
+          else if (sizeBytes != null && sizeBytes > 0)
+            _sizeRow(ctx, l.fileSize, sizeBytes),
+        ],
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
@@ -24,6 +69,26 @@ Future<bool> confirmDownload(BuildContext context, String title) async {
     ),
   );
   return go == true;
+}
+
+Widget _sizeRow(BuildContext ctx, String label, int bytes) {
+  return Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: Row(children: [
+      Icon(Icons.storage_rounded, size: 16,
+          color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+      const SizedBox(width: 8),
+      Text('$label: ${_fmtBytes(bytes)}',
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+    ]),
+  );
+}
+
+String _fmtBytes(int b) {
+  if (b < 1024) return '$b B';
+  if (b < 1048576) return '${(b / 1024).round()} KB';
+  if (b < 1073741824) return '${(b / 1048576).toStringAsFixed(1)} MB';
+  return '${(b / 1073741824).toStringAsFixed(2)} GB';
 }
 
 /// What the user chose to do with a download that is already running.

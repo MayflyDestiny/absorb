@@ -9,6 +9,8 @@ import '../services/android_auto_service.dart';
 import '../services/book_search_index.dart';
 import '../services/carplay_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/ebook_preferences.dart';
+import '../services/ebook_progress_store.dart';
 import '../services/equalizer_service.dart';
 import '../services/session_cache.dart';
 import '../services/socket_service.dart';
@@ -1470,6 +1472,12 @@ class AuthProvider extends ChangeNotifier {
     // Sign the paired watch out too.
     WearAuthService.instance.clear();
 
+    // The active scope may now be empty or belong to another account; drop the
+    // warmed ebook caches so the next account doesn't inherit this one's
+    // default versions and per-version reading positions.
+    await EbookPreferences.load();
+    await EbookProgressStore.instance.reload();
+
     notifyListeners();
   }
 
@@ -1522,6 +1530,12 @@ class AuthProvider extends ChangeNotifier {
     // EqualizerService singleton keeps the previous account's in-memory
     // state and would write it back into the new scope on any change.
     await EqualizerService().reloadForActiveAccount();
+
+    // Reload the per-account ebook caches the same way: they warm once from the
+    // active scope, so without this the previous account's default versions and
+    // per-version reading positions bleed into the new account's books.
+    await EbookPreferences.load();
+    await EbookProgressStore.instance.reload();
 
     // Set credentials
     _serverUrl = selected.serverUrl;

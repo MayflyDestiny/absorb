@@ -5,6 +5,8 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 
+import 'app_log.dart';
+
 /// App-wide image cache with real timeouts.
 ///
 /// `flutter_cache_manager`'s default file service has no timeout at all, so a
@@ -91,6 +93,10 @@ class _TimeoutHttpFileService extends FileService {
     if (headers != null) request.headers.addAll(headers);
     try {
       final response = await client.send(request).timeout(connectTimeout);
+      if (verboseDiagnostics) {
+        verboseLog(
+            '[NET] cover ${Uri.parse(url).path} ${response.statusCode} ${response.contentLength}B');
+      }
       return _TimeoutResponse(
         HttpGetResponse(response),
         _abortableBody(response.stream, client),

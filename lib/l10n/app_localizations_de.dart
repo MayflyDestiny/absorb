@@ -2203,6 +2203,12 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get downloadsEbookOnlyCached => 'Cached only';
+
+  @override
+  String get downloadsEbookExported => 'Exported';
+
+  @override
   String get downloadsSort => 'Sort';
 
   @override
@@ -2320,7 +2326,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get cacheStreamingHint =>
-      'Recently streamed audio kept on disk for instant replay.';
+      'Recently streamed audio and ebook page blocks are cached locally to avoid re-downloading.';
 
   @override
   String get clearAllCaches => 'Clear all';
@@ -3654,6 +3660,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get noEbookFileFound => 'Keine eBook-Datei gefunden';
 
   @override
+  String get readerFailedToOpen => 'Couldn\'t open the PDF';
+
+  @override
+  String get readerStreamHint =>
+      'Streaming a PDF needs a connection to your server. Check the connection, then try again.';
+
+  @override
   String get bookmark => 'Lesezeichen';
 
   @override
@@ -3833,6 +3846,17 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String downloadConfirmContent(String title) {
     return 'Download “$title” to this device?';
+  }
+
+  @override
+  String chapterDownloadConfirm(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Download $count chapters to this device?',
+      one: 'Download 1 chapter to this device?',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -8883,6 +8907,30 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get readEbook => 'Lesen';
+
+  @override
+  String get chooseEbookVersion => 'Choose ebook version';
+
+  @override
+  String get ebookPrimaryVersion => 'server default';
+
+  @override
+  String get ebookChooseHoldHint =>
+      'Long-press a version to make it your default';
+
+  @override
+  String get ebookLocalDefault => 'your default';
+
+  @override
+  String ebookDefaultSet(Object name) {
+    return 'Default version set: $name';
+  }
+
+  @override
+  String get ebookDefaultCleared => 'Back to the server default version';
+
+  @override
+  String get ebookAlreadyDefault => 'Already the default version';
 
   @override
   String get homeTapCardToResume =>

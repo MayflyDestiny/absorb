@@ -36,6 +36,7 @@ import '../services/bookmark_preview_player.dart';
 import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/ebook_preferences.dart';
 import '../services/inflight_temp_writes.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
@@ -1107,7 +1108,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       const SizedBox(height: 12),
       if (isEbookOnly && ebookFile != null && canReadEbook(ebookFile))
         SizedBox(height: 52, child: FilledButton.icon(
-          onPressed: () => _openEbookReader(context, auth, ebookFile, title),
+          onPressed: () => _readEbook(context, auth, title),
           icon: const Icon(Icons.menu_book_rounded, size: 24),
           label: Text(l.readEbook,
             style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
@@ -1119,7 +1120,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         SizedBox(height: 52, child: FilledButton.icon(
           onPressed: () => _ebookSaved
               ? _deleteEbookExport(context)
-              : _saveEbook(context, auth, ebookFile, title),
+              : _exportEbook(context, auth, title),
           icon: Icon(_ebookSaved ? Icons.download_done_rounded : Icons.save_alt_rounded, size: 24),
           label: Text(_ebookSaved ? l.ebookExportedLabel : l.ebookSaveToDevice,
             style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
@@ -1259,7 +1260,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       if (!isEbookOnly && ebookFile != null && canReadEbook(ebookFile)) ...[
         const SizedBox(height: 8),
         Builder(builder: (context) {
-          final ebookProgress = lib.getEbookProgress(widget.itemId);
+          // Show the default version's progress (the one the Read button opens)
+          // rather than whichever version was read last on this device.
+          final defaultEbook = resolveEbookFile(_item) ?? _cachedEbookFallback;
+          final ebookProgress = lib.getEbookProgress(widget.itemId,
+              versionId: defaultEbook == null
+                  ? null
+                  : ebookVersionKey(defaultEbook),
+              multiVersion: ebookFileChoices(_item).length > 1);
           final showFill = ebookProgress > 0 && ebookProgress < 1;
           return SizedBox(
             height: 40,
@@ -1268,7 +1276,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
               borderRadius: BorderRadius.circular(14),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
-                onTap: () => _openEbookReader(context, auth, ebookFile, title),
+                onTap: () => _readEbook(context, auth, title),
                 child: Stack(children: [
                   if (showFill)
                     FractionallySizedBox(
@@ -1357,7 +1365,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
                           ? null
                           : (saved
                               ? () => _removeEbookOffline(context)
-                              : () => _downloadEbookOffline(context, auth, ebookFile, title)),
+                              : () => _offlineEbook(context, auth, title)),
                       child: Container(
                         height: 36,
                         decoration: BoxDecoration(
@@ -2144,7 +2152,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           ));
         }
         if (ebookFile != null && canReadEbook(ebookFile)) {
-          addDynamic(Icons.menu_book_rounded, l.readEbook, () => _openEbookReader(context, auth, ebookFile, title));
+          addDynamic(Icons.menu_book_rounded, l.readEbook, () => _readEbook(context, auth, title));
         }
         // Save/Send push the file elsewhere, which needs the server's own file
         // entry (with ino) - the cache-synthesized fallback can't serve them.
@@ -2154,7 +2162,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
               _ebookSaved ? l.ebookExportedLabel : l.ebookSaveToDevice,
               () => _ebookSaved
                   ? _deleteEbookExport(context)
-                  : _saveEbook(context, auth, serverEbookFile, title));
+                  : _exportEbook(context, auth, title));
         }
         if (serverEbookFile != null && auth.ereaderDevices.isNotEmpty) {
           addDynamic(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
@@ -2371,6 +2379,205 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         );
       },
     );
+  }
+
+  /// All ebook versions the detail sheet knows about for this book. When a
+  /// book ships several (a big image-packed EPUB/PDF next to a plain text
+  /// one, like 极品家丁's 161MB 精校多图 vs the 6MB plain EPUB), lets the user
+  /// pick which one to read / export / download and shows each version's size
+  /// so the wrong (huge) file doesn't get pulled by accident. A single
+  /// version skips the prompt and is returned at once. With [readableOnly]
+  /// the list is trimmed to formats the in-app readers can actually open.
+  Future<Map<String, dynamic>?> _pickEbook(BuildContext context,
+      {bool readableOnly = false, AuthProvider? auth}) async {
+    var choices = ebookFileChoices(_item);
+    if (readableOnly) {
+      final readable = choices.where(canReadEbook).toList();
+      if (readable.isNotEmpty) choices = readable;
+    }
+    if (choices.length <= 1) {
+      return choices.isNotEmpty ? choices.first : _cachedEbookFallback;
+    }
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final api = auth?.apiService;
+    final primary =
+        ((_item?['media'] as Map<String, dynamic>?)?['ebookFile'])
+            as Map<String, dynamic>?;
+    var serverIno = primary?['ino']?.toString();
+    // Effective default: a local override (set only when the server can't be
+    // changed, e.g. BookOrbit or a failed PATCH), when it's offered in this
+    // list, else the server's primary.
+    String? localIno = EbookPreferences.defaultIno(widget.itemId);
+    if (localIno != null &&
+        !choices.any((f) => f['ino']?.toString() == localIno)) {
+      localIno = null;
+    }
+    var effectiveIno = localIno ?? serverIno;
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setSheet) {
+          Widget tile(Map<String, dynamic> f) {
+            final ino = f['ino']?.toString();
+            final hasIno = ino != null && ino.isNotEmpty;
+            final name = f['metadata']?['filename'] as String? ??
+                f['name'] as String? ?? '';
+            return _EbookVersionTile(
+              leading: Icon(_ebookTypeIcon(f), color: cs.primary),
+              title: Text(
+                name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: tt.bodyMedium?.copyWith(color: cs.onSurface),
+              ),
+              subtitle: Text(
+                _ebookVersionSubtitle(f, serverIno, localIno, l),
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              trailing: (hasIno && ino == effectiveIno)
+                  ? Icon(Icons.check_circle_rounded, color: cs.primary)
+                  : null,
+              onTap: () => Navigator.pop(ctx, f),
+              onLongPress: !hasIno
+                  ? null
+                  : () async {
+                      final isServerPrimary = ino == serverIno;
+                      // Nothing to do: already the server default with no
+                      // local override on top of it.
+                      if (isServerPrimary && localIno == null) {
+                        if (context.mounted) {
+                          showOverlayToast(context, l.ebookAlreadyDefault,
+                              icon: Icons.check_circle_rounded);
+                        }
+                        return;
+                      }
+                      // Prefer changing the server's primary (ABS only) so the
+                      // choice follows the account onto every device. Fall back
+                      // to a local override when the server can't be changed
+                      // (BookOrbit, missing permission, offline) or when the
+                      // user re-picks the version that's already the primary.
+                      var serverDone = false;
+                      if (api != null && !isServerPrimary) {
+                        serverDone =
+                            await api.updateEbookFileStatus(widget.itemId, ino);
+                      }
+                      if (context.mounted) HapticFeedback.mediumImpact();
+                      if (serverDone) {
+                        await EbookPreferences.clearDefaultIno(widget.itemId);
+                        localIno = null;
+                        serverIno = ino;
+                        effectiveIno = ino;
+                        unawaited(_loadItem());
+                        if (context.mounted) {
+                          showOverlayToast(context, l.ebookDefaultSet(name),
+                              icon: Icons.check_circle_rounded);
+                        }
+                      } else if (isServerPrimary) {
+                        // Server already has this as primary; just drop any
+                        // local override so the two agree again.
+                        await EbookPreferences.clearDefaultIno(widget.itemId);
+                        localIno = null;
+                        effectiveIno = serverIno;
+                        if (context.mounted) {
+                          showOverlayToast(context, l.ebookDefaultCleared,
+                              icon: Icons.restore_rounded);
+                        }
+                      } else if (localIno == ino) {
+                        // Long-press the current local pick again to drop it.
+                        await EbookPreferences.clearDefaultIno(widget.itemId);
+                        localIno = null;
+                        effectiveIno = serverIno;
+                        if (context.mounted) {
+                          showOverlayToast(context, l.ebookDefaultCleared,
+                              icon: Icons.restore_rounded);
+                        }
+                      } else {
+                        await EbookPreferences.setDefaultIno(widget.itemId, ino);
+                        localIno = ino;
+                        effectiveIno = ino;
+                        if (context.mounted) {
+                          showOverlayToast(context, l.ebookDefaultSet(name),
+                              icon: Icons.check_circle_rounded);
+                        }
+                      }
+                      if (ctx.mounted) setSheet(() {});
+                    },
+            );
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Center(child: Container(width: 40, height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+                Text(l.chooseEbookVersion,
+                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+                const SizedBox(height: 4),
+                Text(l.ebookChooseHoldHint,
+                    textAlign: TextAlign.center,
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ListView(shrinkWrap: true, children: [
+                    for (final f in choices) tile(f),
+                  ]),
+                ),
+              ]),
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  IconData _ebookTypeIcon(Map<String, dynamic> f) {
+    switch (ebookExtFromFile(f)) {
+      case '.pdf': return Icons.picture_as_pdf_rounded;
+      case '.epub': return Icons.menu_book_rounded;
+      case '.cbz': case '.cbr': case '.cb7': return Icons.image_rounded;
+      case '.mobi': case '.azw3': return Icons.book_rounded;
+      default: return Icons.insert_drive_file_rounded;
+    }
+  }
+
+  String _ebookVersionSubtitle(
+      Map<String, dynamic> f, String? serverIno, String? localIno, AppLocalizations l) {
+    final ext = ebookExtFromFile(f).replaceFirst('.', '').toUpperCase();
+    final size = ebookFileSize(f);
+    final sizeText = size != null ? _fmtSize(size) : '';
+    final ino = f['ino']?.toString();
+    final parts = <String>[];
+    if (ext.isNotEmpty) parts.add(ext);
+    if (sizeText.isNotEmpty) parts.add(sizeText);
+    if (ino != null && ino == localIno) parts.add(l.ebookLocalDefault);
+    if (ino != null && ino == serverIno) parts.add(l.ebookPrimaryVersion);
+    return parts.join('  ·  ');
+  }
+
+  Future<void> _readEbook(BuildContext context, AuthProvider auth, String title) async {
+    final ef = await _pickEbook(context, readableOnly: true, auth: auth);
+    if (ef == null || !mounted) return;
+    _openEbookReader(context, auth, ef, title);
+  }
+
+  Future<void> _exportEbook(BuildContext context, AuthProvider auth, String title) async {
+    final ef = await _pickEbook(context, auth: auth);
+    if (ef == null || !mounted) return;
+    await _saveEbook(context, auth, ef, title);
+  }
+
+  Future<void> _offlineEbook(BuildContext context, AuthProvider auth, String title) async {
+    final ef = await _pickEbook(context, auth: auth);
+    if (ef == null || !mounted) return;
+    await _downloadEbookOffline(context, auth, ef, title);
   }
 
   Future<void> _removeFromContinueListening(
@@ -2867,7 +3074,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     final l = AppLocalizations.of(context)!;
     final api = auth.apiService;
     if (api == null) return;
-    final ok = await confirmDownload(context, title);
+    final ok = await confirmDownload(context, title, sizeBytes: ebookFileSize(ebookFile));
     if (!ok || !mounted) return;
     setState(() => _ebookOfflineDownloading = true);
     try {
@@ -2877,6 +3084,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         itemId: widget.itemId,
         item: _item,
         libraryId: _item?['libraryId'] as String?,
+        ebookFile: ebookFile,
       );
       if (mounted) {
         setState(() => _ebookOfflineDownloading = false);
@@ -2911,14 +3119,33 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l.ebookSaveToDeviceTitle),
-        content: Text(l.ebookSaveToDeviceBody),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.ebookSaveToDevice)),
-        ],
-      ),
+      builder: (ctx) {
+        final sizeBytes = ebookFileSize(ebookFile);
+        return AlertDialog(
+          title: Text(l.ebookSaveToDeviceTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l.ebookSaveToDeviceBody),
+              if (sizeBytes != null && sizeBytes > 0) ...[
+                const SizedBox(height: 12),
+                Row(children: [
+                  Icon(Icons.storage_rounded, size: 16,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Text('${l.fileSize}: ${_fmtSize(sizeBytes)}',
+                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                ]),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.ebookSaveToDevice)),
+          ],
+        );
+      },
     );
     if (confirmed != true) return;
 
@@ -2960,11 +3187,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
               return cleanTitle.isEmpty ? 'book.epub' : '$cleanTitle$ext';
             })();
 
-      // Download to cache first (reuse if already cached)
+      // Reuse the reader's offline cache when this book's ebook is already on
+      // the device: exporting a cached book must not hit the network. The cache
+      // is keyed by itemId + format (ebookCacheFileFor derives the same
+      // extension this export would write), so a hit is the exact file.
+      final readerCache = await ebookCacheFileFor(widget.itemId, ebookFile);
       final cacheDir = await getTemporaryDirectory();
       final cachedFile = File('${cacheDir.path}/$exportName');
+      final sourceFile = readerCache.existsSync() ? readerCache : cachedFile;
 
-      if (!cachedFile.existsSync()) {
+      if (!sourceFile.existsSync()) {
         final cleanBase = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
         final url = api.isBookOrbit
             ? api.buildEbookUrl(widget.itemId, ino)
@@ -3040,15 +3272,19 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       String? savedMetaUri;
       if (hasSafExportFolder) {
         final moved = await dl.saveEbookCopyToSaf(
-          cachedFile.path,
+          sourceFile.path,
           exportName,
-          jsonEncode({'itemId': widget.itemId, 'title': bookTitle}),
+          jsonEncode({
+            'itemId': widget.itemId,
+            'title': bookTitle,
+            'ino': ino,
+          }),
         );
         if (moved != null) {
           savedPath = moved.fileUri;
           savedMetaUri = moved.metaUri;
         } else {
-          final bytes = await cachedFile.readAsBytes();
+          final bytes = await sourceFile.readAsBytes();
           savedPath = await FilePicker.platform.saveFile(
             dialogTitle: l.saveEbook,
             fileName: exportName,
@@ -3056,7 +3292,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           );
         }
       } else {
-        final bytes = await cachedFile.readAsBytes();
+        final bytes = await sourceFile.readAsBytes();
         savedPath = await FilePicker.platform.saveFile(
           dialogTitle: l.saveEbook,
           fileName: exportName,
@@ -3070,7 +3306,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       // (content:// URI or file path) so the "exported" button can offer a
       // delete with a real target. The optional `<name>.absorb-ebook` metadata
       // URI is stored too, so it's removed together with the copy.
-      await dl.recordSavedEbook(widget.itemId, savedPath, savedMetaUri);
+      await dl.recordSavedEbook(widget.itemId, savedPath, savedMetaUri, ino);
+      // The export is now the on-device copy: drop the reader cache for this
+      // exact version so the book isn't stored twice. The reader reads the
+      // exported copy in place next time (see resolveEbookOpenSource).
+      await deleteCachedEbookVersion(widget.itemId, ebookFile);
       if (mounted) setState(() => _ebookSaved = true);
 
       if (mounted) {
@@ -3875,6 +4115,83 @@ class _PersonalNoteDialogState extends State<_PersonalNoteDialog> {
         TextButton(onPressed: () => Navigator.pop(context), child: Text(l.cancel)),
         FilledButton(onPressed: () => Navigator.pop(context, _ctrl.text), child: Text(l.save)),
       ],
+    );
+  }
+}
+
+/// One selectable ebook-version row in the version picker. It replaces a plain
+/// [ListTile] so the press feedback is a rounded, primary-tinted ripple instead
+/// of the default square white highlight, and so the row can dip slightly while
+/// held for a tactile cue.
+class _EbookVersionTile extends StatefulWidget {
+  const _EbookVersionTile({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.trailing,
+    this.onLongPress,
+  });
+
+  final Widget leading;
+  final Widget title;
+  final Widget subtitle;
+  final Widget? trailing;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  State<_EbookVersionTile> createState() => _EbookVersionTileState();
+}
+
+class _EbookVersionTileState extends State<_EbookVersionTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(16);
+    return AnimatedScale(
+      scale: _pressed ? 0.98 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: Material(
+        color: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: radius),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          borderRadius: radius,
+          splashColor: cs.primary.withValues(alpha: 0.12),
+          highlightColor: cs.primary.withValues(alpha: 0.08),
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          onHighlightChanged: (v) {
+            if (v != _pressed) setState(() => _pressed = v);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(children: [
+              widget.leading,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    widget.title,
+                    const SizedBox(height: 2),
+                    widget.subtitle,
+                  ],
+                ),
+              ),
+              if (widget.trailing != null) ...[
+                const SizedBox(width: 16),
+                widget.trailing!,
+              ],
+            ]),
+          ),
+        ),
+      ),
     );
   }
 }

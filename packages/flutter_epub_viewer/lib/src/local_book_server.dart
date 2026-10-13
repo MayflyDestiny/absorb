@@ -1,23 +1,21 @@
 import 'dart:io';
-import 'dart:math';
 
-/// Serves one file to the WebView over the loopback interface. The page then
-/// fetches the epub straight from disk, instead of Dart reading the whole
-/// file into memory, base64-encoding it in chunks and pushing every chunk
-/// across the bridge to be decoded again: on a 322MB book that took about
-/// twelve seconds before the first page could even start rendering.
-///
-/// One random path per server, loopback only, closed with the viewer.
+import 'book_source.dart';
+import 'server_utils.dart';
+
+/// Serves the whole book to the WebView over loopback, for when it isn't a zip
+/// we can index as a directory (the page then fetches the file in ranges).
+/// Reads go through [BookSource], so the bytes can come from a regular file or
+/// an Android SAF file descriptor that never lands on disk.
 class LocalBookServer {
-  LocalBookServer(this.file);
+  LocalBookServer(this.source);
 
-  final File file;
-  final String _token = _randomToken();
+  final BookSource source;
+  final String _token = randomHexToken();
   HttpServer? _server;
 
-  String? get url => _server == null
-      ? null
-      : 'http://127.0.0.1:${_server!.port}/$_token/book.epub';
+  String? get url =>
+      _server == null ? null : 'http://127.0.0.1:${_server!.port}/$_token/book.epub';
 
   Future<String> start() async {
     if (_server == null) {
@@ -44,56 +42,36 @@ class LocalBookServer {
         await res.close();
         return;
       }
-      final length = await file.length();
+      final length = await source.length();
       res.headers.set(HttpHeaders.accessControlAllowOriginHeader, '*');
       res.headers.set(HttpHeaders.contentTypeHeader, 'application/epub+zip');
       res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
-      var start = 0;
-      var end = length - 1;
-      final range = req.headers.value(HttpHeaders.rangeHeader);
-      final m = range == null
-          ? null
-          : RegExp(r'^bytes=(\d*)-(\d*)$').firstMatch(range.trim());
-      if (m != null && (m.group(1)!.isNotEmpty || m.group(2)!.isNotEmpty)) {
-        if (m.group(1)!.isEmpty) {
-          start = length - int.parse(m.group(2)!);
-        } else {
-          start = int.parse(m.group(1)!);
-          if (m.group(2)!.isNotEmpty) end = int.parse(m.group(2)!);
-        }
-        if (start < 0) start = 0;
-        if (end > length - 1) end = length - 1;
-        if (start >= length || end < start) {
-          res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
-          res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$length');
-          await res.close();
-          return;
-        }
+      final resolved =
+          resolveByteRange(req.headers.value(HttpHeaders.rangeHeader), length);
+      if (resolved == null) {
+        res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+        res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$length');
+        await res.close();
+        return;
+      }
+      final start = resolved.start;
+      final end = resolved.end;
+      if (resolved.partial) {
         res.statusCode = HttpStatus.partialContent;
-        res.headers.set(
-          HttpHeaders.contentRangeHeader,
-          'bytes $start-$end/$length',
-        );
+        res.headers
+            .set(HttpHeaders.contentRangeHeader, 'bytes $start-$end/$length');
       }
       res.contentLength = end - start + 1;
       if (req.method == 'HEAD') {
         await res.close();
         return;
       }
-      await res.addStream(file.openRead(start, end + 1));
-      await res.close();
+      // Stream the range in chunks, reading only what the page asks for.
+      await streamBookRange(res, source, start, end);
     } catch (_) {
       try {
         await res.close();
       } catch (_) {}
     }
-  }
-
-  static String _randomToken() {
-    final r = Random.secure();
-    return List.generate(
-      16,
-      (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
   }
 }

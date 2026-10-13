@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -17,6 +18,8 @@ import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'cover_blur_cache.dart';
 import 'ebook_cache.dart';
+import 'ebook_stream_cache.dart';
+import 'http_range_book_source.dart';
 import 'offline_source.dart';
 import 'scoped_prefs.dart';
 import 'app_log.dart';
@@ -50,6 +53,24 @@ class DownloadInfo {
     this.localDirPath,
     this.libraryId,
   });
+
+  DownloadInfo copyWith({
+    String? coverUrl,
+    String? localCoverPath,
+  }) =>
+      DownloadInfo(
+        itemId: itemId,
+        status: status,
+        progress: progress,
+        localPaths: localPaths,
+        sessionData: sessionData,
+        title: title,
+        author: author,
+        coverUrl: coverUrl ?? this.coverUrl,
+        localCoverPath: localCoverPath ?? this.localCoverPath,
+        localDirPath: localDirPath,
+        libraryId: libraryId,
+      );
 
   Map<String, dynamic> toJson() => {
     'itemId': itemId,
@@ -721,8 +742,9 @@ class DownloadService extends ChangeNotifier {
   /// when the user picks a folder. Returns how many books were recognized and
   /// how many audio-bearing folders had no marker.
   Future<({int recognized, int unknown})> scanAndRegisterExistingDownloads(
-    String treeUri,
-  ) async {
+    String treeUri, {
+    ApiService? api,
+  }) async {
     if (!Platform.isAndroid) return (recognized: 0, unknown: 0);
     Map? res;
     try {
@@ -788,6 +810,10 @@ class DownloadService extends ChangeNotifier {
     // state and the delete entry, even though the audio scan ignores ebooks.
     final ebookCount = await _restoreEbookExports(res?['ebooks']);
     final unknown = (res?['unknownCount'] as num?)?.toInt() ?? 0;
+    // Cover bytes only ever lived in app-private storage (a data wipe deletes
+    // them) and the marker holds a server URL, not the image, so re-fetch the
+    // artwork for the restored records in the background.
+    if (api != null) unawaited(_refreshMissingCovers(api));
     return (recognized: recognized + ebookCount, unknown: unknown);
   }
 
@@ -808,13 +834,44 @@ class DownloadService extends ChangeNotifier {
         final m = jsonDecode(meta) as Map<String, dynamic>;
         final itemId = m['itemId'] as String?;
         if (itemId == null || itemId.isEmpty) continue;
-        await recordSavedEbook(itemId, fileUri, metaUri);
+        await recordSavedEbook(itemId, fileUri, metaUri, m['ino'] as String?);
         restored++;
       } catch (e) {
         basicLog('[Download] ebook scan entry failed: $e');
       }
     }
     return restored;
+  }
+
+  /// Re-fetch covers for restored downloads whose local cover is gone (e.g.
+  /// after clearing app data and re-adding the download folder). Cover bytes
+  /// only ever lived in app-private storage, and the marker stores a server URL
+  /// rather than the image, so the artwork can only come back from the server.
+  /// Runs fire-and-forget; each cover that lands updates its record and notifies
+  /// listeners. Covers missing from a marker-identified download are skipped.
+  Future<void> _refreshMissingCovers(ApiService api) async {
+    final ids = _downloads.entries
+        .where((e) => e.value.status == DownloadStatus.downloaded)
+        .map((e) => e.key)
+        .toList();
+    for (final itemId in ids) {
+      if (syncLocalCoverProbe(itemId) != null) continue;
+      final info = _downloads[itemId];
+      if (info == null) continue;
+      // Podcast episodes are keyed `<itemId>-<episodeId>`; the cover endpoint
+      // wants the base 36-char item id (same rule as LibraryProvider).
+      final apiItemId = itemId.length > 36 ? itemId.substring(0, 36) : itemId;
+      try {
+        final path = await _cacheCover(
+            api, itemId, api.getCoverUrl(apiItemId, width: 800));
+        if (path == null) continue;
+        _downloads[itemId] = info.copyWith(localCoverPath: path);
+        await _save();
+        notifyListeners();
+      } catch (e) {
+        basicLog('[Download] cover refresh failed for $itemId: $e');
+      }
+    }
   }
 
   Future<bool> _migrateOneDownload(DownloadInfo info, String? treeUri) async {
@@ -1163,6 +1220,41 @@ class DownloadService extends ChangeNotifier {
     return total;
   }
 
+  /// Total bytes of downloaded audio on the device, SAF (content://) files
+  /// included. [totalDownloadSize] skips content:// paths because Dart can't
+  /// stat them, which made the settings "storage used" row disagree with the
+  /// manage-downloads screen; this reuses the sizes from the last existence
+  /// probe and falls back to a size-only probe for any URI it missed.
+  Future<int> get totalDownloadSizeOnDevice async {
+    int total = 0;
+    final missing = <String>[];
+    for (final info in _downloads.values) {
+      if (info.status != DownloadStatus.downloaded) continue;
+      for (final path in info.localPaths) {
+        if (isContentUri(path)) {
+          final known = _lastProbedSafSizes[path];
+          if (known != null) {
+            total += known;
+          } else {
+            missing.add(path);
+          }
+          continue;
+        }
+        try {
+          final file = File(path);
+          if (file.existsSync()) total += file.lengthSync();
+        } catch (_) {}
+      }
+    }
+    if (missing.isNotEmpty) {
+      final extra = await getSafFileSizes(missing);
+      for (final size in extra.values) {
+        total += size;
+      }
+    }
+    return total;
+  }
+
   /// Byte sizes of SAF (content://) files, which Dart can't stat. Mirrors the
   /// chunked probe in [_validateDownloadsNow] so a huge registry stays within a
   /// comfortable channel-batch size. Unknown/failed files report 0.
@@ -1308,10 +1400,15 @@ class DownloadService extends ChangeNotifier {
     Map<String, dynamic>? item,
   }) async {
     if (_keptEbooks.containsKey(itemId)) return;
-    Map<String, dynamic>? full;
-    try {
-      full = await api.getLibraryItem(itemId);
-    } catch (_) {}
+    // As with registerEbookDownload, prefer the caller's expanded item so we
+    // don't fire the multi-MB request a second time just to keep the record.
+    Map<String, dynamic>? full =
+        (item != null && item.containsKey('media')) ? item : null;
+    if (full == null) {
+      try {
+        full = await api.getLibraryItem(itemId);
+      } catch (_) {}
+    }
     final stored = full ?? item;
     if (stored == null) return;
     final media = stored['media'] as Map<String, dynamic>?;
@@ -1465,17 +1562,36 @@ class DownloadService extends ChangeNotifier {
     Map<String, dynamic>? item,
     String? libraryId,
     bool onlyIfNoAudio = false,
+    Map<String, dynamic>? ebookFile,
   }) async {
     // Never demote a real download: this call writes a record with
     // localPaths: [] over whatever is stored for the id, which would orphan the
     // downloaded audio files on disk.
     final existing = _downloads[itemId];
     if (existing != null && existing.localPaths.isNotEmpty) return false;
-    Map<String, dynamic>? fullItem;
-    try {
-      fullItem = await api.getLibraryItem(itemId);
-    } catch (_) {}
-    final stored = fullItem ?? item ?? {'id': itemId};
+    // Reuse the caller's already-loaded item when it carries `media` (the
+    // expanded form): the reader makes the same multi-MB request, so re-fetching
+    // it just to write the offline record is pure duplicate traffic.
+    Map<String, dynamic>? fullItem =
+        (item != null && item.containsKey('media')) ? item : null;
+    if (fullItem == null) {
+      try {
+        fullItem = await api.getLibraryItem(itemId);
+      } catch (_) {}
+    }
+    // Remember the exact ebook version the user picked (a plain EPUB vs the
+    // image-packed one). Overriding the stored media's primary with the
+    // chosen file means offline open later resolves the SAME file from the
+    // reader cache instead of silently falling back to the server's default.
+    final baseStored = fullItem ?? item ?? <String, dynamic>{'id': itemId};
+    final stored = <String, dynamic>{
+      ...baseStored,
+      if (ebookFile != null)
+        'media': <String, dynamic>{
+          ...(baseStored['media'] as Map<String, dynamic>? ?? const <String, dynamic>{}),
+          'ebookFile': ebookFile,
+        },
+    };
     final media = stored['media'] as Map<String, dynamic>?;
     if (onlyIfNoAudio) {
       final tracks = media?['numTracks'];
@@ -2608,28 +2724,10 @@ class DownloadService extends ChangeNotifier {
     TaskStatus.canceled,
   };
 
-  /// Best-effort download of a book's ebook into the persistent reader cache so
-  /// it reads offline. Swallows errors - the audio download is what matters.
-  Future<void> _cacheEbookForOffline(
-    ApiService api,
-    String itemId,
-    Map<String, dynamic> ebookFile,
-    String title,
-  ) async {
-    try {
-      final f = await fetchEbookToCache(api, itemId, ebookFile, title);
-      await _excludeFromBackup(f.path);
-      // The copy landed again; let the catch-up keep it fresh from now on.
-      _ebookRemovedIds.remove(itemId);
-      verboseLog('[Download] cached ebook for offline: $itemId');
-    } catch (e) {
-      basicLog('[Download] ebook offline cache failed for $itemId: $e');
-    }
-  }
-
-  /// Re-fetch any companion ebooks whose fire-and-forget download never landed
-  /// (killed mid-transfer, offline at the time). Called when the app comes up
-  /// with a working connection; cheap when everything is already cached.
+  /// Register any ebook that is already cached on disk as an offline download,
+  /// and repair the saved session of each downloaded book whose ebook appeared
+  /// on the server after the download. Ebooks themselves are not downloaded
+  /// here - the reader streams them on demand.
   Future<void> catchUpEbookCaches(ApiService api) async {
     // An ebook opened from a streamed book has a cached file and nothing
     // that lists it. Give those a record once, so they show offline.
@@ -2690,9 +2788,10 @@ class DownloadService extends ChangeNotifier {
           verboseLog('[Download] ebook appeared on the server after the '
               'download: $apiItemId (${ebookFile['ebookFormat'] ?? ebookFile['metadata']?['ext']})');
         }
-        if (await isEbookCached(apiItemId, ebookFile)) continue;
-        await _cacheEbookForOffline(
-            api, apiItemId, ebookFile, info.title ?? apiItemId);
+        // The ebook is no longer pre-downloaded here: the reader streams it on
+        // demand (HTTP Range + block cache), so a downloaded audiobook does not
+        // pull its whole companion ebook into the cache in the background. A
+        // version the user explicitly cached for offline stays where it is.
       } catch (e) {
         verboseLog('[Download] ebook catch-up failed for ${info.itemId}: $e');
       }
@@ -2823,15 +2922,14 @@ class DownloadService extends ChangeNotifier {
       await api.prepareDownload(apiItemId);
       final files = _resolveDurableFiles(api, apiItemId, audioTracks);
 
-      // Pull the companion ebook into the offline cache too, so a downloaded
-      // book is fully readable offline. Fire-and-forget - never blocks or fails
-      // the audio download.
+      // The companion ebook is recorded in the saved session (so offline Read
+      // knows one exists) but NOT pre-downloaded: the reader streams it on
+      // demand over HTTP Range with a block cache, so a downloaded book no
+      // longer pulls its whole companion ebook in the background. Users who want
+      // the whole file offline use the explicit "download ebook" action.
       final ebookFile = resolveEbookFile(
         sessionData['libraryItem'] as Map<String, dynamic>?,
       );
-      if (ebookFile != null) {
-        unawaited(_cacheEbookForOffline(api, apiItemId, ebookFile, title));
-      }
 
       // Per-book destination. Android downloads into the app-specific external
       // files dir by default, and (for SAF custom folders) into a temp dir that
@@ -3609,41 +3707,110 @@ class DownloadService extends ChangeNotifier {
 
   /// Persist that [itemId] has an exported copy at [fileUri] (an optional
   /// `<name>.absorb-ebook` metadata URI is stored too so it can be deleted
-  /// together). Shared with the folder-scan restore path.
+  /// together). [version] is the exported ebook's `ino`, so several versions of
+  /// one book can each be exported and tracked side by side. Shared with the
+  /// folder-scan restore path.
   Future<void> recordSavedEbook(
     String itemId,
     String fileUri, [
     String? metaUri,
+    String? version,
   ]) async {
     final saved = await ScopedPrefs.getStringList('saved_ebooks');
     if (!saved.contains(itemId)) {
       saved.add(itemId);
       await ScopedPrefs.setStringList('saved_ebooks', saved);
     }
+    final key = version ?? '';
     await _writeEbookRefs((refs) {
-      refs[itemId] = jsonEncode({
+      final versions = _toVersionMap(refs[itemId]);
+      versions[key] = {
         'uri': fileUri,
         if (metaUri != null && metaUri.isNotEmpty) 'meta': metaUri,
-      });
+      };
+      refs[itemId] = versions;
     });
   }
 
-  /// Resolve the saved-ebook refs for [itemId]. Returns null when not exported.
-  /// Tolerates the legacy plain-`uri` format written before meta refs existed.
-  Future<({String? uri, String? meta})?> savedEbookRef(String itemId) async {
+  /// Normalize any stored shape for one item into `version -> {uri, meta}`.
+  /// Accepts the current per-version map, the earlier single `{uri,meta,v}`
+  /// object, and the original bare-URI string.
+  Map<String, dynamic> _toVersionMap(dynamic existing) {
+    if (existing is Map) {
+      final m = existing.cast<String, dynamic>();
+      if (m.containsKey('uri')) {
+        return _normalizeEbookRefObject(m).map((k, r) => MapEntry(k, {
+              if (r.uri != null) 'uri': r.uri,
+              if (r.meta != null) 'meta': r.meta,
+            }));
+      }
+      return Map<String, dynamic>.from(m);
+    }
+    if (existing is String) {
+      final s = existing.trim();
+      if (s.isEmpty) return <String, dynamic>{};
+      if (!s.startsWith('{')) return {'': {'uri': s}};
+      try {
+        return _toVersionMap(jsonDecode(s));
+      } catch (_) {}
+    }
+    return <String, dynamic>{};
+  }
+
+  Map<String, ({String? uri, String? meta})> _normalizeEbookRefObject(
+    Map<String, dynamic> m,
+  ) {
+    final uri = m['uri'] as String?;
+    if (uri == null || uri.isEmpty) return const {};
+    final v = (m['v'] as String?) ?? '';
+    return {v: (uri: uri, meta: m['meta'] as String?)};
+  }
+
+  /// Every exported copy recorded for [itemId], keyed by ebook version (the
+  /// file's `ino`, or '' when unknown). Empty when nothing is exported. This is
+  /// the multi-version view; [savedEbookRef] is the single-version convenience
+  /// wrapper for callers that only deal with a book's primary export.
+  Future<Map<String, ({String? uri, String? meta})>> savedEbookVersionRefs(
+      String itemId) async {
     final refsRaw = await ScopedPrefs.getString(_savedEbookRefsKey);
-    if (refsRaw == null || refsRaw.isEmpty) return null;
+    if (refsRaw == null || refsRaw.isEmpty) return const {};
     try {
       final refs = (jsonDecode(refsRaw) as Map).cast<String, dynamic>();
-      final v = refs[itemId] as String?;
-      if (v == null) return null;
-      if (!v.trimLeft().startsWith('{')) return (uri: v, meta: null);
-      final m = jsonDecode(v) as Map<String, dynamic>;
-      return (uri: m['uri'] as String?, meta: m['meta'] as String?);
+      if (!refs.containsKey(itemId)) return const {};
+      final out = <String, ({String? uri, String? meta})>{};
+      _toVersionMap(refs[itemId]).forEach((k, value) {
+        if (value is Map) {
+          final uri = value['uri'] as String?;
+          if (uri == null || uri.isEmpty) return;
+          out[k] = (uri: uri, meta: value['meta'] as String?);
+        }
+      });
+      return out;
     } catch (e) {
-      basicLog('[Download] savedEbookRef failed: $e');
-      return null;
+      basicLog('[Download] savedEbookVersionRefs failed: $e');
+      return const {};
     }
+  }
+
+  /// Resolve one saved-ebook ref for [itemId] (the version-identified entry
+  /// when there is one, else any). Returns null when not exported. Tolerates the
+  /// legacy plain-`uri` format written before meta refs existed.
+  Future<({String? uri, String? meta, String? version})?> savedEbookRef(
+      String itemId) async {
+    final refs = await savedEbookVersionRefs(itemId);
+    if (refs.isEmpty) return null;
+    var entry = refs.entries.first;
+    for (final e in refs.entries) {
+      if (e.key.isNotEmpty) {
+        entry = e;
+        break;
+      }
+    }
+    return (
+      uri: entry.value.uri,
+      meta: entry.value.meta,
+      version: entry.key.isEmpty ? null : entry.key,
+    );
   }
 
   /// Item ids with an exported ebook copy recorded on the device. The export
@@ -3663,25 +3830,60 @@ class DownloadService extends ChangeNotifier {
     await _writeEbookRefs((refs) => refs.remove(itemId));
   }
 
-  Future<void> _writeEbookRefs(
-    void Function(Map<String, dynamic> refs) mutate,
-  ) async {
-    final raw = await ScopedPrefs.getString(_savedEbookRefsKey);
-    final refs = raw == null || raw.isEmpty
-        ? <String, dynamic>{}
-        : (jsonDecode(raw) as Map).cast<String, dynamic>();
-    mutate(refs);
-    await ScopedPrefs.setString(_savedEbookRefsKey, jsonEncode(refs));
+  /// Drop just one exported version of [itemId], keeping the others. When the
+  /// last version goes the item id is forgotten too.
+  Future<void> clearSavedEbookVersion(String itemId, String version) async {
+    await _writeEbookRefs((refs) {
+      final versions = _toVersionMap(refs[itemId])..remove(version);
+      if (versions.isEmpty) {
+        refs.remove(itemId);
+      } else {
+        refs[itemId] = versions;
+      }
+    });
+    if ((await savedEbookVersionRefs(itemId)).isEmpty) {
+      final saved = await ScopedPrefs.getStringList('saved_ebooks');
+      if (saved.remove(itemId)) {
+        await ScopedPrefs.setStringList('saved_ebooks', saved);
+      }
+    }
   }
 
-  /// Whether the exported copy for [itemId] still exists on disk. SAF
+  /// Tail of the serialized saved-ebook-refs writes (see [_writeEbookRefs]).
+  Future<void> _ebookRefsWrite = Future.value();
+
+  Future<void> _writeEbookRefs(
+    void Function(Map<String, dynamic> refs) mutate,
+  ) {
+    // Serialize the read-modify-write: two concurrent exports/deletes (or a
+    // delete racing a save) would otherwise both read the same map and the
+    // later write would drop the other's ref.
+    final next = _ebookRefsWrite.then((_) async {
+      final raw = await ScopedPrefs.getString(_savedEbookRefsKey);
+      final refs = raw == null || raw.isEmpty
+          ? <String, dynamic>{}
+          : (jsonDecode(raw) as Map).cast<String, dynamic>();
+      mutate(refs);
+      await ScopedPrefs.setString(_savedEbookRefsKey, jsonEncode(refs));
+    });
+    _ebookRefsWrite = next.catchError((_) {});
+    return next;
+  }
+
+  /// Whether any exported copy for [itemId] still exists on disk. SAF
   /// content:// URIs are probed through the native side (Dart can't stat them);
   /// when existence can't be determined the copy is treated as present so we
   /// never wrongly drop a real export. Returns false when nothing was recorded.
   Future<bool> savedEbookCopyExists(String itemId) async {
-    final ref = await savedEbookRef(itemId);
-    if (ref == null) return false;
-    for (final r in [ref.uri, ref.meta]) {
+    final refs = await savedEbookVersionRefs(itemId);
+    for (final ref in refs.values) {
+      if (await _ebookRefFilesExist(ref.uri, ref.meta)) return true;
+    }
+    return false;
+  }
+
+  Future<bool> _ebookRefFilesExist(String? uri, String? meta) async {
+    for (final r in [uri, meta]) {
       if (r == null || r.isEmpty) continue;
       if (!isContentUri(r)) {
         try {
@@ -3713,12 +3915,11 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Byte size of the exported ebook copy for [itemId], or 0 when there is none
-  /// or its size can't be read. SAF content:// files are measured by the native
-  /// probe; real paths are stat-ed directly.
-  Future<int> savedEbookBytes(String itemId) async {
-    final ref = await savedEbookRef(itemId);
-    final uri = ref?.uri;
+  /// Byte size of one exported copy at [uri], or 0 when absent/unreadable. SAF
+  /// content:// files are measured by the native probe; real paths are stat-ed.
+  Future<int> savedEbookUriBytes(String? uri) => _exportBytes(uri);
+
+  Future<int> _exportBytes(String? uri) async {
     if (uri == null || uri.isEmpty) return 0;
     if (isContentUri(uri)) {
       try {
@@ -3743,6 +3944,50 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Total bytes of every exported copy for [itemId], or 0 when none.
+  Future<int> savedEbookBytes(String itemId) async {
+    final refs = await savedEbookVersionRefs(itemId);
+    var total = 0;
+    for (final ref in refs.values) {
+      total += await _exportBytes(ref.uri);
+    }
+    return total;
+  }
+
+  /// Total on-device bytes of the ebook for [itemId], counting each version once
+  /// across the reader cache and any exported copies. An export of a version
+  /// that is also in the reader cache (the same file, copied to the download
+  /// folder) is not counted twice; an export with no cache twin still counts.
+  Future<int> ebookDeviceBytes(String itemId) async {
+    final versions = cachedEbookVersionBytesSync(itemId);
+    final refs = await savedEbookVersionRefs(itemId);
+    final counted = <String>{};
+    var total = 0;
+    for (final ref in refs.entries) {
+      final bytes = await _exportBytes(ref.value.uri);
+      if (bytes <= 0) continue;
+      total += bytes;
+      // Mark the cache version this export duplicates so it isn't added again.
+      // Prefer the recorded version key; fall back to a size match for refs
+      // written before versions were tracked (a byte-for-byte cache copy).
+      final key = ref.key;
+      if (key.isNotEmpty && versions.containsKey(key)) {
+        counted.add(key);
+      } else {
+        for (final e in versions.entries) {
+          if (e.value == bytes && !counted.contains(e.key)) {
+            counted.add(e.key);
+            break;
+          }
+        }
+      }
+    }
+    versions.forEach((k, v) {
+      if (!counted.contains(k)) total += v;
+    });
+    return total;
+  }
+
   /// Delete a saved ebook copy ([ref] is a content:// URI or a real file path)
   /// that [saveEbookCopyToSaf] or the manual save dialog produced earlier.
   /// Returns whether the file existed and was removed.
@@ -3761,13 +4006,17 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Delete the exported ebook copy for [itemId]: the file (and its metadata
-  /// sidecar) on the device plus the recorded state. Mirrors the detail sheet's
-  /// "delete export" so the downloads screen can drop it too. Returns whether a
-  /// copy was recorded.
+  /// Delete every exported ebook copy for [itemId]: the files (and their
+  /// metadata sidecars) on the device plus the recorded state. Mirrors the
+  /// detail sheet's "delete export" so the downloads screen can drop it too.
+  /// Returns whether a copy was recorded.
   Future<bool> deleteSavedEbook(String itemId) async {
-    final ref = await savedEbookRef(itemId);
-    if (ref != null) {
+    final refs = await savedEbookVersionRefs(itemId);
+    if (refs.isEmpty) {
+      await clearSavedEbook(itemId);
+      return false;
+    }
+    for (final ref in refs.values) {
       if (ref.uri != null && ref.uri!.isNotEmpty) {
         await deleteBookFileAt(ref.uri!);
       }
@@ -3776,7 +4025,23 @@ class DownloadService extends ChangeNotifier {
       }
     }
     await clearSavedEbook(itemId);
-    return ref != null;
+    return true;
+  }
+
+  /// Delete just one exported version of [itemId], leaving the others. Returns
+  /// whether that version was recorded.
+  Future<bool> deleteSavedEbookVersion(String itemId, String version) async {
+    final refs = await savedEbookVersionRefs(itemId);
+    final ref = refs[version];
+    if (ref == null) return false;
+    if (ref.uri != null && ref.uri!.isNotEmpty) {
+      await deleteBookFileAt(ref.uri!);
+    }
+    if (ref.meta != null && ref.meta!.isNotEmpty) {
+      await deleteBookFileAt(ref.meta!);
+    }
+    await clearSavedEbookVersion(itemId, version);
+    return true;
   }
 
   Future<void> _finalizeSuccess(String itemId) async {
@@ -4990,6 +5255,60 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Bytes the server will pull for [chapterSelection] of [itemId]'s audio,
+  /// resolved exactly like the download itself: [_sessionShapedItem] reads the
+  /// item's own track list (no play session opened, so nothing being streamed
+  /// gets killed), then [_resolveSelectedTracks] narrows it to the same files
+  /// the download will take. Used by the chapter picker to show a download's
+  /// footprint before the user confirms. Null when the size can't be resolved.
+  Future<int?> selectedChapterBytes(
+      ApiService api, String itemId, List<int> chapterSelection) async {
+    try {
+      if (chapterSelection.isEmpty) return null;
+      final session = await _sessionShapedItem(api, itemId, null);
+      if (session == null) return null;
+      final allTracks = session['audioTracks'] as List<dynamic>?;
+      if (allTracks == null || allTracks.isEmpty) return null;
+      final selected =
+          _resolveSelectedTracks(allTracks, session, chapterSelection).tracks;
+      var total = 0;
+      for (final t in selected) {
+        final meta = (t as Map<String, dynamic>)['metadata'] as Map<String, dynamic>?;
+        final size = meta?['size'];
+        if (size is num) total += size.toInt();
+      }
+      return total > 0 ? total : null;
+    } catch (e) {
+      verboseLog('[Download] Chapter size estimate failed for $itemId: $e');
+      return null;
+    }
+  }
+
+  /// Bytes the server will pull for one podcast episode (its whole audio file).
+  /// Same lightweight read as [selectedChapterBytes]: the item's own track list,
+  /// no play session opened. Used by the episode download confirm so a large
+  /// episode's footprint is shown before the user commits. Null when it can't be
+  /// resolved.
+  Future<int?> episodeBytes(
+      ApiService api, String apiItemId, String episodeId) async {
+    try {
+      final session = await _sessionShapedItem(api, apiItemId, episodeId);
+      final tracks = session?['audioTracks'] as List<dynamic>?;
+      if (tracks == null || tracks.isEmpty) return null;
+      var total = 0;
+      for (final t in tracks) {
+        final meta =
+            (t as Map<String, dynamic>)['metadata'] as Map<String, dynamic>?;
+        final size = meta?['size'];
+        if (size is num) total += size.toInt();
+      }
+      return total > 0 ? total : null;
+    } catch (e) {
+      verboseLog('[Download] Episode size estimate failed for $apiItemId/$episodeId: $e');
+      return null;
+    }
+  }
+
   /// Chapters of [chapters] covered by a completed download of [itemId],
   /// computed from the persisted session's track ranges only — no filesystem
   /// I/O. Mirrors the overlap rule in [_resolveSelectedTracks] (and therefore
@@ -5235,4 +5554,312 @@ class DownloadService extends ChangeNotifier {
   List<DownloadInfo> get pausedDownloads => _downloads.values
       .where((d) => d.status == DownloadStatus.paused)
       .toList();
+
+  /// Open an exported ebook at [uri] straight from SAF storage, returning a
+  /// readable, seekable local path (`/proc/self/fd/<n>`) plus the held file
+  /// descriptor, or null when the provider can't expose a real file (e.g. a
+  /// cloud drive serving a pipe) so the caller falls back to a cached copy.
+  /// The fd must be released with [closeSafEbookFd] when the reader closes.
+  Future<({int fd, String path, int length})?> openSafEbookFd(String uri) async {
+    if (!Platform.isAndroid || !isContentUri(uri)) return null;
+    try {
+      final res = await _storageChannel
+          .invokeMethod<Map>('openSafFileDescriptor', {'uri': uri});
+      if (res == null) return null;
+      final fd = (res['fd'] as num?)?.toInt();
+      final path = res['path'] as String?;
+      final length = (res['length'] as num?)?.toInt();
+      if (fd == null || path == null || length == null || length <= 0) {
+        if (fd != null) await closeSafEbookFd(fd);
+        return null;
+      }
+      return (fd: fd, path: path, length: length);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> closeSafEbookFd(int fd) async {
+    try {
+      await _storageChannel.invokeMethod('closeSafFileDescriptor', {'fd': fd});
+    } catch (_) {}
+  }
+
+  /// Positional read of a held SAF descriptor ([fd]) at [offset]. Returns the
+  /// bytes read (empty at/after EOF), or null on failure. This is the direct
+  /// read path: the descriptor stays seekable, so readers can index and stream
+  /// an exported book without it ever being copied to app storage.
+  Future<Uint8List?> readSafEbookFd(int fd, int offset, int count) async {
+    try {
+      return await _storageChannel.invokeMethod<Uint8List>(
+          'readSafFileDescriptor', {'fd': fd, 'offset': offset, 'count': count});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Copy an exported ebook ([uri], a `content://` document) out of SAF into a
+  /// real app-private file at [destPath], because not every provider's
+  /// descriptor can be read in place. Returns true when the copy landed.
+  Future<bool> materializeSafFile(String uri, String destPath) async {
+    if (!Platform.isAndroid || !isContentUri(uri)) return false;
+    try {
+      final len = await _storageChannel.invokeMethod<num>(
+          'materializeSafFile', {'uri': uri, 'destPath': destPath});
+      return len != null && len > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+/// A book the reader can open, plus how to release it. [source] is the
+/// random-access byte source the readers serve; [file] is set when a real file
+/// backs it (a plain export path, the reader cache, or a transient copy). Only
+/// callers that need an actual [File] (the CBZ unpacker) rely on [file].
+class EbookOpenSource {
+  EbookOpenSource(
+    this.source, {
+    this.file,
+    this.deleteOnRelease = false,
+    this.fromExport = false,
+    this.streaming = false,
+  });
+
+  final BookSource source;
+  final File? file;
+
+  /// A transient app-private copy that [release] deletes when the reader closes.
+  final bool deleteOnRelease;
+
+  /// Whether the bytes came from the user's exported copy rather than the
+  /// reader cache.
+  final bool fromExport;
+
+  /// Whether the bytes are read on demand straight from the server (HTTP Range)
+  /// rather than from a local file. Nothing is persisted, so callers must not
+  /// register it for offline.
+  final bool streaming;
+
+  /// Whether this source owns a transient temp file that [release] deletes.
+  /// Callers must still call [release] for *every* source when the reader
+  /// closes (an fd- or HTTP-backed source holds a descriptor/client that must be
+  /// closed); this flag only says whether that also removes a temp file.
+  bool get isTransient => deleteOnRelease;
+
+  Future<void> release() async {
+    await source.close();
+    if (deleteOnRelease) {
+      final f = file;
+      if (f != null) {
+        try {
+          if (f.existsSync()) await f.delete();
+        } catch (_) {}
+      }
+    }
+  }
+}
+
+/// [BookSource] over a held Android SAF descriptor, read positionally through
+/// the native side. The descriptor opened by SAF stays seekable, unlike a
+/// re-opened `/proc/self/fd` path, so a reader can index and stream an exported
+/// book without the app ever copying it into its own storage.
+class FdBookSource implements BookSource {
+  FdBookSource(this._dl, this._fd, this._length);
+
+  final DownloadService _dl;
+  final int _fd;
+  final int _length;
+
+  @override
+  Future<int> length() async => _length;
+
+  @override
+  Future<Uint8List> read(int offset, int count) async {
+    if (count <= 0 || offset < 0 || offset >= _length) return Uint8List(0);
+    final n = count < _length - offset ? count : _length - offset;
+    return await _dl.readSafEbookFd(_fd, offset, n) ?? Uint8List(0);
+  }
+
+  @override
+  Future<void> close() => _dl.closeSafEbookFd(_fd);
+}
+
+/// Resolve how to open [itemId]'s [ebookFile]. Prefers an already-exported copy
+/// - read straight from the user's download folder (a plain path, or on Android
+/// a held SAF descriptor) so opening a saved book never makes a second copy -
+/// and otherwise falls back to the app's reader cache, downloading it if needed.
+/// The caller must always [EbookOpenSource.release] the source when the reader
+/// closes: even a non-[EbookOpenSource.isTransient] one still holds an open file
+/// descriptor or HTTP client. Pass [needFile] when the caller needs a real
+/// [File] (the CBZ unpacker), which forces a copy instead of an fd-backed read.
+Future<EbookOpenSource> resolveEbookOpenSource(
+  ApiService api,
+  String itemId,
+  Map<String, dynamic> ebookFile,
+  String title, {
+  bool needFile = false,
+}) async {
+  final local =
+      await resolveLocalEbookSource(itemId, ebookFile, needFile: needFile);
+  if (local != null) return local;
+  // Nothing local: stream the book from the server over HTTP Range so it opens
+  // without downloading it whole. Only EPUB genuinely streams - epub.js fetches
+  // zip sections on demand. foliate-js (MOBI/AZW3/FB2/CBZ) downloads the whole
+  // file to a Blob before parsing, so streaming it would re-transfer the book
+  // on every open with no cached copy - strictly worse than caching once. It is
+  // also skipped when the caller needs a real [File] (the CBZ unpacker) or when
+  // the server doesn't honour Range (then we cache a copy as before).
+  if (!needFile && ebookExtFromFile(ebookFile) == '.epub') {
+    final streamed = await _tryStreamingSource(api, itemId, ebookFile);
+    if (streamed != null) return streamed;
+  }
+  final cached = await fetchEbookToCache(api, itemId, ebookFile, title);
+  return EbookOpenSource(FileBookSource(cached), file: cached);
+}
+
+/// Opens [itemId]'s [ebookFile] as an HTTP Range source straight from the
+/// server, or null when the item has no file id or the server doesn't honour
+/// Range (so the caller caches instead).
+Future<EbookOpenSource?> _tryStreamingSource(
+  ApiService api,
+  String itemId,
+  Map<String, dynamic> ebookFile,
+) async {
+  final ino = ebookFile['ino']?.toString();
+  if (ino == null || ino.isEmpty) return null;
+  final url = api.buildFileUrl(itemId, ino);
+  final source = await HttpRangeBookSource.open(url, headers: api.mediaHeaders);
+  if (source == null) {
+    debugPrint('[EbookReader] stream unavailable item=$itemId ino=$ino');
+    return null;
+  }
+  try {
+    final length = await source.length();
+    // Persist the fetched blocks to disk (bounded by the 流式缓存 setting) so
+    // flipping back through pages doesn't re-download them. With that setting off
+    // the cache is null and the book still streams, just without persistence.
+    final cache = await EbookStreamCache.open(itemId, ebookFile);
+    final effective =
+        cache == null ? source : CachingBookSource(source, cache, length);
+    return EbookOpenSource(effective, streaming: true);
+  } catch (e) {
+    // The stream is open (holds an http.Client); a failure building the cache
+    // must release it and report "no stream" so the caller falls back to
+    // caching the file rather than leaking the client and aborting the open.
+    debugPrint('[EbookReader] stream setup failed item=$itemId ino=$ino: $e');
+    await source.close();
+    return null;
+  }
+}
+
+/// An [EbookOpenSource] already on the device for [itemId]'s [ebookFile] - the
+/// exported copy (read in place) when there is one, else the reader cache -
+/// without downloading anything. Null when the ebook isn't available locally.
+/// Used where a caller would rather stream/fall back than force a download.
+Future<EbookOpenSource?> resolveLocalEbookSource(
+  String itemId,
+  Map<String, dynamic> ebookFile, {
+  bool needFile = false,
+}) async {
+  final exported =
+      await _openExportedEbook(itemId, ebookFile, needFile: needFile);
+  if (exported != null) return exported;
+  final cached = await ebookCacheFileFor(itemId, ebookFile);
+  if (cached.existsSync() && await cached.length() > 0) {
+    return EbookOpenSource(FileBookSource(cached), file: cached);
+  }
+  return null;
+}
+
+/// Open [itemId]'s [ebookFile] straight from its exported copy: a plain path
+/// used as-is, or on Android a held SAF descriptor read positionally with no
+/// copy (falling back to a transient app-private copy the reader deletes on
+/// close when the descriptor can't be read in place). Deletes any redundant
+/// reader cache for the same version first, so the exported copy stays the only
+/// permanent one. Null when the item has no usable export.
+Future<EbookOpenSource?> _openExportedEbook(
+  String itemId,
+  Map<String, dynamic> ebookFile, {
+  bool needFile = false,
+}) async {
+  final dl = DownloadService();
+  try {
+    final refs = await dl.savedEbookVersionRefs(itemId);
+    final uri = refs[ebookVersionKey(ebookFile)]?.uri;
+    if (uri != null && uri.isNotEmpty) {
+      if (!isContentUri(uri)) {
+        final f = File(uri);
+        if (f.existsSync() && await f.length() > 0) {
+          await deleteCachedEbookVersion(itemId, ebookFile);
+          return EbookOpenSource(FileBookSource(f), file: f, fromExport: true);
+        }
+      } else {
+        // Direct read: keep the SAF descriptor open and read bytes at an offset
+        // through the native side. Verify it reads at both ends before trusting
+        // it (a descriptor that reads linearly from the start would break the
+        // zip server's end-of-central-directory scan).
+        if (!needFile) {
+          final opened = await dl.openSafEbookFd(uri);
+          if (opened != null) {
+            if (await _fdReadable(dl, opened.fd, opened.length)) {
+              debugPrint('[EbookReader] export direct fd=${opened.fd} '
+                  'bytes=${opened.length}');
+              await deleteCachedEbookVersion(itemId, ebookFile);
+              return EbookOpenSource(
+                  FdBookSource(dl, opened.fd, opened.length),
+                  fromExport: true);
+            }
+            debugPrint('[EbookReader] export fd=${opened.fd} not readable, '
+                'copying');
+            await dl.closeSafEbookFd(opened.fd);
+          }
+        }
+        // Fallback: materialize a transient app-private copy the reader deletes
+        // on close, so nothing permanent is duplicated beside the export.
+        final dir = await getTemporaryDirectory();
+        final ext = ebookExtFromFile(ebookFile);
+        final ino = ebookVersionKey(ebookFile);
+        final safeId = safeEbookPathSegment(itemId);
+        final safeIno = safeEbookPathSegment(ino);
+        final safeExt = ext.isEmpty
+            ? ''
+            : '.${safeEbookPathSegment(ext.replaceFirst('.', ''))}';
+        final dest = File(
+            '${dir.path}/absorb_reader/$safeId${ino.isEmpty ? '' : '.$safeIno'}$safeExt');
+        final ok = await dl.materializeSafFile(uri, dest.path);
+        debugPrint('[EbookReader] export copy=$ok path=${dest.path}');
+        if (ok) {
+          await deleteCachedEbookVersion(itemId, ebookFile);
+          return EbookOpenSource(FileBookSource(dest),
+              file: dest, deleteOnRelease: true, fromExport: true);
+        }
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/// Whether the held descriptor reads correctly at both ends and returns to the
+/// start consistently - what the zip and foliate readers require.
+Future<bool> _fdReadable(DownloadService dl, int fd, int length) async {
+  try {
+    if (length <= 0) return false;
+    if (length < 64) {
+      return (await dl.readSafEbookFd(fd, 0, 1))?.isNotEmpty ?? false;
+    }
+    final head = await dl.readSafEbookFd(fd, 0, 32);
+    final tail = await dl.readSafEbookFd(fd, length - 32, 32);
+    if (head == null || head.length != 32 || tail == null || tail.length != 32) {
+      return false;
+    }
+    final head2 = await dl.readSafEbookFd(fd, 0, 32);
+    if (head2 == null || head2.length != 32) return false;
+    for (var i = 0; i < 32; i++) {
+      if (head[i] != head2[i]) return false;
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
 }

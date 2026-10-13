@@ -20,6 +20,8 @@ import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/ebook_stream_cache.dart';
+import '../services/ebook_progress_store.dart';
 import '../services/find_in_ebook.dart';
 import '../services/progress_sync_service.dart';
 import '../services/reader_font_service.dart';
@@ -116,8 +118,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   EpubController? _epubController;
   bool _loading = true;
   String? _error;
-  File? _cachedFile;
+  BookSource? _ebookSource;
   String? _cachedLocations;
+  // Where the readable bytes came from (exported copy or reader cache) and its
+  // byte size. The size tags the cached location index; an exported/SAF source
+  // is released in dispose so its file descriptor doesn't leak.
+  EbookOpenSource? _openSource;
+  int _ebookBytes = 0;
   // Swiping to the recents/app-switcher un-hides the system bars. The frozen
   // safe-area padding (see _buildViewerArea) keeps that from resizing the
   // WebView, but if a resize still gets through (some OEMs resize the window
@@ -310,7 +317,6 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _epubController = EpubController();
     _quietLib = context.read<LibraryProvider>();
     _quietLib.setReaderQuiet(true);
-    _loadInitialLocation();
     // A settings read failure must not stop the book from opening - fall back
     // to the field defaults and open anyway.
     _loadSettings()
@@ -370,6 +376,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       // relocations until we're back (they'll be resize artifacts).
       if (_readerActive) _bgCfi = _currentCfi;
       _readerActive = false;
+      // Push the coalesced position now: if the OS kills us while backgrounded
+      // the server would otherwise be stuck on the last flushed page.
+      _flushEbookPush();
       // Following along costs transcription and a WebView call several times
       // a second, and nobody is reading a page they can't see.
       if (_readAlongOn) {
@@ -386,10 +395,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   Future<void> _loadAudioMeta() async {
     final lib = context.read<LibraryProvider>();
     _audioCoverUrl = lib.getCoverUrl(widget.itemId);
-    final api = context.read<AuthProvider>().apiService;
-    if (api == null) return;
     try {
-      final item = await api.getLibraryItem(widget.itemId);
+      final item = await _loadItem();
       if (item == null || !mounted) return;
       final media = item['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
@@ -401,6 +408,32 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         _hasAudio = dur > 0;
       });
     } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>?>? _itemFuture;
+
+  /// One `getLibraryItem` per reader session. The response is multi-MB, so the
+  /// audio metadata lookup and the offline-register step share a single request
+  /// instead of each pulling the item again.
+  Future<Map<String, dynamic>?> _loadItem() {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return Future.value(null);
+    return _itemFuture ??= _loadItemUncached(api);
+  }
+
+  Future<Map<String, dynamic>?> _loadItemUncached(ApiService api) async {
+    // Prefer the on-disk copy: the audio metadata and offline record only need
+    // the last known item, and reading a book already on the device shouldn't
+    // hit the network for a multi-MB payload. The server is only consulted on
+    // the first open on this device (nothing cached yet). Progress does not come
+    // from here, so a stale copy can't regress the reading position.
+    final cached = await api.getCachedLibraryItem(widget.itemId);
+    if (cached != null) return cached;
+    try {
+      return await api.getLibraryItem(widget.itemId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _startThisBook() async {
@@ -712,6 +745,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _pendingTapAction?.cancel();
     // Restore system UI when leaving
     _setFullscreen(false);
+    final source = _openSource;
+    if (source != null) unawaited(source.release());
+    // The viewer has closed its source, so trim the streamed-ebook block cache
+    // now its blocks are no longer held open. Fire-and-forget: cache upkeep must
+    // never delay teardown.
+    unawaited(enforceEbookStreamCacheLimits());
     super.dispose();
   }
 
@@ -856,7 +895,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     ''');
   }
 
-  void _loadInitialLocation() {
+  Future<void> _loadInitialLocation() async {
     final lib = context.read<LibraryProvider>();
     // A highlight jump wins over the saved reading position; the percent below
     // still comes from saved progress so the bar isn't at 0 until epub.js has
@@ -867,14 +906,24 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _settleJumpCfi = _initialCfi;
     }
     final progressData = lib.getProgressData(widget.itemId);
-    final loc = progressData?['ebookLocation'] as String?;
+    // The item-level location is shared across every ebook version of this
+    // book; per-version resolution keeps the 6.4 MB and 161 MB EPUBs from
+    // resuming at each other's position (see EbookProgressStore).
+    final resolved = await EbookProgressStore.instance.resolve(
+      widget.itemId,
+      ebookVersionKey(widget.ebookFile),
+      itemLocation: progressData?['ebookLocation'] as String?,
+      itemProgress: (progressData?['ebookProgress'] as num?)?.toDouble(),
+    );
+    if (!mounted) return;
+    final loc = resolved.location;
     if (_initialCfi == null && loc != null && loc.isNotEmpty) {
       _initialCfi = loc;
     }
     // Seed the displayed percent from saved progress so the bar shows the
     // resume position until epub.js's location index is ready, and so the
     // pre-index save keeps this value instead of regressing to 0.
-    final savedProgress = (progressData?['ebookProgress'] as num?)?.toDouble();
+    final savedProgress = resolved.progress;
     if (savedProgress != null) _progress = savedProgress.clamp(0.0, 1.0);
   }
 
@@ -883,15 +932,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// kept ebook record, so the copy outlives the audio download.
   Future<void> _rememberForOffline(ApiService api) async {
     final downloads = DownloadService();
+    final item = await _loadItem();
     if (!downloads.isDownloaded(widget.itemId)) {
       final registered = await downloads.registerEbookDownload(
         api: api,
         itemId: widget.itemId,
+        item: item,
         onlyIfNoAudio: true,
       );
       if (registered) return;
     }
-    await downloads.keepEbook(api: api, itemId: widget.itemId);
+    await downloads.keepEbook(api: api, itemId: widget.itemId, item: item);
   }
 
   Future<void> _downloadAndOpen() async {
@@ -902,33 +953,58 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         setState(() { _error = 'Not connected to server'; _loading = false; });
         return;
       }
-      // Shared persistent cache - reuses a downloaded/previously-opened copy so
-      // the book reads offline.
+      await _loadInitialLocation();
+      if (!mounted) return;
+      // Trim the streamed-ebook block cache before this session adds to it, the
+      // same upkeep the PDF reader does around its own block cache.
+      unawaited(enforceEbookStreamCacheLimits());
+      // Prefer the exported copy (read in place, no second copy); otherwise the
+      // shared persistent cache, which reuses a downloaded/previously-opened
+      // copy so the book reads offline.
       final playing = AudioPlayerService().isPlaying;
       debugPrint('[EbookReader] open item=${widget.itemId} ext=${ebookExtFromFile(widget.ebookFile)} '
           'cached=${await isEbookCached(widget.itemId, widget.ebookFile)} playing=$playing');
-      final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
-      unawaited(_rememberForOffline(api));
-      final len = file.existsSync() ? await file.length() : 0;
-      final locations = await loadCachedLocations(file);
-      debugPrint('[EbookReader] file ready item=${widget.itemId} bytes=$len '
-          'locations=${locations == null ? 'none' : 'cached'} path=${file.path}');
-      if (mounted) {
-        setState(() {
-          _cachedFile = file;
-          _cachedLocations = locations;
-          _loading = false;
-        });
+      final previous = _openSource;
+      if (previous != null) {
+        _openSource = null;
+        await previous.release();
       }
+      final source = await resolveEbookOpenSource(api, widget.itemId, widget.ebookFile, widget.title);
+      // Record the open source immediately: the reads below can throw, and then
+      // the catch (or dispose) must release this file/stream rather than leak it.
+      _openSource = source;
+      // A streamed book (HTTP Range) isn't on disk, so it must not be
+      // registered as an offline download.
+      if (!source.streaming) unawaited(_rememberForOffline(api));
+      final len = await source.source.length();
+      final locations = await loadCachedLocations(
+          ebookLocationsKey(widget.itemId, widget.ebookFile), len);
+      debugPrint('[EbookReader] file ready item=${widget.itemId} bytes=$len '
+          'locations=${locations == null ? 'none' : 'cached'}');
+      _ebookBytes = len;
+      if (!mounted) {
+        _openSource = null;
+        await source.release();
+        return;
+      }
+      setState(() {
+        _ebookSource = source.source;
+        _cachedLocations = locations;
+        _loading = false;
+      });
     } catch (e) {
       debugPrint('[EbookReader] Error: $e');
+      // Release the source opened this attempt (dispose may have already run
+      // with it unset), then clear it so dispose doesn't release it twice.
+      final opened = _openSource;
+      _openSource = null;
+      if (opened != null) unawaited(opened.release());
       if (mounted) {
         setState(() { _error = 'Error loading ebook: $e'; _loading = false; });
       }
     }
   }
 
-  DateTime _ebookPushAt = DateTime.fromMillisecondsSinceEpoch(0);
   (String, double)? _ebookPushPending;
   Timer? _ebookPushTimer;
   ApiService? _ebookPushApi;
@@ -938,28 +1014,24 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final api = auth.apiService;
     if (api == null) return;
     _ebookPushApi = api;
+    // The device copy and the local progress store are written immediately so
+    // an offline/force-closed session never loses the page.
     context.read<LibraryProvider>().applyLocalEbookProgress(
       widget.itemId, location: cfi, progress: progress);
-    // Read along turns the pages itself, several times a minute and in
-    // bursts while a page settles. One server write every 15s is plenty for
-    // that; the latest position wins and whatever is pending goes out when
-    // read along stops.
-    if (_readAlongOn) {
-      _ebookPushPending = (cfi, progress);
-      final since = DateTime.now().difference(_ebookPushAt);
-      if (since < const Duration(seconds: 15)) {
-        _ebookPushTimer ??=
-            Timer(const Duration(seconds: 15) - since, _flushEbookPush);
-        return;
-      }
-      _ebookPushPending = null;
-    }
-    _ebookPushAt = DateTime.now();
-    ProgressSyncService().pushEbookProgress(
-      api,
-      widget.itemId,
-      location: cfi,
-      progress: progress,
+    unawaited(EbookProgressStore.instance.record(
+      widget.itemId, ebookVersionKey(widget.ebookFile), cfi, progress));
+    // The server write is coalesced: opening a book relocates twice (first
+    // paint, then the index-rescue) and page turns arrive in bursts, so one
+    // PATCH per event is wasteful. Keep only the latest position and send it
+    // once the reader has been quiet for the window. Read along turns pages on
+    // its own several times a minute, so it gets a longer window; whatever is
+    // pending is flushed when read along stops or the app leaves the screen.
+    _ebookPushPending = (cfi, progress);
+    _ebookPushTimer ??= Timer(
+      _readAlongOn
+          ? const Duration(seconds: 15)
+          : const Duration(seconds: 2),
+      _flushEbookPush,
     );
   }
 
@@ -970,7 +1042,6 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final api = _ebookPushApi;
     if (pending == null || api == null) return;
     _ebookPushPending = null;
-    _ebookPushAt = DateTime.now();
     ProgressSyncService().pushEbookProgress(
       api,
       widget.itemId,
@@ -5907,7 +5978,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       );
     }
 
-    if (_error != null || _cachedFile == null) {
+    if (_error != null || _ebookSource == null) {
       return _wrap(
         Center(
           child: Padding(
@@ -5930,14 +6001,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           // and read along and auto scroll measure the page they can see.
           _withPinnedTopBar(bg, fg, fgDim, accent, _buildViewerArea(EpubViewer(
               key: ValueKey(_viewerKey),
-              epubSource: EpubSource.fromFile(_cachedFile!),
+              epubSource: EpubSource.fromSource(_ebookSource!),
               epubController: _epubController!,
               initialCfi: _initialCfi,
               cachedLocations: _cachedLocations,
               onLocationsGenerated: (json) {
                 debugPrint('[EbookReader] locations generated item=${widget.itemId} chars=${json.length}');
-                final file = _cachedFile;
-                if (file != null) saveCachedLocations(file, json);
+                saveCachedLocations(
+                    ebookLocationsKey(widget.itemId, widget.ebookFile),
+                    _ebookBytes, json);
               },
               displaySettings: EpubDisplaySettings(
                 flow: EpubFlow.paginated,
@@ -5961,11 +6033,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               // value.progress is only meaningful (and stable) after this.
               onLocationLoaded: () {
                 debugPrint('[EbookReader] onLocationLoaded item=${widget.itemId}');
+                final wasReady = _locationsReady;
                 if (mounted) setState(() => _locationsReady = true);
-                // A find jump right after open lands before this index exists,
-                // so its refresh got page/chapter but percentage=0 - and no
-                // relocated fires until a page turn. Recompute now it can.
-                if (_didStartFind) _refreshLocationAfterJump();
+                // The relocation(s) before the index existed carried a bogus
+                // percentage, and no further relocated fires until a page turn -
+                // so a book opened and left alone keeps progress 0 (the resume
+                // location is saved, but the percent never is, leaving the
+                // detail sheet's Read bar empty). Recompute the current
+                // location's percent now the index exists and push it. This also
+                // covers a find jump right after open, whose own refresh ran
+                // before the index.
+                if (!wasReady) _refreshLocationAfterJump();
               },
               suppressNativeContextMenu: true,
               onSelection: _onSelection,

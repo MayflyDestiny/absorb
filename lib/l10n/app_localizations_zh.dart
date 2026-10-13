@@ -661,7 +661,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get desc => '降序';
 
   @override
-  String get fileSize => '文件大小';
+  String get fileSize => '大小';
 
   @override
   String get lastUpdated => '最后更新';
@@ -1982,13 +1982,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sectionDownloadsAndStorage => '下载与存储';
 
   @override
-  String get downloadOverWifiOnly => '仅在 Wi-Fi 下下载';
+  String get downloadOverWifiOnly => '下载所用网络';
 
   @override
-  String get downloadOverWifiOnSubtitle => '开启 - 禁止使用移动数据下载';
+  String get downloadOverWifiOnSubtitle => '仅限 Wi-Fi 下载';
 
   @override
-  String get downloadOverWifiOffSubtitle => '关闭 - 任何网络均可下载';
+  String get downloadOverWifiOffSubtitle => '任意网络下载';
 
   @override
   String get autoDownloadOnWifi => 'Wi-Fi 下自动下载';
@@ -2104,6 +2104,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get downloadsEbookOnlyCached => '仅缓存';
+
+  @override
+  String get downloadsEbookExported => '已导出';
+
+  @override
   String get downloadsSort => '排序';
 
   @override
@@ -2160,17 +2166,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get streamingCacheInfoContent =>
-      '将流式播放的音频缓存到磁盘，以便在快退或重复收听时无需重新下载。缓存会自动管理 - 达到大小限制时，最旧的文件会被移除。这与完全下载的书籍是分开的';
+      '将流式播放的音频和电子书页面块缓存到磁盘，快退或回看时无需重新下载；达到大小限制时移除最旧文件。关闭时不保留，与完全下载的书籍分开。';
 
   @override
   String get streamingCacheOff => '关闭';
 
   @override
-  String get streamingCacheOffSubtitle => '关闭 - 音频直接流式播放，不缓存';
+  String get streamingCacheOffSubtitle => '关闭 - 音频不缓存，电子书块仅本次会话保留';
 
   @override
   String streamingCacheOnSubtitle(int size) {
-    return '$size MB - 最近流式播放的音频将缓存到磁盘';
+    return '$size MB - 最近流式播放的音频与电子书页面将缓存到磁盘';
   }
 
   @override
@@ -2212,7 +2218,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cacheAppDataHint => '书架、网格、阅读进度和播放会话缓存。';
 
   @override
-  String get cacheStreamingHint => '最近流式播放的音频保存在本地，便于即时重播。';
+  String get cacheStreamingHint => '近期流式播放的音频和电子书页面块会缓存到本地避免重复下载。';
 
   @override
   String get clearAllCaches => '全部清除';
@@ -3470,6 +3476,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noEbookFileFound => '未找到电子书文件';
 
   @override
+  String get readerFailedToOpen => '无法打开 PDF';
+
+  @override
+  String get readerStreamHint => '流式阅读 PDF 需要连接你的服务器。请检查网络后重试。';
+
+  @override
   String get bookmark => '书签';
 
   @override
@@ -3642,6 +3654,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String downloadConfirmContent(String title) {
     return '将“$title”下载到本机？';
+  }
+
+  @override
+  String chapterDownloadConfirm(int count) {
+    return '下载 $count 个章节？';
   }
 
   @override
@@ -8499,6 +8516,29 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readEbook => '阅读';
+
+  @override
+  String get chooseEbookVersion => '选择电子书版本';
+
+  @override
+  String get ebookPrimaryVersion => '服务端默认';
+
+  @override
+  String get ebookChooseHoldHint => '长按某个版本可设为默认';
+
+  @override
+  String get ebookLocalDefault => '本地默认';
+
+  @override
+  String ebookDefaultSet(Object name) {
+    return '已设为默认版本：$name';
+  }
+
+  @override
+  String get ebookDefaultCleared => '已恢复为服务端默认版本';
+
+  @override
+  String get ebookAlreadyDefault => '已是默认版本';
 
   @override
   String get homeTapCardToResume => '点按卡片继续收听，长按查看详情。';

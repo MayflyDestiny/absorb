@@ -28,6 +28,7 @@ import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
 import 'services/settings_sync_service.dart';
 import 'services/scoped_prefs.dart';
+import 'services/ebook_preferences.dart';
 import 'services/cover_cache_manager.dart';
 import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
@@ -708,6 +709,10 @@ class _AuthGateState extends State<AuthGate> {
     // One-time migration: copy any settings that were written under unscoped
     // keys (before scope was active) to the current user's scoped keys.
     await ScopedPrefs.migrateToScope();
+
+    // Warm the per-book preferred ebook versions so the synchronous
+    // resolveEbookFile() can honor a local default.
+    await EbookPreferences.load();
 
     // Reload settings that were read in main() before scope was active
     var scopedTheme = await PlayerSettings.getThemeMode();

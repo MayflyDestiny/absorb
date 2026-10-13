@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/api_service.dart';
 import '../services/app_log.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
@@ -32,6 +34,26 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   Map<String, int> _fileSizes = {};
   Map<String, DateTime> _downloadedTimes = {};
   Map<String, bool> _isPodcast = {};
+
+  /// Total on-device ebook bytes per item (reader cache + exported copy, each
+  /// version counted once). Resolved in [_load]; rows fall back to the cache
+  /// sum until it lands.
+  Map<String, int> _ebookBytes = {};
+
+  /// Render cache from the previous opening, kept static so the next push can
+  /// seed sizes / timestamps / ebook-only rows on its very first frame. The
+  /// in-memory service has no per-item size or time, so without this a revisit
+  /// would paint rows in registry order and then visibly re-sort (and grow its
+  /// size labels) once the background stat lands. [_load] replaces it.
+  static Map<String, int> _snapSizes = {};
+  static Map<String, DateTime> _snapTimes = {};
+  static List<DownloadInfo> _snapEbookOnly = [];
+  static Set<String> _snapExported = {};
+  static Map<String, int> _snapEbookBytes = {};
+
+  /// Ids whose metadata fetch is already in flight, so overlapping [_load]s
+  /// don't hit the network for the same ebook twice.
+  final Set<String> _resolvingEbookIds = {};
 
   /// Ebooks on the phone that no record lists: cached copies the reader made
   /// when an ebook was opened (the reader-only path can fail to write a record
@@ -61,6 +83,24 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   @override
   void initState() {
     super.initState();
+    // Seed from what is already in memory so the first frame after the push
+    // animation starts is the real list, not a spinner. The service holds the
+    // titles / authors / paths synchronously; sizes and the ebook-only rows are
+    // filled in by [_load] as they resolve. The static snapshot supplies the
+    // previous sort keys so rows don't jump on the second open.
+    final dl = DownloadService();
+    final items = dl.downloadedItems;
+    _items = items;
+    _itemIds = {for (final item in items) item.itemId};
+    _isPodcast = {
+      for (final item in items)
+        item.itemId: _sessionIsPodcast(item.sessionData),
+    };
+    _fileSizes = Map.of(_snapSizes);
+    _downloadedTimes = Map.of(_snapTimes);
+    _ebookOnlyItems = List.of(_snapEbookOnly);
+    _exportedEbookIds = Set.of(_snapExported);
+    _ebookBytes = Map.of(_snapEbookBytes);
     _load();
   }
 
@@ -151,8 +191,6 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             _isPodcast[item.itemId] ?? _sessionIsPodcast(item.sessionData),
     };
     // Ebooks on the phone that no record lists (see [_ebookOnlyItems]).
-    // Metadata comes from the item cache first, then the server, so the row
-    // shows the book's title rather than a cache file name.
     final api = context.read<AuthProvider>().apiService;
     final recordIds = <String>{
       for (final item in items) item.itemId,
@@ -166,6 +204,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ...cachedEbookIds,
       ...exportedEbookIds,
     };
+    // Total on-device ebook bytes per item, each version counted once across the
+    // reader cache and an exported copy (an exported version already in the
+    // cache must not be double counted). Cache-only ids resolve without a SAF
+    // probe; only the handful of exported copies pay for one.
+    final ebookBytes = <String, int>{};
+    for (final e in await Future.wait(onDeviceEbookIds
+        .map((id) async => MapEntry(id, await dl.ebookDeviceBytes(id))))) {
+      ebookBytes[e.key] = e.value;
+    }
     final ebookOnly = <DownloadInfo>[
       for (final r in _ebookOnlyItems)
         if (onDeviceEbookIds.contains(r.itemId) && !recordIds.contains(r.itemId))
@@ -175,57 +222,114 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       ...recordIds,
       for (final r in ebookOnly) r.itemId,
     };
+    final merge = await PlayerSettings.getMergeAbsorbingLibraries();
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _itemIds = {for (final item in items) item.itemId};
+      _fileSizes = sizes;
+      _downloadedTimes = times;
+      _isPodcast = pods;
+      _ebookOnlyItems = ebookOnly;
+      _exportedEbookIds = exportedEbookIds;
+      _ebookBytes = ebookBytes;
+      _mergeLibraries = merge;
+      _loading = false;
+      // Live state is authoritative again, so the optimistic-drop guard has
+      // done its job.
+      _dropping.clear();
+    });
+    _storeSnapshot();
+    // Resolve the on-device ebooks no record lists in the background: a cached
+    // copy is a local read, a cache miss is a network fetch. Neither should
+    // hold back the sizes/timestamps painted just above. Rows fade in as they
+    // resolve, since the list rebuilds from [_ebookOnlyItems].
     if (api != null) {
-      for (final id in onDeviceEbookIds) {
-        if (knownIds.contains(id)) continue;
-        try {
-          final item =
-              await api.getCachedLibraryItem(id) ?? await api.getLibraryItem(id);
-          if (item == null) continue;
-          final media = item['media'] as Map<String, dynamic>?;
-          final metadata = media?['metadata'] as Map<String, dynamic>?;
-          ebookOnly.add(
-            DownloadInfo(
-              itemId: id,
-              status: DownloadStatus.downloaded,
-              sessionData: jsonEncode({
-                'libraryItem': item,
-                'mediaMetadata': metadata,
-                'duration': 0,
-                'chapters': const <dynamic>[],
-              }),
-              title: metadata?['title'] as String?,
-              author: metadata?['authorName'] as String?,
-              libraryId: item['libraryId'] as String?,
-            ),
-          );
-        } catch (e) {
-          verboseLog('[Downloads] ebook row metadata failed for $id: $e');
-        }
+      final pending = <String>[
+        for (final id in onDeviceEbookIds)
+          if (!knownIds.contains(id) && _resolvingEbookIds.add(id)) id,
+      ];
+      if (pending.isNotEmpty) {
+        unawaited(
+          _resolveEbookOnlyMetadata(api, pending, recordIds, onDeviceEbookIds),
+        );
       }
     }
-    final merge = await PlayerSettings.getMergeAbsorbingLibraries();
-    if (mounted) {
-      setState(() {
-        _items = items;
-        _itemIds = {for (final item in items) item.itemId};
-        _fileSizes = sizes;
-        _downloadedTimes = times;
-        _isPodcast = pods;
-        _ebookOnlyItems = ebookOnly;
-        _exportedEbookIds = exportedEbookIds;
-        _mergeLibraries = merge;
-        _loading = false;
-        // Live state is authoritative again, so the optimistic-drop guard has
-        // done its job.
-        _dropping.clear();
-      });
-      // A download that finished after the snapshot above ticked while
-      // [_loading] was still set, so it was dropped with no second tick coming.
-      // Re-check now the gate is open; both sides are the same set, so this
-      // settles after one extra pass.
-      _maybeRefreshMetadata(dl);
+    // A download that finished after the snapshot above ticked while
+    // [_loading] was still set, so it was dropped with no second tick coming.
+    // Re-check now the gate is open; both sides are the same set, so this
+    // settles after one extra pass.
+    _maybeRefreshMetadata(dl);
+  }
+
+  /// Fills in the display metadata for ebook-only rows without blocking the
+  /// list paint (see [_load]). [ids] are already claimed in [_resolvingEbookIds]
+  /// so overlapping loads don't fetch the same book twice; a failure releases
+  /// its id so a later load can retry.
+  Future<void> _resolveEbookOnlyMetadata(
+    ApiService api,
+    List<String> ids,
+    Set<String> recordIds,
+    Set<String> onDeviceEbookIds,
+  ) async {
+    final resolved = <DownloadInfo>[];
+    for (final id in ids) {
+      try {
+        final item =
+            await api.getCachedLibraryItem(id) ?? await api.getLibraryItem(id);
+        if (item == null) {
+          _resolvingEbookIds.remove(id);
+          continue;
+        }
+        final media = item['media'] as Map<String, dynamic>?;
+        final metadata = media?['metadata'] as Map<String, dynamic>?;
+        resolved.add(
+          DownloadInfo(
+            itemId: id,
+            status: DownloadStatus.downloaded,
+            sessionData: jsonEncode({
+              'libraryItem': item,
+              'mediaMetadata': metadata,
+              'duration': 0,
+              'chapters': const <dynamic>[],
+            }),
+            title: metadata?['title'] as String?,
+            author: metadata?['authorName'] as String?,
+            libraryId: item['libraryId'] as String?,
+          ),
+        );
+        // Release the claim: the id is now in [_ebookOnlyItems], so later loads
+        // skip it via knownIds - but a re-cached copy after a delete can
+        // resolve again.
+        _resolvingEbookIds.remove(id);
+      } catch (e) {
+        _resolvingEbookIds.remove(id);
+        verboseLog('[Downloads] ebook row metadata failed for $id: $e');
+      }
     }
+    if (!mounted || resolved.isEmpty) return;
+    setState(() {
+      final existing = {for (final r in _ebookOnlyItems) r.itemId};
+      for (final r in resolved) {
+        if (onDeviceEbookIds.contains(r.itemId) &&
+            !recordIds.contains(r.itemId) &&
+            existing.add(r.itemId)) {
+          _ebookOnlyItems = [..._ebookOnlyItems, r];
+        }
+      }
+    });
+    _storeSnapshot();
+  }
+
+  /// Persists this frame's render keys for the next opening (see [_snapSizes]).
+  /// Shares map/list references with the live state, so in-place edits made
+  /// elsewhere (a delete trimming `_fileSizes`) are reflected automatically.
+  void _storeSnapshot() {
+    _snapSizes = _fileSizes;
+    _snapTimes = _downloadedTimes;
+    _snapEbookOnly = _ebookOnlyItems;
+    _snapExported = _exportedEbookIds;
+    _snapEbookBytes = _ebookBytes;
   }
 
   /// Queues an update when the completed set changes, so rows that finished
@@ -354,31 +458,43 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         (d.author ?? '').toLowerCase().contains(q);
   }
 
+  /// Stable ordering: when two rows tie (same/null key) their input order is
+  /// kept. Matters on the first frame, where no timestamp is known yet, so the
+  /// list shows the registry order instead of an arbitrary shuffle before the
+  /// background stat lands and re-sorts by the real keys.
   List<DownloadInfo> _sortedCompleted(List<DownloadInfo> list) {
-    final out = List<DownloadInfo>.from(list);
+    final indexed = <({DownloadInfo item, int i})>[
+      for (var i = 0; i < list.length; i++) (item: list[i], i: i),
+    ];
+    int byIndex(({DownloadInfo item, int i}) a, ({DownloadInfo item, int i}) b) =>
+        a.i.compareTo(b.i);
     switch (_sort) {
       case _DownloadSort.recent:
-        out.sort((a, b) {
-          final ta = _downloadedTimes[a.itemId];
-          final tb = _downloadedTimes[b.itemId];
-          if (ta == null && tb == null) return 0;
+        indexed.sort((a, b) {
+          final ta = _downloadedTimes[a.item.itemId];
+          final tb = _downloadedTimes[b.item.itemId];
+          if (ta == null && tb == null) return byIndex(a, b);
           if (ta == null) return 1;
           if (tb == null) return -1;
-          return tb.compareTo(ta);
+          final c = tb.compareTo(ta);
+          return c != 0 ? c : byIndex(a, b);
         });
       case _DownloadSort.title:
-        out.sort(
-          (a, b) => (a.title ?? '').toLowerCase().compareTo(
-            (b.title ?? '').toLowerCase(),
-          ),
-        );
+        indexed.sort((a, b) {
+          final c = (a.item.title ?? '')
+              .toLowerCase()
+              .compareTo((b.item.title ?? '').toLowerCase());
+          return c != 0 ? c : byIndex(a, b);
+        });
       case _DownloadSort.size:
-        out.sort(
-          (a, b) =>
-              (_fileSizes[b.itemId] ?? 0).compareTo(_fileSizes[a.itemId] ?? 0),
-        );
+        indexed.sort((a, b) {
+          final c = (_fileSizes[b.item.itemId] ?? 0).compareTo(
+            _fileSizes[a.item.itemId] ?? 0,
+          );
+          return c != 0 ? c : byIndex(a, b);
+        });
     }
-    return out;
+    return [for (final e in indexed) e.item];
   }
 
   void _toggleSelect(String itemId) {
@@ -626,8 +742,17 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   Widget _completedRow(DownloadInfo info, Set<String> ebookIds) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     final hasAudio = info.localPaths.isNotEmpty;
     final hasEbook = ebookIds.contains(info.itemId);
+    // A book with an ebook but no audio gets a wording badge instead of the
+    // bare book mark, so "kept just for reading" is legible at a glance: an
+    // export to the device's download folder wins over an app-cache-only copy.
+    final ebookBadge = hasEbook && !hasAudio
+        ? (_exportedEbookIds.contains(info.itemId)
+              ? l.downloadsEbookExported
+              : l.downloadsEbookOnlyCached)
+        : null;
     return Dismissible(
       // Swiping takes the whole row: the audio files and, for a book that has
       // one, the cached ebook (deleteDownload decides what may stay behind).
@@ -653,14 +778,20 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       child: _DownloadCard(
         info: info,
         // The ebook half of the book counts here as well, matching the summary.
-        // An ebook-only row has no audio to measure.
+        // An ebook-only row has no audio to measure. [_ebookBytes] holds the
+        // cache + export total (each version once); fall back to the cache sum
+        // until it resolves.
         fileSize: (hasAudio ? (_fileSizes[info.itemId] ?? 0) : 0) +
-            (hasEbook ? cachedEbookBytesSync(info.itemId) : 0),
+            (hasEbook
+                ? (_ebookBytes[info.itemId] ??
+                      cachedEbookBytesSync(info.itemId))
+                : 0),
         cs: cs,
         tt: tt,
         selecting: _selecting,
         isSelected: _selected.contains(info.itemId),
         hasEbook: hasEbook,
+        ebookBadge: ebookBadge,
         onToggle: () => _toggleSelect(info.itemId),
         onLongPress: () => _enterSelection(info.itemId),
         onOpen: _selecting
@@ -825,9 +956,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
+          child:
+              Column(
                   children: [
                     // Header
                     Padding(
@@ -1017,7 +1147,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           for (final d in rows) {
                             completedBytes += _fileSizes[d.itemId] ?? 0;
                             if (ebookIds.contains(d.itemId)) {
-                              completedBytes += cachedEbookBytesSync(d.itemId);
+                              completedBytes +=
+                                  _ebookBytes[d.itemId] ??
+                                      cachedEbookBytesSync(d.itemId);
                             }
                           }
                           final hasAny =
@@ -1343,6 +1475,9 @@ class _DownloadCard extends StatelessWidget {
   final bool isSelected;
   /// The book's ebook is on the phone: draw the badge and offer "read".
   final bool hasEbook;
+  /// Wording badge for an ebook-only row ("Cached only" / "Exported"), shown in
+  /// place of the bare book mark. Null for audio rows (or none on the phone).
+  final String? ebookBadge;
   final VoidCallback onToggle;
   final VoidCallback? onLongPress;
   /// Tap action: the file manager for a download, the reader for an ebook-only
@@ -1365,6 +1500,7 @@ class _DownloadCard extends StatelessWidget {
     required this.selecting,
     required this.isSelected,
     this.hasEbook = false,
+    this.ebookBadge,
     required this.onToggle,
     this.onLongPress,
     this.onOpen,
@@ -1428,9 +1564,29 @@ class _DownloadCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          // A quiet mark so the ebook half of a row is visible
-                          // at a glance; the read button is its action.
-                          if (hasEbook) ...[
+                          // An ebook-only row shows its wording badge; a row
+                          // that also carries audio keeps the quiet book mark.
+                          if (ebookBadge != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                ebookBadge!,
+                                style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontSize: 10,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ),
+                          ] else if (hasEbook) ...[
                             const SizedBox(width: 6),
                             Icon(
                               Icons.menu_book_rounded,
@@ -1799,6 +1955,30 @@ class _DownloadCover extends StatelessWidget {
   }
 }
 
+/// One ebook copy on the device for the track-management sheet: the exported
+/// file or a single cached version. Carries the [file] to hand the reader, the
+/// byte size to show, and (for a cached copy) the on-disk [cacheFileName] so it
+/// can be deleted on its own.
+class _EbookEntry {
+  const _EbookEntry({
+    required this.name,
+    required this.bytes,
+    required this.file,
+    required this.exported,
+    this.version = '',
+    this.cacheFileName,
+  });
+
+  final String name;
+  final int bytes;
+  final Map<String, dynamic> file;
+  final bool exported;
+  /// The ebook version (`ino`) this row represents; for an exported row it is
+  /// the key under which the export is recorded, so it can be deleted alone.
+  final String version;
+  final String? cacheFileName;
+}
+
 /// Per-episode manager for one completed download: lists every local audio
 /// file, shows its length/size/date, supports batch deletion and lets a tap
 /// jump playback to that episode (episodes saved to SAF are listed but can't
@@ -1825,6 +2005,7 @@ class _TrackManagementSheet extends StatefulWidget {
 
 class _TrackManagementSheetState extends State<_TrackManagementSheet> {
   bool _deleting = false;
+  bool _exporting = false;
   bool _selecting = false;
   final Set<int> _selected = {};
   /// Which half of the download the selector shows (audio files or the ebook).
@@ -1833,13 +2014,10 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
   // content:// files). Empty until the probe lands.
   Map<String, int> _safSizes = const {};
   bool _safSizesLoaded = false;
-  // The ebook cached or exported for this book, when it has one. Loaded once -
-  // it only disappears with the whole download, which closes the sheet.
-  Map<String, dynamic>? _ebookFile;
-  int _ebookBytes = 0;
-  // The ebook's real file name (what the user sees in their folder), resolved
-  // from the stored item or a fresh fetch - never the book's title.
-  String? _ebookName;
+  // Every ebook copy on the device for this book: the exported file first (when
+  // there is one) then each cached version, listed like the audio files. Loaded
+  // once - a copy only leaves via its own delete or the whole download.
+  List<_EbookEntry> _ebookEntries = const [];
   // Whether this book has an ebook on the device at all (cached or exported).
   // Drives the audio/ebook split. Seeded from the list (which knows
   // synchronously) so the split is right on the very first frame.
@@ -1883,56 +2061,170 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
     return t.sizeBytes + (_safSizes[t.path] ?? 0);
   }
 
-  /// Loads the ebook half of this download, if the book has one on the phone.
-  /// The sheet only reads it: an audiobook opens that same cached file for
-  /// offline reading, so it leaves with the whole download, not on its own. An
-  /// exported copy (in the download folder) counts too, so it can be read or
-  /// deleted from here even when no cached copy exists.
+  /// Union of two views of a book's file list, so a name found in either source
+  /// sticks. Deduped by `ino` when present (else by format + size, the best a
+  /// file without one can offer).
+  List<Map<String, dynamic>> _mergeEbookChoices(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    final seen = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final f in [...a, ...b]) {
+      final ino = f['ino']?.toString();
+      final key = (ino != null && ino.isNotEmpty)
+          ? 'i:$ino'
+          : 's:${ebookExtFromFile(f)}:${ebookFileSize(f)}';
+      if (seen.add(key)) out.add(f);
+    }
+    return out;
+  }
+
+  /// Whether every cached version with a known `ino` has a matching file in
+  /// [choices], i.e. the list can name them all.
+  bool _choicesCoverVersions(
+    List<Map<String, dynamic>> choices,
+    List<({String version, String ext, int bytes, String fileName})> versions,
+  ) {
+    for (final v in versions) {
+      if (v.version.isEmpty) continue;
+      if (!choices.any((f) => f['ino']?.toString() == v.version)) return false;
+    }
+    return true;
+  }
+
+  /// Loads the ebook half of this download, if the book has one on the phone:
+  /// the exported copy (first) plus every cached version, each as its own row
+  /// like the audio files. The sheet only reads them: an audiobook opens the
+  /// same cached file for offline reading, so a copy leaves only via its own
+  /// delete or the whole download.
   ///
   /// This never blocks the first frame: the split is laid out from
-  /// [widget.hasEbook], and the name/size fill in as they resolve.
+  /// [widget.hasEbook], and the rows fill in as they resolve.
   Future<void> _loadEbook() async {
     final api = context.read<AuthProvider>().apiService;
-    final cached = await cachedEbookFileFor(widget.info.itemId);
-    // The list already told us whether an ebook is on the device, so when none
-    // is cached it must be the exported copy - no SAF probe needed here.
-    final exported = cached == null && widget.hasEbook;
-    final hasEbook = cached != null || exported;
-    final ebookFile =
-        cached ??
-        (exported
-            ? resolveEbookFile(_sessionLibraryItem(widget.info.sessionData))
-            : null);
-    // The pane shows the file's real name, never the book title. The stored
-    // session is the cheap source; an audiobook's session can omit the ebook
-    // metadata, so fall back to the item's disk cache. A network refresh (if
-    // any) is fired in the background so the sheet never waits on it.
-    var name = _ebookNameFromItem(_sessionLibraryItem(widget.info.sessionData));
-    if (hasEbook && name == null && api != null) {
-      name = _ebookNameFromItem(
-        await api.getCachedLibraryItem(widget.info.itemId),
-      );
-      if (name == null && mounted) {
-        unawaited(
-          api.getLibraryItem(widget.info.itemId).then((item) {
-            final fresh = _ebookNameFromItem(item);
-            if (fresh != null && mounted && _ebookName == null) {
-              setState(() => _ebookName = fresh);
-            }
-          }),
-        );
+    final ds = DownloadService();
+    final itemId = widget.info.itemId;
+    final sessionItem = _sessionLibraryItem(widget.info.sessionData);
+    final cachedCopy = (await cachedEbookFileFor(itemId)) != null;
+    final versionRefs = await ds.savedEbookVersionRefs(itemId);
+    final exportBytes = <String, int>{};
+    for (final e in versionRefs.entries) {
+      exportBytes[e.key] = await ds.savedEbookUriBytes(e.value.uri);
+    }
+    final hasExport = versionRefs.isNotEmpty;
+    final hasEbook = cachedCopy || hasExport || widget.hasEbook;
+    final versions = cachedEbookVersionsSync(itemId);
+
+    // Names come from the item's file list, which an audio session trims (it
+    // keeps media.ebookFile but not libraryFiles), so a cached supplementary
+    // version would otherwise show as just its format. Union every source we
+    // have - the session, the item cached on disk, and, only when those still
+    // can't name a cached version, a fresh fetch.
+    var choices = ebookFileChoices(sessionItem);
+    if (api != null) {
+      choices = _mergeEbookChoices(
+          ebookFileChoices(await api.getCachedLibraryItem(itemId)), choices);
+      if (!_choicesCoverVersions(choices, versions)) {
+        choices = _mergeEbookChoices(
+            ebookFileChoices(await api.getLibraryItem(itemId)), choices);
       }
     }
-    var bytes = cached == null ? 0 : cachedEbookBytesSync(widget.info.itemId);
-    if (exported) {
-      bytes += await DownloadService().savedEbookBytes(widget.info.itemId);
+
+    Map<String, dynamic>? choiceFor(String version) {
+      if (version.isEmpty) return null;
+      for (final f in choices) {
+        if (f['ino']?.toString() == version) return f;
+      }
+      return null;
+    }
+
+    // The label is always a human name - never the internal cache file name
+    // (`<itemId>.<ino>.<ext>`): fall back to the book's own ebook name, then its
+    // format, then the title.
+    String labelFor(Map<String, dynamic>? f, String version, String ext) {
+      final raw =
+          ((f?['metadata'] as Map<String, dynamic>?)?['filename'] as String?) ??
+          f?['name'] as String?;
+      final trimmed = raw?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+      final byItem = _ebookNameFromItem(sessionItem);
+      if (byItem != null) return byItem;
+      final fmt = ext.replaceFirst('.', '').toUpperCase();
+      if (fmt.isNotEmpty) return fmt;
+      final title = widget.info.title?.trim();
+      return (title != null && title.isNotEmpty) ? title : itemId;
+    }
+
+    Map<String, dynamic> fileFor(
+      Map<String, dynamic>? f,
+      String version,
+      String ext,
+      String name,
+    ) =>
+        f ??
+        {
+          if (version.isNotEmpty) 'ino': version,
+          if (ext.length > 1) 'ebookFormat': ext.replaceFirst('.', ''),
+          'metadata': {'filename': name},
+        };
+
+    final entries = <_EbookEntry>[];
+    // Versions shown as an exported row, so the cache loop can skip them.
+    final exportedVersions = <String>{};
+
+    // Every exported copy is its own row, largest first. Each is tied to the
+    // cached version it duplicates (recorded ino, else byte-size match) so an
+    // exported+cached version shows once; its own record key stays [entry.version]
+    // so it can be deleted on its own.
+    final orderedExports = versionRefs.entries.toList()
+      ..sort((a, b) =>
+          (exportBytes[b.key] ?? 0).compareTo(exportBytes[a.key] ?? 0));
+    for (final exp in orderedExports) {
+      final bytes = exportBytes[exp.key] ?? 0;
+      var version = exp.key;
+      if (version.isEmpty || !versions.any((v) => v.version == version)) {
+        final match = versions.firstWhere(
+          (v) => v.bytes == bytes && !exportedVersions.contains(v.version),
+          orElse: () => (version: '', ext: '', bytes: 0, fileName: ''),
+        );
+        if (match.version.isNotEmpty) version = match.version;
+      }
+      if (version.isNotEmpty) exportedVersions.add(version);
+      exportedVersions.add(exp.key);
+      final f = choiceFor(version);
+      final ext = f != null ? ebookExtFromFile(f) : '';
+      final name = labelFor(f, version, ext);
+      entries.add(_EbookEntry(
+        name: name,
+        bytes: bytes,
+        file: fileFor(f, version, ext, name),
+        exported: true,
+        version: exp.key,
+      ));
+    }
+
+    // Then each cached version not already shown as an export, largest first.
+    final ordered = [...versions]..sort((a, b) => b.bytes.compareTo(a.bytes));
+    for (final v in ordered) {
+      if (exportedVersions.contains(v.version)) continue;
+      final f = choiceFor(v.version);
+      final name = labelFor(f, v.version, v.ext);
+      entries.add(
+        _EbookEntry(
+          name: name,
+          bytes: v.bytes,
+          file: fileFor(f, v.version, v.ext, name),
+          exported: false,
+          version: v.version,
+          cacheFileName: v.fileName,
+        ),
+      );
     }
     if (!mounted) return;
     setState(() {
-      _ebookFile = ebookFile;
-      _ebookName = name;
-      _hasEbook = hasEbook;
-      _ebookBytes = bytes;
+      _ebookEntries = entries;
+      _hasEbook = hasEbook && entries.isNotEmpty;
       _ebookReady = true;
       if (!_hasEbook) _pane = _SheetPane.audio;
     });
@@ -1962,19 +2254,7 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
     }
   }
 
-  Future<void> _openEbook() async {
-    final l = AppLocalizations.of(context)!;
-    final ebookFile =
-        _ebookFile ?? await cachedEbookFileFor(widget.info.itemId);
-    if (!mounted) return;
-    if (ebookFile == null) {
-      showOverlayToast(
-        context,
-        l.noEbookFileFound,
-        icon: Icons.menu_book_outlined,
-      );
-      return;
-    }
+  Future<void> _openEbook(Map<String, dynamic> ebookFile) async {
     await openEbookReader(
       context,
       itemId: widget.info.itemId,
@@ -1983,16 +2263,18 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
     );
   }
 
-  /// Removes the ebook copy at the user's request, keeping the audio files. The
-  /// service remembers the id so the startup catch-up does not fetch it back.
-  Future<void> _deleteEbookCopy() async {
+  /// Removes one ebook copy (an exported file, or a single cached version) at
+  /// the user's request, keeping the audio files and any other versions. The
+  /// service remembers a deleted export id so the startup catch-up doesn't
+  /// restore it.
+  Future<void> _deleteEbookEntry(_EbookEntry entry) async {
     final l = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
         title: Text(l.downloadsRemoveEbookTitle),
-        content: Text(l.downloadsRemoveEbookBody),
+        content: Text(entry.name),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -2007,23 +2289,160 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
     );
     if (confirmed != true || !mounted) return;
     final ds = DownloadService();
-    await ds.deleteEbookCopy(widget.info.itemId);
-    // Sweep the exported copy too: the "download" the user sees in their
-    // folder is the real file, not just this cache.
-    await ds.deleteSavedEbook(widget.info.itemId);
+    if (entry.exported) {
+      await ds.deleteSavedEbookVersion(widget.info.itemId, entry.version);
+    } else if (entry.cacheFileName != null &&
+        entry.cacheFileName!.isNotEmpty) {
+      await deleteCachedEbookFile(entry.cacheFileName!);
+    }
     if (!mounted) return;
-    setState(() {
-      _ebookFile = null;
-      _ebookName = null;
-      _ebookBytes = 0;
-      _hasEbook = false;
-      _pane = _SheetPane.audio;
-    });
+    await _loadEbook();
+    if (!mounted) return;
     showOverlayToast(
       context,
       l.downloadsRemovedTitle(widget.info.title ?? ''),
       icon: Icons.delete_outline_rounded,
     );
+  }
+
+  /// Exports one cached ebook version to the user's download location: the SAF
+  /// "ebooks" folder when a custom location is set (falling back to the manual
+  /// save dialog), else the manual dialog outright. Reads the copy already on
+  /// disk - exporting a cached book must not hit the network - then records it
+  /// so the row flips to "exported".
+  Future<void> _exportEbookEntry(_EbookEntry entry) async {
+    if (_exporting) return;
+    final l = AppLocalizations.of(context)!;
+    final dl = DownloadService();
+    final hasSafExportFolder =
+        dl.customDownloadUri != null && dl.customDownloadUri!.isNotEmpty;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.ebookSaveToDeviceTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.ebookSaveToDeviceBody),
+            if (entry.bytes > 0) ...[
+              const SizedBox(height: 12),
+              Row(children: [
+                Icon(Icons.storage_rounded,
+                    size: 16, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Text('${l.fileSize}: ${widget.formatBytes(entry.bytes)}',
+                    style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+              ]),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l.cancel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l.ebookSaveToDevice)),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _exporting = true);
+    try {
+      final ino = entry.file['ino'] as String?;
+      final exportName = _ebookExportName(entry);
+      final sourceFile =
+          (entry.cacheFileName != null && entry.cacheFileName!.isNotEmpty)
+              ? await cachedEbookFileByName(entry.cacheFileName!)
+              : await ebookCacheFileFor(widget.info.itemId, entry.file);
+      if (!sourceFile.existsSync()) {
+        if (mounted) {
+          showOverlayToast(context, l.noEbookFileFound,
+              icon: Icons.error_outline_rounded);
+        }
+        return;
+      }
+
+      final bytes = await sourceFile.readAsBytes();
+      String? savedPath;
+      String? savedMetaUri;
+      if (hasSafExportFolder) {
+        final moved = await dl.saveEbookCopyToSaf(
+          sourceFile.path,
+          exportName,
+          jsonEncode({
+            'itemId': widget.info.itemId,
+            'title': widget.info.title,
+            'ino': ino,
+          }),
+        );
+        if (moved != null) {
+          savedPath = moved.fileUri;
+          savedMetaUri = moved.metaUri;
+        } else {
+          savedPath = await FilePicker.platform.saveFile(
+            dialogTitle: l.saveEbook,
+            fileName: exportName,
+            bytes: Uint8List.fromList(bytes),
+          );
+        }
+      } else {
+        savedPath = await FilePicker.platform.saveFile(
+          dialogTitle: l.saveEbook,
+          fileName: exportName,
+          bytes: Uint8List.fromList(bytes),
+        );
+      }
+      if (savedPath == null) return; // user cancelled
+
+      await dl.recordSavedEbook(widget.info.itemId, savedPath, savedMetaUri, ino);
+      // Drop the reader-cached copy of this version now that it's exported, so
+      // the book isn't stored twice (the reader reads the export in place).
+      await deleteCachedEbookVersion(widget.info.itemId, entry.file);
+      if (!mounted) return;
+      await _loadEbook();
+      if (!mounted) return;
+      showOverlayToast(
+        context,
+        hasSafExportFolder
+            ? l.ebookExportedToFolder(exportName)
+            : l.ebookSaved(exportName),
+        icon: Icons.download_done_rounded,
+      );
+    } catch (e) {
+      debugPrint('[Ebook] Export error: $e');
+      if (mounted) {
+        showOverlayToast(context, l.errorSavingEbook(e.toString()),
+            icon: Icons.error_outline_rounded);
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  /// A safe file name for an exported cached copy: the row's name when it is a
+  /// bare filename with an extension, else that name plus the format's
+  /// extension, else the book title. Non-ASCII titles are kept intact (the
+  /// legacy ASCII-only scrub stripped CJK to nothing).
+  String _ebookExportName(_EbookEntry entry) {
+    final ext = ebookExtFromFile(entry.file);
+    final extWithDot = ext.isNotEmpty ? ext : '.epub';
+    final id = widget.info.itemId;
+    var raw = entry.name.trim();
+    // Never export under an internal cache name (`<itemId>.<ino>.<ext>`) or the
+    // bare item id - fall through to the book title instead.
+    if (raw == id || raw.startsWith('$id.')) raw = '';
+    if (raw.isNotEmpty && !raw.contains('/') && !raw.contains('\\')) {
+      return raw.contains('.') ? raw : '$raw$extWithDot';
+    }
+    final title = (widget.info.title ?? '')
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s\-_]', unicode: true), '')
+        .trim();
+    return title.isEmpty ? 'book$extWithDot' : '$title$extWithDot';
   }
 
   static String _fmtDuration(double seconds) {
@@ -2251,64 +2670,109 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
           final allSelected =
               tracks.isNotEmpty && _selected.length == tracks.length;
           final showGap = _hasGap(tracks);
-          // The two halves of the sheet. The ebook opens on a tap of its name,
-          // mirroring the audio files where tapping a row plays it.
+          final ebookBytes = _ebookEntries.fold<int>(0, (a, e) => a + e.bytes);
+          // The two halves of the sheet. The ebook rows open on a tap, mirroring
+          // the audio files where tapping a row plays it. The exported copy is
+          // listed first, then each cached version.
           final ebookPane = <Widget>[
             if (_hasEbook)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    InkWell(
-                      onTap: _openEbook,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.menu_book_rounded,
-                              color: cs.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _ebookName ?? l.downloadsEbooks,
-                                style: tt.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.55,
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _ebookEntries.length,
+                  itemBuilder: (context, i) {
+                    final e = _ebookEntries[i];
+                    final ext = ebookExtFromFile(
+                      e.file,
+                    ).replaceFirst('.', '').toUpperCase();
+                    final meta = <String>[
+                      if (ext.isNotEmpty) ext,
+                      widget.formatBytes(e.bytes),
+                    ].join(' · ');
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        e.exported
+                            ? Icons.download_done_rounded
+                            : Icons.menu_book_rounded,
+                        color: cs.primary,
+                        size: 22,
+                      ),
+                      title: Text(
+                        e.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodyMedium,
+                      ),
+                      subtitle: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              meta,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              e.exported
+                                  ? l.downloadsEbookExported
+                                  : l.downloadsEbookOnlyCached,
+                              style: tt.labelSmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontSize: 10,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 28),
-                      child: Text(
-                        widget.formatBytes(_ebookBytes),
-                        style: tt.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
+                      onTap: _deleting ? null : () => _openEbook(e.file),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!e.exported)
+                            IconButton(
+                              icon: Icon(
+                                Icons.save_alt_rounded,
+                                color: cs.primary,
+                                size: 22,
+                              ),
+                              tooltip: l.ebookSaveToDevice,
+                              onPressed: _deleting || _exporting
+                                  ? null
+                                  : () => _exportEbookEntry(e),
+                            ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              color: cs.error,
+                              size: 22,
+                            ),
+                            tooltip: l.delete,
+                            onPressed: _deleting
+                                ? null
+                                : () => _deleteEbookEntry(e),
+                          ),
+                        ],
                       ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                        label: Text(l.delete),
-                        style: TextButton.styleFrom(
-                          foregroundColor: cs.error,
-                        ),
-                        onPressed: _deleteEbookCopy,
-                      ),
-                    ),
-                    const Divider(height: 1),
-                  ],
+                    );
+                  },
                 ),
               ),
           ];
@@ -2471,7 +2935,7 @@ class _TrackManagementSheetState extends State<_TrackManagementSheet> {
                                 ? '${l.downloadsSelectedCount(_selected.length)}'
                                       ' · ${widget.formatBytes(selectedBytes)}'
                                 : (showEbook
-                                      ? widget.formatBytes(_ebookBytes)
+                                      ? widget.formatBytes(ebookBytes)
                                       : '${tracks.length} · '
                                             '${widget.formatBytes(totalBytes)}'),
                             style: tt.bodySmall?.copyWith(

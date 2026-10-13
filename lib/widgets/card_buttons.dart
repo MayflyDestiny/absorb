@@ -2468,7 +2468,11 @@ class CardActionDelegate {
       final currentTitle = (chapters[ci] as Map<String, dynamic>)['title']
               as String? ??
           title;
-      final ok = await confirmDownload(ctx, currentTitle);
+      final api = ctx.read<AuthProvider>().apiService;
+      final sizeFuture = api == null
+          ? null
+          : DownloadService().selectedChapterBytes(api, itemId, [ci]);
+      final ok = await confirmDownload(ctx, currentTitle, sizeFuture: sizeFuture);
       if (!ok || !ctx.mounted) return;
       await _startDownload(dlKey, [ci]);
       return;
@@ -2479,7 +2483,11 @@ class CardActionDelegate {
         showOverlayToast(ctx, l.downloaded, icon: Icons.download_done_rounded);
         return;
       }
-      final ok = await confirmDownload(ctx, title);
+      final api = ctx.read<AuthProvider>().apiService;
+      final sizeFuture = api == null
+          ? null
+          : DownloadService().episodeBytes(api, itemId, episodeId!);
+      final ok = await confirmDownload(ctx, title, sizeFuture: sizeFuture);
       if (!ok || !ctx.mounted) return;
       await _startDownload(dlKey, null);
       return;
