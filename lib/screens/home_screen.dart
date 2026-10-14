@@ -11,6 +11,9 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
+import '../services/ebook_cache.dart';
+import '../widgets/ebook_router.dart';
+import '../widgets/overlay_toast.dart';
 import '../widgets/desktop_batch_actions.dart';
 import '../widgets/home_section.dart';
 import '../widgets/absorb_page_header.dart';
@@ -1008,6 +1011,11 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
 
     void resume() {
       if (_isLoading) return;
+      // Nothing to play: an ebook-only book continues in the reader.
+      if (recentEpisode == null && PlayerSettings.isEbookOnly(item)) {
+        _openEbook(context, itemId, title);
+        return;
+      }
       if (isCurrentItem) {
         if (player.isPlaying) {
           player.pause();
@@ -1230,6 +1238,27 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           ),
       ],
     );
+  }
+
+  Future<void> _openEbook(BuildContext context, String itemId, String title) async {
+    final l = AppLocalizations.of(context)!;
+    setState(() => _isLoading = true);
+    var ebookFile = resolveEbookFile(widget.item) ?? await cachedEbookFileFor(itemId);
+    if (ebookFile == null && context.mounted) {
+      final api = context.read<AuthProvider>().apiService;
+      if (api != null) {
+        try {
+          ebookFile = resolveEbookFile(await api.getLibraryItem(itemId));
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (ebookFile == null) {
+      showOverlayToast(context, l.noEbookFileFound, icon: Icons.menu_book_outlined);
+      return;
+    }
+    await openEbookReader(context, itemId: itemId, title: title, ebookFile: ebookFile);
   }
 
   Future<void> _startBook(BuildContext context, String itemId) async {

@@ -7270,24 +7270,64 @@ class AudioPlayerService extends ChangeNotifier {
         return;
       }
     }
+    // Android: a player left paused past the pause timeout comes back with
+    // the position moving and nothing audible, and only a rebuilt player
+    // sounds again. One whose decoder failed while paused is rebuilt too.
+    // Decided before any seek: seeking a player that is about to be replaced
+    // is wasted, and on a failed decoder the seek can wait forever.
+    final pausedFor = _lastPauseTime == null
+        ? null
+        : DateTime.now().difference(_lastPauseTime!);
+    final longPause = pausedFor != null && pausedFor >= _pauseStopTimeout;
+    bool canRebuild() =>
+        _player?.processingState != ProcessingState.idle &&
+        _currentItemId != null &&
+        _api != null;
+    String? rebuildWhy = _playerBroken
+        ? 'Player failed while paused'
+        : Platform.isAndroid && longPause
+            ? 'Long pause (${pausedFor.inSeconds}s)'
+            : null;
+    var rebuild = rebuildWhy != null && canRebuild();
+    // Where the resume lands: the live player follows it when it is kept,
+    // the rebuild starts there otherwise.
+    var resumeAt = position.inMilliseconds / 1000.0;
+    Future<void> moveTo(double s, [Future<void> Function()? seek]) async {
+      resumeAt = s;
+      if (rebuild) return;
+      if (!await _resumeSeekFinished(seek ?? () => _seekAbsolute(s), s)) {
+        rebuildWhy = 'Seek on resume never finished';
+        rebuild = canRebuild();
+      }
+    }
+
     // A seek while paused (user, or the socket adopting another device's
     // position) is the position the user expects to hear next - don't let
     // the server check below override it.
     final seekedWhilePaused = _seekedWhilePaused;
     _seekedWhilePaused = false;
-    final adoptedServerPos = fromUi && !seekedWhilePaused
-        ? await _adoptServerPositionBeforeResume()
-        : false;
+    final serverPos = fromUi && !seekedWhilePaused
+        ? await _serverPositionBeforeResume()
+        : null;
+    final adoptedServerPos = serverPos != null;
+    if (serverPos != null) {
+      await moveTo(serverPos);
+      _logEvent(
+        PlaybackEventType.seek,
+        detail: 'adopted server position ${serverPos.toStringAsFixed(1)}s before resume',
+      );
+    }
     // Coming back within a few minutes of the sleep timer firing means you were
     // awake for it, so put back what its rewind took. Done before the ordinary
     // auto-rewind below so that still applies from the restored position.
     // Moot when we just jumped to another device's position; consume the undo
     // anyway so it can't fire on a later resume.
     if (_player != null) {
-      final undoTo = SleepTimerService()
-          .takeSleepRewindUndo(_currentItemId, position);
+      final undoTo = SleepTimerService().takeSleepRewindUndo(
+          _currentItemId, Duration(milliseconds: (resumeAt * 1000).round()));
       if (undoTo != null && !adoptedServerPos) {
-        await seekTo(undoTo, logDetail: 'sleep rewind undone');
+        await moveTo(undoTo.inMilliseconds / 1000.0,
+            () => seekTo(undoTo, logDetail: 'sleep rewind undone'));
         // seekTo flags a paused seek; this one is ours, not the user's, and
         // the server check has already run, so don't carry it to next resume.
         _seekedWhilePaused = false;
@@ -7307,8 +7347,8 @@ class AudioPlayerService extends ChangeNotifier {
         // A player sitting at zero has lost its place (an error reset it);
         // rewinding from there would only seek to the start on top of
         // whatever the server check just restored.
-        if (rewindSeconds > 0.5 && position > Duration.zero) {
-          final currentAbsolutePos = position.inMilliseconds / 1000.0;
+        if (rewindSeconds > 0.5 && resumeAt > 0) {
+          final currentAbsolutePos = resumeAt;
           final currentSpeed = _player!.speed;
           var newPosSeconds =
               currentAbsolutePos - (rewindSeconds * currentSpeed);
@@ -7324,7 +7364,7 @@ class AudioPlayerService extends ChangeNotifier {
               }
             }
           }
-          await _seekAbsolute(newPosSeconds);
+          await moveTo(newPosSeconds);
           // Log the actual book-time delta: at speed>1.0 it's larger than
           // rewindSeconds, and the chapter barrier may cap it smaller.
           final actualDelta = currentAbsolutePos - newPosSeconds;
@@ -7339,9 +7379,6 @@ class AudioPlayerService extends ChangeNotifier {
         }
       }
     }
-    final pausedFor = _lastPauseTime == null
-        ? null
-        : DateTime.now().difference(_lastPauseTime!);
     _lastPauseTime = null;
     // Reset server sync clock so the first sync after resume doesn't
     // include pause duration as timeListened
@@ -7358,22 +7395,14 @@ class AudioPlayerService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Player] Resume setActive(true) failed: $e');
     }
-    // Android: a player left paused past the pause timeout comes back with
-    // the position moving and nothing audible, and only a rebuilt player
-    // sounds again. Rebuild it at the position the resume settled on, which
-    // already includes the auto rewind, so nothing seeks once audio starts.
-    final longPause = pausedFor != null && pausedFor >= _pauseStopTimeout;
-    if ((Platform.isAndroid && longPause || _playerBroken) &&
-        _player?.processingState != ProcessingState.idle &&
-        _currentItemId != null &&
-        _api != null) {
-      final why = _playerBroken
-          ? 'Player failed while paused'
-          : 'Long pause (${pausedFor!.inSeconds}s)';
+    // Rebuild at the position the resume settled on, which already includes
+    // the auto rewind, so nothing seeks once audio starts.
+    if ((rebuild || _playerBroken) && canRebuild()) {
+      final why = rebuildWhy ?? 'Player failed while paused';
       _playerBroken = false;
       // A position of zero means the player lost its place; the start then
       // comes from the saved progress instead of being forced to the top.
-      final startS = position.inMilliseconds / 1000.0;
+      final startS = resumeAt;
       debugPrint(
         '[Player] $why - rebuilding the player '
         '${startS > 0 ? "at ${startS.toStringAsFixed(1)}s" : "from the saved position"} '
@@ -7490,17 +7519,45 @@ class AudioPlayerService extends ChangeNotifier {
   /// the phone left off. A late answer is dropped, never seeked to.
   static const _serverPositionCheckCap = Duration(seconds: 2);
 
+  /// Resume seeks on a player whose decoder died while paused can wait
+  /// forever, which held play() - and every tap after it - for the whole
+  /// in-flight cap. On Android, a plain seek that hasn't finished within
+  /// [_resumeSeekCap] marks the player broken and the resume rebuilds it.
+  /// A pending source swap is left to finish, however long it takes.
+  static const _resumeSeekCap = Duration(seconds: 3);
+
+  Future<bool> _resumeSeekFinished(Future<void> Function() seek, double target) async {
+    if (!Platform.isAndroid ||
+        _pendingLocalSwapKey != null ||
+        _pendingSessionUpgrade != null) {
+      await seek();
+      return true;
+    }
+    try {
+      await seek().timeout(_resumeSeekCap);
+      return true;
+    } on TimeoutException {
+      debugPrint(
+        '[Player] Seek to ${target.toStringAsFixed(1)}s on resume did not finish '
+        'within ${_resumeSeekCap.inSeconds}s - treating the player as broken',
+      );
+      _playerBroken = true;
+      return false;
+    }
+  }
+
   /// Before an app-screen resume, look at the server's saved progress and,
-  /// if another device genuinely moved it ahead, start there. Returns true
-  /// when the position was adopted. Runs only before audio, capped, and only
-  /// after a pause long enough to matter; anything slower starts local.
-  Future<bool> _adoptServerPositionBeforeResume() async {
-    if (_api == null || _currentItemId == null || _player == null) return false;
+  /// if another device genuinely moved it ahead, return that position for
+  /// the resume to start at; null keeps the phone's. Runs only before audio,
+  /// capped, and only after a pause long enough to matter; anything slower
+  /// starts local.
+  Future<double?> _serverPositionBeforeResume() async {
+    if (_api == null || _currentItemId == null || _player == null) return null;
     // An idle player is about to be re-initialised through playItem, which
     // reconciles the start position itself.
-    if (_player!.processingState == ProcessingState.idle) return false;
-    if (_knownOffline || _isOfflineMode) return false;
-    if (ChromecastService().isCasting) return false;
+    if (_player!.processingState == ProcessingState.idle) return null;
+    if (_knownOffline || _isOfflineMode) return null;
+    if (ChromecastService().isCasting) return null;
     final lastPause = _lastPauseTime;
     // BookOrbit has no live progress push to cover a short pause, so check
     // after any pause long enough for someone to have listened elsewhere.
@@ -7508,14 +7565,14 @@ class AudioPlayerService extends ChangeNotifier {
         ? const Duration(seconds: 10)
         : _serverPositionCheckMinPause;
     if (lastPause == null || DateTime.now().difference(lastPause) < minPause) {
-      return false;
+      return null;
     }
     final manualOffline =
         (_prefs ?? await SharedPreferences.getInstance()).getBool(
           'manual_offline_mode',
         ) ??
         false;
-    if (manualOffline) return false;
+    if (manualOffline) return null;
     final pKey = _currentEpisodeId != null
         ? '$_currentItemId-$_currentEpisodeId'
         : _currentItemId!;
@@ -7528,7 +7585,7 @@ class AudioPlayerService extends ChangeNotifier {
         debugPrint(
           '[Player] Resume server-check (pre-start): no answer within ${_serverPositionCheckCap.inMilliseconds}ms - starting local',
         );
-        return false;
+        return null;
       }
       final serverPos = (serverProgress['currentTime'] as num?)?.toDouble() ?? 0;
       final serverTs = (serverProgress['lastUpdate'] as num?)?.toInt() ?? 0;
@@ -7540,16 +7597,10 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint(
         '[Player] Resume server-check (pre-start): server=${serverPos}s(ts=$serverTs) vs local=${localPos}s(ts=$localTs) -> ${ahead ? "SEEKING" : "keep local"}',
       );
-      if (!ahead) return false;
-      await _seekAbsolute(serverPos);
-      _logEvent(
-        PlaybackEventType.seek,
-        detail: 'adopted server position ${serverPos.toStringAsFixed(1)}s before resume',
-      );
-      return true;
+      return ahead ? serverPos : null;
     } catch (e) {
       debugPrint('[Player] Resume server-check (pre-start) failed: $e');
-      return false;
+      return null;
     }
   }
 

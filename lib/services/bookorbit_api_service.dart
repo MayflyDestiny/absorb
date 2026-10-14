@@ -1211,6 +1211,8 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
           case 'not-finished':
             rules.add(_rule('readStatus', 'excludesAll', ['read', 'skimmed']));
         }
+      case 'readStatus':
+        rules.add(_rule('readStatus', 'includesAny', [value]));
       case 'series':
         if (int.tryParse(value) != null) {
           return (rules: rules, q: null, unsupported: false, seriesId: value);
@@ -1543,7 +1545,8 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     await add('listen-again', () async {
       final cards = await _libraryQueryCards(
         libId,
-        rules: [_rule('readStatus', 'includesAny', ['read'])],
+        // Skimmed counts as finished everywhere else, here too.
+        rules: [_rule('readStatus', 'includesAny', ['read', 'skimmed'])],
         sort: [{'field': 'finishedAt', 'dir': 'desc'}],
         size: limit,
       );
@@ -1880,18 +1883,43 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     };
   }
 
+  /// Up to [maxBooks] of a collection's or scope's books, plus how many it
+  /// holds in all.
+  Future<({List<Map<String, dynamic>> books, int total})> _pagedBooks(String path, int maxBooks) async {
+    final books = <Map<String, dynamic>>[];
+    var total = 0;
+    for (var page = 0; page < 40 && books.length < maxBooks; page++) {
+      final res = await _boGet(path, {'page': page, 'size': 100}) as Map<String, dynamic>;
+      final items = (res['items'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>().toList();
+      books.addAll(items.map((card) => _cardItem(card)));
+      total = (res['total'] as num?)?.toInt() ?? books.length;
+      if (items.length < 100 || books.length >= total) break;
+    }
+    return (books: books, total: math.max(total, books.length));
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>?> collectionBooksPage(String collectionId,
+      {required int page, int size = 100}) async {
+    final path = collectionId.startsWith(_scopeIdPrefix)
+        ? '/smart-scopes/${collectionId.substring(_scopeIdPrefix.length)}/books'
+        : '/collections/$collectionId/books';
+    try {
+      final res = await _boGet(path, {'page': page, 'size': size}) as Map<String, dynamic>;
+      return (res['items'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map((card) => _cardItem(card))
+          .toList();
+    } catch (e) {
+      debugPrint('[BookOrbit] $path page $page failed: $e');
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>> _collection(Map<String, dynamic> c, {bool withBooks = true, int maxBooks = 2000}) async {
     final id = '${c['id']}';
-    final books = <Map<String, dynamic>>[];
-    if (withBooks) {
-      for (var page = 0; page < 40 && books.length < maxBooks; page++) {
-        final res = await _boGet('/collections/$id/books', {'page': page, 'size': 100}) as Map<String, dynamic>;
-        final items = (res['items'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>().toList();
-        books.addAll(items.map((card) => _cardItem(card)));
-        final total = (res['total'] as num?)?.toInt() ?? books.length;
-        if (items.length < 100 || books.length >= total) break;
-      }
-    }
+    final paged = withBooks ? await _pagedBooks('/collections/$id/books', maxBooks) : null;
+    final books = paged?.books ?? <Map<String, dynamic>>[];
     return {
       'id': id,
       'name': c['name'] ?? '',
@@ -1901,19 +1929,165 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       'books': books,
       'lastUpdate': BookOrbitMapper.ms(c['updatedAt']),
       'createdAt': BookOrbitMapper.ms(c['createdAt']),
-      'bookOrbit': {'isOwner': c['isOwner'], 'isPublic': c['isPublic'], 'bookCount': c['bookCount']},
+      'bookOrbit': {
+        'isOwner': c['isOwner'],
+        'isPublic': c['isPublic'],
+        'bookCount': c['bookCount'],
+        'total': ?paged?.total,
+      },
     };
+  }
+
+  static const _scopeIdPrefix = 'scope-';
+
+  /// The user's book Smart Scopes, listed after the collections as read-only
+  /// ones. A server from before Smart Scopes has none.
+  Future<List<Map<String, dynamic>>> _bookScopes() async {
+    try {
+      final raw = await _boGet('/smart-scopes');
+      final list = raw is List ? raw : ((raw as Map?)?['items'] as List<dynamic>? ?? const []);
+      return list
+          .whereType<Map<String, dynamic>>()
+          .where((s) => (s['mediaType'] ?? 'books') == 'books')
+          .toList();
+    } on _BoHttpError catch (e) {
+      if (e.status == 404) return const [];
+      rethrow;
+    }
+  }
+
+  /// A Smart Scope in collection shape. Its books are whatever its rules
+  /// match right now; a scope whose rules the server can't run has none.
+  Future<Map<String, dynamic>> _scopeCollection(Map<String, dynamic> s, {int maxBooks = 2000}) async {
+    final id = '${s['id']}';
+    var books = <Map<String, dynamic>>[];
+    int? total;
+    try {
+      final paged = await _pagedBooks('/smart-scopes/$id/books', maxBooks);
+      books = paged.books;
+      total = paged.total;
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] smart scope $id books failed: ${e.status}');
+    }
+    return {
+      'id': '$_scopeIdPrefix$id',
+      'name': s['name'] ?? '',
+      'description': null,
+      'libraryId': '',
+      'userId': '${s['userId'] ?? ''}',
+      'books': books,
+      'lastUpdate': BookOrbitMapper.ms(s['updatedAt']),
+      'createdAt': BookOrbitMapper.ms(s['createdAt']),
+      'bookOrbit': {
+        'smartScope': true,
+        'scopeId': id,
+        'isOwner': s['isOwner'] == true,
+        'isPublic': s['isPublic'],
+        'bookCount': s['bookCount'],
+        'total': ?total,
+        'icon': s['icon'],
+      },
+    };
+  }
+
+  /// A Smart Scope as BookOrbit keeps it, rules and sort included.
+  Future<Map<String, dynamic>> smartScope(String id) async =>
+      await _boGet('/smart-scopes/$id') as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> createSmartScope(Map<String, dynamic> body) async =>
+      await _boPost('/smart-scopes', body) as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> updateSmartScope(String id, Map<String, dynamic> body) async =>
+      await _boPatch('/smart-scopes/$id', body) as Map<String, dynamic>;
+
+  Future<void> deleteSmartScope(String id) => _boDelete('/smart-scopes/$id');
+
+  /// How many books [filter] matches right now, the count the web shows
+  /// while a scope is edited. Null when the server can't say.
+  Future<int?> smartScopeMatchCount(Map<String, dynamic>? filter, List<Map<String, dynamic>> sort) async {
+    try {
+      final res = await _boPost('/books/query', {
+        if (sort.isNotEmpty) 'sort': sort.take(5).toList(),
+        'pagination': {'page': 0, 'size': 1},
+        if (filter != null) 'filter': filter,
+      }) as Map<String, dynamic>;
+      return (res['total'] as num?)?.toInt();
+    } catch (e) {
+      debugPrint('[BookOrbit] smart scope count: $e');
+      return null;
+    }
+  }
+
+  /// Names starting or containing [q] for a rule value: [source] is one of
+  /// authors, genres, tags, series, publishers, languages, collections.
+  Future<List<String>> metadataSuggestions(String source, String q) async {
+    final text = q.trim();
+    if (text.isEmpty) return const [];
+    try {
+      final list = await _boGet('/metadata/$source', {'q': text}) as List<dynamic>;
+      return [
+        for (final e in list.whereType<Map<String, dynamic>>())
+          if ('${e['name'] ?? ''}'.isNotEmpty) '${e['name']}',
+      ];
+    } catch (e) {
+      debugPrint('[BookOrbit] $source suggestions: $e');
+      return const [];
+    }
+  }
+
+  /// The user's custom metadata fields a rule can test: {key, label, type}
+  /// with key `custom:<id>` and type text, url, number, date or boolean.
+  Future<List<Map<String, String>>> customMetadataFields() async {
+    try {
+      final list = (await _boGet('/custom-metadata/fields/active') as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .where((f) => f['archivedAt'] == null && f['id'] != null)
+          .toList()
+        ..sort((a, b) {
+          final byOrder = ((a['displayOrder'] as num?) ?? 0).compareTo((b['displayOrder'] as num?) ?? 0);
+          return byOrder != 0 ? byOrder : '${a['label']}'.compareTo('${b['label']}');
+        });
+      return [
+        for (final f in list) {'key': 'custom:${f['id']}', 'label': '${f['label'] ?? ''}', 'type': '${f['type'] ?? 'text'}'},
+      ];
+    } catch (e) {
+      debugPrint('[BookOrbit] custom fields: $e');
+      return const [];
+    }
+  }
+
+  /// Library names, which is what a library rule matches on.
+  Future<List<String>> libraryNames() async {
+    try {
+      final list = await _boGet('/libraries') as List<dynamic>;
+      return [
+        for (final l in list.whereType<Map<String, dynamic>>())
+          if ('${l['name'] ?? ''}'.isNotEmpty) '${l['name']}',
+      ];
+    } catch (e) {
+      debugPrint('[BookOrbit] library names: $e');
+      return const [];
+    }
   }
 
   Future<Map<String, dynamic>> _libraryCollections(String libId, Map<String, String> q) async {
     final page = int.tryParse(q['page'] ?? '') ?? 0;
     final limit = (int.tryParse(q['limit'] ?? '') ?? 25).clamp(1, 200);
-    final all = (await _boGet('/collections') as List<dynamic>)
+    final collections = (await _boGet('/collections') as List<dynamic>)
         .whereType<Map<String, dynamic>>()
-        .where((c) => (c['mediaType'] ?? 'books') == 'books')
-        .toList();
+        .where((c) => (c['mediaType'] ?? 'books') == 'books');
+    final all = [
+      for (final c in collections) (entry: c, scope: false),
+      for (final s in await _bookScopes()) (entry: s, scope: true),
+    ];
     final slice = all.skip(page * limit).take(limit).toList();
-    final results = await _pool(slice.map((c) => () => _collection(c, maxBooks: 500)).toList(), width: 4);
+    final results = await _pool(
+        slice
+            .map((e) => () => e.scope
+                ? _scopeCollection(e.entry, maxBooks: 500)
+                : _collection(e.entry, maxBooks: 500))
+            .toList(),
+        width: 4);
     for (final r in results) {
       r['libraryId'] = libId;
     }
@@ -1934,6 +2108,13 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       return _json(await _collection(created)..['libraryId'] = body['libraryId'] ?? '');
     }
     final id = at(2);
+    if (id.startsWith(_scopeIdPrefix)) {
+      final scopeId = id.substring(_scopeIdPrefix.length);
+      if (n == 3 && method == 'GET') {
+        return _json(await _scopeCollection(await _boGet('/smart-scopes/$scopeId') as Map<String, dynamic>));
+      }
+      return _status(403, 'Smart Scopes are read-only');
+    }
     if (n == 3) {
       switch (method) {
         case 'GET':
@@ -1993,6 +2174,45 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final t = cv == null ? '' : '&t=${Uri.encodeQueryComponent(cv)}';
     final slot = coverSlot == null ? _listCoverSlot(itemId) : '$coverSlot&strict=true';
     return BookOrbitMediaProxy.instance.urlFor('/api/v1/books/$itemId/$kind?medium=$slot$t');
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>?> ebookBookmarks(String itemId) async {
+    try {
+      final list = await _boGet('/books/$itemId/bookmarks') as List<dynamic>;
+      return [
+        for (final b in list.whereType<Map<String, dynamic>>())
+          if (b['cfi'] is String && (b['cfi'] as String).isNotEmpty)
+            {'id': '${b['id']}', 'cfi': b['cfi'], 'title': b['title'], 'note': b['note']},
+      ];
+    } catch (e) {
+      debugPrint('[BookOrbit] ebook bookmarks for $itemId: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> addEbookBookmark(String itemId, {required String cfi, required String title}) async {
+    try {
+      final created = await _boPost('/books/$itemId/bookmarks', {'cfi': cfi, 'title': title}) as Map<String, dynamic>;
+      return created['id'] == null ? null : '${created['id']}';
+    } catch (e) {
+      debugPrint('[BookOrbit] add ebook bookmark for $itemId: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> deleteEbookBookmark(String itemId, String bookmarkId) async {
+    try {
+      await _boDelete('/books/$itemId/bookmarks/$bookmarkId');
+      return true;
+    } on _BoHttpError catch (e) {
+      return e.status == 404;
+    } catch (e) {
+      debugPrint('[BookOrbit] delete ebook bookmark $bookmarkId: $e');
+      return false;
+    }
   }
 
   @override

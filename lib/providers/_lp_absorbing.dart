@@ -669,7 +669,8 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     if (itemId.length > 36 && existing['isFinished'] != true) {
       nudgeUnfinishedEpisodeCount(itemId.substring(0, 36), -1);
     }
-    _progressMap[itemId] = {...existing, 'isFinished': true};
+    // Finished from here is BookOrbit's "read", not "skimmed".
+    _progressMap[itemId] = {...existing, 'isFinished': true, if (!fromRemote) 'skimmed': false};
     _localProgressOverrides[itemId] = 1.0;
     _lastFinishedItemId = itemId;
     _locallyFinishedItems.add(itemId);

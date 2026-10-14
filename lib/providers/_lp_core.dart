@@ -712,6 +712,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     mp['ebookProgress'] = progress.clamp(0.0, 1.0);
     if (finished) mp['isFinished'] = true;
     _progressMap[itemId] = mp;
+    // Reading again after a reset or "not finished" is new progress; while
+    // the item stayed marked reset, the reader couldn't see its own saved
+    // page and started over on every open.
+    _resetItems.remove(itemId);
     notifyListeners();
   }
 
@@ -2257,6 +2261,47 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _isLoadingCollections = false;
     notifyListeners();
     unawaited(_catchUpQueueAutoDownloads());
+  }
+
+  /// A BookOrbit collection or Smart Scope that holds more books than the
+  /// Lists tab loaded.
+  bool collectionHasMore(String collectionId) {
+    final c = _collections
+        .whereType<Map<String, dynamic>>()
+        .where((c) => c['id'] == collectionId)
+        .firstOrNull;
+    if (c == null) return false;
+    final total = ((c['bookOrbit'] as Map?)?['total'] as num?)?.toInt();
+    return total != null && ((c['books'] as List<dynamic>?)?.length ?? 0) < total;
+  }
+
+  /// Loads the next page of such a collection's books. False when the page
+  /// could not be fetched.
+  Future<bool> loadMoreCollectionBooks(String collectionId) async {
+    final api = _api;
+    if (api == null || !collectionHasMore(collectionId)) return true;
+    final before = _collections
+        .whereType<Map<String, dynamic>>()
+        .firstWhere((c) => c['id'] == collectionId);
+    final have = (before['books'] as List<dynamic>?)?.length ?? 0;
+    final page = await api.collectionBooksPage(collectionId, page: have ~/ 100);
+    if (page == null) return false;
+    final at = _collections.indexWhere((c) => c is Map && c['id'] == collectionId);
+    if (at < 0) return true;
+    final current = _collections[at] as Map<String, dynamic>;
+    final books = [...(current['books'] as List<dynamic>? ?? const [])];
+    final seen = books.map((b) => (b as Map)['id']).toSet();
+    for (final b in page) {
+      if (seen.add(b['id'])) books.add(b);
+    }
+    final bo = Map<String, dynamic>.from(current['bookOrbit'] as Map? ?? const {});
+    // Rules can match fewer books than when the list loaded; stop at the end.
+    if (books.length == (current['books'] as List<dynamic>? ?? const []).length) {
+      bo['total'] = books.length;
+    }
+    _collections = [..._collections]..[at] = {...current, 'books': books, 'bookOrbit': bo};
+    notifyListeners();
+    return true;
   }
 
   Future<Map<String, dynamic>?> createCollection(String name, {List<String> books = const []}) async {
