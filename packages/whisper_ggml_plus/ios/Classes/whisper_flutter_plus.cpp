@@ -25,6 +25,9 @@
 
 extern "C" const char* get_vad_model_path();
 extern "C" bool absorb_metal_usable();
+extern "C" const char * absorb_metal_reason();
+extern "C" void absorb_gpu_watch_begin();
+extern "C" void absorb_gpu_watch_end();
 
 using json = nlohmann::json;
 
@@ -98,6 +101,7 @@ static std::string default_vad_model_path() {
 static struct whisper_context * g_ctx = nullptr;
 static std::string g_model_path = "";
 static bool g_use_gpu = true;
+static bool g_gpu_proven = false;
 static std::mutex g_mutex;
 static std::atomic<bool> g_should_abort(false);
 
@@ -195,12 +199,19 @@ json transcribe(json jsonBody)
     const bool use_gpu = absorb_metal_usable();
     if (g_ctx == nullptr || g_model_path != params.model || g_use_gpu != use_gpu) {
         dispose_context_locked();
+        if (!use_gpu) {
+            const std::string why = std::string("absorb: whisper runs on the CPU: ") + absorb_metal_reason() + "\n";
+            capture_whisper_log(GGML_LOG_LEVEL_INFO, why.c_str(), nullptr);
+        }
 
         whisper_context_params cparams = whisper_context_default_params();
         cparams.use_gpu = use_gpu;
         cparams.flash_attn = true;
 
+        if (use_gpu) absorb_gpu_watch_begin();
         g_ctx = whisper_init_from_file_with_params(params.model.c_str(), cparams);
+        if (use_gpu) absorb_gpu_watch_end();
+        g_gpu_proven = false;
         if (g_ctx != nullptr) {
             g_model_path = params.model;
             g_use_gpu = use_gpu;
@@ -301,7 +312,17 @@ json transcribe(json jsonBody)
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    if (whisper_full(g_ctx, wparams, pcmf32.data(), pcmf32.size()) != 0)
+    // A GPU that can't run whisper dies on its first run, so only that one is
+    // watched; a long session isn't, where being swiped away would count too.
+    const bool watch = g_use_gpu && !g_gpu_proven;
+    if (watch) absorb_gpu_watch_begin();
+    const int full_status = whisper_full(g_ctx, wparams, pcmf32.data(), pcmf32.size());
+    if (watch) {
+        absorb_gpu_watch_end();
+        g_gpu_proven = true;
+    }
+
+    if (full_status != 0)
     {
         if (g_should_abort.load()) {
             jsonResult["@type"] = "aborted";

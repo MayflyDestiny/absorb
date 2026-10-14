@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '_audio_player.dart';
@@ -24,6 +25,7 @@ import 'external_audio_output_types.dart';
 import 'android_auto_service.dart';
 import 'chromecast_service.dart';
 import 'chapter_lookup.dart';
+import 'now_playing_layout.dart';
 import 'cold_start_play_policy.dart';
 import 'playback_error_policy.dart';
 import 'player_settings.dart';
@@ -32,17 +34,10 @@ import 'home_widget_service.dart';
 import 'bookmark_service.dart';
 import 'review_service.dart';
 import '../utils/episode_key.dart';
+import '../utils/duration_format.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 export 'player_settings.dart';
-
-/// Localized user-facing playback errors. The player runs without a
-/// BuildContext, so it resolves strings from the root navigator; falls back to
-/// the English literal when no context is mounted yet (e.g. headless start).
-AppLocalizations? _l10n() {
-  final ctx = rootNavigatorKey.currentContext;
-  return ctx != null ? AppLocalizations.of(ctx) : null;
-}
 
 String playbackDownloadKey(String itemId, String? episodeId) =>
     episodeKeyFor(itemId, episodeId);
@@ -1894,28 +1889,40 @@ class AudioPlayerService extends ChangeNotifier {
   double _currentChapterStart = 0;
   double _currentChapterEnd = 0;
   bool get notifChapterMode => _notifChapterMode && _chapters.isNotEmpty;
+  NowPlayingLayout _nowPlayingLayout = NowPlayingLayout.standard;
+  String _nowPlayingLayoutJson = '';
+  bool _speedAdjustedTime = true;
+  // The moving parts (percent, minutes left) the media controls last showed.
+  String _lastNowPlayingTicker = '-1|-1';
+  String? _currentNarrator;
+  String? _currentSeries;
   double get currentChapterStart => _currentChapterStart;
   double get currentChapterEnd => _currentChapterEnd;
 
   void _onSettingsChanged() {
-    PlayerSettings.getNotificationChapterProgress().then((v) {
-      if (v == _notifChapterMode) return;
-      _notifChapterMode = v;
+    Future.wait<Object>([
+      PlayerSettings.getNotificationChapterProgress(),
+      PlayerSettings.getNowPlayingLayout(),
+      PlayerSettings.getSpeedAdjustedTime(),
+    ]).then((v) {
+      final chapterMode = v[0] as bool;
+      final layoutJson = v[1] as String;
+      final speedAdjusted = v[2] as bool;
+      final chapterModeChanged = chapterMode != _notifChapterMode;
+      final textChanged = layoutJson != _nowPlayingLayoutJson ||
+          (speedAdjusted != _speedAdjustedTime &&
+              _nowPlayingLayout.uses(NowPlayingPiece.timeLeft));
+      _notifChapterMode = chapterMode;
+      _speedAdjustedTime = speedAdjusted;
+      if (layoutJson != _nowPlayingLayoutJson) {
+        _nowPlayingLayoutJson = layoutJson;
+        _nowPlayingLayout = NowPlayingLayout.fromJson(layoutJson);
+      }
+      if (!chapterModeChanged && !textChanged) return;
       // Re-push MediaItem + PlaybackState so notification updates immediately
       if (_currentItemId != null) {
-        _pushMediaItem(
-          _mediaItemKey,
-          _currentTitle ?? '',
-          _currentAuthor ?? '',
-          _currentCoverUrl,
-          _totalDuration,
-          chapter: _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
-              ? (_chapters[_lastNotifiedChapterIndex]
-                        as Map<String, dynamic>)['title']
-                    as String?
-              : null,
-        );
-        _handler?.refreshPlaybackState();
+        _repushNotifiedMediaItem();
+        if (chapterModeChanged) _handler?.refreshPlaybackState();
       }
     });
     // Update cached skip amounts so notification icons stay in sync
@@ -2512,15 +2519,22 @@ class AudioPlayerService extends ChangeNotifier {
 
       final startS = (next['startS'] as num?)?.toDouble() ?? 0;
 
-      // GH #298: label the pre-buffered next book like the lock screen — its
-      // chapter at the resume point as title, "Author · Book" beneath.
-      final nextLabels = nowPlayingLabels(
-        (next['title'] as String?) ?? '',
-        (next['author'] as String?) ?? '',
-        _chapterTitleAt(
-          (next['chapters'] as List<dynamic>?) ?? const [],
-          startS,
-        ),
+      // Label the pre-buffered next book like the lock screen: the same
+      // layout, at its resume point.
+      final nextTitle = (next['title'] as String?) ?? '';
+      final nextChapters = (next['chapters'] as List<dynamic>?) ?? const [];
+      final nextChapterIndex = _chapterIndexAt(nextChapters, startS);
+      final nextLabels = _nowPlayingLines(
+        title: nextTitle,
+        author: (next['author'] as String?) ?? '',
+        chapter: nextChapterIndex >= 0
+            ? (nextChapters[nextChapterIndex] as Map<String, dynamic>)['title']
+                as String?
+            : null,
+        chapterIndex: nextChapterIndex,
+        chapterCount: nextChapters.length,
+        posSec: startS,
+        totalDuration: (next['duration'] as num?)?.toDouble() ?? 0,
       );
 
       final ok = await _queueAdvancerChannel.invokeMethod<bool>('prepareNext', {
@@ -2529,6 +2543,7 @@ class AudioPlayerService extends ChangeNotifier {
         'headers': audioHeaders ?? <String, String>{},
         'title': nextLabels.title,
         'artist': nextLabels.subtitle,
+        'album': nextTitle,
         'durationS': (next['duration'] as num?)?.toDouble() ?? 0,
         'coverPath': coverPath,
         'startS': startS,
@@ -2565,6 +2580,8 @@ class AudioPlayerService extends ChangeNotifier {
     _syncNotifSkipCache();
     _currentTitle = next['title'] as String?;
     _currentAuthor = next['author'] as String?;
+    _currentNarrator = null;
+    _currentSeries = null;
     _currentCoverUrl = next['coverUrl'] as String?;
     _totalDuration = (next['duration'] as num?)?.toDouble() ?? 0;
     _metaDuration = _totalDuration;
@@ -2945,12 +2962,23 @@ class AudioPlayerService extends ChangeNotifier {
     String? chapter,
   }) async {
     if (!Platform.isIOS) return;
-    // GH #298: match the lock screen — chapter as title, "Author · Book" beneath.
-    final labels = nowPlayingLabels(title, artist, chapter);
+    // Match the lock screen, which uses the same layout.
+    final labels = _nowPlayingLines(
+      title: title,
+      author: artist,
+      chapter: chapter,
+      chapterIndex: chapter == null ? -1 : _lastNotifiedChapterIndex,
+      chapterCount: _chapters.length,
+      posSec: elapsed,
+      totalDuration: duration,
+      narrator: _currentNarrator,
+      series: _currentSeries,
+    );
     try {
       await _eqChannelForDiag.invokeMethod('primeNowPlaying', {
         'title': labels.title,
         'artist': labels.subtitle,
+        'album': title,
         'duration': duration,
         'elapsed': elapsed,
       });
@@ -3735,6 +3763,11 @@ class AudioPlayerService extends ChangeNotifier {
       // Load notification chapter progress setting and watch for changes
       _instance._notifChapterMode =
           await PlayerSettings.getNotificationChapterProgress();
+      _instance._nowPlayingLayoutJson =
+          await PlayerSettings.getNowPlayingLayout();
+      _instance._nowPlayingLayout =
+          NowPlayingLayout.fromJson(_instance._nowPlayingLayoutJson);
+      _instance._speedAdjustedTime = await PlayerSettings.getSpeedAdjustedTime();
       PlayerSettings.settingsChanged.addListener(_instance._onSettingsChanged);
       // Configure audio session for audiobook playback
       await _configureAudioSession();
@@ -4447,6 +4480,8 @@ class AudioPlayerService extends ChangeNotifier {
     _currentEpisodeTitle = episodeTitle;
     _currentTitle = title;
     _currentAuthor = author;
+    _currentNarrator = null;
+    _currentSeries = null;
     _currentCoverUrl = coverUrl;
     _totalDuration = totalDuration;
     _metaDuration = totalDuration;
@@ -5216,6 +5251,7 @@ class AudioPlayerService extends ChangeNotifier {
             ?.map((e) => (e as num).toDouble())
             .toList();
         _applyTrackToChapterFromSession(session);
+        _captureNowPlayingCredits(session);
         // Fall back to the cached session duration when the caller didn't have
         // one (e.g. podcast cold-start from Android Auto pushes dur=0). Replaces
         // the old /play-response duration fallback now that local plays skip it.
@@ -5856,6 +5892,7 @@ class AudioPlayerService extends ChangeNotifier {
       _playbackSessionId = sessionData['id'] as String?;
       _lastServerSync = DateTime.now();
       verboseLog('[Player] Background session refreshed: $_playbackSessionId');
+      _captureNowPlayingCredits(sessionData);
       _logEvent(PlaybackEventType.sessionStart, detail: 'refresh');
 
       // Update cached session with fresh track data in case it changed
@@ -6189,6 +6226,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _playbackSessionId = ownSessionId;
+    _captureNowPlayingCredits(sessionData);
     // Sessions know their library; adopt it when the caller couldn't provide
     // one so per-library skip amounts work for lean/merged shelf items.
     final sessionLibId = sessionData['libraryId'] as String?;
@@ -6972,17 +7010,18 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Set _currentChapterStart/End for the chapter containing [posSeconds].
-  /// Chapter title covering [posSeconds] in an arbitrary chapter list (used for
-  /// the pre-buffered next book, whose chapters aren't in [_chapters] yet).
-  String? _chapterTitleAt(List<dynamic> chapters, double posSeconds) {
-    if (chapters.isEmpty) return null;
-    for (final ch in chapters) {
-      final m = ch as Map<String, dynamic>;
+  /// Index of the chapter covering [posSeconds] in an arbitrary chapter list
+  /// (used for the pre-buffered next book, whose chapters aren't in
+  /// [_chapters] yet), the first one when none does, or -1 with no chapters.
+  int _chapterIndexAt(List<dynamic> chapters, double posSeconds) {
+    if (chapters.isEmpty) return -1;
+    for (var i = 0; i < chapters.length; i++) {
+      final m = chapters[i] as Map<String, dynamic>;
       final start = (m['start'] as num?)?.toDouble() ?? 0;
       final end = (m['end'] as num?)?.toDouble() ?? double.infinity;
-      if (posSeconds >= start && posSeconds < end) return m['title'] as String?;
+      if (posSeconds >= start && posSeconds < end) return i;
     }
-    return (chapters.first as Map<String, dynamic>)['title'] as String?;
+    return 0;
   }
 
   /// Returns the chapter title (or null) so _pushMediaItem can show it.
@@ -7034,6 +7073,7 @@ class AudioPlayerService extends ChangeNotifier {
     double totalDuration, {
     String? chapter,
     int? coverCacheBust,
+    double? positionSec,
   }) {
     // Alpha [PodDur]: trace every push-site. We want to see which callers
     // pass only the parent itemId (missing -episodeId suffix) and/or a zero
@@ -7084,7 +7124,155 @@ class AudioPlayerService extends ChangeNotifier {
       effectiveCoverUrl,
       totalDuration,
       chapter: chapter,
+      positionSec: positionSec,
     );
+  }
+
+  /// Push the media item again for the chapter already showing, e.g. when a
+  /// setting or the book percentage changes.
+  void _repushNotifiedMediaItem({double? positionSec}) {
+    _pushMediaItem(
+      _mediaItemKey,
+      _currentTitle ?? '',
+      _currentAuthor ?? '',
+      _currentCoverUrl,
+      _totalDuration,
+      chapter: _lastNotifiedChapterIndex >= 0 &&
+              _lastNotifiedChapterIndex < _chapters.length
+          ? (_chapters[_lastNotifiedChapterIndex]
+                    as Map<String, dynamic>)['title']
+                as String?
+          : null,
+      positionSec: positionSec,
+    );
+  }
+
+  static int _bookPercent(double posSec, double totalDuration) =>
+      totalDuration > 0
+          ? (posSec / totalDuration * 100).floor().clamp(0, 100)
+          : -1;
+
+  double _secondsLeft(double posSec, double totalDuration) {
+    final left = math.max(0.0, totalDuration - posSec);
+    final speed = _player?.speed ?? 1.0;
+    return _speedAdjustedTime && speed > 0 ? left / speed : left;
+  }
+
+  /// The moving parts of the media controls text at [posSec], so the
+  /// position tick only re-sends it when what it shows would change.
+  String _nowPlayingTicker(double posSec, double totalDuration) {
+    final layout = _nowPlayingLayout;
+    final percent = layout.uses(NowPlayingPiece.percent)
+        ? _bookPercent(posSec, totalDuration)
+        : -1;
+    final minutes = layout.uses(NowPlayingPiece.timeLeft) && totalDuration > 0
+        ? (_secondsLeft(posSec, totalDuration) / 60).floor()
+        : -1;
+    return '$percent|$minutes';
+  }
+
+  static AppLocalizations? _l10n() {
+    final ctx = rootNavigatorKey.currentContext;
+    return ctx != null ? AppLocalizations.of(ctx) : null;
+  }
+
+  /// Both lines of the media controls for an item, in the layout the user
+  /// picked (Settings > Media Controls > Now playing text).
+  ({String title, String subtitle}) _nowPlayingLines({
+    required String title,
+    required String author,
+    required String? chapter,
+    required int chapterIndex,
+    required int chapterCount,
+    required double posSec,
+    required double totalDuration,
+    String? narrator,
+    String? series,
+    NowPlayingLayout? layout,
+  }) {
+    final l = _l10n();
+    final percent = _bookPercent(posSec, totalDuration);
+    final left = totalDuration > 0
+        ? formatHm(_secondsLeft(posSec, totalDuration))
+        : null;
+    final hasChapter = chapterIndex >= 0 && chapterCount > 0;
+    return (layout ?? _nowPlayingLayout).build(NowPlayingValues(
+      title: title,
+      author: author,
+      chapter: chapter,
+      narrator: narrator,
+      series: series,
+      percent: percent >= 0 ? '$percent%' : null,
+      chapterNumber: hasChapter
+          ? (l?.nowPlayingChapterNumber(chapterIndex + 1, chapterCount) ??
+              'Ch. ${chapterIndex + 1}/$chapterCount')
+          : null,
+      timeLeft: left == null
+          ? null
+          : (l?.nowPlayingTimeLeft(left) ?? '$left left'),
+    ));
+  }
+
+  /// What the media controls would show for the playing item with [layout],
+  /// for the settings preview; null with nothing loaded.
+  ({String title, String subtitle})? previewNowPlayingLines(
+    NowPlayingLayout layout,
+  ) {
+    if (_currentItemId == null) return null;
+    final chapterIndex = _lastNotifiedChapterIndex >= 0 &&
+            _lastNotifiedChapterIndex < _chapters.length
+        ? _lastNotifiedChapterIndex
+        : -1;
+    return _nowPlayingLines(
+      title: _currentTitle ?? '',
+      author: _currentAuthor ?? '',
+      chapter: chapterIndex >= 0
+          ? (_chapters[chapterIndex] as Map<String, dynamic>)['title'] as String?
+          : null,
+      chapterIndex: chapterIndex,
+      chapterCount: _chapters.length,
+      posSec: position.inMilliseconds / 1000.0,
+      totalDuration: _totalDuration,
+      narrator: _currentNarrator,
+      series: _currentSeries,
+      layout: layout,
+    );
+  }
+
+  /// Narrator and series for the media controls, from a playback session's
+  /// book details. Re-sends the text when they arrive after it went out.
+  void _captureNowPlayingCredits(Map<String, dynamic>? session) {
+    final meta = session?['mediaMetadata'];
+    if (meta is! Map) return;
+    String? joined(Object? names) {
+      if (names is! List) return null;
+      final parts = names
+          .map((n) => (n is Map ? n['name'] : n)?.toString().trim() ?? '')
+          .where((n) => n.isNotEmpty);
+      return parts.isEmpty ? null : parts.join(', ');
+    }
+    final narrator = joined(meta['narrators']) ??
+        (meta['narratorName'] is String ? meta['narratorName'] as String : null);
+    String? series;
+    final seriesList = meta['series'];
+    if (seriesList is List && seriesList.isNotEmpty && seriesList.first is Map) {
+      final first = seriesList.first as Map;
+      final name = first['name']?.toString().trim() ?? '';
+      final sequence = first['sequence']?.toString().trim() ?? '';
+      if (name.isNotEmpty) {
+        series = sequence.isEmpty ? name : '$name #$sequence';
+      }
+    } else if (meta['seriesName'] is String) {
+      series = meta['seriesName'] as String;
+    }
+    if (narrator == _currentNarrator && series == _currentSeries) return;
+    _currentNarrator = narrator;
+    _currentSeries = series;
+    if (_currentItemId != null &&
+        (_nowPlayingLayout.uses(NowPlayingPiece.narrator) ||
+            _nowPlayingLayout.uses(NowPlayingPiece.series))) {
+      _repushNotifiedMediaItem();
+    }
   }
 
   void _scheduleStreamedCoverRepush(String itemId) {
@@ -7132,9 +7320,21 @@ class AudioPlayerService extends ChangeNotifier {
     String? coverUrl,
     double totalDuration, {
     String? chapter,
+    double? positionSec,
   }) {
-    // GH #298: chapter becomes the title, book moves beside the author.
-    final labels = nowPlayingLabels(title, author, chapter);
+    final posSec = positionSec ?? position.inMilliseconds / 1000.0;
+    final labels = _nowPlayingLines(
+      title: title,
+      author: author,
+      chapter: chapter,
+      chapterIndex: chapter == null ? -1 : _lastNotifiedChapterIndex,
+      chapterCount: _chapters.length,
+      posSec: posSec,
+      totalDuration: totalDuration,
+      narrator: _currentNarrator,
+      series: _currentSeries,
+    );
+    _lastNowPlayingTicker = _nowPlayingTicker(posSec, totalDuration);
     // In chapter progress mode, show chapter duration instead of full book
     final rawDuration = notifChapterMode
         ? (_currentChapterEnd - _currentChapterStart)
@@ -7179,6 +7379,8 @@ class AudioPlayerService extends ChangeNotifier {
     _currentEpisodeTitle = null;
     _currentTitle = null;
     _currentAuthor = null;
+    _currentNarrator = null;
+    _currentSeries = null;
     _currentCoverUrl = null;
     _coverRepushTimer?.cancel();
     _coverRepushItem = null;
@@ -7788,6 +7990,7 @@ if (_chapterJumpLatchIndex >= 0) {
               _currentCoverUrl,
               _totalDuration,
               chapter: chapterTitle,
+              positionSec: posSec,
             );
             // Force PlaybackState refresh so the notification position resets
             // to 0 immediately instead of waiting for the next stream event.
@@ -7803,6 +8006,11 @@ if (_chapterJumpLatchIndex >= 0) {
             _currentItemId != null &&
             posSec > 0) {
           await _maybeSkipChapterIntroOutro(posSec);
+        }
+        if (_currentItemId != null &&
+            _nowPlayingTicker(posSec, _totalDuration) !=
+                _lastNowPlayingTicker) {
+          _repushNotifiedMediaItem(positionSec: posSec);
         }
 
         // ─── Completion detection (fallback) ───────────────────

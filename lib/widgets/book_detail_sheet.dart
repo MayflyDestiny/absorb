@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
+import '../services/book_dock.dart';
 import '../services/bookorbit_mapper.dart';
 import 'absorb_placement.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -210,6 +211,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   List<Map<String, dynamic>> _similar = const [];
   bool _similarLoaded = false;
   bool _savingStatus = false;
+  // A Book Dock action (filing, removing, using found details) is running.
+  bool _dockBusy = false;
+  // Re-reads a dock file while the server is still reading or looking it
+  // up; BookOrbit tells its web page over a socket Absorb doesn't keep.
+  Timer? _dockPoll;
   bool _isLoading = true;
   bool _seededFromCache = false;
   bool _bookmarksExpanded = false;
@@ -397,6 +403,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     SocketService().removeItemUpdatedListener(_onSocketItemUpdated);
     _liveRefreshDebounce?.cancel();
     _coverSchemeTimer?.cancel();
+    _dockPoll?.cancel();
     _preview?.removeListener(_onPreviewChanged);
     _preview?.dispose();
     _routeAnim?.removeListener(_onRouteAnimChanged);
@@ -637,8 +644,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           } else {
             setState(() { _item = finalItem; _isLoading = false; });
           }
+          if (BookDockInfo.of(finalItem)?.isWorking ?? false) {
+            _dockPoll?.cancel();
+            _dockPoll = Timer(const Duration(seconds: 3), () {
+              if (mounted) _loadItem();
+            });
+          }
           _scheduleCoverScheme();
-          if (api.isBookOrbit && !_similarLoaded) {
+          if (api.isBookOrbit && !_similarLoaded && !ApiService.isBookDockItem(widget.itemId)) {
             _similarLoaded = true;
             unawaited(_loadSimilar(api));
           }
@@ -920,9 +933,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
                   : AnimatedOpacity(
                       key: const ValueKey('content'),
                       opacity: 1.0, duration: const Duration(milliseconds: 300),
-                      child: widget.quick
-                          ? _buildQuickContent(context, cs, tt, l)
-                          : _buildContent(context, cs, tt, l)),
+                      child: BookDockInfo.of(_item) != null
+                          ? _buildDockContent(context, cs, tt, l, BookDockInfo.of(_item)!)
+                          : widget.quick
+                              ? _buildQuickContent(context, cs, tt, l)
+                              : _buildContent(context, cs, tt, l)),
         ),
       ]),
     );
@@ -2644,8 +2659,455 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         isEbookOnly: isEbookOnly,
         isAdmin: auth.isAdmin,
         libraryId: _item!['libraryId'] as String?,
+        isBookDock: BookDockInfo.of(_item) != null,
       ),
     ));
+  }
+
+  /// A BookOrbit Book Dock file, shown the way BookOrbit's web Book Dock
+  /// shows it: status, match, where it will go, what filing would change,
+  /// and its files. It can't be played or downloaded until it is filed.
+  Widget _buildDockContent(BuildContext context, ColorScheme cs, TextTheme tt,
+      AppLocalizations l, BookDockInfo dock) {
+    final accent =
+        (PlayerSettings.einkMode ? null : _coverScheme?.primary) ?? cs.primary;
+    final auth = context.read<AuthProvider>();
+    final lib = context.watch<LibraryProvider>();
+    final media = _item!['media'] as Map<String, dynamic>? ?? {};
+    final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+    final title = metadata['title'] as String? ?? dock.fileName;
+    final subtitle = metadata['subtitle'] as String? ?? '';
+    final authorName = metadata['authorName'] as String? ?? '';
+    final narratorName = metadata['narratorName'] as String? ?? '';
+    final seriesName = metadata['seriesName'] as String? ?? '';
+    final descRaw = metadata['description'] as String? ?? '';
+    final duration = (media['duration'] as num?)?.toDouble() ?? 0;
+    final year = metadata['publishedYear'] as String? ?? '';
+    final publisher = metadata['publisher'] as String? ?? '';
+    final genres = (metadata['genres'] as List<dynamic>?)?.cast<String>() ?? const [];
+    final busy = _dockBusy || lib.isOffline;
+    final good = Theme.of(context).brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700;
+    const warn = Colors.orange;
+    final destination = dock.hasDestination ? _libraryName(lib, dock.targetLibraryId!) : null;
+    final unitSize = dock.unitFiles.fold<int>(0, (sum, f) => sum + (f.fileSize ?? 0));
+    final size = dock.unitFiles.length > 1 && unitSize > 0 ? unitSize : dock.fileSize;
+
+    Color matchColor(int c) => c >= 85 ? good : c >= BookDockInfo.reviewBelow ? warn : cs.error;
+    final statusBadge = switch (dock.status) {
+      'pending' => (l.bookDockBadgePending, warn),
+      'extracting' => (l.bookDockBadgeExtracting, Colors.blue),
+      'fetching' => (l.bookDockBadgeFetching, Colors.blue),
+      'error' => (l.bookDockBadgeError, cs.error),
+      _ => null,
+    };
+
+    return ListView(controller: widget.scrollController, padding: EdgeInsets.fromLTRB(20, 8, 20, 32 + MediaQuery.of(context).viewPadding.bottom), children: [
+      Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
+      if (_coverUrl != null) ...[
+        Center(child: Container(
+          height: 200,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 4))],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: CachedNetworkImage(
+            imageUrl: _coverUrl!, fit: BoxFit.contain,
+            httpHeaders: lib.mediaHeaders,
+            placeholder: (_, __) => const SizedBox(width: 140),
+            errorWidget: (_, __, ___) => Container(
+              width: 140,
+              color: cs.surfaceContainerHigh,
+              child: Icon(Icons.move_to_inbox_rounded, size: 40, color: cs.onSurfaceVariant),
+            ),
+          ),
+        )),
+        const SizedBox(height: 16),
+      ],
+      Text(title, textAlign: TextAlign.center, style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+      if (subtitle.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text(subtitle, textAlign: TextAlign.center, style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant)),
+      ],
+      for (final line in [authorName.isNotEmpty ? authorName : l.bookDockNoAuthor, narratorName, seriesName])
+        if (line.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(line, textAlign: TextAlign.center, style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+        ],
+      const SizedBox(height: 14),
+      Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
+        if (statusBadge != null)
+          _dockBadge(statusBadge.$1, statusBadge.$2, working: dock.isWorking),
+        if (dock.needsReview) _dockBadge(l.bookDockNeedsReview, warn, icon: Icons.flag_outlined),
+        if (dock.hasMatch)
+          _dockBadge(l.bookDockMatch(dock.confidence!), matchColor(dock.confidence!))
+        else if (dock.status == 'ready')
+          _dockBadge(l.bookDockNoMatch, cs.onSurfaceVariant),
+        if (dock.detailsState == 'edited')
+          _dockBadge(l.bookDockApplied, good, icon: Icons.check_rounded)
+        else if (dock.detailsState == 'fetched')
+          _dockBadge(l.bookDockNotApplied, warn, icon: Icons.auto_fix_high_rounded),
+        if (dock.unitFiles.length > 1)
+          _dockBadge(l.bookDockFileCount(dock.unitFiles.length), cs.onSurfaceVariant, icon: Icons.folder_copy_outlined),
+      ]),
+      const SizedBox(height: 10),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(dock.hasDestination ? Icons.drive_folder_upload_rounded : Icons.error_outline_rounded,
+            size: 16, color: dock.hasDestination ? cs.onSurfaceVariant : warn),
+        const SizedBox(width: 6),
+        Flexible(child: Text(
+          dock.hasDestination ? l.bookDockGoesTo(destination ?? l.libraryFallback) : l.bookDockNoDestination,
+          maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: tt.bodySmall?.copyWith(color: dock.hasDestination ? cs.onSurfaceVariant : warn),
+        )),
+      ]),
+      const SizedBox(height: 14),
+      SizedBox(height: 52, child: FilledButton.icon(
+        onPressed: busy || dock.isWorking ? null : () => _fileDockItem(context, auth, lib, title, dock),
+        icon: _dockBusy
+            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))
+            : const Icon(Icons.library_add_rounded, size: 22),
+        label: Text(l.bookDockAddToLibrary,
+            style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onPrimary)),
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      )),
+      if (dock.detailsState == 'fetched') ...[
+        const SizedBox(height: 8),
+        _dockAction(cs, Icons.auto_fix_high_rounded, l.bookDockUseFound,
+            busy ? null : () => _useFoundDockDetails(context, auth), color: warn),
+      ],
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: _dockAction(cs, Icons.edit_rounded, l.edit,
+            busy ? null : () => _openEditPage(auth, title, false))),
+        const SizedBox(width: 8),
+        Expanded(child: _dockAction(cs, Icons.refresh_rounded, l.bookDockLookUpAgain,
+            busy || dock.isWorking ? null : () => _lookUpDockDetails(context, auth))),
+        const SizedBox(width: 8),
+        Expanded(child: _dockAction(cs, Icons.delete_outline_rounded, l.remove,
+            busy ? null : () => _removeDockItem(context, auth, lib, title),
+            color: cs.error)),
+      ]),
+      const SizedBox(height: 18),
+      Row(children: [
+        Text(l.bookDockProposedChanges, style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        const Spacer(),
+        if (dock.changes.isNotEmpty)
+          Text(l.bookDockChangedFields(dock.changes.length), style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+      ]),
+      const SizedBox(height: 8),
+      if (dock.changes.isNotEmpty)
+        for (final change in dock.changes)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 80, child: Text(_dockFieldLabel(l, change.field),
+                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600))),
+              Expanded(child: change.from == null
+                  ? Text('+ ${change.to}', style: tt.bodySmall?.copyWith(color: good, fontWeight: FontWeight.w600))
+                  : Text.rich(TextSpan(children: [
+                      TextSpan(text: change.from, style: tt.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant, decoration: TextDecoration.lineThrough)),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Icon(Icons.arrow_forward_rounded, size: 12, color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                      TextSpan(text: change.to, style: tt.bodySmall?.copyWith(
+                          color: cs.onSurface, fontWeight: FontWeight.w600)),
+                    ]))),
+            ]),
+          )
+      else if ((dock.errorMessage ?? '').isNotEmpty)
+        Text(dock.errorMessage!, style: tt.bodySmall?.copyWith(color: cs.error))
+      else
+        Text(dock.isWorking ? l.bookDockStillReading : l.bookDockNoChanges,
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+      if (dock.unitFiles.length > 1) ...[
+        const SizedBox(height: 18),
+        Text(l.bookDockFilesInEntry(dock.unitFiles.length),
+            style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        for (var i = 0; i < dock.unitFiles.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(children: [
+              SizedBox(width: 28, child: Text('${i + 1}', textAlign: TextAlign.right,
+                  style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant))),
+              const SizedBox(width: 10),
+              Expanded(child: Text(dock.unitFiles[i].fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: tt.bodySmall)),
+              const SizedBox(width: 8),
+              Text([
+                _dockRoleLabel(l, dock.unitFiles[i].role),
+                if ((dock.unitFiles[i].fileSize ?? 0) > 0) _fmtSize(dock.unitFiles[i].fileSize!),
+              ].join(' \u00b7 '), style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+            ]),
+          ),
+      ],
+      const SizedBox(height: 16),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        if (dock.fileName.isNotEmpty) _chip(Icons.insert_drive_file_outlined, dock.fileName),
+        if ((dock.format ?? '').isNotEmpty) _chip(Icons.description_outlined, dock.format!.toUpperCase()),
+        if ((size ?? 0) > 0) _chip(Icons.storage_rounded, _fmtSize(size!)),
+        if (duration > 0) _chip(Icons.schedule_rounded, formatHm(duration)),
+        if (dock.addedAt != null) _chip(Icons.move_to_inbox_rounded, l.bookDockAdded(_fmtDate(dock.addedAt!))),
+        if (year.isNotEmpty) _chip(Icons.calendar_today_rounded, year),
+        if (publisher.isNotEmpty) _chip(Icons.business_rounded, publisher),
+        for (final g in genres) _chip(Icons.tag_rounded, g),
+      ]),
+      if (descRaw.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text(l.aboutSection, style: tt.titleSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        HtmlDescription(
+          html: descRaw,
+          maxLines: null,
+          style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.7), height: 1.5),
+          linkColor: accent,
+        ),
+      ],
+      const SizedBox(height: 20),
+    ]);
+  }
+
+  String? _libraryName(LibraryProvider lib, String libraryId) {
+    for (final library in lib.libraries) {
+      if (library is Map && library['id'] == libraryId) return library['name'] as String?;
+    }
+    return null;
+  }
+
+  String _dockFieldLabel(AppLocalizations l, String field) => switch (field) {
+        'title' => l.bookDockFieldTitle,
+        'subtitle' => l.bookDockFieldSubtitle,
+        'authors' => l.bookDockFieldAuthors,
+        'seriesName' => l.bookDockFieldSeries,
+        'publisher' => l.bookDockFieldPublisher,
+        'publishedYear' => l.bookDockFieldYear,
+        'language' => l.bookDockFieldLanguage,
+        'isbn13' => l.bookDockFieldIsbn,
+        _ => field,
+      };
+
+  String _dockRoleLabel(AppLocalizations l, String? role) => switch (role) {
+        'cover' => l.bookDockRoleCover,
+        'metadata' => l.bookDockRoleMetadata,
+        'supplement' => l.bookDockRoleExtra,
+        _ => l.bookDockRoleBook,
+      };
+
+  Widget _dockBadge(String label, Color color, {IconData? icon, bool working = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (working)
+          Padding(
+            padding: const EdgeInsets.only(right: 5),
+            child: SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: color)),
+          )
+        else if (icon != null)
+          Padding(padding: const EdgeInsets.only(right: 4), child: Icon(icon, size: 12, color: color)),
+        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+      ]),
+    );
+  }
+
+  Future<void> _lookUpDockDetails(BuildContext context, AuthProvider auth) async {
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    if (api == null) return;
+    setState(() => _dockBusy = true);
+    final ok = await api.lookUpBookDockDetails(widget.itemId);
+    if (!mounted) return;
+    setState(() => _dockBusy = false);
+    if (ok) await _loadItem();
+    if (!context.mounted) return;
+    showOverlayToast(context, ok ? l.bookDockLookingUp : l.bookDockLookUpFailed,
+        icon: ok ? Icons.refresh_rounded : Icons.error_outline_rounded);
+  }
+
+  Widget _dockAction(ColorScheme cs, IconData icon, String label, VoidCallback? onTap, {Color? color}) {
+    final c = color ?? cs.onSurfaceVariant;
+    return Opacity(
+      opacity: onTap == null ? 0.5 : 1,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 16, color: c),
+            const SizedBox(width: 6),
+            Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w500))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _fileDockItem(BuildContext context, AuthProvider auth,
+      LibraryProvider lib, String title, BookDockInfo dock) async {
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    if (api == null) return;
+    setState(() => _dockBusy = true);
+    final destinations = await api.bookDockDestinations();
+    if (!mounted) return;
+    setState(() => _dockBusy = false);
+    if (destinations.isEmpty) {
+      showOverlayToast(context, l.bookDockNoLibraries, icon: Icons.lock_outline_rounded);
+      return;
+    }
+    final picked = await _pickDockDestination(context, destinations, dock);
+    if (picked == null || !mounted) return;
+    final navigator = Navigator.of(context);
+    final rootNavigator = rootNavigatorKey.currentState;
+    setState(() => _dockBusy = true);
+    final result = await api.fileBookDockItem(widget.itemId, picked);
+    if (!mounted) return;
+    setState(() => _dockBusy = false);
+    if (result.success) {
+      if (navigator.canPop()) navigator.pop();
+      await lib.refresh();
+      showNavigatorOverlayToast(rootNavigator, l.bookDockFiled(title, picked.libraryName),
+          icon: Icons.library_add_check_rounded);
+    } else if (result.duplicate) {
+      final remove = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l.bookDockDuplicateTitle(picked.libraryName)),
+          content: Text(l.bookDockDuplicateBody),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.remove)),
+          ],
+        ),
+      );
+      if (remove == true && mounted && context.mounted) {
+        await _removeDockItem(context, auth, lib, title, confirm: false);
+      }
+    } else {
+      final reason = result.message ?? '';
+      showOverlayToast(
+        context,
+        reason.isNotEmpty ? l.bookDockFileFailedReason(reason) : l.bookDockFileFailed,
+        icon: Icons.error_outline_rounded,
+      );
+    }
+  }
+
+  Future<BookDockDestination?> _pickDockDestination(BuildContext context,
+      List<BookDockDestination> destinations, BookDockInfo dock) {
+    final l = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    // A library with more than one folder names the folder too.
+    final folderCount = <String, int>{};
+    for (final d in destinations) {
+      folderCount[d.libraryId] = (folderCount[d.libraryId] ?? 0) + 1;
+    }
+    return showModalBottomSheet<BookDockDestination>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(l.bookDockPickLibrary, style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            Flexible(
+              child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: 16), children: [
+                for (final d in destinations)
+                  ListTile(
+                    leading: Icon(Icons.auto_stories_rounded, color: cs.onSurfaceVariant),
+                    title: Text(d.libraryName),
+                    subtitle: (folderCount[d.libraryId] ?? 0) > 1 ? Text(d.folderName) : null,
+                    // The destination BookOrbit already set for this file.
+                    trailing: d.libraryId == dock.targetLibraryId && d.folderId == dock.targetFolderId
+                        ? Icon(Icons.check_circle_rounded, color: cs.primary)
+                        : null,
+                    onTap: () => Navigator.pop(ctx, d),
+                  ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _removeDockItem(BuildContext context, AuthProvider auth,
+      LibraryProvider lib, String title, {bool confirm = true}) async {
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    if (api == null) return;
+    if (confirm) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l.bookDockRemoveTitle),
+          content: Text(l.bookDockRemoveBody(title)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l.remove, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted || !context.mounted) return;
+    }
+    final navigator = Navigator.of(context);
+    final rootNavigator = rootNavigatorKey.currentState;
+    setState(() => _dockBusy = true);
+    final ok = await api.removeBookDockItem(widget.itemId);
+    if (!mounted) return;
+    setState(() => _dockBusy = false);
+    if (ok) {
+      if (navigator.canPop()) navigator.pop();
+      await lib.refresh();
+      showNavigatorOverlayToast(rootNavigator, l.bookDockRemoved(title),
+          icon: Icons.delete_outline_rounded);
+    } else if (context.mounted) {
+      showOverlayToast(context, l.bookDockRemoveFailed, icon: Icons.error_outline_rounded);
+    }
+  }
+
+  Future<void> _useFoundDockDetails(BuildContext context, AuthProvider auth) async {
+    final l = AppLocalizations.of(context)!;
+    final api = auth.apiService;
+    if (api == null) return;
+    setState(() => _dockBusy = true);
+    final ok = await api.useFoundBookDockDetails(widget.itemId);
+    if (!mounted) return;
+    setState(() => _dockBusy = false);
+    if (ok) await _loadItem();
+    if (!context.mounted) return;
+    showOverlayToast(context, ok ? l.bookDockDetailsUpdated : l.bookDockUseFoundFailed,
+        icon: ok ? Icons.check_circle_outline_rounded : Icons.error_outline_rounded);
   }
 
   List<Widget> _audioInfoChips(Map<String, dynamic> media) {
@@ -3850,8 +4312,24 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
   }
 
   void _openGoodreads(String title, String author) async {
+    // A BookOrbit book matched on Goodreads carries its id, which opens the
+    // book itself the way the web app links it; anything else is searched.
+    // An ISBN opens the book too, on any server.
+    final id = ((_item?['bookOrbit'] as Map?)?['providerIds'] as Map?)?['goodreads'];
+    final rawIsbn = (((_item?['media'] as Map?)?['metadata'] as Map?)?['isbn'] ?? '')
+        .toString()
+        .replaceAll(RegExp(r'[^0-9Xx]'), '');
+    final isbn = rawIsbn.length == 10 || rawIsbn.length == 13 ? rawIsbn : null;
+    final exact = id is String && id.trim().isNotEmpty
+        ? BookOrbitMapper.providerUrl('goodreads', id.trim())
+        : isbn != null
+            ? 'https://www.goodreads.com/book/isbn/$isbn'
+            : null;
     final q = author.isNotEmpty ? '$title $author' : title;
-    final uri = Uri.https('www.goodreads.com', '/search', {'q': q});
+    final uri = exact != null
+        ? Uri.parse(exact)
+        : Uri.https('www.goodreads.com', '/search', {'q': q});
+    debugPrint('[Goodreads] ${exact != null ? 'book page' : 'search'}: $uri');
     try {
       // Open in Goodreads app if installed
       if (!await launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication)) {

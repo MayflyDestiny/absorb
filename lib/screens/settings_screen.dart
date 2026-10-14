@@ -37,7 +37,9 @@ import '../services/audiobookshelf_update_service.dart';
 import '../widgets/update_dialog.dart';
 import '../widgets/stackable_sheet.dart';
 import '../widgets/nav_hold_options.dart';
+import '../widgets/now_playing_text_sheet.dart';
 import '../screens/admin_screen.dart';
+import '../screens/book_requests_screen.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
 import '../screens/backup_sync_screen.dart';
@@ -241,6 +243,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _trustAllCerts = false;
   bool _includePreReleases = false;
   String? _rmabBaseUrl;
+  bool _bookRequestsOn = false;
+
+  Future<void> _loadBookRequests() async {
+    final api = context.read<AuthProvider>().apiService;
+    final on = api != null && (await api.bookRequestAccess()).canRequest;
+    if (mounted && on != _bookRequestsOn) setState(() => _bookRequestsOn = on);
+  }
   String? _rmabApiToken;
   bool _githubProxyEnabled = false;
   String _githubProxyUrl = PlayerSettings.defaultGithubProxyUrl;
@@ -323,6 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _localServerController = TextEditingController();
     _loadSettings();
+    _loadBookRequests();
     _loadAdminIssueCount();
     _refreshSyncStatus();
     SocketService().addItemsChangedListener(_onServerItemsChanged);
@@ -611,6 +621,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         for (final lib in libraries)
           if ((lib['id'] as String?)?.isNotEmpty == true) lib['id'] as String,
       ],
+      bookRequests: context.read<AuthProvider>().apiService?.isBookOrbit == true,
     );
     final validIds = ids.toSet();
     final podcastTab = await PlayerSettings.getPodcastTabEnabled();
@@ -4508,6 +4519,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         } : null,
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
+                            ListTile(
+                              title: Text(l.nowPlayingText),
+                              subtitle: Text(l.nowPlayingTextSubtitle,
+                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+                              onTap: () => NowPlayingTextSheet.show(context),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
                             // Cross-platform: drops the seek action so the scrubber in the
                             // notification / lockscreen / car can't be dragged.
                             SwitchListTile(
@@ -5614,6 +5633,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         setState(() => _includePreReleases = v);
                             await PlayerSettings.setIncludePreReleases(v);
                           } : null,
+                              ),
+                            ],
+                            if (_bookRequestsOn) ...[
+                              const Divider(height: 1, indent: 16, endIndent: 16),
+                              ListTile(
+                                leading: Icon(Icons.playlist_add_rounded, color: cs.primary),
+                                title: Text(l.breqTitle),
+                                subtitle: Text(l.breqSettingsSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                                trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                                onTap: () => BookRequestsScreen.open(context, openList: true),
                               ),
                             ],
                             const Divider(height: 1, indent: 16, endIndent: 16),

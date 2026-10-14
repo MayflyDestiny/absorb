@@ -3,9 +3,22 @@ part of 'api_service.dart';
 class _BoHttpError implements Exception {
   final int status;
   final String message;
-  _BoHttpError(this.status, this.message);
+  final String body;
+  _BoHttpError(this.status, this.message, [String? body]) : body = body ?? message;
   @override
   String toString() => 'BookOrbit HTTP $status: $message';
+
+  /// The reason in BookOrbit's error body, fit to show to the user.
+  String? get serverMessage {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return null;
+      final m = decoded['message'];
+      if (m is String && m.trim().isNotEmpty) return m.trim();
+      if (m is List && m.isNotEmpty) return m.join('\n');
+    } catch (_) {}
+    return null;
+  }
 }
 
 class _BoListenSession {
@@ -99,6 +112,8 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   static final Map<String, _BoTicket> _tickets = {};
   static final Map<String, String> _assetByFile = {};
   static final Map<String, String> _serverVersions = {};
+  // What each server says it can do, from /app-info `features`.
+  static final Map<String, Set<String>> _serverFeatures = {};
   static List<Map<String, dynamic>>? _librariesCache;
   static DateTime? _librariesAt;
   static final Map<String, ({DateTime at, Future<Object?> value})> _recent = {};
@@ -140,6 +155,17 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     _librariesCache = null;
     _librariesAt = null;
     _recent.clear();
+    _serverVersions.clear();
+    _serverFeatures.clear();
+  }
+
+  Future<Set<String>> _features() async {
+    final origin = ApiService._originOf(_cleanBaseUrl) ?? _cleanBaseUrl;
+    if (!_serverFeatures.containsKey(origin)) {
+      _serverVersions.remove(origin);
+      await _fetchVersion(_cleanBaseUrl, _accessToken, customHeaders, client: _httpClient);
+    }
+    return _serverFeatures[origin] ?? const {};
   }
 
   @override
@@ -315,6 +341,9 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
           .timeout(const Duration(seconds: 20));
       if (r.statusCode != 200 && r.statusCode != 201) {
         debugPrint('[BookOrbit] login failed: ${r.statusCode} ${r.body}');
+        if (r.statusCode == 403 && r.body.contains('password_auth_disabled')) {
+          return (<String, dynamic>{'bookOrbitPasswordOff': true}, 403);
+        }
         return (null, r.statusCode);
       }
       final data = jsonDecode(r.body) as Map<String, dynamic>;
@@ -467,6 +496,27 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     return null;
   }
 
+  /// The server a magic link points at (`https://host[/base]/magic?token=...`),
+  /// or null when [input] isn't such a link.
+  static Uri? serverFromMagicLink(String input) {
+    final uri = Uri.tryParse(input.trim());
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty ||
+        (uri.queryParameters['token'] ?? '').isEmpty) {
+      return null;
+    }
+    var path = uri.path;
+    if (path.endsWith('/')) path = path.substring(0, path.length - 1);
+    if (!path.endsWith('/magic')) return null;
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: path.substring(0, path.length - '/magic'.length),
+    );
+  }
+
   /// Sign in with a magic link and answer like [signIn].
   static Future<(Map<String, dynamic>?, int)> signInWithMagicLink({
     required String serverUrl,
@@ -506,18 +556,24 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   static Future<String?> _fetchVersion(
     String serverUrl,
     String accessToken,
-    Map<String, String> customHeaders,
-  ) async {
+    Map<String, String> customHeaders, {
+    http.Client? client,
+  }) async {
     final origin = ApiService._originOf(serverUrl) ?? serverUrl;
     final cached = _serverVersions[origin];
     if (cached != null) return cached;
     try {
-      final r = await http.get(
+      final get = client?.get ?? http.get;
+      final r = await get(
         Uri.parse('${_v1Of(serverUrl)}/app-info'),
         headers: {...customHeaders, 'Authorization': 'Bearer $accessToken'},
       ).timeout(const Duration(seconds: 10));
       if (r.statusCode == 200) {
-        final v = (jsonDecode(r.body) as Map<String, dynamic>)['version'] as String?;
+        final info = jsonDecode(r.body) as Map<String, dynamic>;
+        _serverFeatures[origin] = {
+          for (final f in (info['features'] as List<dynamic>? ?? const [])) '$f',
+        };
+        final v = info['version'] as String?;
         if (v != null && v.isNotEmpty) {
           final label = 'BookOrbit ${v.startsWith('v') ? v.substring(1) : v}';
           _serverVersions[origin] = label;
@@ -573,7 +629,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   dynamic _decode(http.Response r) {
     if (r.statusCode < 200 || r.statusCode >= 300) {
-      throw _BoHttpError(r.statusCode, r.body.length > 300 ? r.body.substring(0, 300) : r.body);
+      throw _BoHttpError(r.statusCode, r.body.length > 300 ? r.body.substring(0, 300) : r.body, r.body);
     }
     if (r.body.isEmpty) return null;
     return jsonDecode(r.body);
@@ -733,8 +789,12 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         return _routeMe(method, s, q, body);
       case 'libraries':
         if (method != 'GET') return null;
-        if (n == 2) return _json({'libraries': await _libraries()});
+        if (n == 2) {
+          final dock = await _dockLibrary();
+          return _json({'libraries': [...await _libraries(), if (dock != null) dock]});
+        }
         final libId = at(2);
+        if (libId == ApiService.bookDockLibraryId) return _routeDockLibrary(n, at(3), q);
         if (n == 3) {
           final lib = (await _libraries()).firstWhere((l) => l['id'] == libId,
               orElse: () => const <String, dynamic>{});
@@ -804,6 +864,9 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         }
         return null;
       case 'items':
+        if (n >= 3 && ApiService.isBookDockItem(at(2))) {
+          return _routeDockItem(method, at(2), n == 4 ? at(3) : '', n, body);
+        }
         if (at(2) == 'batch' && at(3) == 'get' && method == 'POST') {
           final ids = (body['libraryItemIds'] as List<dynamic>? ?? const []).map((e) => '$e').toList();
           return _json({'libraryItems': await _itemsBatch(ids)});
@@ -946,8 +1009,40 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     return null;
   }
 
+  // The signed-in account's BookOrbit permissions, read with /auth/me.
+  Set<String>? _permissions;
+  bool _superuser = false;
+
+  // Off when the user hid book requests in BookOrbit's settings.
+  bool _showBookRequests = true;
+
+  void _readPermissions(Map<String, dynamic> me) {
+    _permissions = {for (final p in (me['permissions'] as List<dynamic>? ?? const [])) '$p'};
+    _superuser = me['isSuperuser'] == true;
+    _showBookRequests = (me['settings'] as Map?)?['showBookRequests'] != false;
+  }
+
+  bool _hasPermission(String permission) {
+    final perms = _permissions;
+    if (perms == null) return false;
+    return _superuser || perms.contains('*') || perms.contains(permission);
+  }
+
+  Future<bool> _can(String permission) async {
+    if (_permissions == null) {
+      try {
+        _readPermissions(await _boGet('/auth/me') as Map<String, dynamic>);
+      } catch (e) {
+        debugPrint('[BookOrbit] Could not read permissions: $e');
+        return false;
+      }
+    }
+    return _hasPermission(permission);
+  }
+
   Future<Map<String, dynamic>> _authorizePayload() async {
     final raw = await _boGet('/auth/me') as Map<String, dynamic>;
+    _readPermissions(raw);
     final version = await _fetchVersion(_cleanBaseUrl, _accessToken, customHeaders);
     return {
       'user': BookOrbitMapper.user(raw),
@@ -1062,6 +1157,9 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   Future<List<Map<String, dynamic>>> _itemsBatch(List<String> ids) async {
     final jobs = ids.map((id) => () async {
           try {
+            if (ApiService.isBookDockItem(id)) {
+              return BookOrbitMapper.dockItem(await _dockFile(_dockFileId(id)));
+            }
             final detail = await _detail(id);
             return BookOrbitMapper.item(detail: detail, manifest: _manifests[_key(id)]);
           } catch (_) {
@@ -1891,6 +1989,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   /// one), which is what the cover editor wants.
   @override
   String getCoverUrl(String itemId, {int? width = 400, int? updatedAt, String? coverSlot}) {
+    if (ApiService.isBookDockItem(itemId)) return _dockCoverUrl(_dockFileId(itemId));
     final kind = coverSlot == null && width != null && width <= 400 ? 'thumbnail' : 'cover';
     final cv = _coverVersions[_key(itemId)];
     final t = cv == null ? '' : '&t=${Uri.encodeQueryComponent(cv)}';
@@ -1980,6 +2079,346 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     return {'updated': true, 'libraryItem': await _afterEdit(bookId)};
   }
 
+  // Book Dock: BookOrbit's import inbox, shown as one more library.
+
+  /// The cover URL picked for each dock file, by file id, from the last read.
+  final Map<String, String> _dockCovers = {};
+
+  String _dockFileId(String itemId) =>
+      itemId.substring(BookOrbitMapper.dockItemPrefix.length);
+
+  Future<Map<String, dynamic>?> _dockLibrary() async {
+    if (!await _can('book_dock_access')) return null;
+    return {
+      'id': ApiService.bookDockLibraryId,
+      'name': 'Book Dock',
+      'displayOrder': 1 << 20,
+      'icon': 'database',
+      'mediaType': 'book',
+      'provider': 'audible',
+      'folders': const [],
+      'settings': {'coverAspectRatio': 0},
+      'bookDock': true,
+    };
+  }
+
+  void _rememberDockFile(Map<String, dynamic> file) {
+    final cover = BookOrbitMapper.dockMetadata(file)['coverUrl'];
+    final id = '${file['id']}';
+    if (cover is String && cover.startsWith('http')) {
+      _dockCovers[id] = cover;
+    } else {
+      _dockCovers.remove(id);
+    }
+  }
+
+  Future<Map<String, dynamic>> _dockFile(String fileId) async {
+    final file = await _boGet('/book-dock/files/$fileId') as Map<String, dynamic>;
+    _rememberDockFile(file);
+    return file;
+  }
+
+  /// A picked cover shows through BookOrbit's image proxy like on the web,
+  /// which needs edit rights; otherwise the cover read from the file.
+  String _dockCoverUrl(String fileId) {
+    final picked = _dockCovers[fileId];
+    if (picked != null && _hasPermission('library_edit_metadata')) {
+      return BookOrbitMediaProxy.instance
+          .urlFor('/api/v1/books/cover/proxy?url=${Uri.encodeQueryComponent(picked)}');
+    }
+    return BookOrbitMediaProxy.instance.urlFor('/api/v1/book-dock/files/$fileId/cover');
+  }
+
+  Future<Map<String, dynamic>> _dockItems(Map<String, String> q, {String? search}) async {
+    final page = int.tryParse(q['page'] ?? '') ?? 0;
+    final limit = (int.tryParse(q['limit'] ?? '') ?? 20).clamp(1, 100);
+    final desc = q['desc'] == '1';
+    final sort = switch (q['sort']) {
+      'media.metadata.title' || 'media.metadata.titleIgnorePrefix' => 'fileName',
+      'size' => 'fileSize',
+      _ => 'createdAt',
+    };
+    final res = await _boGet('/book-dock/files', {
+      'page': page + 1,
+      'limit': limit,
+      'sort': sort,
+      'order': desc ? 'desc' : 'asc',
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+    }) as Map<String, dynamic>;
+    final items = <Map<String, dynamic>>[];
+    for (final f in (res['items'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+      _rememberDockFile(f);
+      items.add(BookOrbitMapper.dockItem(f));
+    }
+    return {
+      'results': items,
+      'total': res['total'] ?? items.length,
+      'limit': limit,
+      'page': page,
+      'sortBy': q['sort'],
+      'sortDesc': desc,
+      'filterBy': q['filter'],
+      'mediaType': 'book',
+      'minified': q['minified'] != '0',
+      'collapseseries': false,
+      'include': '',
+    };
+  }
+
+  /// The dock library answers the library routes Absorb calls; the ones
+  /// with nothing behind them (series, authors, ...) answer empty.
+  Future<http.Response?> _routeDockLibrary(int n, String sub, Map<String, String> q) async {
+    final dock = await _dockLibrary();
+    if (dock == null) return _status(404, 'Book Dock is not available');
+    final emptyFilterData = <String, dynamic>{
+      'authors': const [],
+      'series': const [],
+      'genres': const [],
+      'tags': const [],
+      'narrators': const [],
+      'languages': const [],
+      'publishers': const [],
+      'publishedDecades': const [],
+    };
+    if (n == 3) {
+      return _json({
+        ...dock,
+        if ((q['include'] ?? '').contains('filterdata')) 'filterdata': emptyFilterData,
+      });
+    }
+    final page = int.tryParse(q['page'] ?? '') ?? 0;
+    final limit = int.tryParse(q['limit'] ?? '') ?? 20;
+    switch (sub) {
+      case 'items':
+        return _json(await _dockItems(q));
+      case 'personalized':
+        final recent = await _dockItems({'page': '0', 'limit': '20', 'desc': '1'});
+        final entities = recent['results'] as List<dynamic>;
+        return _json([
+          if (entities.isNotEmpty)
+            {
+              'id': 'recently-added',
+              'label': 'Recently Added',
+              'labelStringKey': 'LabelRecentlyAdded',
+              'type': 'book',
+              'entities': entities,
+              'total': entities.length,
+            },
+        ]);
+      case 'search':
+        final text = q['q'] ?? '';
+        final found = text.trim().isEmpty
+            ? const <dynamic>[]
+            : (await _dockItems({'limit': '${(int.tryParse(q['limit'] ?? '') ?? 25).clamp(1, 100)}'},
+                    search: text))['results'] as List<dynamic>;
+        return _json({
+          'book': [
+            for (final item in found)
+              {
+                'libraryItem': item,
+                'matchKey': 'title',
+                'matchText': (((item as Map)['media'] as Map)['metadata'] as Map)['title'],
+              },
+          ],
+          'podcast': const [],
+          'series': const [],
+          'authors': const [],
+          'narrators': const [],
+          'tags': const [],
+          'genres': const [],
+        });
+      case 'filterdata':
+        return _json(emptyFilterData);
+      case 'series':
+      case 'collections':
+      case 'playlists':
+        return _json({'results': const [], 'total': 0, 'limit': limit, 'page': page});
+      case 'authors':
+        return _json(q.containsKey('page')
+            ? {'results': const [], 'total': 0, 'limit': limit, 'page': page}
+            : {'authors': const []});
+      case 'narrators':
+        return _json({'narrators': const []});
+      case 'stats':
+        final summary = await _boGet('/book-dock/summary') as Map<String, dynamic>;
+        return _json({
+          'totalItems': summary['total'] ?? 0,
+          'totalSize': 0,
+          'totalDuration': 0,
+          'numAudioFiles': 0,
+          'numAudioTracks': 0,
+          'totalAuthors': 0,
+          'totalGenres': 0,
+        });
+    }
+    return null;
+  }
+
+  /// Item routes for a dock file: read, edit, pick a cover, apply what the
+  /// server found online, and discard. Anything else (play, chapters, ...)
+  /// waits until the file is in a library.
+  Future<http.Response?> _routeDockItem(
+    String method,
+    String itemId,
+    String sub,
+    int n,
+    Map<String, dynamic> body,
+  ) async {
+    final fileId = _dockFileId(itemId);
+    if (int.tryParse(fileId) == null) return _status(404, 'Book Dock file not found');
+    if (n == 3 && method == 'GET') return _json(BookOrbitMapper.dockItem(await _dockFile(fileId)));
+    if (n == 3 && method == 'DELETE') {
+      final ok = await removeBookDockItem(itemId);
+      return ok ? _json({'success': true}) : _status(500, 'Could not remove the file');
+    }
+    if (n == 4 && sub == 'media' && method == 'PATCH') {
+      final file = await _dockFile(fileId);
+      final next = BookOrbitMapper.dockMetadataPatch(
+        BookOrbitMapper.dockMetadata(file),
+        (body['metadata'] as Map?)?.cast<String, dynamic>() ?? const {},
+      );
+      return _json({'updated': true, 'libraryItem': await _saveDockMetadata(fileId, next)});
+    }
+    if (n == 4 && sub == 'cover' && method == 'POST') {
+      final url = _upstreamImageUrl('${body['url'] ?? ''}');
+      if (!url.startsWith('http')) return _status(400, 'No cover URL');
+      final file = await _dockFile(fileId);
+      await _saveDockMetadata(fileId, BookOrbitMapper.dockMetadata(file)..['coverUrl'] = url);
+      return _json({'success': true});
+    }
+    if (n == 4 && sub == 'match' && method == 'POST') {
+      final updated = await useFoundBookDockDetails(itemId);
+      return _json({
+        'updated': updated,
+        'libraryItem': BookOrbitMapper.dockItem(await _dockFile(fileId)),
+      });
+    }
+    return _status(409, 'This file is still in the Book Dock');
+  }
+
+  Future<Map<String, dynamic>> _saveDockMetadata(String fileId, Map<String, dynamic> metadata) async {
+    final file = await _boPatch('/book-dock/files/$fileId', {'selectedMetadata': metadata})
+        as Map<String, dynamic>;
+    _rememberDockFile(file);
+    final item = BookOrbitMapper.dockItem(file);
+    SocketService().emitLocalItemUpdated(item);
+    return item;
+  }
+
+  void _afterDockGone(String itemId) {
+    _dockCovers.remove(_dockFileId(itemId));
+    _recent.removeWhere((key, _) => key.startsWith('personalized:'));
+    SocketService().emitLocalItemRemoved({'id': itemId, 'libraryId': ApiService.bookDockLibraryId});
+  }
+
+  @override
+  Future<List<BookDockDestination>> bookDockDestinations() async {
+    try {
+      final caps = await _boGet('/uploads/capabilities') as Map<String, dynamic>;
+      if (caps['canUploadToLibrary'] != true) return const [];
+      final out = <BookDockDestination>[];
+      for (final lib in (caps['libraries'] as List<dynamic>? ?? const []).whereType<Map>()) {
+        for (final folder in (lib['folders'] as List<dynamic>? ?? const []).whereType<Map>()) {
+          out.add(BookDockDestination(
+            libraryId: '${lib['id']}',
+            libraryName: '${lib['name'] ?? ''}',
+            folderId: '${folder['id']}',
+            folderName: '${folder['name'] ?? ''}',
+          ));
+        }
+      }
+      return out;
+    } catch (e) {
+      debugPrint('[BookOrbit] Book Dock destinations: $e');
+      return const [];
+    }
+  }
+
+  @override
+  Future<BookDockFileResult> fileBookDockItem(String itemId, BookDockDestination destination) async {
+    final fileId = int.tryParse(_dockFileId(itemId));
+    final libraryId = int.tryParse(destination.libraryId);
+    final folderId = int.tryParse(destination.folderId);
+    if (fileId == null || libraryId == null || folderId == null) {
+      return const BookDockFileResult(success: false);
+    }
+    try {
+      // As an override: a file's own target would beat a default.
+      final res = await _boPost('/book-dock/finalize', {
+        'fileIds': [fileId],
+        'overrides': [
+          {'fileId': fileId, 'libraryId': libraryId, 'folderId': folderId},
+        ],
+      }, const Duration(minutes: 2)) as Map<String, dynamic>;
+      Map? result;
+      for (final r in (res['results'] as List<dynamic>? ?? const []).whereType<Map>()) {
+        if (r['fileId'] == fileId) result = r;
+      }
+      final ok = result?['success'] == true;
+      debugPrint('[BookOrbit] Book Dock file $fileId -> library $libraryId: '
+          '${ok ? 'filed as book ${result?['bookId']}' : 'not filed (${result?['message']})'}');
+      if (ok) {
+        _afterDockGone(itemId);
+        _recent.clear();
+      }
+      return BookDockFileResult(
+        success: ok,
+        duplicate: result?['isDuplicate'] == true,
+        message: result?['message'] as String?,
+      );
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] Book Dock finalize $fileId: ${e.status} ${e.message}');
+      return BookDockFileResult(success: false, message: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] Book Dock finalize $fileId: $e');
+      return const BookDockFileResult(success: false);
+    }
+  }
+
+  @override
+  Future<bool> removeBookDockItem(String itemId) async {
+    try {
+      await _boDelete('/book-dock/files/${_dockFileId(itemId)}');
+      _afterDockGone(itemId);
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Book Dock discard $itemId: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> lookUpBookDockDetails(String itemId) async {
+    try {
+      await _boPost('/book-dock/files/${_dockFileId(itemId)}/refetch-metadata', const <String, dynamic>{});
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Book Dock look up again $itemId: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> useFoundBookDockDetails(String itemId) async {
+    try {
+      final fileId = _dockFileId(itemId);
+      final file = await _dockFile(fileId);
+      final found = file['fetchedMetadata'];
+      if (found is! Map || found.isEmpty) return false;
+      await _saveDockMetadata(
+        fileId,
+        BookOrbitMapper.dockMergeFound(
+          BookOrbitMapper.dockMetadata(file),
+          Map<String, dynamic>.from(found),
+        ),
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Book Dock use found details $itemId: $e');
+      return false;
+    }
+  }
+
   /// Covers picked from a search come back through the proxy; BookOrbit
   /// wants the original address.
   String _upstreamImageUrl(String url) {
@@ -2004,6 +2443,10 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   @override
   Future<bool> updateItemCoverUrl(String itemId, String url, {String? coverSlot}) async {
     try {
+      if (ApiService.isBookDockItem(itemId)) {
+        final res = await _routeDockItem('POST', itemId, 'cover', 4, {'url': url});
+        return res?.statusCode == 200;
+      }
       return (await _coverFromUrl(itemId, url, slot: coverSlot)).statusCode == 200;
     } catch (e) {
       debugPrint('[BookOrbit] updateItemCoverUrl error: $e');
@@ -2013,6 +2456,9 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   @override
   Future<bool> removeItemCover(String itemId, {String? coverSlot}) async {
+    // A dock file's cover comes from the file or a picked URL; it is set at
+    // filing time, so there is nothing to remove yet.
+    if (ApiService.isBookDockItem(itemId)) return false;
     try {
       await _boDelete('/books/$itemId/cover?medium=${coverSlot ?? await _coverMedium(itemId)}');
       await _afterEdit(itemId);
@@ -2025,6 +2471,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   @override
   Future<bool> uploadItemCover(String itemId, String filePath, {String? coverSlot}) async {
+    if (ApiService.isBookDockItem(itemId)) return false;
     try {
       final bytes = await (await http.MultipartFile.fromPath('file', filePath)).finalize().toBytes();
       await _boMultipart(
@@ -2337,6 +2784,341 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     } catch (e) {
       debugPrint('[BookOrbit] provider list failed: $e');
       return null;
+    }
+  }
+
+  @override
+  Future<BookRequestAccess> bookRequestAccess() async {
+    if (!await _can('book_request_access') || !_showBookRequests) return BookRequestAccess.none;
+    return BookRequestAccess(
+      canRequest: true,
+      canManage: _hasPermission('manage_book_requests'),
+      autoApprove: _hasPermission('book_request_auto_approve'),
+      selfFulfill: _hasPermission('book_request_self_fulfill'),
+      pairs: (await _features()).contains('book-request-pairs'),
+    );
+  }
+
+  @override
+  Future<({List<BookRequest> items, int total})?> bookRequests({
+    bool all = false,
+    int page = 1,
+    int limit = 25,
+    bool includeDismissed = false,
+  }) async {
+    try {
+      final res = await _boGet(all ? '/admin/book-requests' : '/book-requests', {
+        'page': '$page',
+        'limit': '$limit',
+        if (includeDismissed) 'includeDismissed': 'true',
+      }) as Map<String, dynamic>;
+      return (
+        items: [
+          for (final r in (res['items'] as List<dynamic>? ?? const []).whereType<Map>())
+            if (r['id'] is num) BookRequest(Map<String, dynamic>.from(r)),
+        ],
+        total: (res['total'] as num?)?.toInt() ?? 0,
+      );
+    } catch (e) {
+      debugPrint('[BookOrbit] book requests (all=$all page=$page): $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<BookRequestAvailability?>> bookRequestAvailability(
+    List<MatchCandidate> records,
+    String mediaKind,
+  ) async {
+    String? clip(String v, int max) {
+      final s = v.trim();
+      if (s.isEmpty) return null;
+      return s.length > max ? s.substring(0, max) : s;
+    }
+    final out = <BookRequestAvailability?>[];
+    // The server takes at most 50 a time.
+    for (var start = 0; start < records.length; start += 50) {
+      final batch = records.sublist(start, math.min(start + 50, records.length));
+      try {
+        final res = await _boPost('/book-requests/availability', {
+          'items': [
+            for (final c in batch)
+              {
+                'title': clip(c.title, 500) ?? '?',
+                'mediaKind': mediaKind,
+                if (c.authors.isNotEmpty) 'author': ?clip(c.authors.first, 255),
+                'isbn13': ?clip(c.isbn13, 20),
+                'providerKey': ?clip(c.provider, 50),
+                'providerId': ?clip(c.providerId, 255),
+              },
+          ],
+        }) as List<dynamic>;
+        for (var i = 0; i < batch.length; i++) {
+          out.add(i < res.length ? BookRequestAvailability.fromJson(res[i]) : null);
+        }
+      } catch (e) {
+        debugPrint('[BookOrbit] request availability: $e');
+        out.addAll([for (final _ in batch) null]);
+      }
+    }
+    return out;
+  }
+
+  @override
+  Future<BookRequestSubmitResult> submitBookRequest(Map<String, dynamic> body) async {
+    try {
+      return BookRequestSubmitResult.fromJson(await _boPost('/book-requests', body));
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] book request refused: ${e.status} ${e.message}');
+      return BookRequestSubmitResult(error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] book request: $e');
+      return const BookRequestSubmitResult();
+    }
+  }
+
+  @override
+  Future<BookRequestPairResult> submitBookRequestPair(Map<String, dynamic> body) async {
+    try {
+      final res = await _boPost('/book-requests/pairs', body);
+      if (res is! Map) return const BookRequestPairResult();
+      return BookRequestPairResult(
+        ebook: BookRequestSubmitResult.fromJson(res['ebook']),
+        audiobook: BookRequestSubmitResult.fromJson(res['audiobook']),
+      );
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] paired book request refused: ${e.status} ${e.message}');
+      return BookRequestPairResult(error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] paired book request: $e');
+      return const BookRequestPairResult();
+    }
+  }
+
+  // Managers work any request through the admin routes; someone allowed to
+  // download directly works their own through the fulfilment twins.
+  Future<String> _fulfilBase() async =>
+      await _can('manage_book_requests') ? '/admin/book-requests' : '/book-request-fulfilment';
+
+  @override
+  Future<({BookRequestReleases? releases, String? error})> bookRequestReleases(
+    int id, {
+    bool refresh = false,
+    ({String title, String author, String? isbn})? terms,
+  }) async {
+    String? clip(String? v, int max) {
+      final s = v?.trim() ?? '';
+      if (s.isEmpty) return null;
+      return s.length > max ? s.substring(0, max) : s;
+    }
+    final base = await _fulfilBase();
+    // Every tracker is asked in turn, which can take most of a minute.
+    const wait = Duration(minutes: 3);
+    try {
+      final Object? res = terms == null
+          ? await _boGet('$base/$id/releases', {if (refresh) 'refresh': 'true'}, wait)
+          : await _boPost('$base/$id/releases/search', {
+              'title': ?clip(terms.title, 500),
+              if (clip(terms.author, 255) != null) 'authors': [clip(terms.author, 255)],
+              'isbn': clip(terms.isbn, 20),
+            }, wait);
+      if (res is! Map<String, dynamic>) return (releases: null, error: null);
+      return (releases: BookRequestReleases.fromJson(res), error: null);
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] releases for request $id: ${e.status} ${e.message}');
+      return (releases: null, error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] releases for request $id: $e');
+      return (releases: null, error: null);
+    }
+  }
+
+  @override
+  Future<({String? status, String? error})> inspectBookRequestRelease(int id, int indexerId, String guid) async {
+    final base = await _fulfilBase();
+    try {
+      final res = await _boPost('$base/$id/releases/inspect', {
+        'indexerId': indexerId,
+        'releaseGuid': guid,
+      }, const Duration(minutes: 1));
+      return (status: res is Map ? '${res['status'] ?? ''}' : null, error: null);
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] inspect release for request $id: ${e.status} ${e.message}');
+      return (status: null, error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] inspect release for request $id: $e');
+      return (status: null, error: null);
+    }
+  }
+
+  @override
+  Future<({BookRequest? request, String? error})> grabBookRequestRelease(int id, int indexerId, String guid) async {
+    final base = await _fulfilBase();
+    try {
+      final res = await _boPost('$base/$id/grab', {
+        'indexerId': indexerId,
+        'releaseGuid': guid,
+      }, const Duration(minutes: 2));
+      if (res is! Map || res['id'] is! num) return (request: null, error: null);
+      return (request: BookRequest(Map<String, dynamic>.from(res)), error: null);
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] grab for request $id: ${e.status} ${e.message}');
+      return (request: null, error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] grab for request $id: $e');
+      return (request: null, error: null);
+    }
+  }
+
+  @override
+  Future<({BookRequestReview? review, String? error})> bookRequestReview(int id) async {
+    final base = await _fulfilBase();
+    try {
+      final res = await _boGet('$base/$id/review');
+      if (res is! Map<String, dynamic>) return (review: null, error: null);
+      return (review: BookRequestReview.fromJson(res), error: null);
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] review for request $id: ${e.status} ${e.message}');
+      return (review: null, error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] review for request $id: $e');
+      return (review: null, error: null);
+    }
+  }
+
+  @override
+  Future<({bool ok, BookRequest? request, String? error})> bookRequestAction(
+    int id,
+    BookRequestAction action, {
+    String? note,
+    int? libraryId,
+    int? downloadId,
+  }) async {
+    final trimmed = note?.trim() ?? '';
+    final decision = trimmed.isEmpty
+        ? null
+        : trimmed.length > 2000
+            ? trimmed.substring(0, 2000)
+            : trimmed;
+    try {
+      final Object? res = switch (action) {
+        BookRequestAction.cancel => await _boPost('/book-requests/$id/cancel', const {}),
+        BookRequestAction.dismiss => await _boPost('/book-requests/$id/dismiss', const {}),
+        BookRequestAction.restore => await _boPost('/book-requests/$id/restore', const {}),
+        BookRequestAction.leave => await _boDelete('/book-requests/$id/subscription'),
+        BookRequestAction.approve => await _boPost('/admin/book-requests/$id/approve', {
+            'decisionNote': ?decision,
+            'targetLibraryId': ?libraryId,
+          }),
+        BookRequestAction.reject => await _boPost('/admin/book-requests/$id/reject', {
+            'decisionNote': ?decision,
+          }),
+        BookRequestAction.delete => await _boDelete('/admin/book-requests/$id'),
+        BookRequestAction.forceFile =>
+          await _boPost('${await _fulfilBase()}/$id/force-file', const {}, const Duration(minutes: 2)),
+        BookRequestAction.discardImport => await _boPost('${await _fulfilBase()}/$id/discard-import', const {}),
+        BookRequestAction.stopDownload => downloadId == null
+            ? throw ArgumentError('stopDownload needs the download id')
+            : await _boPost('/book-requests/$id/downloads/$downloadId/cancel', const {}),
+      };
+      return (
+        ok: true,
+        request: res is Map && res['id'] is num ? BookRequest(Map<String, dynamic>.from(res)) : null,
+        error: null,
+      );
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] book request $id ${action.name}: ${e.status} ${e.message}');
+      return (ok: false, request: null, error: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] book request $id ${action.name}: $e');
+      return (ok: false, request: null, error: null);
+    }
+  }
+
+  @override
+  Future<Map<String, int>> bookRequestDefaultLibraries() async {
+    try {
+      final res = await _boGet('/book-requests/default-destinations') as Map<String, dynamic>;
+      return {
+        for (final e in res.entries)
+          if (e.value is Map && (e.value as Map)['libraryId'] is num)
+            e.key: ((e.value as Map)['libraryId'] as num).toInt(),
+      };
+    } catch (e) {
+      debugPrint('[BookOrbit] request default libraries: $e');
+      return const {};
+    }
+  }
+
+  @override
+  Stream<MatchSearchEvent> searchMatches(
+    String itemId, {
+    String? title,
+    String? author,
+    String? isbn,
+    bool? isAudiobook,
+    String? mediaKind,
+    List<String>? mediaKinds,
+  }) async* {
+    String? clip(String? v, int max) {
+      final s = v?.trim() ?? '';
+      if (s.isEmpty) return null;
+      return s.length > max ? s.substring(0, max) : s;
+    }
+    final query = <String, dynamic>{
+      'title': clip(title, 500),
+      'author': clip(author, 255),
+      'isbn': clip(isbn, 30),
+      // A book's own id lets the server use what it already knows of it.
+      if (!ApiService.isBookDockItem(itemId) && int.tryParse(itemId) != null) 'bookId': itemId,
+      if (isAudiobook != null) 'isAudiobook': '$isAudiobook',
+      'mediaKind': ?mediaKind,
+      if (mediaKinds != null && mediaKinds.isNotEmpty) 'mediaKinds': mediaKinds.join(','),
+    };
+    if (query['title'] == null && query['author'] == null && query['isbn'] == null) return;
+    await _ensureFreshAccessToken();
+    final request = http.Request('GET', _boUri('/metadata-fetch/stream', query))
+      ..headers.addAll({..._headers, 'Accept': 'text/event-stream'});
+    final client = _httpClient ?? http.Client();
+    try {
+      final response = await client.send(request).timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) {
+        throw _BoHttpError(response.statusCode, await response.stream.bytesToString());
+      }
+      String? event;
+      final data = StringBuffer();
+      MatchSearchEvent? take() {
+        final text = data.toString();
+        final name = event;
+        data.clear();
+        event = null;
+        if (text.isEmpty) return null;
+        try {
+          final decoded = jsonDecode(text);
+          if (decoded is! Map<String, dynamic>) return null;
+          if (name == 'provider-status') {
+            return MatchSearchEvent.status('${decoded['provider']}', '${decoded['outcome']}');
+          }
+          if (name == null || name == 'message') return MatchSearchEvent.result(MatchCandidate(decoded));
+        } catch (_) {}
+        return null;
+      }
+      final lines = response.stream.transform(utf8.decoder).transform(const LineSplitter());
+      await for (final line in lines) {
+        if (line.isEmpty) {
+          final e = take();
+          if (e != null) yield e;
+        } else if (line.startsWith('event:')) {
+          event = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          if (data.isNotEmpty) data.write('\n');
+          data.write(line.substring(5).trim());
+        }
+      }
+      final last = take();
+      if (last != null) yield last;
+    } finally {
+      if (_httpClient == null) client.close();
     }
   }
 

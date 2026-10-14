@@ -397,6 +397,18 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _handleLogin() async {
     final apiKey = _apiKeyController.text.trim();
 
+    // A magic link carries its server, so an empty address can come from it.
+    final linkServer = _backend.isBookOrbit && _serverController.text.trim().isEmpty
+        ? BookOrbitApiService.serverFromMagicLink(apiKey)
+        : null;
+    if (linkServer != null) {
+      setState(() {
+        _protocol = '${linkServer.scheme}://';
+        _serverController.text = linkServer.toString().replaceFirst(RegExp(r'^https?://'), '');
+        _serverValid = false;
+      });
+    }
+
     // Skip form validation when an API key is supplied — the username
     // field's required-validator would otherwise block the submit.
     if (apiKey.isEmpty && !_formKey.currentState!.validate()) return;

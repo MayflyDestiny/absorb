@@ -72,6 +72,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
 
     // ── Media Controls ──
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.chapterProgressInNotification, [l.chapterProgressInNotificationIos, l.chapterProgressOnSubtitle, l.chapterProgressOnSubtitleIos, l.chapterProgressOffSubtitle]),
+    SettingSearchEntry('Media Controls', l.sectionMediaControls, l.nowPlayingText, [l.nowPlayingTextSubtitle, l.nowPlayingPiecePercent, l.nowPlayingPieceTimeLeft, l.nowPlayingPieceNarrator, l.nowPlayingPieceSeries]),
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.lockSeekBar, [l.lockSeekBarOnSubtitle, l.lockSeekBarOffSubtitle]),
     if (Platform.isAndroid) ...[
       SettingSearchEntry('Media Controls', l.sectionMediaControls, l.duckTitle, [l.duckOnSubtitle, l.duckOffSubtitle]),

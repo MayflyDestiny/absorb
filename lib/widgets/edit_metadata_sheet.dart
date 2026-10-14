@@ -6,8 +6,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/bookorbit_match.dart';
 import '../services/socket_service.dart';
 import '../screens/chapter_editor_screen.dart';
+import 'bookorbit_match_view.dart';
 import 'overlay_toast.dart';
 
 enum _ETab { details, cover, chapters, match, encode, embed }
@@ -31,6 +33,8 @@ class MetadataEditView extends StatefulWidget {
   final bool isEbookOnly;
   final bool isAdmin;
   final String? libraryId;
+  /// A BookOrbit Book Dock file: details, a cover URL and matching only.
+  final bool isBookDock;
 
   const MetadataEditView({
     super.key,
@@ -44,6 +48,7 @@ class MetadataEditView extends StatefulWidget {
     this.isEbookOnly = false,
     this.isAdmin = false,
     this.libraryId,
+    this.isBookDock = false,
   });
 
   @override
@@ -134,6 +139,125 @@ class _MetadataEditViewState extends State<MetadataEditView>
     });
   }
 
+  // The ids a BookOrbit book already holds per source, so a result with the
+  // same source and id shows as linked.
+  Map<String, String> _matchProviderIds = const {};
+
+  Future<void> _loadMatchProviderIds() async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null || !api.isBookOrbit) return;
+    final item = await api.getLibraryItem(widget.itemId);
+    if (!mounted || item == null) return;
+    setState(() => _matchProviderIds = _providerIdsOf(item));
+  }
+
+  static Map<String, String> _providerIdsOf(Map item) {
+    final ids = ((item['bookDock'] ?? item['bookOrbit']) as Map?)?['providerIds'];
+    return {
+      if (ids is Map)
+        for (final e in ids.entries)
+          if ('${e.value ?? ''}'.trim().isNotEmpty) '${e.key}': '${e.value}'.trim(),
+    };
+  }
+
+  MatchCurrent _matchCurrent() {
+    List<String> split(String s) => [
+          for (final p in s.split(','))
+            if (p.trim().isNotEmpty) p.trim(),
+        ];
+    return MatchCurrent(
+      title: _titleCtrl.text.trim(),
+      subtitle: _subtitleCtrl.text.trim(),
+      authors: split(_authorCtrl.text),
+      narrators: split(_narratorCtrl.text),
+      genres: split(_genresCtrl.text),
+      description: _descCtrl.text.trim(),
+      publisher: _publisherCtrl.text.trim(),
+      published: _yearCtrl.text.trim(),
+      language: _languageCtrl.text.trim(),
+      isbn: _isbnCtrl.text.trim(),
+      series: [
+        for (final row in _seriesRows)
+          if (row.name.text.trim().isNotEmpty)
+            (name: row.name.text.trim(), index: row.seq.text.trim().isEmpty ? null : row.seq.text.trim()),
+      ],
+      providerIds: _matchProviderIds,
+    );
+  }
+
+  Future<bool> _applyBookOrbitMatch(MatchUpdate update) async {
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return false;
+    final saved = update.metadata.isEmpty || await api.updateItemMedia(widget.itemId, update.metadata);
+    var ok = saved;
+    if (saved && update.coverUrl != null) {
+      ok = await api.updateItemCoverUrl(widget.itemId, update.coverUrl!, coverSlot: _coverSlot);
+    }
+    // Picks up the new cover and source ids.
+    final item = await api.getLibraryItem(widget.itemId);
+    if (!mounted) return ok;
+    setState(() {
+      if (saved) _takeMatchedValues(update.metadata);
+      if (item != null) _matchProviderIds = _providerIdsOf(item);
+      _coverVersion++;
+    });
+    context.read<LibraryProvider>().refresh();
+    return ok;
+  }
+
+  /// Puts applied match values into the form. Fields the match left alone
+  /// keep whatever was typed into them.
+  void _takeMatchedValues(Map<String, dynamic> m) {
+    String joined(Object? v) => v is List
+        ? [
+            for (final e in v)
+              if ('${e is Map ? e['name'] ?? '' : e ?? ''}'.trim().isNotEmpty)
+                '${e is Map ? e['name'] : e}'.trim(),
+          ].join(', ')
+        : '${v ?? ''}';
+    final fields = {
+      'title': _titleCtrl,
+      'subtitle': _subtitleCtrl,
+      'authors': _authorCtrl,
+      'narrators': _narratorCtrl,
+      'description': _descCtrl,
+      'publisher': _publisherCtrl,
+      'publishedYear': _yearCtrl,
+      'language': _languageCtrl,
+      'isbn': _isbnCtrl,
+      'genres': _genresCtrl,
+    };
+    fields.forEach((key, ctrl) {
+      if (m.containsKey(key)) ctrl.text = joined(m[key]);
+    });
+    final series = m['series'];
+    if (series is List) {
+      final previous = List.of(_seriesRows);
+      _seriesRows
+        ..clear()
+        ..addAll([
+          for (final s in series.whereType<Map>())
+            (
+              name: TextEditingController(text: _safeString(s['name'])),
+              seq: TextEditingController(text: _safeString(s['sequence'])),
+            ),
+        ]);
+      if (_seriesRows.isEmpty) {
+        _seriesRows.add((name: TextEditingController(), seq: TextEditingController()));
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final row in previous) {
+          row.name.dispose();
+          row.seq.dispose();
+        }
+      });
+    }
+    _searchTitleCtrl.text = _titleCtrl.text;
+    _searchAuthorCtrl.text = _authorCtrl.text;
+    _coverSearchTitleCtrl.text = _titleCtrl.text;
+    _coverSearchAuthorCtrl.text = _authorCtrl.text;
+  }
+
   List<String> get _bookOrbitCoverProviders =>
       ['duckduckgo', 'itunes', if (_coverSlot != 'ebook') 'audiobookcovers', 'all'];
 
@@ -164,15 +288,20 @@ class _MetadataEditViewState extends State<MetadataEditView>
   @override
   void initState() {
     super.initState();
+    final media = !widget.isEbookOnly && !widget.isBookDock;
     _tabs = [
       _ETab.details,
       _ETab.cover,
-      if (!widget.isEbookOnly) _ETab.chapters,
+      if (media) _ETab.chapters,
       _ETab.match,
-      if (widget.isAdmin && !widget.isEbookOnly) _ETab.encode,
-      if (widget.isAdmin && !widget.isEbookOnly) _ETab.embed,
+      if (widget.isAdmin && media) _ETab.encode,
+      if (widget.isAdmin && media) _ETab.embed,
     ];
     _tabCtrl = TabController(length: _tabs.length, vsync: this);
+    // The match tab compares against the form, so it needs the latest edits.
+    _tabCtrl.addListener(() {
+      if (mounted && _tabs[_tabCtrl.index] == _ETab.match) setState(() {});
+    });
     // Listen for encode progress/finish for the editor's lifetime so a running
     // encode shows up even if it was started elsewhere (e.g. the web UI).
     SocketService()
@@ -185,6 +314,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
     _loadFilterSuggestions();
     _loadServerProviders();
     _loadCoverSlots();
+    _loadMatchProviderIds();
     final m = widget.metadata;
     _titleCtrl = TextEditingController(text: m['title'] as String? ?? '');
     _subtitleCtrl = TextEditingController(text: m['subtitle'] as String? ?? '');
@@ -1208,6 +1338,18 @@ class _MetadataEditViewState extends State<MetadataEditView>
   // ─── Quick Match Tab ────────────────────────────────────────
 
   Widget _buildQuickMatchTab(ColorScheme cs, TextTheme tt, AppLocalizations l) {
+    final api = context.read<AuthProvider>().apiService;
+    if (api != null && api.isBookOrbit) {
+      return BookOrbitMatchView(
+        api: api,
+        itemId: widget.itemId,
+        current: _matchCurrent(),
+        currentCoverUrl: api.getCoverUrl(widget.itemId, width: null, coverSlot: _coverSlot),
+        coverHeaders: api.mediaHeaders,
+        isAudiobook: !widget.isEbookOnly,
+        onApply: _applyBookOrbitMatch,
+      );
+    }
     return Column(children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -1622,7 +1764,7 @@ class _MetadataEditViewState extends State<MetadataEditView>
                 ),
               ),
             ),
-            if (base.isNotEmpty) ...[
+            if (base.isNotEmpty && !widget.isBookDock) ...[
               const SizedBox(height: 8),
               Center(
                 child: TextButton.icon(
@@ -1650,14 +1792,17 @@ class _MetadataEditViewState extends State<MetadataEditView>
                   onChanged: (_) => setState(() => _coverFilePath = null),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(l.or, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              const SizedBox(width: 8),
-              FilledButton.tonalIcon(
-                onPressed: _pickCoverImage,
-                icon: const Icon(Icons.image_rounded, size: 18),
-                label: Text(l.file),
-              ),
+              // The server only takes a cover URL for a dock file.
+              if (!widget.isBookDock) ...[
+                const SizedBox(width: 8),
+                Text(l.or, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _pickCoverImage,
+                  icon: const Icon(Icons.image_rounded, size: 18),
+                  label: Text(l.file),
+                ),
+              ],
             ]),
             if (_coverFilePath != null)
               Padding(

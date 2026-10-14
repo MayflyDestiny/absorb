@@ -910,6 +910,11 @@ class PlayerSettings {
   static Future<bool> getNotificationChapterProgress() => _get('notificationChapterProgress', true);
   static Future<void> setNotificationChapterProgress(bool value) => _set('notificationChapterProgress', value, notify: true);
 
+  // Which pieces the media controls show on each line, as
+  // NowPlayingLayout JSON. Empty = the standard layout.
+  static Future<String> getNowPlayingLayout() => _get('nowPlayingLayout', '');
+  static Future<void> setNowPlayingLayout(String json) => _set('nowPlayingLayout', json, notify: true);
+
   // Android only: when true, the phone media controls show speed + bookmark in
   // the two extra slots instead of chapter skip. Android Auto shows all of them
   // either way; this just reorders which pair the phone "borrows".
@@ -1533,6 +1538,8 @@ class PlayerSettings {
   static bool isEbookOnly(Map<String, dynamic> item) {
     // Podcasts are never eBook-only (minified podcasts lack duration/audioFiles)
     if ((item['mediaType'] as String?) == 'podcast') return false;
+    // BookOrbit Book Dock files have no tracks until they are filed.
+    if (item['bookDock'] != null) return false;
     final media = item['media'] as Map<String, dynamic>? ?? {};
     final duration = (media['duration'] as num?)?.toDouble() ?? 0;
     if (duration > 0) return false; // Has audio content

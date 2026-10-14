@@ -1,3 +1,5 @@
+import 'bookorbit_match.dart' show bookOrbitProviderIdFields;
+
 /// Turns BookOrbit API payloads into the Audiobookshelf JSON shapes the rest
 /// of the app reads. Pure functions only, so the shapes can be unit tested
 /// without a server.
@@ -384,6 +386,244 @@ class BookOrbitMapper {
       };
     }
     return item;
+  }
+
+  static const dockItemPrefix = 'dock-';
+
+  /// A Book Dock file's metadata as it would be filed: what was saved for
+  /// it, else what was read from the file (the server's own rule).
+  static Map<String, dynamic> dockMetadata(Map<String, dynamic> file) {
+    final m = file['selectedMetadata'] ?? file['embeddedMetadata'];
+    return m is Map ? Map<String, dynamic>.from(m) : <String, dynamic>{};
+  }
+
+  /// A Book Dock file as an item of the 'book-dock' library. It has no
+  /// tracks or ebook, so nothing tries to play, download or read it.
+  static Map<String, dynamic> dockItem(Map<String, dynamic> file, {String libraryId = 'book-dock'}) {
+    final fileId = _str(file['id']);
+    final id = '$dockItemPrefix$fileId';
+    final m = dockMetadata(file);
+    final fileName = _str(file['fileName']);
+    final dot = fileName.lastIndexOf('.');
+    final stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+    final rawTitle = _str(m['title']).trim();
+    final title = rawTitle.isNotEmpty ? rawTitle : stem;
+
+    final authorNames = _strings(m['authors']);
+    final narratorNames = _strings(m['narrators']);
+    final seriesList = <Map<String, dynamic>>[];
+    void addSeries(Object? name, Object? index) {
+      final n = _str(name).trim();
+      if (n.isEmpty) return;
+      seriesList.add({'id': 'name:$n', 'name': n, 'sequence': index == null ? null : '$index'});
+    }
+    final memberships = _maps(m['seriesMemberships']);
+    if (memberships.isNotEmpty) {
+      for (final s in memberships) {
+        addSeries(s['seriesName'], s['seriesIndex']);
+      }
+    } else {
+      addSeries(m['seriesName'], m['seriesIndex']);
+    }
+    final seriesName = seriesList
+        .map((s) => s['sequence'] != null ? '${s['name']} #${s['sequence']}' : '${s['name']}')
+        .join(', ');
+    final duration = ((m['durationSeconds'] as num?) ?? 0).toDouble();
+    final size = (file['fileSize'] as num?) ?? 0;
+
+    final metadata = <String, dynamic>{
+      'title': title,
+      'titleIgnorePrefix': title,
+      'subtitle': m['subtitle'],
+      'authors': [for (final a in authorNames) {'id': '$authorNamePrefix$a', 'name': a}],
+      'narrators': narratorNames,
+      'series': seriesList,
+      'genres': _strings(m['genres']),
+      'publishedYear': m['publishedYear'] == null ? null : '${m['publishedYear']}',
+      'publishedDate': m['publishedDate'],
+      'publisher': m['publisher'],
+      'description': m['description'],
+      'isbn': m['isbn13'] ?? m['isbn10'],
+      'asin': m['audibleId'],
+      'language': m['language'],
+      'explicit': false,
+      'abridged': m['abridged'] == true,
+      'authorName': authorNames.join(', '),
+      'authorNameLF': authorNames.map(_lastFirst).join(', '),
+      'narratorName': narratorNames.join(', '),
+      'seriesName': seriesName,
+    };
+
+    return {
+      'id': id,
+      'ino': id,
+      'libraryId': libraryId,
+      'folderId': '',
+      'path': '',
+      'relPath': '',
+      'isFile': true,
+      'mediaType': 'book',
+      'addedAt': ms(file['createdAt']),
+      'updatedAt': ms(file['updatedAt']) ?? ms(file['createdAt']),
+      'isMissing': false,
+      'isInvalid': false,
+      'size': size,
+      'numFiles': 1 + _maps(file['unitFiles']).length,
+      'media': {
+        'id': id,
+        'libraryItemId': id,
+        'metadata': metadata,
+        'coverPath': '/bookorbit/dock/$fileId/cover',
+        'tags': const [],
+        'audioFiles': const [],
+        'chapters': const [],
+        'duration': duration,
+        'size': size,
+        'tracks': const [],
+        'ebookFile': null,
+        'numTracks': 0,
+        'numAudioFiles': 0,
+        'numChapters': 0,
+      },
+      'libraryFiles': const [],
+      'bookDock': {
+        'fileId': fileId,
+        'status': file['status'],
+        'fileName': fileName,
+        'format': file['format'],
+        'fileSize': file['fileSize'],
+        'errorMessage': file['errorMessage'],
+        'hasFoundDetails': _hasContent(file['fetchedMetadata']),
+        'detailsState': _hasContent(file['selectedMetadata'])
+            ? 'edited'
+            : _hasContent(file['fetchedMetadata'])
+                ? 'fetched'
+                : _hasContent(file['embeddedMetadata'])
+                    ? 'embedded'
+                    : 'none',
+        'confidence': (file['confidence'] as num?)?.round(),
+        'targetLibraryId': file['targetLibraryId'] == null ? null : '${file['targetLibraryId']}',
+        'targetFolderId': file['targetFolderId'] == null ? null : '${file['targetFolderId']}',
+        'addedAt': ms(file['createdAt']),
+        'unitFiles': [
+          for (final u in _maps(file['unitFiles']))
+            {'fileName': _str(u['fileName']), 'fileSize': u['fileSize'], 'role': u['role']},
+        ],
+        'changes': dockChanges(file),
+        'providerIds': {
+          for (final e in bookOrbitProviderIdFields.entries)
+            if (e.key != 'audnexus' && _str(m[e.value]).trim().isNotEmpty) e.key: _str(m[e.value]).trim(),
+        },
+      },
+    };
+  }
+
+  static bool _hasContent(Object? metadata) =>
+      metadata is Map &&
+      metadata.values.any((v) => v != null && v != '' && !(v is List && v.isEmpty));
+
+  // The fields BookOrbit's web lists under "Proposed changes", in its order.
+  static const _dockChangeFields = [
+    'title',
+    'subtitle',
+    'authors',
+    'seriesName',
+    'publisher',
+    'publishedYear',
+    'language',
+    'isbn13',
+  ];
+
+  /// What filing would change against what the file says about itself, the
+  /// way BookOrbit's web shows it: the saved details, else the ones found
+  /// online, field by field against the embedded ones. {field, from?, to}.
+  static List<Map<String, dynamic>> dockChanges(Map<String, dynamic> file) {
+    final incoming = file['selectedMetadata'] ?? file['fetchedMetadata'];
+    if (incoming is! Map) return const [];
+    final current = file['embeddedMetadata'] is Map ? file['embeddedMetadata'] as Map : const {};
+    String? shown(Object? v) {
+      if (v == null || v == '') return null;
+      if (v is List) return v.isEmpty ? null : v.join(', ');
+      return '$v';
+    }
+    return [
+      for (final field in _dockChangeFields)
+        if (shown(incoming[field]) != null && shown(incoming[field]) != shown(current[field]))
+          {'field': field, 'from': shown(current[field]), 'to': shown(incoming[field])},
+    ];
+  }
+
+  /// A dock file's metadata after an edit in the Audiobookshelf shape
+  /// ([abs] is `body.metadata` of PATCH /items/:id/media). BookOrbit
+  /// replaces a dock file's saved metadata whole, so this starts from
+  /// [current] and only overwrites what the edit sent.
+  static Map<String, dynamic> dockMetadataPatch(
+    Map<String, dynamic> current,
+    Map<String, dynamic> abs,
+  ) {
+    final out = Map<String, dynamic>.from(current);
+    String? text(Object? v) {
+      final s = v?.toString().trim() ?? '';
+      return s.isEmpty ? null : s;
+    }
+    List<String> names(Object? list) => [
+          for (final e in (list as List<dynamic>? ?? const []))
+            if (text(e is Map ? e['name'] : e) != null) text(e is Map ? e['name'] : e)!,
+        ];
+
+    for (final key in ['title', 'subtitle', 'publisher', 'language']) {
+      if (abs.containsKey(key)) out[key] = text(abs[key]);
+    }
+    if (abs.containsKey('description')) out['description'] = text(abs['description']) ?? '';
+    if (abs.containsKey('publishedDate')) {
+      final d = text(abs['publishedDate']);
+      out['publishedDate'] = d != null && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(d) ? d : null;
+    }
+    if (abs.containsKey('publishedYear')) {
+      // A full date (from a match) sets the date and its year.
+      final v = text(abs['publishedYear']) ?? '';
+      if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(v)) out['publishedDate'] = v;
+      final y = int.tryParse(RegExp(r'^\d{4}').firstMatch(v)?.group(0) ?? '');
+      out['publishedYear'] = y != null && y >= 1000 && y <= 2200 ? y : null;
+    }
+    if (abs.containsKey('authors')) out['authors'] = names(abs['authors']);
+    if (abs.containsKey('narrators')) out['narrators'] = names(abs['narrators']);
+    if (abs.containsKey('genres')) out['genres'] = names(abs['genres']);
+    if (abs.containsKey('series')) {
+      final series = [
+        for (final s in (abs['series'] as List<dynamic>? ?? const []).whereType<Map>())
+          if (text(s['name']) != null)
+            {'seriesName': text(s['name']), 'seriesIndex': text(s['sequence'])},
+      ];
+      out['seriesMemberships'] = series;
+      out['seriesName'] = series.isEmpty ? null : series.first['seriesName'];
+      out['seriesIndex'] = series.isEmpty ? null : series.first['seriesIndex'];
+    }
+    if (abs.containsKey('isbn')) {
+      final isbn = text(abs['isbn'])?.replaceAll(RegExp(r'[^0-9Xx]'), '');
+      out['isbn13'] = isbn != null && isbn.length == 13 ? isbn : null;
+      out['isbn10'] = isbn != null && isbn.length == 10 ? isbn : null;
+    }
+    if (abs.containsKey('asin')) out['audibleId'] = text(abs['asin']);
+    if (abs.containsKey('abridged')) out['abridged'] = abs['abridged'] == true;
+    out.addAll(providerIdPatch(abs['bookOrbitProviderIds']));
+    return out;
+  }
+
+  /// [found] (what the server looked up online) laid over [current],
+  /// field by field, keeping [current] where [found] has nothing.
+  static Map<String, dynamic> dockMergeFound(
+    Map<String, dynamic> current,
+    Map<String, dynamic> found,
+  ) {
+    final out = Map<String, dynamic>.from(current);
+    found.forEach((key, value) {
+      final empty = value == null ||
+          (value is String && value.trim().isEmpty) ||
+          (value is List && value.isEmpty);
+      if (!empty) out[key] = value;
+    });
+    return out;
   }
 
   static bool _hasAudio(List<Map<String, dynamic>> files) =>
@@ -864,8 +1104,18 @@ class BookOrbitMapper {
       }
     }
     if (audio.isNotEmpty) out['audioMetadata'] = audio;
+    out.addAll(providerIdPatch(metadata['bookOrbitProviderIds']));
     return out;
   }
+
+  /// `{goodreads: '123'}` from a match as BookOrbit's flat id fields
+  /// (`goodreadsId: '123'`).
+  static Map<String, String> providerIdPatch(Object? ids) => {
+        if (ids is Map)
+          for (final e in ids.entries)
+            if (bookOrbitProviderIdFields['${e.key}'] != null && '${e.value}'.trim().isNotEmpty)
+              bookOrbitProviderIdFields['${e.key}']!: '${e.value}'.trim(),
+      };
 
   /// Audiobookshelf chapters ({start, end, title} in seconds) as BookOrbit's
   /// audio chapters. Null clears them.

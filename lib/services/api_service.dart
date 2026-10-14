@@ -10,6 +10,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'auth_tokens.dart';
 import 'app_log.dart';
 import 'json_file_cache.dart';
+import 'book_dock.dart';
+import 'book_requests.dart';
+import 'bookorbit_match.dart';
 import 'bookorbit_mapper.dart';
 import 'bookorbit_media_proxy_stub.dart'
     if (dart.library.io) 'bookorbit_media_proxy.dart';
@@ -495,6 +498,106 @@ class ApiService {
   /// Show a collection to everyone on the server or only its owner. Only
   /// BookOrbit has this; Audiobookshelf collections are always shared.
   Future<bool> setCollectionPublic(String collectionId, bool isPublic) async => false;
+
+  /// BookOrbit's Book Dock (its import inbox) shows as a library with this
+  /// id for accounts allowed to use it. Its items are dock files, not books:
+  /// they can be edited, filed into a real library or removed, not played.
+  static const bookDockLibraryId = 'book-dock';
+  static bool isBookDockItem(String itemId) => itemId.startsWith('dock-');
+
+  /// The library folders a dock file can be filed into; empty when this
+  /// account may not add books to a library.
+  Future<List<BookDockDestination>> bookDockDestinations() async => const [];
+
+  /// File dock item [itemId] into [destination].
+  Future<BookDockFileResult> fileBookDockItem(
+          String itemId, BookDockDestination destination) async =>
+      const BookDockFileResult(success: false);
+
+  /// Remove a dock item and its file from the server.
+  Future<bool> removeBookDockItem(String itemId) async => false;
+
+  /// Copy the details the server found online over the dock item's own.
+  Future<bool> useFoundBookDockDetails(String itemId) async => false;
+
+  /// Ask the server to look the dock item's details up online again.
+  Future<bool> lookUpBookDockDetails(String itemId) async => false;
+
+  /// BookOrbit's metadata search over every source it has turned on, as
+  /// results arrive. Empty on Audiobookshelf.
+  Stream<MatchSearchEvent> searchMatches(
+    String itemId, {
+    String? title,
+    String? author,
+    String? isbn,
+    bool? isAudiobook,
+    String? mediaKind,
+    List<String>? mediaKinds,
+  }) =>
+      const Stream.empty();
+
+  /// What the account may do with BookOrbit book requests. Nothing on
+  /// Audiobookshelf.
+  Future<BookRequestAccess> bookRequestAccess() async => BookRequestAccess.none;
+
+  /// One page of the account's own requests, or everyone's with [all].
+  Future<({List<BookRequest> items, int total})?> bookRequests({
+    bool all = false,
+    int page = 1,
+    int limit = 25,
+    bool includeDismissed = false,
+  }) async =>
+      null;
+
+  /// Whether each record is already in a library or asked for, in order.
+  Future<List<BookRequestAvailability?>> bookRequestAvailability(
+    List<MatchCandidate> records,
+    String mediaKind,
+  ) async =>
+      [for (final _ in records) null];
+
+  Future<BookRequestSubmitResult> submitBookRequest(Map<String, dynamic> body) async =>
+      const BookRequestSubmitResult();
+
+  /// Asks for the e-book and the audiobook together, on servers whose
+  /// [BookRequestAccess.pairs] is set.
+  Future<BookRequestPairResult> submitBookRequestPair(Map<String, dynamic> body) async =>
+      const BookRequestPairResult();
+
+  Future<({bool ok, BookRequest? request, String? error})> bookRequestAction(
+    int id,
+    BookRequestAction action, {
+    String? note,
+    int? libraryId,
+    int? downloadId,
+  }) async =>
+      (ok: false, request: null, error: null);
+
+  /// Releases the indexers offer for request [id]. [terms] searches with
+  /// other words than the request's own; a null ISBN searches by title and
+  /// author.
+  Future<({BookRequestReleases? releases, String? error})> bookRequestReleases(
+    int id, {
+    bool refresh = false,
+    ({String title, String author, String? isbn})? terms,
+  }) async =>
+      (releases: null, error: null);
+
+  /// What a release holds. 'no_supported_file' means nothing in it can be
+  /// filed into a library.
+  Future<({String? status, String? error})> inspectBookRequestRelease(int id, int indexerId, String guid) async =>
+      (status: null, error: null);
+
+  /// Sends the picked release to the download client.
+  Future<({BookRequest? request, String? error})> grabBookRequestRelease(int id, int indexerId, String guid) async =>
+      (request: null, error: null);
+
+  /// Why a downloaded request is waiting for a manual check.
+  Future<({BookRequestReview? review, String? error})> bookRequestReview(int id) async =>
+      (review: null, error: null);
+
+  /// The library each kind of request lands in when nobody picks one.
+  Future<Map<String, int>> bookRequestDefaultLibraries() async => const {};
 
   /// Current access token (for external use like cover URLs, socket auth).
   String get token => _accessToken;
@@ -4331,6 +4434,45 @@ class ApiService {
       }
     } catch (e) { verboseLog('[API] updateSortingPrefixes error: $e'); }
     return null;
+  }
+
+  /// GET /api/auth-settings - password and OpenID Connect settings (admin only).
+  Future<Map<String, dynamic>?> getAuthSettings() async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/auth-settings'));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+      debugPrint('[API] getAuthSettings failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] getAuthSettings error: $e'); }
+    return null;
+  }
+
+  /// PATCH /api/auth-settings (admin only). Returns { updated, serverSettings }.
+  Future<Map<String, dynamic>?> updateAuthSettings(Map<String, dynamic> patch) async {
+    try {
+      final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/auth-settings'),
+          body: jsonEncode(patch));
+      if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
+      debugPrint('[API] updateAuthSettings failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] updateAuthSettings error: $e'); }
+    return null;
+  }
+
+  /// GET /auth/openid/config?issuer= - the server fetches the issuer's
+  /// openid-configuration (admin only). On failure [error] holds the
+  /// server's message.
+  Future<({Map<String, dynamic>? config, String? error})> getOpenIdIssuerConfig(String issuer) async {
+    try {
+      final r = await _authGet(Uri.parse('$_cleanBaseUrl/auth/openid/config')
+          .replace(queryParameters: {'issuer': issuer}));
+      if (r.statusCode == 200) {
+        return (config: jsonDecode(r.body) as Map<String, dynamic>, error: null);
+      }
+      final body = r.body.trim();
+      return (config: null, error: body.isNotEmpty ? body : 'HTTP ${r.statusCode}');
+    } catch (e) {
+      debugPrint('[API] getOpenIdIssuerConfig error: $e');
+      return (config: null, error: e.toString());
+    }
   }
 
   /// GET /api/stats/server — { books, podcasts, total } (admin only).

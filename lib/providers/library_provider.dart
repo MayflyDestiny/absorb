@@ -470,7 +470,8 @@ class LibraryProvider extends ChangeNotifier
     // when merge is off, otherwise the player would be unreachable from the
     // new library.
     final merged = await PlayerSettings.getMergeAbsorbingLibraries();
-    if (!merged) {
+    // The Book Dock is somewhere to sort new files, not a place to listen.
+    if (!merged && libraryId != ApiService.bookDockLibraryId) {
       final wasPlaying = AudioPlayerService().isPlaying;
       final wasCasting = ChromecastService().isPlaying;
       if (wasPlaying) {
@@ -528,7 +529,8 @@ class LibraryProvider extends ChangeNotifier
   /// Track the last non-podcast library so the Home/Library tabs know where
   /// to return when leaving the dedicated Podcasts tab.
   Future<void> _rememberBookLibrary(String libraryId) async {
-    if (!isPodcastLibraryId(libraryId)) {
+    if (!isPodcastLibraryId(libraryId) &&
+        libraryId != ApiService.bookDockLibraryId) {
       await ScopedPrefs.setString('last_book_library', libraryId);
     }
   }

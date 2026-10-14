@@ -3424,6 +3424,1686 @@ abstract class AppLocalizations {
   /// **'On - lock screen & CarPlay show chapter progress'**
   String get chapterProgressOnSubtitleIos;
 
+  /// No description provided for @nowPlayingText.
+  ///
+  /// In en, this message translates to:
+  /// **'Now playing text'**
+  String get nowPlayingText;
+
+  /// No description provided for @nowPlayingTextSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose what the media controls show on each line'**
+  String get nowPlayingTextSubtitle;
+
+  /// No description provided for @nowPlayingTopLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Top line'**
+  String get nowPlayingTopLine;
+
+  /// No description provided for @nowPlayingSecondLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Second line'**
+  String get nowPlayingSecondLine;
+
+  /// No description provided for @nowPlayingNotShown.
+  ///
+  /// In en, this message translates to:
+  /// **'Not shown'**
+  String get nowPlayingNotShown;
+
+  /// No description provided for @nowPlayingTopLineRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'The top line needs at least one item'**
+  String get nowPlayingTopLineRequired;
+
+  /// No description provided for @nowPlayingPieceChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter'**
+  String get nowPlayingPieceChapter;
+
+  /// No description provided for @nowPlayingPieceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Book title'**
+  String get nowPlayingPieceTitle;
+
+  /// No description provided for @nowPlayingPieceNarrator.
+  ///
+  /// In en, this message translates to:
+  /// **'Narrator'**
+  String get nowPlayingPieceNarrator;
+
+  /// No description provided for @nowPlayingPieceSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Series'**
+  String get nowPlayingPieceSeries;
+
+  /// No description provided for @nowPlayingPiecePercent.
+  ///
+  /// In en, this message translates to:
+  /// **'Book percentage'**
+  String get nowPlayingPiecePercent;
+
+  /// No description provided for @nowPlayingPieceChapterNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter number'**
+  String get nowPlayingPieceChapterNumber;
+
+  /// No description provided for @nowPlayingPieceTimeLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Time left'**
+  String get nowPlayingPieceTimeLeft;
+
+  /// No description provided for @nowPlayingChapterNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Ch. {number}/{total}'**
+  String nowPlayingChapterNumber(int number, int total);
+
+  /// No description provided for @nowPlayingTimeLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{time} left'**
+  String nowPlayingTimeLeft(String time);
+
+  /// No description provided for @bookDockBadgePending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get bookDockBadgePending;
+
+  /// No description provided for @bookDockBadgeExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading file'**
+  String get bookDockBadgeExtracting;
+
+  /// No description provided for @bookDockBadgeFetching.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking up'**
+  String get bookDockBadgeFetching;
+
+  /// No description provided for @bookDockBadgeError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get bookDockBadgeError;
+
+  /// No description provided for @bookDockNeedsReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs review'**
+  String get bookDockNeedsReview;
+
+  /// No description provided for @bookDockNoMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No match'**
+  String get bookDockNoMatch;
+
+  /// No description provided for @bookDockApplied.
+  ///
+  /// In en, this message translates to:
+  /// **'Applied'**
+  String get bookDockApplied;
+
+  /// No description provided for @bookDockNotApplied.
+  ///
+  /// In en, this message translates to:
+  /// **'Found details not used'**
+  String get bookDockNotApplied;
+
+  /// No description provided for @bookDockNoDestination.
+  ///
+  /// In en, this message translates to:
+  /// **'No destination set'**
+  String get bookDockNoDestination;
+
+  /// No description provided for @bookDockNoAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'No author yet'**
+  String get bookDockNoAuthor;
+
+  /// No description provided for @bookDockLookUpAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Look up again'**
+  String get bookDockLookUpAgain;
+
+  /// No description provided for @bookDockLookingUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking up details again'**
+  String get bookDockLookingUp;
+
+  /// No description provided for @bookDockLookUpFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t look up details'**
+  String get bookDockLookUpFailed;
+
+  /// No description provided for @bookDockProposedChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Proposed changes'**
+  String get bookDockProposedChanges;
+
+  /// No description provided for @bookDockNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'No details found online yet'**
+  String get bookDockNoChanges;
+
+  /// No description provided for @bookDockStillReading.
+  ///
+  /// In en, this message translates to:
+  /// **'The server is still reading this file'**
+  String get bookDockStillReading;
+
+  /// No description provided for @bookDockRoleBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Book'**
+  String get bookDockRoleBook;
+
+  /// No description provided for @bookDockRoleCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover'**
+  String get bookDockRoleCover;
+
+  /// No description provided for @bookDockRoleMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata'**
+  String get bookDockRoleMetadata;
+
+  /// No description provided for @bookDockRoleExtra.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra'**
+  String get bookDockRoleExtra;
+
+  /// No description provided for @bookDockFieldTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get bookDockFieldTitle;
+
+  /// No description provided for @bookDockFieldSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Subtitle'**
+  String get bookDockFieldSubtitle;
+
+  /// No description provided for @bookDockFieldAuthors.
+  ///
+  /// In en, this message translates to:
+  /// **'Authors'**
+  String get bookDockFieldAuthors;
+
+  /// No description provided for @bookDockFieldSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Series'**
+  String get bookDockFieldSeries;
+
+  /// No description provided for @bookDockFieldPublisher.
+  ///
+  /// In en, this message translates to:
+  /// **'Publisher'**
+  String get bookDockFieldPublisher;
+
+  /// No description provided for @bookDockFieldYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Year'**
+  String get bookDockFieldYear;
+
+  /// No description provided for @bookDockFieldLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get bookDockFieldLanguage;
+
+  /// No description provided for @bookDockFieldIsbn.
+  ///
+  /// In en, this message translates to:
+  /// **'ISBN'**
+  String get bookDockFieldIsbn;
+
+  /// No description provided for @bookDockMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% match'**
+  String bookDockMatch(int percent);
+
+  /// No description provided for @bookDockFileCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String bookDockFileCount(int count);
+
+  /// No description provided for @bookDockGoesTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Goes to {library}'**
+  String bookDockGoesTo(String library);
+
+  /// No description provided for @bookDockChangedFields.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 field} other{{count} fields}}'**
+  String bookDockChangedFields(int count);
+
+  /// No description provided for @bookDockFilesInEntry.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{File in this entry} other{{count} files in this entry}}'**
+  String bookDockFilesInEntry(int count);
+
+  /// No description provided for @bookDockAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Added {date}'**
+  String bookDockAdded(String date);
+
+  /// No description provided for @bookDockAddToLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to library'**
+  String get bookDockAddToLibrary;
+
+  /// No description provided for @bookDockUseFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Use found details'**
+  String get bookDockUseFound;
+
+  /// No description provided for @bookDockRemoveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Book Dock?'**
+  String get bookDockRemoveTitle;
+
+  /// No description provided for @bookDockRemoveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove this file'**
+  String get bookDockRemoveFailed;
+
+  /// No description provided for @bookDockPickLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to which library?'**
+  String get bookDockPickLibrary;
+
+  /// No description provided for @bookDockNoLibraries.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account can\'t add books to a library'**
+  String get bookDockNoLibraries;
+
+  /// No description provided for @bookDockFileFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t add this file to the library'**
+  String get bookDockFileFailed;
+
+  /// No description provided for @bookDockDuplicateBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A file with this name is already in that library. Remove it from Book Dock?'**
+  String get bookDockDuplicateBody;
+
+  /// No description provided for @bookDockDetailsUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Details updated'**
+  String get bookDockDetailsUpdated;
+
+  /// No description provided for @bookDockUseFoundFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'No found details to use'**
+  String get bookDockUseFoundFailed;
+
+  /// No description provided for @bookDockRemoveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This deletes {title} from the server.'**
+  String bookDockRemoveBody(String title);
+
+  /// No description provided for @bookDockRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed {title} from Book Dock'**
+  String bookDockRemoved(String title);
+
+  /// No description provided for @bookDockFiled.
+  ///
+  /// In en, this message translates to:
+  /// **'Added {title} to {library}'**
+  String bookDockFiled(String title, String library);
+
+  /// No description provided for @bookDockFileFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t add this file: {reason}'**
+  String bookDockFileFailedReason(String reason);
+
+  /// No description provided for @bookDockDuplicateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in {library}'**
+  String bookDockDuplicateTitle(String library);
+
+  /// No description provided for @bomatchSearchAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Search all sources'**
+  String get bomatchSearchAll;
+
+  /// No description provided for @bomatchSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching...'**
+  String get bomatchSearching;
+
+  /// No description provided for @bomatchSearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search for matches. Check your connection and try again.'**
+  String get bomatchSearchFailed;
+
+  /// No description provided for @bomatchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches found'**
+  String get bomatchNoResults;
+
+  /// No description provided for @bomatchStrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Strong matches'**
+  String get bomatchStrong;
+
+  /// No description provided for @bomatchPossible.
+  ///
+  /// In en, this message translates to:
+  /// **'Possible matches'**
+  String get bomatchPossible;
+
+  /// No description provided for @bomatchSourceTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'timed out'**
+  String get bomatchSourceTimeout;
+
+  /// No description provided for @bomatchSourceBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'busy'**
+  String get bomatchSourceBusy;
+
+  /// No description provided for @bomatchSourceFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'failed'**
+  String get bomatchSourceFailed;
+
+  /// No description provided for @bomatchLinked.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked'**
+  String get bomatchLinked;
+
+  /// No description provided for @bomatchSameIsbn.
+  ///
+  /// In en, this message translates to:
+  /// **'Same ISBN'**
+  String get bomatchSameIsbn;
+
+  /// No description provided for @bomatchFewDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Few details'**
+  String get bomatchFewDetails;
+
+  /// No description provided for @bomatchBack.
+  ///
+  /// In en, this message translates to:
+  /// **'All results'**
+  String get bomatchBack;
+
+  /// No description provided for @bomatchFillEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill empty'**
+  String get bomatchFillEmpty;
+
+  /// No description provided for @bomatchTakeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Take all'**
+  String get bomatchTakeAll;
+
+  /// No description provided for @bomatchOnlyDifferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Only differences'**
+  String get bomatchOnlyDifferences;
+
+  /// No description provided for @bomatchNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Now'**
+  String get bomatchNow;
+
+  /// No description provided for @bomatchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty'**
+  String get bomatchEmpty;
+
+  /// No description provided for @bomatchKindNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get bomatchKindNew;
+
+  /// No description provided for @bomatchKindChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get bomatchKindChange;
+
+  /// No description provided for @bomatchKindSmall.
+  ///
+  /// In en, this message translates to:
+  /// **'Small change'**
+  String get bomatchKindSmall;
+
+  /// No description provided for @bomatchKindSame.
+  ///
+  /// In en, this message translates to:
+  /// **'Same'**
+  String get bomatchKindSame;
+
+  /// No description provided for @bomatchKindNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in result'**
+  String get bomatchKindNone;
+
+  /// No description provided for @bomatchKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get bomatchKeep;
+
+  /// No description provided for @bomatchUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Use'**
+  String get bomatchUse;
+
+  /// No description provided for @bomatchMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge'**
+  String get bomatchMerge;
+
+  /// No description provided for @bomatchReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get bomatchReplace;
+
+  /// No description provided for @bomatchUseThis.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this'**
+  String get bomatchUseThis;
+
+  /// No description provided for @bomatchChosen.
+  ///
+  /// In en, this message translates to:
+  /// **'Chosen'**
+  String get bomatchChosen;
+
+  /// No description provided for @bomatchOther.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 other book} other{{count} other books}}'**
+  String bomatchOther(int count);
+
+  /// No description provided for @bomatchChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 change} other{{count} changes}}'**
+  String bomatchChanged(int count);
+
+  /// No description provided for @bomatchNew.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 new} other{{count} new}}'**
+  String bomatchNew(int count);
+
+  /// No description provided for @bomatchApply.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Apply} =1{Apply 1 change} other{Apply {count} changes}}'**
+  String bomatchApply(int count);
+
+  /// No description provided for @bomatchOtherSources.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 other source} other{{count} other sources}}'**
+  String bomatchOtherSources(int count);
+
+  /// No description provided for @bomatchFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'From {source}'**
+  String bomatchFrom(String source);
+
+  /// No description provided for @breqTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Book requests'**
+  String get breqTitle;
+
+  /// No description provided for @breqTabRequest.
+  ///
+  /// In en, this message translates to:
+  /// **'Request a book'**
+  String get breqTabRequest;
+
+  /// No description provided for @breqTabMine.
+  ///
+  /// In en, this message translates to:
+  /// **'My requests'**
+  String get breqTabMine;
+
+  /// No description provided for @breqTabAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All requests'**
+  String get breqTabAll;
+
+  /// No description provided for @breqNoAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account can\'t request books on this server.'**
+  String get breqNoAccess;
+
+  /// No description provided for @breqTitleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Book title'**
+  String get breqTitleHint;
+
+  /// No description provided for @breqAuthorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Author'**
+  String get breqAuthorHint;
+
+  /// No description provided for @breqKindAudiobook.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobook'**
+  String get breqKindAudiobook;
+
+  /// No description provided for @breqKindEbook.
+  ///
+  /// In en, this message translates to:
+  /// **'E-book'**
+  String get breqKindEbook;
+
+  /// No description provided for @breqKindComic.
+  ///
+  /// In en, this message translates to:
+  /// **'Comic'**
+  String get breqKindComic;
+
+  /// No description provided for @breqSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get breqSearch;
+
+  /// No description provided for @breqSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching...'**
+  String get breqSearching;
+
+  /// No description provided for @breqSearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search. Check your connection and try again.'**
+  String get breqSearchFailed;
+
+  /// No description provided for @breqSearchPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Search for a book the library does not have yet to request it.'**
+  String get breqSearchPrompt;
+
+  /// No description provided for @breqNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching books found'**
+  String get breqNoResults;
+
+  /// No description provided for @breqInLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'In your library'**
+  String get breqInLibrary;
+
+  /// No description provided for @breqYouAsked.
+  ///
+  /// In en, this message translates to:
+  /// **'You requested this'**
+  String get breqYouAsked;
+
+  /// No description provided for @breqSomeoneAsked.
+  ///
+  /// In en, this message translates to:
+  /// **'Already requested by someone else'**
+  String get breqSomeoneAsked;
+
+  /// No description provided for @breqView.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get breqView;
+
+  /// No description provided for @breqRequest.
+  ///
+  /// In en, this message translates to:
+  /// **'Request'**
+  String get breqRequest;
+
+  /// No description provided for @breqRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested'**
+  String get breqRequested;
+
+  /// No description provided for @breqAddMeToo.
+  ///
+  /// In en, this message translates to:
+  /// **'Add me too'**
+  String get breqAddMeToo;
+
+  /// No description provided for @breqLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Library'**
+  String get breqLibrary;
+
+  /// No description provided for @breqLibraryApprover.
+  ///
+  /// In en, this message translates to:
+  /// **'Let the approver decide'**
+  String get breqLibraryApprover;
+
+  /// No description provided for @breqLibraryChoose.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a library'**
+  String get breqLibraryChoose;
+
+  /// No description provided for @breqNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Note for the approver'**
+  String get breqNote;
+
+  /// No description provided for @breqNoteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Anything worth knowing about this request'**
+  String get breqNoteHint;
+
+  /// No description provided for @breqAutoApproved.
+  ///
+  /// In en, this message translates to:
+  /// **'Your requests are approved right away.'**
+  String get breqAutoApproved;
+
+  /// No description provided for @breqSubmitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Request submitted'**
+  String get breqSubmitted;
+
+  /// No description provided for @breqJoined.
+  ///
+  /// In en, this message translates to:
+  /// **'Added you to the existing request'**
+  String get breqJoined;
+
+  /// No description provided for @breqFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send the request'**
+  String get breqFailed;
+
+  /// No description provided for @breqStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get breqStatusPending;
+
+  /// No description provided for @breqStatusApproved.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved'**
+  String get breqStatusApproved;
+
+  /// No description provided for @breqStatusRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'Rejected'**
+  String get breqStatusRejected;
+
+  /// No description provided for @breqStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get breqStatusCancelled;
+
+  /// No description provided for @breqStatusSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching'**
+  String get breqStatusSearching;
+
+  /// No description provided for @breqStatusGrabbed.
+  ///
+  /// In en, this message translates to:
+  /// **'Release found'**
+  String get breqStatusGrabbed;
+
+  /// No description provided for @breqStatusDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get breqStatusDownloading;
+
+  /// No description provided for @breqStatusImporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing'**
+  String get breqStatusImporting;
+
+  /// No description provided for @breqStatusNeedsReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs review'**
+  String get breqStatusNeedsReview;
+
+  /// No description provided for @breqStatusAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get breqStatusAvailable;
+
+  /// No description provided for @breqStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get breqStatusFailed;
+
+  /// No description provided for @breqWaitingApproval.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for approval'**
+  String get breqWaitingApproval;
+
+  /// No description provided for @breqWaitingRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for a release to be picked'**
+  String get breqWaitingRelease;
+
+  /// No description provided for @breqLookingForRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for a release'**
+  String get breqLookingForRelease;
+
+  /// No description provided for @breqStartingDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting the download'**
+  String get breqStartingDownload;
+
+  /// No description provided for @breqAddingToLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Adding to the library'**
+  String get breqAddingToLibrary;
+
+  /// No description provided for @breqWaitingCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for a manual check'**
+  String get breqWaitingCheck;
+
+  /// No description provided for @breqReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready in your library'**
+  String get breqReady;
+
+  /// No description provided for @breqSomethingWrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong'**
+  String get breqSomethingWrong;
+
+  /// No description provided for @breqShowHidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Show hidden'**
+  String get breqShowHidden;
+
+  /// No description provided for @breqHidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Hidden'**
+  String get breqHidden;
+
+  /// No description provided for @breqMineEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'You haven\'t requested any books yet.'**
+  String get breqMineEmpty;
+
+  /// No description provided for @breqAllEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No requests yet.'**
+  String get breqAllEmpty;
+
+  /// No description provided for @breqLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load requests.'**
+  String get breqLoadFailed;
+
+  /// No description provided for @breqLoadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get breqLoadMore;
+
+  /// No description provided for @breqApprove.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve'**
+  String get breqApprove;
+
+  /// No description provided for @breqReject.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject'**
+  String get breqReject;
+
+  /// No description provided for @breqCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel request'**
+  String get breqCancel;
+
+  /// No description provided for @breqHide.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide from my list'**
+  String get breqHide;
+
+  /// No description provided for @breqUnhide.
+  ///
+  /// In en, this message translates to:
+  /// **'Show in my list'**
+  String get breqUnhide;
+
+  /// No description provided for @breqLeave.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave request'**
+  String get breqLeave;
+
+  /// No description provided for @breqDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete request'**
+  String get breqDelete;
+
+  /// No description provided for @breqOpenBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Open book'**
+  String get breqOpenBook;
+
+  /// No description provided for @breqCancelConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel this request? A download in progress stops too.'**
+  String get breqCancelConfirm;
+
+  /// No description provided for @breqDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this request? This can\'t be undone.'**
+  String get breqDeleteConfirm;
+
+  /// No description provided for @breqRejectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject request'**
+  String get breqRejectTitle;
+
+  /// No description provided for @breqRejectReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason (optional)'**
+  String get breqRejectReason;
+
+  /// No description provided for @breqApproveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve request'**
+  String get breqApproveTitle;
+
+  /// No description provided for @breqApproveLibraryNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the library this book goes into.'**
+  String get breqApproveLibraryNeeded;
+
+  /// No description provided for @breqApprovedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Request approved'**
+  String get breqApprovedToast;
+
+  /// No description provided for @breqRejectedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Request rejected'**
+  String get breqRejectedToast;
+
+  /// No description provided for @breqCancelledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Request cancelled'**
+  String get breqCancelledToast;
+
+  /// No description provided for @breqHiddenToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Hidden from your list'**
+  String get breqHiddenToast;
+
+  /// No description provided for @breqRestoredToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Back on your list'**
+  String get breqRestoredToast;
+
+  /// No description provided for @breqDeletedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Request deleted'**
+  String get breqDeletedToast;
+
+  /// No description provided for @breqLeftToast.
+  ///
+  /// In en, this message translates to:
+  /// **'You left this request'**
+  String get breqLeftToast;
+
+  /// No description provided for @breqActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the request'**
+  String get breqActionFailed;
+
+  /// No description provided for @breqFactRequestedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested by'**
+  String get breqFactRequestedBy;
+
+  /// No description provided for @breqFactRequestedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested on'**
+  String get breqFactRequestedOn;
+
+  /// No description provided for @breqFactLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Library'**
+  String get breqFactLibrary;
+
+  /// No description provided for @breqFactDecidedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Decided by'**
+  String get breqFactDecidedBy;
+
+  /// No description provided for @breqFactNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Note from the requester'**
+  String get breqFactNote;
+
+  /// No description provided for @breqFactDecisionNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Decision note'**
+  String get breqFactDecisionNote;
+
+  /// No description provided for @breqFactAlsoWanted.
+  ///
+  /// In en, this message translates to:
+  /// **'Also wanted by'**
+  String get breqFactAlsoWanted;
+
+  /// No description provided for @breqLibraryCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Request a book'**
+  String get breqLibraryCta;
+
+  /// No description provided for @breqSettingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for books the library does not have yet'**
+  String get breqSettingsSubtitle;
+
+  /// No description provided for @navHoldBookRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Book requests'**
+  String get navHoldBookRequests;
+
+  /// No description provided for @breqLibraryDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default ({library})'**
+  String breqLibraryDefault(String library);
+
+  /// No description provided for @breqFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send the request: {reason}'**
+  String breqFailedReason(String reason);
+
+  /// No description provided for @breqDownloadingPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading, {percent}%'**
+  String breqDownloadingPercent(int percent);
+
+  /// No description provided for @breqAddedTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to {library}'**
+  String breqAddedTo(String library);
+
+  /// No description provided for @breqRejectedWithNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Rejected: {note}'**
+  String breqRejectedWithNote(String note);
+
+  /// No description provided for @breqFailedWithReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {reason}'**
+  String breqFailedWithReason(String reason);
+
+  /// No description provided for @breqRequestedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested by {name}'**
+  String breqRequestedBy(String name);
+
+  /// No description provided for @breqActionFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the request: {reason}'**
+  String breqActionFailedReason(String reason);
+
+  /// No description provided for @breqFooterCta.
+  ///
+  /// In en, this message translates to:
+  /// **'Request \"{query}\"'**
+  String breqFooterCta(String query);
+
+  /// No description provided for @breqCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No requests} =1{1 request} other{{count} requests}}'**
+  String breqCount(int count);
+
+  /// No description provided for @breqFindRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Find a release'**
+  String get breqFindRelease;
+
+  /// No description provided for @breqTryAnotherRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Try another release'**
+  String get breqTryAnotherRelease;
+
+  /// No description provided for @breqApproveAndFind.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve and find a release'**
+  String get breqApproveAndFind;
+
+  /// No description provided for @breqReviewButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Review download'**
+  String get breqReviewButton;
+
+  /// No description provided for @breqStopDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop download'**
+  String get breqStopDownload;
+
+  /// No description provided for @breqStopDownloadConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop this download? The request goes back to approved so another release can be picked.'**
+  String get breqStopDownloadConfirm;
+
+  /// No description provided for @breqDiscardImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard download'**
+  String get breqDiscardImport;
+
+  /// No description provided for @breqDiscardConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard this download? The request is marked failed and can be tried again with another release.'**
+  String get breqDiscardConfirm;
+
+  /// No description provided for @breqFileAnyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to library'**
+  String get breqFileAnyway;
+
+  /// No description provided for @breqFiledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to the library'**
+  String get breqFiledToast;
+
+  /// No description provided for @breqDiscardedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Download discarded'**
+  String get breqDiscardedToast;
+
+  /// No description provided for @breqStoppedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Download stopped'**
+  String get breqStoppedToast;
+
+  /// No description provided for @breqGrabTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download this release?'**
+  String get breqGrabTitle;
+
+  /// No description provided for @breqGrab.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get breqGrab;
+
+  /// No description provided for @breqGrabbed.
+  ///
+  /// In en, this message translates to:
+  /// **'Download started'**
+  String get breqGrabbed;
+
+  /// No description provided for @breqGrabFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start that download'**
+  String get breqGrabFailed;
+
+  /// No description provided for @breqReleaseVipWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'This tracker only lets VIP accounts download it.'**
+  String get breqReleaseVipWarning;
+
+  /// No description provided for @breqReleaseNoBookFile.
+  ///
+  /// In en, this message translates to:
+  /// **'This release has no book file BookOrbit can add to a library.'**
+  String get breqReleaseNoBookFile;
+
+  /// No description provided for @breqReleaseCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check what\'s in this release. Try again or pick another one.'**
+  String get breqReleaseCheckFailed;
+
+  /// No description provided for @breqCheckingRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the files...'**
+  String get breqCheckingRelease;
+
+  /// No description provided for @breqSearchAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Search again'**
+  String get breqSearchAgain;
+
+  /// No description provided for @breqSearchTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Search terms'**
+  String get breqSearchTerms;
+
+  /// No description provided for @breqIsbnHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty to search by title and author'**
+  String get breqIsbnHint;
+
+  /// No description provided for @breqSearchingIndexers.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching your indexers. This can take up to a minute.'**
+  String get breqSearchingIndexers;
+
+  /// No description provided for @breqReleasesFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search for releases.'**
+  String get breqReleasesFailed;
+
+  /// No description provided for @breqNoSourcesSetUp.
+  ///
+  /// In en, this message translates to:
+  /// **'No search sources are set up in BookOrbit.'**
+  String get breqNoSourcesSetUp;
+
+  /// No description provided for @breqNoSourcesOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Every search source is switched off in BookOrbit.'**
+  String get breqNoSourcesOn;
+
+  /// No description provided for @breqNoSourceCarries.
+  ///
+  /// In en, this message translates to:
+  /// **'None of your search sources carry this kind of book.'**
+  String get breqNoSourceCarries;
+
+  /// No description provided for @breqNoReleases.
+  ///
+  /// In en, this message translates to:
+  /// **'No releases found. Try different search terms.'**
+  String get breqNoReleases;
+
+  /// No description provided for @breqFromCache.
+  ///
+  /// In en, this message translates to:
+  /// **'from a recent search'**
+  String get breqFromCache;
+
+  /// No description provided for @breqIndexerUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'sign-in failed'**
+  String get breqIndexerUnauthorized;
+
+  /// No description provided for @breqIndexerThrottled.
+  ///
+  /// In en, this message translates to:
+  /// **'busy'**
+  String get breqIndexerThrottled;
+
+  /// No description provided for @breqIndexerTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'timed out'**
+  String get breqIndexerTimeout;
+
+  /// No description provided for @breqIndexerUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'unreachable'**
+  String get breqIndexerUnreachable;
+
+  /// No description provided for @breqIndexerNoMedium.
+  ///
+  /// In en, this message translates to:
+  /// **'does not carry this'**
+  String get breqIndexerNoMedium;
+
+  /// No description provided for @breqIndexerError.
+  ///
+  /// In en, this message translates to:
+  /// **'failed'**
+  String get breqIndexerError;
+
+  /// No description provided for @breqSortBest.
+  ///
+  /// In en, this message translates to:
+  /// **'Best match'**
+  String get breqSortBest;
+
+  /// No description provided for @breqSortSeeders.
+  ///
+  /// In en, this message translates to:
+  /// **'Seeders'**
+  String get breqSortSeeders;
+
+  /// No description provided for @breqSortSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get breqSortSize;
+
+  /// No description provided for @breqSortNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest'**
+  String get breqSortNewest;
+
+  /// No description provided for @breqFreeleech.
+  ///
+  /// In en, this message translates to:
+  /// **'Freeleech'**
+  String get breqFreeleech;
+
+  /// No description provided for @breqVipOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'VIP only'**
+  String get breqVipOnly;
+
+  /// No description provided for @breqAlreadyGrabbed.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded before'**
+  String get breqAlreadyGrabbed;
+
+  /// No description provided for @breqReasonIsbn.
+  ///
+  /// In en, this message translates to:
+  /// **'ISBN'**
+  String get breqReasonIsbn;
+
+  /// No description provided for @breqReasonTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get breqReasonTitle;
+
+  /// No description provided for @breqReasonAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'Author'**
+  String get breqReasonAuthor;
+
+  /// No description provided for @breqReasonUnknownFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown format'**
+  String get breqReasonUnknownFormat;
+
+  /// No description provided for @breqReasonExpectedSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get breqReasonExpectedSize;
+
+  /// No description provided for @breqReasonSuspiciousSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Unusual size'**
+  String get breqReasonSuspiciousSize;
+
+  /// No description provided for @breqReasonFreeleech.
+  ///
+  /// In en, this message translates to:
+  /// **'Freeleech'**
+  String get breqReasonFreeleech;
+
+  /// No description provided for @breqReasonSeveralBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Several books'**
+  String get breqReasonSeveralBooks;
+
+  /// No description provided for @breqReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download waiting for a check'**
+  String get breqReviewTitle;
+
+  /// No description provided for @breqReviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the download details.'**
+  String get breqReviewFailed;
+
+  /// No description provided for @breqReviewDockGone.
+  ///
+  /// In en, this message translates to:
+  /// **'The downloaded files are no longer in the Book Dock.'**
+  String get breqReviewDockGone;
+
+  /// No description provided for @breqReviewNoLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'This request has no library to add the book to.'**
+  String get breqReviewNoLibrary;
+
+  /// No description provided for @breqGrabFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start that download: {reason}'**
+  String breqGrabFailedReason(String reason);
+
+  /// No description provided for @breqReleaseCheckFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check what\'s in this release: {reason}'**
+  String breqReleaseCheckFailedReason(String reason);
+
+  /// No description provided for @breqReleasesFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t search for releases: {reason}'**
+  String breqReleasesFailedReason(String reason);
+
+  /// No description provided for @breqReviewFailedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the download details: {reason}'**
+  String breqReviewFailedReason(String reason);
+
+  /// No description provided for @breqReleaseCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No releases} =1{1 release} other{{count} releases}}'**
+  String breqReleaseCount(int count);
+
+  /// No description provided for @breqFileCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String breqFileCount(int count);
+
+  /// No description provided for @breqReviewFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String breqReviewFiles(int count);
+
+  /// No description provided for @breqSeeders.
+  ///
+  /// In en, this message translates to:
+  /// **'{seeders} seeders, {leechers} leechers'**
+  String breqSeeders(int seeders, int leechers);
+
+  /// No description provided for @breqScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Score {score}'**
+  String breqScore(int score);
+
+  /// No description provided for @breqReasonPreferredFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Preferred {format}'**
+  String breqReasonPreferredFormat(String format);
+
+  /// No description provided for @breqReasonFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'{format}'**
+  String breqReasonFormat(String format);
+
+  /// No description provided for @breqReasonSeeders.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} seeders'**
+  String breqReasonSeeders(String count);
+
+  /// No description provided for @breqReviewScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Match score {score}. Downloads scoring {threshold} or more are added on their own.'**
+  String breqReviewScore(int score, int threshold);
+
+  /// No description provided for @breqReviewRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested: {value}'**
+  String breqReviewRequested(String value);
+
+  /// No description provided for @breqReviewImported.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded: {value}'**
+  String breqReviewImported(String value);
+
+  /// No description provided for @breqKindBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Both'**
+  String get breqKindBoth;
+
+  /// No description provided for @breqEbookLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'E-book library'**
+  String get breqEbookLibrary;
+
+  /// No description provided for @breqAudiobookLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobook library'**
+  String get breqAudiobookLibrary;
+
+  /// No description provided for @breqRequestBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Request both'**
+  String get breqRequestBoth;
+
+  /// No description provided for @breqAddMeToBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Add me to both'**
+  String get breqAddMeToBoth;
+
+  /// No description provided for @breqRequestEbook.
+  ///
+  /// In en, this message translates to:
+  /// **'Request e-book'**
+  String get breqRequestEbook;
+
+  /// No description provided for @breqRequestAudiobook.
+  ///
+  /// In en, this message translates to:
+  /// **'Request audiobook'**
+  String get breqRequestAudiobook;
+
+  /// No description provided for @breqAddMeEbook.
+  ///
+  /// In en, this message translates to:
+  /// **'Add me to the e-book request'**
+  String get breqAddMeEbook;
+
+  /// No description provided for @breqAddMeAudiobook.
+  ///
+  /// In en, this message translates to:
+  /// **'Add me to the audiobook request'**
+  String get breqAddMeAudiobook;
+
+  /// No description provided for @breqPairSubmitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested the e-book and the audiobook'**
+  String get breqPairSubmitted;
+
+  /// No description provided for @breqPairOneJoined.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested both. One was already on its way, so you were added to that request'**
+  String get breqPairOneJoined;
+
+  /// No description provided for @breqJoinedBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Added you to both requests'**
+  String get breqJoinedBoth;
+
+  /// No description provided for @breqJoinsOwned.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested. It will join the copy already in your library'**
+  String get breqJoinsOwned;
+
   /// No description provided for @speedBookmarkInControls.
   ///
   /// In en, this message translates to:
@@ -14505,6 +16185,18 @@ abstract class AppLocalizations {
   /// **'Scanner, storage and sorting'**
   String get adminServerSettingsSubtitle;
 
+  /// No description provided for @adminAuthentication.
+  ///
+  /// In en, this message translates to:
+  /// **'Authentication'**
+  String get adminAuthentication;
+
+  /// No description provided for @adminAuthenticationSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Password and OpenID Connect sign-in'**
+  String get adminAuthenticationSubtitle;
+
   /// No description provided for @adminStats.
   ///
   /// In en, this message translates to:
@@ -14786,6 +16478,282 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sorting prefixes updated'**
   String get srvPrefixesSaved;
+
+  /// No description provided for @authSetLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load authentication settings'**
+  String get authSetLoadFailed;
+
+  /// No description provided for @authSetCustomMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom message on login'**
+  String get authSetCustomMessage;
+
+  /// No description provided for @authSetMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get authSetMessage;
+
+  /// No description provided for @authSetPasswordAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'Password authentication'**
+  String get authSetPasswordAuth;
+
+  /// No description provided for @authSetOpenId.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenID Connect authentication'**
+  String get authSetOpenId;
+
+  /// No description provided for @authSetGuide.
+  ///
+  /// In en, this message translates to:
+  /// **'Setup guide'**
+  String get authSetGuide;
+
+  /// No description provided for @authSetIssuerUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Issuer URL'**
+  String get authSetIssuerUrl;
+
+  /// No description provided for @authSetAutoPopulate.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-populate'**
+  String get authSetAutoPopulate;
+
+  /// No description provided for @authSetAuthorizeUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorize URL'**
+  String get authSetAuthorizeUrl;
+
+  /// No description provided for @authSetTokenUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Token URL'**
+  String get authSetTokenUrl;
+
+  /// No description provided for @authSetUserinfoUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Userinfo URL'**
+  String get authSetUserinfoUrl;
+
+  /// No description provided for @authSetJwksUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'JWKS URL'**
+  String get authSetJwksUrl;
+
+  /// No description provided for @authSetLogoutUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Logout URL'**
+  String get authSetLogoutUrl;
+
+  /// No description provided for @authSetClientId.
+  ///
+  /// In en, this message translates to:
+  /// **'Client ID'**
+  String get authSetClientId;
+
+  /// No description provided for @authSetClientSecret.
+  ///
+  /// In en, this message translates to:
+  /// **'Client secret'**
+  String get authSetClientSecret;
+
+  /// No description provided for @authSetSigningAlgorithm.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing algorithm'**
+  String get authSetSigningAlgorithm;
+
+  /// No description provided for @authSetRedirectUris.
+  ///
+  /// In en, this message translates to:
+  /// **'Allowed mobile redirect URIs'**
+  String get authSetRedirectUris;
+
+  /// No description provided for @authSetRedirectUrisInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.'**
+  String get authSetRedirectUrisInfo;
+
+  /// No description provided for @authSetAddRedirectUri.
+  ///
+  /// In en, this message translates to:
+  /// **'Add URI'**
+  String get authSetAddRedirectUri;
+
+  /// No description provided for @authSetAddAbsorbRedirect.
+  ///
+  /// In en, this message translates to:
+  /// **'Add absorb://oauth'**
+  String get authSetAddAbsorbRedirect;
+
+  /// No description provided for @authSetSubfolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Subfolder for redirect URLs'**
+  String get authSetSubfolder;
+
+  /// No description provided for @authSetSubfolderNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get authSetSubfolderNone;
+
+  /// No description provided for @authSetWebRedirectInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow these URLs in your OAuth provider so sign-in can return to the web app:'**
+  String get authSetWebRedirectInfo;
+
+  /// No description provided for @authSetButtonText.
+  ///
+  /// In en, this message translates to:
+  /// **'Button text'**
+  String get authSetButtonText;
+
+  /// No description provided for @authSetMatchExisting.
+  ///
+  /// In en, this message translates to:
+  /// **'Match existing users by'**
+  String get authSetMatchExisting;
+
+  /// No description provided for @authSetMatchNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not match'**
+  String get authSetMatchNone;
+
+  /// No description provided for @authSetMatchEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get authSetMatchEmail;
+
+  /// No description provided for @authSetMatchUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get authSetMatchUsername;
+
+  /// No description provided for @authSetMatchExistingInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Used to link existing users. Once linked, users are matched by their unique ID from the provider.'**
+  String get authSetMatchExistingInfo;
+
+  /// No description provided for @authSetAutoLaunch.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto launch'**
+  String get authSetAutoLaunch;
+
+  /// No description provided for @authSetAutoLaunchInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the provider automatically from the web login page. /login?autoLaunch=0 skips it.'**
+  String get authSetAutoLaunchInfo;
+
+  /// No description provided for @authSetAutoRegister.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto register'**
+  String get authSetAutoRegister;
+
+  /// No description provided for @authSetAutoRegisterInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Create new users automatically after they sign in'**
+  String get authSetAutoRegisterInfo;
+
+  /// No description provided for @authSetClaimsInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave these empty to turn off group and permission assignment. New users then get the User role.'**
+  String get authSetClaimsInfo;
+
+  /// No description provided for @authSetGroupClaim.
+  ///
+  /// In en, this message translates to:
+  /// **'Group claim'**
+  String get authSetGroupClaim;
+
+  /// No description provided for @authSetGroupClaimInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim that lists the user\'s groups, usually groups. Groups named admin, user or guest set the role, and the highest one wins. If no group matches, sign-in is refused.'**
+  String get authSetGroupClaimInfo;
+
+  /// No description provided for @authSetPermsClaim.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced permission claim'**
+  String get authSetPermsClaim;
+
+  /// No description provided for @authSetPermsClaimInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Claim with permissions for non-admin users. If the claim is missing, sign-in is refused, and a missing option counts as off. Expected format:'**
+  String get authSetPermsClaimInfo;
+
+  /// No description provided for @authSetRestartNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart the server after saving to apply OpenID Connect changes.'**
+  String get authSetRestartNote;
+
+  /// No description provided for @authSetNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'No changes to save'**
+  String get authSetNoChanges;
+
+  /// No description provided for @authSetNeedOneMethod.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on at least one sign-in method'**
+  String get authSetNeedOneMethod;
+
+  /// No description provided for @authSetFieldRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'{field} is required'**
+  String authSetFieldRequired(String field);
+
+  /// No description provided for @authSetInvalidRedirectUri.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid redirect URI: {uri}'**
+  String authSetInvalidRedirectUri(String uri);
+
+  /// No description provided for @authSetAsteriskAlone.
+  ///
+  /// In en, this message translates to:
+  /// **'An asterisk (*) must be the only redirect URI'**
+  String get authSetAsteriskAlone;
+
+  /// No description provided for @authSetInvalidClaim.
+  ///
+  /// In en, this message translates to:
+  /// **'{field} is not a valid claim name'**
+  String authSetInvalidClaim(String field);
+
+  /// No description provided for @authSetIssuerFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read the issuer: {error}'**
+  String authSetIssuerFailed(String error);
 
   /// No description provided for @libNoneYet.
   ///
@@ -17624,6 +19592,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This account still has its default password. Change it in BookOrbit, then sign in again.'**
   String get authBookOrbitDefaultPassword;
+
+  /// No description provided for @authBookOrbitPasswordOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Password sign-in is turned off on this server. Sign in with a magic link or single sign-on.'**
+  String get authBookOrbitPasswordOff;
 
   /// No description provided for @authServerIsBookOrbit.
   ///

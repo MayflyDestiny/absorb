@@ -889,6 +889,606 @@
   "chapterProgressOffSubtitle": "Off - they show full book progress",
   "chapterProgressInNotificationIos": "Chapter progress on lock screen & CarPlay",
   "chapterProgressOnSubtitleIos": "On - lock screen & CarPlay show chapter progress",
+  "nowPlayingText": "Now playing text",
+  "nowPlayingTextSubtitle": "Choose what the media controls show on each line",
+  "nowPlayingTopLine": "Top line",
+  "nowPlayingSecondLine": "Second line",
+  "nowPlayingNotShown": "Not shown",
+  "nowPlayingTopLineRequired": "The top line needs at least one item",
+  "nowPlayingPieceChapter": "Chapter",
+  "nowPlayingPieceTitle": "Book title",
+  "nowPlayingPieceNarrator": "Narrator",
+  "nowPlayingPieceSeries": "Series",
+  "nowPlayingPiecePercent": "Book percentage",
+  "nowPlayingPieceChapterNumber": "Chapter number",
+  "nowPlayingPieceTimeLeft": "Time left",
+  "nowPlayingChapterNumber": "Ch. {number}/{total}",
+  "@nowPlayingChapterNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "nowPlayingTimeLeft": "{time} left",
+  "@nowPlayingTimeLeft": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockBadgePending": "Pending",
+  "bookDockBadgeExtracting": "Reading file",
+  "bookDockBadgeFetching": "Looking up",
+  "bookDockBadgeError": "Error",
+  "bookDockNeedsReview": "Needs review",
+  "bookDockNoMatch": "No match",
+  "bookDockApplied": "Applied",
+  "bookDockNotApplied": "Found details not used",
+  "bookDockNoDestination": "No destination set",
+  "bookDockNoAuthor": "No author yet",
+  "bookDockLookUpAgain": "Look up again",
+  "bookDockLookingUp": "Looking up details again",
+  "bookDockLookUpFailed": "Couldn't look up details",
+  "bookDockProposedChanges": "Proposed changes",
+  "bookDockNoChanges": "No details found online yet",
+  "bookDockStillReading": "The server is still reading this file",
+  "bookDockRoleBook": "Book",
+  "bookDockRoleCover": "Cover",
+  "bookDockRoleMetadata": "Metadata",
+  "bookDockRoleExtra": "Extra",
+  "bookDockFieldTitle": "Title",
+  "bookDockFieldSubtitle": "Subtitle",
+  "bookDockFieldAuthors": "Authors",
+  "bookDockFieldSeries": "Series",
+  "bookDockFieldPublisher": "Publisher",
+  "bookDockFieldYear": "Year",
+  "bookDockFieldLanguage": "Language",
+  "bookDockFieldIsbn": "ISBN",
+  "bookDockMatch": "{percent}% match",
+  "@bookDockMatch": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "bookDockFileCount": "{count, plural, =1{1 file} other{{count} files}}",
+  "@bookDockFileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookDockGoesTo": "Goes to {library}",
+  "@bookDockGoesTo": {
+    "placeholders": {
+      "library": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockChangedFields": "{count, plural, =1{1 field} other{{count} fields}}",
+  "@bookDockChangedFields": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookDockFilesInEntry": "{count, plural, =1{File in this entry} other{{count} files in this entry}}",
+  "@bookDockFilesInEntry": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookDockAdded": "Added {date}",
+  "@bookDockAdded": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockAddToLibrary": "Add to library",
+  "bookDockUseFound": "Use found details",
+  "bookDockRemoveTitle": "Remove from Book Dock?",
+  "bookDockRemoveFailed": "Couldn't remove this file",
+  "bookDockPickLibrary": "Add to which library?",
+  "bookDockNoLibraries": "Your account can't add books to a library",
+  "bookDockFileFailed": "Couldn't add this file to the library",
+  "bookDockDuplicateBody": "A file with this name is already in that library. Remove it from Book Dock?",
+  "bookDockDetailsUpdated": "Details updated",
+  "bookDockUseFoundFailed": "No found details to use",
+  "bookDockRemoveBody": "This deletes {title} from the server.",
+  "@bookDockRemoveBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockRemoved": "Removed {title} from Book Dock",
+  "@bookDockRemoved": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockFiled": "Added {title} to {library}",
+  "@bookDockFiled": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "library": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockFileFailedReason": "Couldn't add this file: {reason}",
+  "@bookDockFileFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockDuplicateTitle": "Already in {library}",
+  "@bookDockDuplicateTitle": {
+    "placeholders": {
+      "library": {
+        "type": "String"
+      }
+    }
+  },
+  "bomatchSearchAll": "Search all sources",
+  "bomatchSearching": "Searching...",
+  "bomatchSearchFailed": "Couldn't search for matches. Check your connection and try again.",
+  "bomatchNoResults": "No matches found",
+  "bomatchStrong": "Strong matches",
+  "bomatchPossible": "Possible matches",
+  "bomatchSourceTimeout": "timed out",
+  "bomatchSourceBusy": "busy",
+  "bomatchSourceFailed": "failed",
+  "bomatchLinked": "Linked",
+  "bomatchSameIsbn": "Same ISBN",
+  "bomatchFewDetails": "Few details",
+  "bomatchBack": "All results",
+  "bomatchFillEmpty": "Fill empty",
+  "bomatchTakeAll": "Take all",
+  "bomatchOnlyDifferences": "Only differences",
+  "bomatchNow": "Now",
+  "bomatchEmpty": "Empty",
+  "bomatchKindNew": "New",
+  "bomatchKindChange": "Change",
+  "bomatchKindSmall": "Small change",
+  "bomatchKindSame": "Same",
+  "bomatchKindNone": "Not in result",
+  "bomatchKeep": "Keep",
+  "bomatchUse": "Use",
+  "bomatchMerge": "Merge",
+  "bomatchReplace": "Replace",
+  "bomatchUseThis": "Use this",
+  "bomatchChosen": "Chosen",
+  "bomatchOther": "{count, plural, =1{1 other book} other{{count} other books}}",
+  "@bomatchOther": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bomatchChanged": "{count, plural, =1{1 change} other{{count} changes}}",
+  "@bomatchChanged": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bomatchNew": "{count, plural, =1{1 new} other{{count} new}}",
+  "@bomatchNew": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bomatchApply": "{count, plural, =0{Apply} =1{Apply 1 change} other{Apply {count} changes}}",
+  "@bomatchApply": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bomatchOtherSources": "{count, plural, =1{1 other source} other{{count} other sources}}",
+  "@bomatchOtherSources": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bomatchFrom": "From {source}",
+  "@bomatchFrom": {
+    "placeholders": {
+      "source": {
+        "type": "String"
+      }
+    }
+  },
+  "breqTitle": "Book requests",
+  "breqTabRequest": "Request a book",
+  "breqTabMine": "My requests",
+  "breqTabAll": "All requests",
+  "breqNoAccess": "Your account can't request books on this server.",
+  "breqTitleHint": "Book title",
+  "breqAuthorHint": "Author",
+  "breqKindAudiobook": "Audiobook",
+  "breqKindEbook": "E-book",
+  "breqKindComic": "Comic",
+  "breqSearch": "Search",
+  "breqSearching": "Searching...",
+  "breqSearchFailed": "Couldn't search. Check your connection and try again.",
+  "breqSearchPrompt": "Search for a book the library does not have yet to request it.",
+  "breqNoResults": "No matching books found",
+  "breqInLibrary": "In your library",
+  "breqYouAsked": "You requested this",
+  "breqSomeoneAsked": "Already requested by someone else",
+  "breqView": "View",
+  "breqRequest": "Request",
+  "breqRequested": "Requested",
+  "breqAddMeToo": "Add me too",
+  "breqLibrary": "Library",
+  "breqLibraryApprover": "Let the approver decide",
+  "breqLibraryChoose": "Choose a library",
+  "breqNote": "Note for the approver",
+  "breqNoteHint": "Anything worth knowing about this request",
+  "breqAutoApproved": "Your requests are approved right away.",
+  "breqSubmitted": "Request submitted",
+  "breqJoined": "Added you to the existing request",
+  "breqFailed": "Couldn't send the request",
+  "breqStatusPending": "Pending",
+  "breqStatusApproved": "Approved",
+  "breqStatusRejected": "Rejected",
+  "breqStatusCancelled": "Cancelled",
+  "breqStatusSearching": "Searching",
+  "breqStatusGrabbed": "Release found",
+  "breqStatusDownloading": "Downloading",
+  "breqStatusImporting": "Importing",
+  "breqStatusNeedsReview": "Needs review",
+  "breqStatusAvailable": "Available",
+  "breqStatusFailed": "Failed",
+  "breqWaitingApproval": "Waiting for approval",
+  "breqWaitingRelease": "Waiting for a release to be picked",
+  "breqLookingForRelease": "Looking for a release",
+  "breqStartingDownload": "Starting the download",
+  "breqAddingToLibrary": "Adding to the library",
+  "breqWaitingCheck": "Waiting for a manual check",
+  "breqReady": "Ready in your library",
+  "breqSomethingWrong": "Something went wrong",
+  "breqShowHidden": "Show hidden",
+  "breqHidden": "Hidden",
+  "breqMineEmpty": "You haven't requested any books yet.",
+  "breqAllEmpty": "No requests yet.",
+  "breqLoadFailed": "Couldn't load requests.",
+  "breqLoadMore": "Load more",
+  "breqApprove": "Approve",
+  "breqReject": "Reject",
+  "breqCancel": "Cancel request",
+  "breqHide": "Hide from my list",
+  "breqUnhide": "Show in my list",
+  "breqLeave": "Leave request",
+  "breqDelete": "Delete request",
+  "breqOpenBook": "Open book",
+  "breqCancelConfirm": "Cancel this request? A download in progress stops too.",
+  "breqDeleteConfirm": "Delete this request? This can't be undone.",
+  "breqRejectTitle": "Reject request",
+  "breqRejectReason": "Reason (optional)",
+  "breqApproveTitle": "Approve request",
+  "breqApproveLibraryNeeded": "Choose the library this book goes into.",
+  "breqApprovedToast": "Request approved",
+  "breqRejectedToast": "Request rejected",
+  "breqCancelledToast": "Request cancelled",
+  "breqHiddenToast": "Hidden from your list",
+  "breqRestoredToast": "Back on your list",
+  "breqDeletedToast": "Request deleted",
+  "breqLeftToast": "You left this request",
+  "breqActionFailed": "Couldn't update the request",
+  "breqFactRequestedBy": "Requested by",
+  "breqFactRequestedOn": "Requested on",
+  "breqFactLibrary": "Library",
+  "breqFactDecidedBy": "Decided by",
+  "breqFactNote": "Note from the requester",
+  "breqFactDecisionNote": "Decision note",
+  "breqFactAlsoWanted": "Also wanted by",
+  "breqLibraryCta": "Request a book",
+  "breqSettingsSubtitle": "Ask for books the library does not have yet",
+  "navHoldBookRequests": "Book requests",
+  "breqLibraryDefault": "Default ({library})",
+  "@breqLibraryDefault": {
+    "placeholders": {
+      "library": {
+        "type": "String"
+      }
+    }
+  },
+  "breqFailedReason": "Couldn't send the request: {reason}",
+  "@breqFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqDownloadingPercent": "Downloading, {percent}%",
+  "@breqDownloadingPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "breqAddedTo": "Added to {library}",
+  "@breqAddedTo": {
+    "placeholders": {
+      "library": {
+        "type": "String"
+      }
+    }
+  },
+  "breqRejectedWithNote": "Rejected: {note}",
+  "@breqRejectedWithNote": {
+    "placeholders": {
+      "note": {
+        "type": "String"
+      }
+    }
+  },
+  "breqFailedWithReason": "Failed: {reason}",
+  "@breqFailedWithReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqRequestedBy": "Requested by {name}",
+  "@breqRequestedBy": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "breqActionFailedReason": "Couldn't update the request: {reason}",
+  "@breqActionFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqFooterCta": "Request \"{query}\"",
+  "@breqFooterCta": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "breqCount": "{count, plural, =0{No requests} =1{1 request} other{{count} requests}}",
+  "@breqCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "breqFindRelease": "Find a release",
+  "breqTryAnotherRelease": "Try another release",
+  "breqApproveAndFind": "Approve and find a release",
+  "breqReviewButton": "Review download",
+  "breqStopDownload": "Stop download",
+  "breqStopDownloadConfirm": "Stop this download? The request goes back to approved so another release can be picked.",
+  "breqDiscardImport": "Discard download",
+  "breqDiscardConfirm": "Discard this download? The request is marked failed and can be tried again with another release.",
+  "breqFileAnyway": "Add to library",
+  "breqFiledToast": "Added to the library",
+  "breqDiscardedToast": "Download discarded",
+  "breqStoppedToast": "Download stopped",
+  "breqGrabTitle": "Download this release?",
+  "breqGrab": "Download",
+  "breqGrabbed": "Download started",
+  "breqGrabFailed": "Couldn't start that download",
+  "breqReleaseVipWarning": "This tracker only lets VIP accounts download it.",
+  "breqReleaseNoBookFile": "This release has no book file BookOrbit can add to a library.",
+  "breqReleaseCheckFailed": "Couldn't check what's in this release. Try again or pick another one.",
+  "breqCheckingRelease": "Checking the files...",
+  "breqSearchAgain": "Search again",
+  "breqSearchTerms": "Search terms",
+  "breqIsbnHint": "Leave empty to search by title and author",
+  "breqSearchingIndexers": "Searching your indexers. This can take up to a minute.",
+  "breqReleasesFailed": "Couldn't search for releases.",
+  "breqNoSourcesSetUp": "No search sources are set up in BookOrbit.",
+  "breqNoSourcesOn": "Every search source is switched off in BookOrbit.",
+  "breqNoSourceCarries": "None of your search sources carry this kind of book.",
+  "breqNoReleases": "No releases found. Try different search terms.",
+  "breqFromCache": "from a recent search",
+  "breqIndexerUnauthorized": "sign-in failed",
+  "breqIndexerThrottled": "busy",
+  "breqIndexerTimeout": "timed out",
+  "breqIndexerUnreachable": "unreachable",
+  "breqIndexerNoMedium": "does not carry this",
+  "breqIndexerError": "failed",
+  "breqSortBest": "Best match",
+  "breqSortSeeders": "Seeders",
+  "breqSortSize": "Size",
+  "breqSortNewest": "Newest",
+  "breqFreeleech": "Freeleech",
+  "breqVipOnly": "VIP only",
+  "breqAlreadyGrabbed": "Downloaded before",
+  "breqReasonIsbn": "ISBN",
+  "breqReasonTitle": "Title",
+  "breqReasonAuthor": "Author",
+  "breqReasonUnknownFormat": "Unknown format",
+  "breqReasonExpectedSize": "Size",
+  "breqReasonSuspiciousSize": "Unusual size",
+  "breqReasonFreeleech": "Freeleech",
+  "breqReasonSeveralBooks": "Several books",
+  "breqReviewTitle": "Download waiting for a check",
+  "breqReviewFailed": "Couldn't load the download details.",
+  "breqReviewDockGone": "The downloaded files are no longer in the Book Dock.",
+  "breqReviewNoLibrary": "This request has no library to add the book to.",
+  "breqGrabFailedReason": "Couldn't start that download: {reason}",
+  "@breqGrabFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReleaseCheckFailedReason": "Couldn't check what's in this release: {reason}",
+  "@breqReleaseCheckFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReleasesFailedReason": "Couldn't search for releases: {reason}",
+  "@breqReleasesFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReviewFailedReason": "Couldn't load the download details: {reason}",
+  "@breqReviewFailedReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReleaseCount": "{count, plural, =0{No releases} =1{1 release} other{{count} releases}}",
+  "@breqReleaseCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "breqFileCount": "{count, plural, =1{1 file} other{{count} files}}",
+  "@breqFileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "breqReviewFiles": "{count, plural, =1{1 file} other{{count} files}}",
+  "@breqReviewFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "breqSeeders": "{seeders} seeders, {leechers} leechers",
+  "@breqSeeders": {
+    "placeholders": {
+      "seeders": {
+        "type": "int"
+      },
+      "leechers": {
+        "type": "int"
+      }
+    }
+  },
+  "breqScore": "Score {score}",
+  "@breqScore": {
+    "placeholders": {
+      "score": {
+        "type": "int"
+      }
+    }
+  },
+  "breqReasonPreferredFormat": "Preferred {format}",
+  "@breqReasonPreferredFormat": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReasonFormat": "{format}",
+  "@breqReasonFormat": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReasonSeeders": "{count} seeders",
+  "@breqReasonSeeders": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReviewScore": "Match score {score}. Downloads scoring {threshold} or more are added on their own.",
+  "@breqReviewScore": {
+    "placeholders": {
+      "score": {
+        "type": "int"
+      },
+      "threshold": {
+        "type": "int"
+      }
+    }
+  },
+  "breqReviewRequested": "Requested: {value}",
+  "@breqReviewRequested": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "breqReviewImported": "Downloaded: {value}",
+  "@breqReviewImported": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "breqKindBoth": "Both",
+  "breqEbookLibrary": "E-book library",
+  "breqAudiobookLibrary": "Audiobook library",
+  "breqRequestBoth": "Request both",
+  "breqAddMeToBoth": "Add me to both",
+  "breqRequestEbook": "Request e-book",
+  "breqRequestAudiobook": "Request audiobook",
+  "breqAddMeEbook": "Add me to the e-book request",
+  "breqAddMeAudiobook": "Add me to the audiobook request",
+  "breqPairSubmitted": "Requested the e-book and the audiobook",
+  "breqPairOneJoined": "Requested both. One was already on its way, so you were added to that request",
+  "breqJoinedBoth": "Added you to both requests",
+  "breqJoinsOwned": "Requested. It will join the copy already in your library",
   "speedBookmarkInControls": "Speed & bookmark in media controls",
   "speedBookmarkOnSubtitle": "On - notification shows speed & bookmark; chapter skip stays in Android Auto",
   "speedBookmarkOffSubtitle": "Off - notification shows chapter skip; speed & bookmark stay in Android Auto",
@@ -4951,6 +5551,8 @@
   "adminUploadReselectFiles": "Choose the files again before retrying.",
   "adminServerSettings": "Server settings",
   "adminServerSettingsSubtitle": "Scanner, storage and sorting",
+  "adminAuthentication": "Authentication",
+  "adminAuthenticationSubtitle": "Password and OpenID Connect sign-in",
   "adminStats": "Statistics",
   "adminStatsSubtitle": "Library and listening totals",
   "adminAllSessions": "All sessions",
@@ -5000,6 +5602,81 @@
   "srvSaved": "Settings saved",
   "srvSaveFailed": "Couldn't save settings",
   "srvPrefixesSaved": "Sorting prefixes updated",
+
+  "authSetLoadFailed": "Couldn't load authentication settings",
+  "authSetCustomMessage": "Custom message on login",
+  "authSetMessage": "Message",
+  "authSetPasswordAuth": "Password authentication",
+  "authSetOpenId": "OpenID Connect authentication",
+  "authSetGuide": "Setup guide",
+  "authSetIssuerUrl": "Issuer URL",
+  "authSetAutoPopulate": "Auto-populate",
+  "authSetAuthorizeUrl": "Authorize URL",
+  "authSetTokenUrl": "Token URL",
+  "authSetUserinfoUrl": "Userinfo URL",
+  "authSetJwksUrl": "JWKS URL",
+  "authSetLogoutUrl": "Logout URL",
+  "authSetClientId": "Client ID",
+  "authSetClientSecret": "Client secret",
+  "authSetSigningAlgorithm": "Signing algorithm",
+  "authSetRedirectUris": "Allowed mobile redirect URIs",
+  "authSetRedirectUrisInfo": "Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.",
+  "authSetAddRedirectUri": "Add URI",
+  "authSetAddAbsorbRedirect": "Add absorb://oauth",
+  "authSetSubfolder": "Subfolder for redirect URLs",
+  "authSetSubfolderNone": "None",
+  "authSetWebRedirectInfo": "Allow these URLs in your OAuth provider so sign-in can return to the web app:",
+  "authSetButtonText": "Button text",
+  "authSetMatchExisting": "Match existing users by",
+  "authSetMatchNone": "Do not match",
+  "authSetMatchEmail": "Email",
+  "authSetMatchUsername": "Username",
+  "authSetMatchExistingInfo": "Used to link existing users. Once linked, users are matched by their unique ID from the provider.",
+  "authSetAutoLaunch": "Auto launch",
+  "authSetAutoLaunchInfo": "Open the provider automatically from the web login page. /login?autoLaunch=0 skips it.",
+  "authSetAutoRegister": "Auto register",
+  "authSetAutoRegisterInfo": "Create new users automatically after they sign in",
+  "authSetClaimsInfo": "Leave these empty to turn off group and permission assignment. New users then get the User role.",
+  "authSetGroupClaim": "Group claim",
+  "authSetGroupClaimInfo": "Claim that lists the user's groups, usually groups. Groups named admin, user or guest set the role, and the highest one wins. If no group matches, sign-in is refused.",
+  "authSetPermsClaim": "Advanced permission claim",
+  "authSetPermsClaimInfo": "Claim with permissions for non-admin users. If the claim is missing, sign-in is refused, and a missing option counts as off. Expected format:",
+  "authSetRestartNote": "Restart the server after saving to apply OpenID Connect changes.",
+  "authSetNoChanges": "No changes to save",
+  "authSetNeedOneMethod": "Turn on at least one sign-in method",
+  "authSetFieldRequired": "{field} is required",
+  "@authSetFieldRequired": {
+    "placeholders": {
+      "field": {
+        "type": "String"
+      }
+    }
+  },
+  "authSetInvalidRedirectUri": "Invalid redirect URI: {uri}",
+  "@authSetInvalidRedirectUri": {
+    "placeholders": {
+      "uri": {
+        "type": "String"
+      }
+    }
+  },
+  "authSetAsteriskAlone": "An asterisk (*) must be the only redirect URI",
+  "authSetInvalidClaim": "{field} is not a valid claim name",
+  "@authSetInvalidClaim": {
+    "placeholders": {
+      "field": {
+        "type": "String"
+      }
+    }
+  },
+  "authSetIssuerFailed": "Couldn't read the issuer: {error}",
+  "@authSetIssuerFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
 
   "libNoneYet": "No libraries yet",
   "libReorderFailed": "Couldn't save the new order",
@@ -5712,6 +6389,7 @@
   "keepScreenOnCarModeSubtitle": "The screen stays on while car mode is open",
   "loginServerType": "Server type",
   "authBookOrbitDefaultPassword": "This account still has its default password. Change it in BookOrbit, then sign in again.",
+  "authBookOrbitPasswordOff": "Password sign-in is turned off on this server. Sign in with a magic link or single sign-on.",
   "authServerIsBookOrbit": "This is a BookOrbit server. Choose BookOrbit above the server address.",
   "authServerIsAudiobookshelf": "This is an Audiobookshelf server. Choose Audiobookshelf above the server address.",
   "castNotAvailableBookOrbit": "Casting is not available with BookOrbit servers",

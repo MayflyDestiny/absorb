@@ -134,7 +134,6 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
 
   int _page = 1;
   bool _rtl = false;
-  bool _zoomed = false;
   bool _showControls = true;
   double? _scrubPage;
 
@@ -321,10 +320,7 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
   }
 
   void _onPageChanged(int index) {
-    setState(() {
-      _page = index + 1;
-      _zoomed = false;
-    });
+    setState(() => _page = index + 1);
     _precacheAround(index);
     _pendingPage = _page;
     if (DateTime.now().difference(_lastSync).inSeconds >= 10) _flushProgress();
@@ -423,21 +419,13 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
       final shownPage = (_scrubPage?.round() ?? _page).clamp(1, pages.count);
       body = Stack(children: [
         Positioned.fill(
-          child: PageView.builder(
+          child: ComicPager(
             controller: controller,
-            reverse: _rtl,
-            physics: _zoomed ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
-            onPageChanged: _onPageChanged,
             itemCount: pages.count,
-            itemBuilder: (_, i) => _ComicPage(
-              key: ValueKey('comic-page-$i'),
-              image: pages.image(i),
-              active: i == _page - 1,
-              onTap: _onPageTap,
-              onZoomChanged: (z) {
-                if (i == _page - 1 && z != _zoomed) setState(() => _zoomed = z);
-              },
-            ),
+            imageFor: pages.image,
+            reverse: _rtl,
+            onPageChanged: _onPageChanged,
+            onTap: _onPageTap,
           ),
         ),
         Positioned(
@@ -524,6 +512,77 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
           ),
         ),
       );
+}
+
+/// The pages: swipe or tap the edges to turn, pinch or double-tap to zoom,
+/// drag to pan while zoomed. Turning is held while two fingers are down or
+/// the page is zoomed: otherwise the page swipe claims a pinch whose first
+/// finger moves before the second lands, and the page never zooms.
+class ComicPager extends StatefulWidget {
+  final PageController controller;
+  final int itemCount;
+  final ImageProvider Function(int index) imageFor;
+  final bool reverse;
+  final ValueChanged<int> onPageChanged;
+  final GestureTapUpCallback onTap;
+
+  const ComicPager({
+    super.key,
+    required this.controller,
+    required this.itemCount,
+    required this.imageFor,
+    required this.onPageChanged,
+    required this.onTap,
+    this.reverse = false,
+  });
+
+  @override
+  State<ComicPager> createState() => _ComicPagerState();
+}
+
+class _ComicPagerState extends State<ComicPager> {
+  final Set<int> _pointers = {};
+  bool _zoomed = false;
+  late int _current = widget.controller.initialPage;
+
+  bool get _holdPage => _zoomed || _pointers.length > 1;
+
+  void _trackPointers(VoidCallback change) {
+    final before = _holdPage;
+    change();
+    if (_holdPage != before) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (e) => _trackPointers(() => _pointers.add(e.pointer)),
+      onPointerUp: (e) => _trackPointers(() => _pointers.remove(e.pointer)),
+      onPointerCancel: (e) => _trackPointers(() => _pointers.remove(e.pointer)),
+      child: PageView.builder(
+        controller: widget.controller,
+        reverse: widget.reverse,
+        physics: _holdPage ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
+        onPageChanged: (i) {
+          setState(() {
+            _current = i;
+            _zoomed = false;
+          });
+          widget.onPageChanged(i);
+        },
+        itemCount: widget.itemCount,
+        itemBuilder: (_, i) => _ComicPage(
+          key: ValueKey('comic-page-$i'),
+          image: widget.imageFor(i),
+          active: i == _current,
+          onTap: widget.onTap,
+          onZoomChanged: (z) {
+            if (i == _current && z != _zoomed) setState(() => _zoomed = z);
+          },
+        ),
+      ),
+    );
+  }
 }
 
 /// One page: fit to the screen, pinch or double-tap to zoom, drag to pan
