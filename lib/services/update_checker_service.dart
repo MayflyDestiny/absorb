@@ -215,6 +215,29 @@ class UpdateCheckerService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_dismissedKey, version);
   }
+
+  /// Web page for the release notes of [tag] (e.g. `v1.22.1` or `v1.22.1-432`).
+  static String releasePageUrl(String tag) =>
+      'https://github.com/$_repo/releases/tag/$tag';
+
+  /// Release-notes body for a specific [tag], or null when the release isn't
+  /// found or the network is unavailable. Used by the post-update "what's new"
+  /// prompt, which falls back to a generic message on null.
+  static Future<String?> fetchReleaseNotes(String tag) async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.github.com/repos/$_repo/releases/tags/$tag'),
+        headers: {'Accept': 'application/vnd.github.v3+json'},
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final body = data['body'] as String? ?? '';
+      return body.trim().isEmpty ? null : body;
+    } catch (e) {
+      basicLog('[UpdateChecker] Release notes fetch failed: $e');
+      return null;
+    }
+  }
 }
 
 enum ApkInstallStatus {

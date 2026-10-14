@@ -175,6 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showEbookBadge = true;
   String _finishedBadgeMode = 'text';
   bool _loggingEnabled = false;
+  bool _showWhatsNew = true;
   bool _fullScreenPlayer = false;
   bool _lockPortrait = false;
   bool _autoSeriesDownloadDefault = false;
@@ -1188,6 +1189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final sectionOrder = await PlayerSettings.getSettingsSectionOrder();
     final hiddenSections = await PlayerSettings.getSettingsHiddenSections();
     final sleepRewind = await PlayerSettings.getSleepRewindSeconds();
+    final showWhatsNew = await PlayerSettings.getShowWhatsNew();
     final lockPortrait = await PlayerSettings.getLockPortrait();
     final autoSeriesDownload = await PlayerSettings.getAutoSeriesDownloadDefault();
     final longSkipButtons = await PlayerSettings.getLongSkipButtons();
@@ -1285,6 +1287,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _hideEbookOnly = hideEbook;
         _showGoodreadsButton = showGoodreads;
         _loggingEnabled = logging;
+        _showWhatsNew = showWhatsNew;
         _fullScreenPlayer = fullScreen;
         _snappyTransitions = snappyTrans;
         _classicWording = classicWording;
@@ -5646,6 +5649,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 onTap: () => BookRequestsScreen.open(context, openList: true),
                               ),
                             ],
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            SwitchListTile(
+                              title: Text(l.showWhatsNewOnLaunch),
+                              subtitle: Text(
+                                _showWhatsNew
+                                    ? l.showWhatsNewOnLaunchOnSubtitle
+                                    : l.showWhatsNewOnLaunchOffSubtitle,
+                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _showWhatsNew,
+                              onChanged: _loaded ? (v) {
+                                setState(() => _showWhatsNew = v);
+                                PlayerSettings.setShowWhatsNew(v);
+                              } : null,
+                            ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
                             ListTile(
                         leading: Icon(Icons.menu_book_rounded, color: cs.primary),

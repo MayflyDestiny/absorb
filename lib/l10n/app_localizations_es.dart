@@ -88,7 +88,18 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String get whatsNewButton => 'See what\'s new';
+  String get whatsNewSeeFull => 'See full release notes';
+
+  @override
+  String get showWhatsNewOnLaunch => 'Show what\'s new after updates';
+
+  @override
+  String get showWhatsNewOnLaunchOnSubtitle =>
+      'On - highlight changes the first time the app opens after an update';
+
+  @override
+  String get showWhatsNewOnLaunchOffSubtitle =>
+      'Off - do not show update highlights';
 
   @override
   String get gotIt => 'Entendido';
