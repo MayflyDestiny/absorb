@@ -1144,6 +1144,11 @@ class PlayerSettings {
   static Future<bool> getShowGoodreadsButton() => _get('showGoodreadsButton', false);
   static Future<void> setShowGoodreadsButton(bool value) => _set('showGoodreadsButton', value);
 
+  // Show a short "what's new" summary the first time the app opens after an
+  // update. Default on; the full release notes remain one tap away either way.
+  static Future<bool> getShowWhatsNew() => _get('showWhatsNewOnLaunch', true);
+  static Future<void> setShowWhatsNew(bool value) => _set('showWhatsNewOnLaunch', value);
+
   static Future<bool> getLoggingEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('loggingEnabled') ?? false;

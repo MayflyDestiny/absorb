@@ -215,6 +215,88 @@ class UpdateCheckerService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_dismissedKey, version);
   }
+
+  /// Web page for the release notes of [tag] (e.g. `v1.22.1` or `v1.22.1-432`).
+  static String releasePageUrl(String tag) =>
+      'https://github.com/$_repo/releases/tag/$tag';
+
+  /// Release-notes body for a specific [tag], or null when the release isn't
+  /// found or the network is unavailable. Used by the post-update "what's new"
+  /// prompt, which falls back to a generic message on null.
+  static Future<String?> fetchReleaseNotes(String tag) async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.github.com/repos/$_repo/releases/tags/$tag'),
+        headers: {'Accept': 'application/vnd.github.v3+json'},
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final body = data['body'] as String? ?? '';
+      return body.trim().isEmpty ? null : body;
+    } catch (e) {
+      basicLog('[UpdateChecker] Release notes fetch failed: $e');
+      return null;
+    }
+  }
+
+  /// Web page for the fork's full changelog on the default branch. The
+  /// in-app prompt shows only the short per-version summary; this is where the
+  /// detailed notes live.
+  static String changelogPageUrl() =>
+      'https://github.com/$_repo/blob/main/CHANGELOG_FULL.md';
+
+  /// Raw URL of the fork's README on the default branch, whose 更新日志
+  /// section carries the short per-version summary.
+  static String get _readmeRawUrl =>
+      'https://raw.githubusercontent.com/$_repo/main/README.md';
+
+  /// The short README 更新日志 entry for [version] (e.g. `1.22.2`), or null
+  /// when it can't be fetched. Read from the default branch so the summary
+  /// stays current without shipping it inside the app; [changelogPageUrl] holds
+  /// the detailed log. Used by the post-update "what's new" prompt when the
+  /// GitHub release carries no notes.
+  static Future<String?> fetchChangelogSection(String version) async {
+    try {
+      final response = await http
+          .get(Uri.parse(_readmeRawUrl))
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      return changelogSectionFor(response.body, version);
+    } catch (e) {
+      basicLog('[UpdateChecker] Changelog fetch failed: $e');
+      return null;
+    }
+  }
+
+  /// Pulls the `### v<version>…` entry out of a README body, from its heading
+  /// up to the next entry, the next section, or the `</details>` that closes
+  /// the changelog block. The version match tolerates a trailing build number
+  /// (`v1.22.2+433`) or a shared heading (`v1.21.0+340 / +338`).
+  static String? changelogSectionFor(String readme, String version) {
+    final heading = RegExp(r'^#{2,3}\s+v' + RegExp.escape(version) + r'\b');
+    final lines = readme.split('\n');
+    var start = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (heading.hasMatch(lines[i])) {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) return null;
+    final section = <String>[];
+    for (var i = start; i < lines.length; i++) {
+      final line = lines[i];
+      if (i > start &&
+          (line.startsWith('### ') ||
+              line.startsWith('## ') ||
+              line.trim() == '</details>')) {
+        break;
+      }
+      section.add(line);
+    }
+    final text = section.join('\n').trim();
+    return text.isEmpty ? null : text;
+  }
 }
 
 enum ApkInstallStatus {

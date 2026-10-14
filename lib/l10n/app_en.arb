@@ -30,7 +30,10 @@
       "version": {"type": "String"}
     }
   },
-  "whatsNewButton": "See what's new",
+  "whatsNewSeeFull": "See full release notes",
+  "showWhatsNewOnLaunch": "Show what's new after updates",
+  "showWhatsNewOnLaunchOnSubtitle": "On - highlight changes the first time the app opens after an update",
+  "showWhatsNewOnLaunchOffSubtitle": "Off - do not show update highlights",
   "gotIt": "Got it",
   "preview": "Preview",
   "or": "or",

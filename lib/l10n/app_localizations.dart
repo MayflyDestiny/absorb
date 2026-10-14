@@ -268,11 +268,29 @@ abstract class AppLocalizations {
   /// **'You\'re now on {version}.'**
   String whatsNewContent(String version);
 
-  /// No description provided for @whatsNewButton.
+  /// No description provided for @whatsNewSeeFull.
   ///
   /// In en, this message translates to:
-  /// **'See what\'s new'**
-  String get whatsNewButton;
+  /// **'See full release notes'**
+  String get whatsNewSeeFull;
+
+  /// No description provided for @showWhatsNewOnLaunch.
+  ///
+  /// In en, this message translates to:
+  /// **'Show what\'s new after updates'**
+  String get showWhatsNewOnLaunch;
+
+  /// No description provided for @showWhatsNewOnLaunchOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - highlight changes the first time the app opens after an update'**
+  String get showWhatsNewOnLaunchOnSubtitle;
+
+  /// No description provided for @showWhatsNewOnLaunchOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - do not show update highlights'**
+  String get showWhatsNewOnLaunchOffSubtitle;
 
   /// No description provided for @gotIt.
   ///

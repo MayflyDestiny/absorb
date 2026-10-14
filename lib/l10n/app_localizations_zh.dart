@@ -86,7 +86,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get whatsNewButton => '查看更新内容';
+  String get whatsNewSeeFull => '查看完整更新日志';
+
+  @override
+  String get showWhatsNewOnLaunch => '启动时显示更新说明';
+
+  @override
+  String get showWhatsNewOnLaunchOnSubtitle => '开启 - 更新后首次启动时展示本次更新要点';
+
+  @override
+  String get showWhatsNewOnLaunchOffSubtitle => '关闭 - 不再显示更新说明';
 
   @override
   String get gotIt => '知道了';
@@ -1791,54 +1800,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chapterProgressOnSubtitleIos => '开启 - 锁屏和 CarPlay 显示章节进度';
 
   @override
-  String get nowPlayingText => 'Now playing text';
+  String get nowPlayingText => '正在播放文本';
 
   @override
-  String get nowPlayingTextSubtitle =>
-      'Choose what the media controls show on each line';
+  String get nowPlayingTextSubtitle => '选择媒体控件每行显示的内容';
 
   @override
-  String get nowPlayingTopLine => 'Top line';
+  String get nowPlayingTopLine => '第一行';
 
   @override
-  String get nowPlayingSecondLine => 'Second line';
+  String get nowPlayingSecondLine => '第二行';
 
   @override
-  String get nowPlayingNotShown => 'Not shown';
+  String get nowPlayingNotShown => '不显示';
 
   @override
-  String get nowPlayingTopLineRequired =>
-      'The top line needs at least one item';
+  String get nowPlayingTopLineRequired => '第一行至少需要一项内容';
 
   @override
-  String get nowPlayingPieceChapter => 'Chapter';
+  String get nowPlayingPieceChapter => '章节';
 
   @override
-  String get nowPlayingPieceTitle => 'Book title';
+  String get nowPlayingPieceTitle => '书名';
 
   @override
-  String get nowPlayingPieceNarrator => 'Narrator';
+  String get nowPlayingPieceNarrator => '朗读者';
 
   @override
-  String get nowPlayingPieceSeries => 'Series';
+  String get nowPlayingPieceSeries => '系列';
 
   @override
-  String get nowPlayingPiecePercent => 'Book percentage';
+  String get nowPlayingPiecePercent => '书籍百分比';
 
   @override
-  String get nowPlayingPieceChapterNumber => 'Chapter number';
+  String get nowPlayingPieceChapterNumber => '章节编号';
 
   @override
-  String get nowPlayingPieceTimeLeft => 'Time left';
+  String get nowPlayingPieceTimeLeft => '剩余时间';
 
   @override
   String nowPlayingChapterNumber(int number, int total) {
-    return 'Ch. $number/$total';
+    return '第 $number/$total 章';
   }
 
   @override
   String nowPlayingTimeLeft(String time) {
-    return '$time left';
+    return '剩余 $time';
   }
 
   @override
@@ -9266,11 +9273,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get adminServerSettingsSubtitle => '扫描器、存储和排序';
 
   @override
-  String get adminAuthentication => 'Authentication';
+  String get adminAuthentication => '身份验证';
 
   @override
-  String get adminAuthenticationSubtitle =>
-      'Password and OpenID Connect sign-in';
+  String get adminAuthenticationSubtitle => '密码与 OpenID Connect 登录';
 
   @override
   String get adminStats => '统计信息';
@@ -9414,159 +9420,153 @@ class AppLocalizationsZh extends AppLocalizations {
   String get srvPrefixesSaved => '排序前缀已更新';
 
   @override
-  String get authSetLoadFailed => 'Couldn\'t load authentication settings';
+  String get authSetLoadFailed => '无法加载身份验证设置';
 
   @override
-  String get authSetCustomMessage => 'Custom message on login';
+  String get authSetCustomMessage => '登录页自定义消息';
 
   @override
-  String get authSetMessage => 'Message';
+  String get authSetMessage => '消息';
 
   @override
-  String get authSetPasswordAuth => 'Password authentication';
+  String get authSetPasswordAuth => '密码身份验证';
 
   @override
-  String get authSetOpenId => 'OpenID Connect authentication';
+  String get authSetOpenId => 'OpenID Connect 身份验证';
 
   @override
-  String get authSetGuide => 'Setup guide';
+  String get authSetGuide => '设置指南';
 
   @override
-  String get authSetIssuerUrl => 'Issuer URL';
+  String get authSetIssuerUrl => '颁发者 URL';
 
   @override
-  String get authSetAutoPopulate => 'Auto-populate';
+  String get authSetAutoPopulate => '自动填充';
 
   @override
-  String get authSetAuthorizeUrl => 'Authorize URL';
+  String get authSetAuthorizeUrl => '授权 URL';
 
   @override
-  String get authSetTokenUrl => 'Token URL';
+  String get authSetTokenUrl => '令牌 URL';
 
   @override
-  String get authSetUserinfoUrl => 'Userinfo URL';
+  String get authSetUserinfoUrl => '用户信息 URL';
 
   @override
   String get authSetJwksUrl => 'JWKS URL';
 
   @override
-  String get authSetLogoutUrl => 'Logout URL';
+  String get authSetLogoutUrl => '注销 URL';
 
   @override
-  String get authSetClientId => 'Client ID';
+  String get authSetClientId => '客户端 ID';
 
   @override
-  String get authSetClientSecret => 'Client secret';
+  String get authSetClientSecret => '客户端密钥';
 
   @override
-  String get authSetSigningAlgorithm => 'Signing algorithm';
+  String get authSetSigningAlgorithm => '签名算法';
 
   @override
-  String get authSetRedirectUris => 'Allowed mobile redirect URIs';
+  String get authSetRedirectUris => '允许的移动端重定向 URI';
 
   @override
   String get authSetRedirectUrisInfo =>
-      'Apps can only return to these addresses after sign-in. Absorb uses absorb://oauth. An asterisk (*) as the only entry allows any address.';
+      '登录后应用只能返回到这些地址。Absorb 使用 absorb://oauth。仅填写星号（*）时允许任意地址。';
 
   @override
-  String get authSetAddRedirectUri => 'Add URI';
+  String get authSetAddRedirectUri => '添加 URI';
 
   @override
-  String get authSetAddAbsorbRedirect => 'Add absorb://oauth';
+  String get authSetAddAbsorbRedirect => '添加 absorb://oauth';
 
   @override
-  String get authSetSubfolder => 'Subfolder for redirect URLs';
+  String get authSetSubfolder => '重定向 URL 的子文件夹';
 
   @override
-  String get authSetSubfolderNone => 'None';
+  String get authSetSubfolderNone => '无';
 
   @override
-  String get authSetWebRedirectInfo =>
-      'Allow these URLs in your OAuth provider so sign-in can return to the web app:';
+  String get authSetWebRedirectInfo => '在 OAuth 提供方中允许这些 URL，以便登录后能返回 Web 应用：';
 
   @override
-  String get authSetButtonText => 'Button text';
+  String get authSetButtonText => '按钮文本';
 
   @override
-  String get authSetMatchExisting => 'Match existing users by';
+  String get authSetMatchExisting => '匹配现有用户的方式';
 
   @override
-  String get authSetMatchNone => 'Do not match';
+  String get authSetMatchNone => '不匹配';
 
   @override
-  String get authSetMatchEmail => 'Email';
+  String get authSetMatchEmail => '邮箱';
 
   @override
-  String get authSetMatchUsername => 'Username';
+  String get authSetMatchUsername => '用户名';
 
   @override
-  String get authSetMatchExistingInfo =>
-      'Used to link existing users. Once linked, users are matched by their unique ID from the provider.';
+  String get authSetMatchExistingInfo => '用于关联现有用户。关联后，将按提供方返回的唯一 ID 匹配用户。';
 
   @override
-  String get authSetAutoLaunch => 'Auto launch';
+  String get authSetAutoLaunch => '自动启动';
 
   @override
   String get authSetAutoLaunchInfo =>
-      'Open the provider automatically from the web login page. /login?autoLaunch=0 skips it.';
+      '从 Web 登录页自动打开提供方。/login?autoLaunch=0 可跳过。';
 
   @override
-  String get authSetAutoRegister => 'Auto register';
+  String get authSetAutoRegister => '自动注册';
 
   @override
-  String get authSetAutoRegisterInfo =>
-      'Create new users automatically after they sign in';
+  String get authSetAutoRegisterInfo => '用户登录后自动创建新账户';
 
   @override
-  String get authSetClaimsInfo =>
-      'Leave these empty to turn off group and permission assignment. New users then get the User role.';
+  String get authSetClaimsInfo => '留空可关闭组和权限分配。新用户将获得「用户」角色。';
 
   @override
-  String get authSetGroupClaim => 'Group claim';
+  String get authSetGroupClaim => '组声明';
 
   @override
   String get authSetGroupClaimInfo =>
-      'Claim that lists the user\'s groups, usually groups. Groups named admin, user or guest set the role, and the highest one wins. If no group matches, sign-in is refused.';
+      '列出用户所属组的声明，通常为 groups。名为 admin、user 或 guest 的组会设置角色，取其中最高者。若没有匹配的组，将拒绝登录。';
 
   @override
-  String get authSetPermsClaim => 'Advanced permission claim';
+  String get authSetPermsClaim => '高级权限声明';
 
   @override
   String get authSetPermsClaimInfo =>
-      'Claim with permissions for non-admin users. If the claim is missing, sign-in is refused, and a missing option counts as off. Expected format:';
+      '包含非管理员用户权限的声明。若缺少该声明将拒绝登录，未列出的选项视为关闭。预期格式:';
 
   @override
-  String get authSetRestartNote =>
-      'Restart the server after saving to apply OpenID Connect changes.';
+  String get authSetRestartNote => '保存后请重启服务器以应用 OpenID Connect 更改。';
 
   @override
-  String get authSetNoChanges => 'No changes to save';
+  String get authSetNoChanges => '没有可保存的更改';
 
   @override
-  String get authSetNeedOneMethod => 'Turn on at least one sign-in method';
+  String get authSetNeedOneMethod => '至少启用一种登录方式';
 
   @override
   String authSetFieldRequired(String field) {
-    return '$field is required';
+    return '$field 为必填项';
   }
 
   @override
   String authSetInvalidRedirectUri(String uri) {
-    return 'Invalid redirect URI: $uri';
+    return '重定向 URI 无效: $uri';
   }
 
   @override
-  String get authSetAsteriskAlone =>
-      'An asterisk (*) must be the only redirect URI';
+  String get authSetAsteriskAlone => '星号（*）必须是唯一的重定向 URI';
 
   @override
   String authSetInvalidClaim(String field) {
-    return '$field is not a valid claim name';
+    return '$field 不是有效的声明名称';
   }
 
   @override
   String authSetIssuerFailed(String error) {
-    return 'Couldn\'t read the issuer: $error';
+    return '无法读取颁发者: $error';
   }
 
   @override

@@ -104,10 +104,10 @@ class SettingsSearchResults extends StatelessWidget {
 }
 
 /// Scroll the tile whose title text is [title] into view inside the expanded
-/// section at [sectionContext], then pulse a highlight over it. The tile is
-/// located by its rendered title text, so the 150+ settings tiles need no
-/// individual markers. No-op if the text isn't found (e.g. the tile is
-/// hidden behind a feature flag).
+/// section at [sectionContext], then pulse a highlight over it that stays glued
+/// to the row while the list scrolls. The tile is located by its rendered title
+/// text, so the 150+ settings tiles need no individual markers. No-op if the
+/// text isn't found (e.g. the tile is hidden behind a feature flag).
 Future<void> highlightSettingInSection({
   required BuildContext sectionContext,
   required String title,
@@ -133,9 +133,6 @@ Future<void> highlightSettingInSection({
     curve: Curves.easeOut,
     alignment: 0.35,
   );
-  // Measuring immediately catches the section's expand animation mid-flight
-  // and paints the pulse where the row used to be - let the layout settle.
-  await Future.delayed(const Duration(milliseconds: 200));
   if (!textElement.mounted) return;
 
   // Prefer the enclosing tile's bounds over the bare text so the pulse
@@ -158,55 +155,127 @@ Future<void> highlightSettingInSection({
   });
   final box = target;
   if (box is! RenderBox || !box.attached) return;
-  var rect = box.localToGlobal(Offset.zero) & box.size;
-  if (!tileFound) {
-    // Custom rows (segmented pickers, sliders) have no ListTile ancestor -
-    // the pulse would hug the bare title text. Span the section's width at
-    // the title's line instead so it still reads as "this row".
-    final section = sectionContext.findRenderObject();
-    if (section is RenderBox && section.attached) {
-      final s = section.localToGlobal(Offset.zero) & section.size;
-      rect = Rect.fromLTRB(s.left + 8, rect.top - 10, s.right - 8, rect.bottom + 10);
-    } else {
-      rect = rect.inflate(10);
-    }
-  }
-  rect = rect.inflate(2);
 
   final overlay = Overlay.maybeOf(sectionContext);
   if (overlay == null) return;
   final accent = Theme.of(sectionContext).colorScheme.primary;
+
+  final sectionRender = sectionContext.findRenderObject();
+  final sectionBox =
+      sectionRender is RenderBox && sectionRender.attached ? sectionRender : null;
+
   late OverlayEntry entry;
   entry = OverlayEntry(
-    builder: (_) => Positioned.fromRect(
-      rect: rect,
-      child: IgnorePointer(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: 1),
-          duration: const Duration(milliseconds: 1800),
-          onEnd: () => entry.remove(),
-          builder: (_, t, __) {
-            // Quick fade in, hold, slow fade out.
-            final opacity = t < 0.12
-                ? t / 0.12
-                : t > 0.55
-                    ? ((1 - t) / 0.45).clamp(0.0, 1.0)
-                    : 1.0;
-            return Opacity(
-              opacity: opacity,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: accent.withValues(alpha: 0.55), width: 1.5),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+    builder: (_) => _SettingHighlightPulse(
+      target: box,
+      sectionBox: sectionBox,
+      tileFound: tileFound,
+      accent: accent,
+      onDone: () {
+        if (entry.mounted) entry.remove();
+      },
     ),
   );
   overlay.insert(entry);
+}
+
+/// A short-lived highlight glued to its target row. The rectangle is re-read
+/// from the target's [RenderObject] on every animation frame, so the box keeps
+/// covering the row while the list scrolls under it (the settings rows stay
+/// mounted in the eager sliver, so the target remains attached). Fades in,
+/// holds, fades out, then removes itself via [onDone].
+class _SettingHighlightPulse extends StatefulWidget {
+  final RenderBox target;
+  final RenderBox? sectionBox;
+  final bool tileFound;
+  final Color accent;
+  final VoidCallback onDone;
+
+  const _SettingHighlightPulse({
+    required this.target,
+    required this.sectionBox,
+    required this.tileFound,
+    required this.accent,
+    required this.onDone,
+  });
+
+  @override
+  State<_SettingHighlightPulse> createState() => _SettingHighlightPulseState();
+}
+
+class _SettingHighlightPulseState extends State<_SettingHighlightPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )
+      // Rebuilding each frame re-measures the target, so the box tracks the
+      // row as it scrolls instead of staying where it was first painted.
+      ..addListener(() => setState(() {}))
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) widget.onDone();
+      })
+      ..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Rect? _currentRect() {
+    final target = widget.target;
+    if (!target.attached) return null;
+    var rect = target.localToGlobal(Offset.zero) & target.size;
+    if (!widget.tileFound) {
+      // Custom rows (segmented pickers, sliders) have no ListTile ancestor -
+      // span the section's width at the title's line instead.
+      final section = widget.sectionBox;
+      if (section != null && section.attached) {
+        final s = section.localToGlobal(Offset.zero) & section.size;
+        rect = Rect.fromLTRB(
+            s.left + 8, rect.top - 10, s.right - 8, rect.bottom + 10);
+      } else {
+        rect = rect.inflate(10);
+      }
+    }
+    return rect.inflate(2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rect = _currentRect();
+    if (rect == null) return const SizedBox.shrink();
+
+    final t = _controller.value;
+    // Quick fade in, hold, slow fade out.
+    final opacity = t < 0.12
+        ? t / 0.12
+        : t > 0.55
+            ? ((1 - t) / 0.45).clamp(0.0, 1.0)
+            : 1.0;
+
+    return Positioned.fromRect(
+      rect: rect,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: opacity,
+          child: Container(
+            decoration: BoxDecoration(
+              color: widget.accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: widget.accent.withValues(alpha: 0.55), width: 1.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
