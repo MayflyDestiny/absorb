@@ -308,6 +308,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // This item's audiobook metadata, so the controls can show (and start
   // playback) even before a session is running.
   bool _hasAudio = false;
+  // A download made on another account: the server signed in now is not this
+  // book's, and the same id there can be a different book. Its place is kept
+  // on the phone and nothing about it goes to this server.
+  late final bool _otherAccount = DownloadService().isFromOtherAccount(widget.itemId);
   double _audioDuration = 0;
   List<dynamic> _audioChapters = const [];
   String _audioAuthor = '';
@@ -409,6 +413,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   Future<void> _loadAudioMeta() async {
     final lib = context.read<LibraryProvider>();
     _audioCoverUrl = lib.getCoverUrl(widget.itemId);
+    if (_otherAccount) return;
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return;
     try {
@@ -920,6 +925,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _initialCfi = pointCfi(target);
       _settleJumpCfi = _initialCfi;
     }
+    if (_otherAccount) return;
     final progressData = lib.getProgressData(widget.itemId);
     final loc = progressData?['ebookLocation'] as String?;
     // Seed the displayed percent from saved progress so the bar shows the
@@ -1011,8 +1017,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       debugPrint('[EbookReader] open item=${widget.itemId} ext=${ebookExtFromFile(widget.ebookFile)} '
           'cached=${await isEbookCached(widget.itemId, widget.ebookFile)} playing=$playing');
       final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
-      unawaited(_rememberForOffline(api));
-      await _pullServerPosition(api);
+      if (_otherAccount) {
+        await _restoreOtherAccountSpot();
+      } else {
+        unawaited(_rememberForOffline(api));
+        await _pullServerPosition(api);
+      }
       final len = file.existsSync() ? await file.length() : 0;
       final locations = await loadCachedLocations(file);
       debugPrint('[EbookReader] file ready item=${widget.itemId} bytes=$len '
@@ -1037,7 +1047,25 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   Timer? _ebookPushTimer;
   ApiService? _ebookPushApi;
 
+  Future<void> _restoreOtherAccountSpot() async {
+    debugPrint('[EbookReader] item=${widget.itemId} is another account\'s download - '
+        'its place stays on this phone');
+    final spot = await DownloadService().otherAccountReadingSpot(widget.itemId);
+    if (spot == null || !mounted) return;
+    _progress = spot.progress.clamp(0.0, 1.0);
+    if (_initialCfi != null) return;
+    if (spot.location.startsWith('epubcfi(')) {
+      _initialCfi = spot.location;
+    } else if (spot.progress > 0 && spot.progress < 1) {
+      _pendingPercentJump = spot.progress;
+    }
+  }
+
   void _syncProgress(String cfi, double progress) {
+    if (_otherAccount) {
+      unawaited(DownloadService().saveOtherAccountReadingSpot(widget.itemId, cfi, progress));
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;

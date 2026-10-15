@@ -2529,11 +2529,16 @@ class ApiService {
   /// Update ebook reading progress on the server. Returns whether the PATCH
   /// landed, so the caller can queue the position for a later retry.
   /// PATCH /api/me/progress/:id
+  /// HTTP status of the last [updateEbookProgress], null when it never got an
+  /// answer. A 404 means the server has no such book, so retrying is pointless.
+  int? lastEbookProgressStatus;
+
   Future<bool> updateEbookProgress(
     String itemId, {
     required String ebookLocation,
     required double ebookProgress,
   }) async {
+    lastEbookProgressStatus = null;
     try {
       final body = jsonEncode({
         'ebookLocation': ebookLocation,
@@ -2554,6 +2559,7 @@ class ApiService {
         body: body,
       ).timeout(const Duration(seconds: 10));
       debugPrint('[API] updateEbookProgress response: ${resp.statusCode} ${resp.body}');
+      lastEbookProgressStatus = resp.statusCode;
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
       debugPrint('[API] updateEbookProgress error: $e');

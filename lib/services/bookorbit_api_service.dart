@@ -111,6 +111,10 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   static final Map<String, String> _bookLibrary = {};
   static final Map<String, _BoTicket> _tickets = {};
   static final Map<String, String> _assetByFile = {};
+  // Each asset's manifest etag, which changes with the file's size or time.
+  // It goes on the stream URL so the player's cache, keyed by URL, starts
+  // over when a file is replaced instead of asking for the old file's bytes.
+  static final Map<String, String> _assetVersion = {};
   static final Map<String, String> _serverVersions = {};
   // What each server says it can do, from /app-info `features`.
   static final Map<String, Set<String>> _serverFeatures = {};
@@ -152,6 +156,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     _bookLibrary.clear();
     _tickets.clear();
     _assetByFile.clear();
+    _assetVersion.clear();
     _librariesCache = null;
     _librariesAt = null;
     _recent.clear();
@@ -1133,6 +1138,10 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       _manifestAt[k] = DateTime.now();
       for (final a in (m['assets'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
         _assetByFile[_key('${a['fileId']}')] = '${a['assetId']}';
+        final etag = a['etag'];
+        if (etag is String && etag.isNotEmpty) {
+          _assetVersion['${a['assetId']}'] = etag.length > 16 ? etag.substring(0, 16) : etag;
+        }
       }
       return m;
     } on _BoHttpError catch (e) {
@@ -3406,9 +3415,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       final bookId = seg[i + 1];
       final fileId = seg[i + 3];
       final asset = uri.queryParameters['asset'] ?? _assetByFile[_key(fileId)];
-      if (asset != null) {
-        return BookOrbitMediaProxy.instance.urlFor('/api/v1/audiobooks/$bookId/assets/$asset/content');
-      }
+      if (asset != null) return _assetContentUrl(bookId, asset);
       return BookOrbitMediaProxy.instance.urlFor('/api/v1/books/files/$fileId/download');
     }
     if (uri.path.contains('/api/v1/')) {
@@ -3416,6 +3423,12 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       return BookOrbitMediaProxy.instance.urlFor(uri.path.substring(at) + (uri.hasQuery ? '?${uri.query}' : ''));
     }
     return contentUrl;
+  }
+
+  String _assetContentUrl(String bookId, String asset) {
+    final v = _assetVersion[asset];
+    return BookOrbitMediaProxy.instance
+        .urlFor('/api/v1/audiobooks/$bookId/assets/$asset/content${v == null ? '' : '?v=$v'}');
   }
 
   @override
@@ -3432,9 +3445,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   @override
   String buildFileUrl(String itemId, String ino) {
     final asset = _assetByFile[_key(ino)];
-    if (asset != null) {
-      return BookOrbitMediaProxy.instance.urlFor('/api/v1/audiobooks/$itemId/assets/$asset/content');
-    }
+    if (asset != null) return _assetContentUrl(itemId, asset);
     return BookOrbitMediaProxy.instance.urlFor('/api/v1/books/files/$ino/serve');
   }
 
@@ -3745,9 +3756,15 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   @override
   Future<bool> updateEbookProgress(String itemId, {required String ebookLocation, required double ebookProgress}) async {
+    lastEbookProgressStatus = null;
     try {
       await _saveEbookProgress(itemId, ebookLocation, ebookProgress);
+      lastEbookProgressStatus = 200;
       return true;
+    } on _BoHttpError catch (e) {
+      lastEbookProgressStatus = e.status;
+      debugPrint('[BookOrbit] updateEbookProgress error: $e');
+      return false;
     } catch (e) {
       debugPrint('[BookOrbit] updateEbookProgress error: $e');
       return false;

@@ -1575,6 +1575,16 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Last known position in seconds — used to detect end→0 position jumps.
   double _lastKnownPositionSec = 0;
+  // Where the latest seek was headed, a start's own seek included. A stream
+  // that fails before that seek lands has no known position yet, and the
+  // retry began the book again from zero.
+  double? _lastSeekTargetSec;
+  DateTime? _lastSeekAt;
+
+  /// When this phone last moved the position itself: a seek, a chapter jump,
+  /// a start at a chosen spot. A server position saved before then is not
+  /// newer than where you are.
+  DateTime? get lastSeekAt => _lastSeekAt;
   // ── Stream error retry tracking ──
   int _streamRetryCount = 0;
   static const _maxStreamRetries = 3;
@@ -2841,6 +2851,8 @@ class AudioPlayerService extends ChangeNotifier {
   /// Seek to an absolute book position, handling multi-file offset conversion.
   Future<void> _seekAbsolute(double absoluteSeconds) async {
     if (_player == null) return;
+    _lastSeekTargetSec = absoluteSeconds;
+    _lastSeekAt = DateTime.now();
 
     // A seek already interrupts audio, so if a fresh session is waiting this
     // is the free moment to swap the source onto its tokenless URLs - the
@@ -3798,6 +3810,7 @@ class AudioPlayerService extends ChangeNotifier {
     _indexSub?.cancel();
     _indexSub = null;
     _lastKnownPositionSec = 0;
+    _lastSeekTargetSec = null;
     _isCompletingBook = false;
 
     // Check if downloaded — play locally
@@ -6020,7 +6033,9 @@ class AudioPlayerService extends ChangeNotifier {
     final episodeTitle = _currentEpisodeTitle;
     final libraryId = _currentLibraryId;
     final api = _api!;
-    final retryPos = _lastKnownPositionSec;
+    final retryPos = _lastKnownPositionSec > 0
+        ? _lastKnownPositionSec
+        : (_lastSeekTargetSec ?? 0);
 
     if (itemId == null) {
       _retryInProgress = false;
@@ -6032,6 +6047,16 @@ class AudioPlayerService extends ChangeNotifier {
     // takes the fresh-session path - tokenless public URLs with a
     // known-good credential - instead of re-baking whatever just failed.
     await SessionCache.clear(itemId: itemId, episodeId: episodeId);
+    // The server turned the byte range down: the file changed size since its
+    // bytes were cached, and the cache keeps asking up to the old length.
+    if ('$error'.contains('Response code: 416')) {
+      debugPrint('[Player] Server refused the byte range (416) - clearing the streaming cache');
+      try {
+        await AudioPlayer.clearStreamingCache();
+      } catch (e) {
+        debugPrint('[Player] Streaming cache clear failed: $e');
+      }
+    }
 
     debugPrint('[Player] Retrying playback at ${retryPos.toStringAsFixed(1)}s');
     final ok = await playItem(

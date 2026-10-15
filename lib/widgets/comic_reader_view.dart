@@ -14,6 +14,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/image_epub.dart';
 import '../services/progress_sync_service.dart';
@@ -130,6 +131,11 @@ class ComicReaderView extends StatefulWidget {
 
 class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingObserver {
   ApiService? _api;
+  // A download made on another account reads from the phone, and neither its
+  // place nor its bookmarks go to the server signed in now.
+  bool _otherAccount = false;
+  ({String location, double progress})? _otherSpot;
+  ApiService? get _syncApi => _otherAccount ? null : _api;
   LibraryProvider? _lib;
   _ComicPages? _pages;
   // Image EPUB only: each page's EPUB position.
@@ -160,6 +166,7 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
     WidgetsBinding.instance.addObserver(this);
     _setFullscreen(true);
     _api = context.read<AuthProvider>().apiService;
+    _otherAccount = DownloadService().isFromOtherAccount(widget.itemId);
     _lib = context.read<LibraryProvider>();
     _lib?.setReaderQuiet(true);
     ScopedPrefs.getBool(_directionKey).then((v) {
@@ -201,7 +208,10 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
   /// The saved page: the location when it is a page number, otherwise the
   /// progress fraction (a CBZ last read in the old reader saved neither).
   int _savedPage(int count) {
-    final data = _lib?.getProgressData(widget.itemId);
+    final spot = _otherSpot;
+    final data = _otherAccount
+        ? (spot == null ? null : {'ebookLocation': spot.location, 'ebookProgress': spot.progress})
+        : _lib?.getProgressData(widget.itemId);
     final cfis = _cfis;
     if (cfis != null) {
       final index = pageIndexForCfi(cfis, data?['ebookLocation'] as String?);
@@ -250,7 +260,11 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
         });
         return;
       }
-      await _pullServerPosition();
+      if (_otherAccount) {
+        _otherSpot = await DownloadService().otherAccountReadingSpot(widget.itemId);
+      } else {
+        await _pullServerPosition();
+      }
       if (!mounted) return;
       final start = _savedPage(pages.count);
       setState(() {
@@ -311,7 +325,7 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
   /// web or another device; a BookOrbit library refresh carries no page). A
   /// page this phone hasn't sent yet wins, and a slow server keeps the phone's.
   Future<void> _pullServerPosition() async {
-    final api = _api;
+    final api = _syncApi;
     final lib = _lib;
     if (api == null || lib == null || lib.isOffline) return;
     try {
@@ -334,7 +348,7 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
     }
   }
 
-  bool get _serverBookmarks => _cfis != null && (_api?.isBookOrbit ?? false);
+  bool get _serverBookmarks => _cfis != null && (_syncApi?.isBookOrbit ?? false);
 
   /// What a bookmark on [page] is saved as: the page's EPUB position for a
   /// picture EPUB, otherwise the page number.
@@ -364,7 +378,7 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
   /// Squares the phone's bookmarks with BookOrbit's: ones deleted elsewhere
   /// go, ones made here offline are sent, ones made elsewhere arrive.
   Future<void> _syncBookmarks() async {
-    final api = _api;
+    final api = _syncApi;
     if (api == null) return;
     final server = await api.ebookBookmarks(widget.itemId);
     if (server == null) return;
@@ -532,14 +546,19 @@ class _ComicReaderViewState extends State<ComicReaderView> with WidgetsBindingOb
 
   void _flushProgress() {
     final page = _pendingPage;
-    final api = _api;
+    final api = _syncApi;
     final count = _pages?.count ?? 0;
-    if (page == null || api == null || count <= 0 || page == _lastSyncedPage) return;
+    if (page == null || count <= 0 || page == _lastSyncedPage) return;
+    if (api == null && !_otherAccount) return;
     final frac = (page / count).clamp(0.0, 1.0);
     final cfis = _cfis;
     final location = cfis != null && page <= cfis.length ? cfis[page - 1] : '$page';
-    ProgressSyncService().pushEbookProgress(api, widget.itemId, location: location, progress: frac);
-    _lib?.applyLocalEbookProgress(widget.itemId, location: location, progress: frac);
+    if (api == null) {
+      unawaited(DownloadService().saveOtherAccountReadingSpot(widget.itemId, location, frac));
+    } else {
+      ProgressSyncService().pushEbookProgress(api, widget.itemId, location: location, progress: frac);
+      _lib?.applyLocalEbookProgress(widget.itemId, location: location, progress: frac);
+    }
     _lastSync = DateTime.now();
     _lastSyncedPage = page;
     _pendingPage = null;

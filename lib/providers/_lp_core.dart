@@ -1430,6 +1430,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (mp == null || player.isPlaying || player.currentItemId != itemId) return;
       final serverUpd = (mp['lastUpdate'] as num?)?.toInt() ?? 0;
       if (serverUpd <= await ProgressSyncService().getSavedTimestamp(itemId)) return;
+      // A chapter picked or a start still loading moved the player after the
+      // server's save, without saving yet.
+      if (serverUpd <= (player.lastSeekAt?.millisecondsSinceEpoch ?? 0)) return;
       debugPrint('[Sync] BookOrbit has a newer position for the paused book');
       _onRemoteProgressUpdated(mp);
     } catch (e) {
@@ -1762,6 +1765,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
               debugPrint('[Sync] Ignoring remote position for paused player: '
                   'server ${serverTime.toStringAsFixed(1)}s ($newUpd) is older '
                   'than what this phone saved ($savedAt)');
+              return;
+            }
+            final movedAt = player.lastSeekAt?.millisecondsSinceEpoch ?? 0;
+            if (newUpd <= movedAt) {
+              debugPrint('[Sync] Ignoring remote position for paused player: '
+                  'server ${serverTime.toStringAsFixed(1)}s ($newUpd) is older '
+                  'than the last move here ($movedAt)');
               return;
             }
             if (player.isPlaying) return;
