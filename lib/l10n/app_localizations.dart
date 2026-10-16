@@ -172,6 +172,24 @@ abstract class AppLocalizations {
   /// **'Absorb couldn\'t reach your server for collections and playlists.'**
   String get listsLoadFailedHint;
 
+  /// No description provided for @listsNoneBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'No collections or Smart Scopes'**
+  String get listsNoneBookOrbit;
+
+  /// No description provided for @listsNoneHintBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'Collections and Smart Scopes are made on your BookOrbit server, and show up here.'**
+  String get listsNoneHintBookOrbit;
+
+  /// No description provided for @listsLoadFailedHintBookOrbit.
+  ///
+  /// In en, this message translates to:
+  /// **'Absorb couldn\'t reach your server for collections and Smart Scopes.'**
+  String get listsLoadFailedHintBookOrbit;
+
   /// No description provided for @cancel.
   ///
   /// In en, this message translates to:
@@ -1342,11 +1360,11 @@ abstract class AppLocalizations {
   /// **'DESC'**
   String get desc;
 
-  /// No description provided for @fileSize.
+  /// No description provided for @sortFileSize.
   ///
   /// In en, this message translates to:
-  /// **'Size'**
-  String get fileSize;
+  /// **'File Size'**
+  String get sortFileSize;
 
   /// No description provided for @lastUpdated.
   ///
@@ -8974,6 +8992,54 @@ abstract class AppLocalizations {
   /// **'Collection name'**
   String get collectionNameHint;
 
+  /// No description provided for @listsNewCollectionSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Group books into a list you keep'**
+  String get listsNewCollectionSubtitle;
+
+  /// No description provided for @listsNewCollectionNeedsBookSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Start it with at least one book'**
+  String get listsNewCollectionNeedsBookSubtitle;
+
+  /// No description provided for @listsNewPlaylistSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Line up books to listen to in order'**
+  String get listsNewPlaylistSubtitle;
+
+  /// No description provided for @listsAddBooksNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Add books now'**
+  String get listsAddBooksNow;
+
+  /// No description provided for @listsPickBooksNext.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll pick books next. A collection on this server needs at least one.'**
+  String get listsPickBooksNext;
+
+  /// No description provided for @listsCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get listsCreate;
+
+  /// No description provided for @listsCollectionNeedsBook.
+  ///
+  /// In en, this message translates to:
+  /// **'A collection needs at least one book, so nothing was created.'**
+  String get listsCollectionNeedsBook;
+
+  /// No description provided for @listsCreateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t create it'**
+  String get listsCreateFailed;
+
   /// No description provided for @castToDevice.
   ///
   /// In en, this message translates to:
@@ -13059,6 +13125,672 @@ abstract class AppLocalizations {
   /// **'Collection'**
   String get collectionDetailDefaultName;
 
+  /// No description provided for @smartScopeBookCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Smart Scope · {count} books'**
+  String smartScopeBookCount(int count);
+
+  /// No description provided for @smartScopeNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New Smart Scope'**
+  String get smartScopeNew;
+
+  /// No description provided for @smartScopeNewSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save a set of filters as a list that keeps itself up to date'**
+  String get smartScopeNewSubtitle;
+
+  /// No description provided for @smartScopeEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Smart Scope'**
+  String get smartScopeEditTitle;
+
+  /// No description provided for @smartScopeIcon.
+  ///
+  /// In en, this message translates to:
+  /// **'Icon'**
+  String get smartScopeIcon;
+
+  /// No description provided for @smartScopePublic.
+  ///
+  /// In en, this message translates to:
+  /// **'Visible to all users'**
+  String get smartScopePublic;
+
+  /// No description provided for @smartScopeKobo.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync to Kobo'**
+  String get smartScopeKobo;
+
+  /// No description provided for @smartScopeRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Rules'**
+  String get smartScopeRules;
+
+  /// No description provided for @smartScopeMatchAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Match all'**
+  String get smartScopeMatchAll;
+
+  /// No description provided for @smartScopeMatchAny.
+  ///
+  /// In en, this message translates to:
+  /// **'Match any'**
+  String get smartScopeMatchAny;
+
+  /// No description provided for @smartScopeAddRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Add rule'**
+  String get smartScopeAddRule;
+
+  /// No description provided for @smartScopeAddGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Add group'**
+  String get smartScopeAddGroup;
+
+  /// No description provided for @smartScopeGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Group'**
+  String get smartScopeGroup;
+
+  /// No description provided for @smartScopeStartFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Start from'**
+  String get smartScopeStartFrom;
+
+  /// No description provided for @smartScopeFromScratch.
+  ///
+  /// In en, this message translates to:
+  /// **'Build from scratch'**
+  String get smartScopeFromScratch;
+
+  /// No description provided for @smartScopeTplHasSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Has a series'**
+  String get smartScopeTplHasSeries;
+
+  /// No description provided for @smartScopeTplRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Added recently'**
+  String get smartScopeTplRecent;
+
+  /// No description provided for @smartScopeTplPdf.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF only'**
+  String get smartScopeTplPdf;
+
+  /// No description provided for @smartScopeTplNoGenres.
+  ///
+  /// In en, this message translates to:
+  /// **'No genres'**
+  String get smartScopeTplNoGenres;
+
+  /// No description provided for @smartScopeTplEpub.
+  ///
+  /// In en, this message translates to:
+  /// **'EPUB only'**
+  String get smartScopeTplEpub;
+
+  /// No description provided for @smartScopeCounting.
+  ///
+  /// In en, this message translates to:
+  /// **'Counting...'**
+  String get smartScopeCounting;
+
+  /// No description provided for @smartScopeSort.
+  ///
+  /// In en, this message translates to:
+  /// **'Default sort'**
+  String get smartScopeSort;
+
+  /// No description provided for @smartScopeAddSort.
+  ///
+  /// In en, this message translates to:
+  /// **'Add sort level'**
+  String get smartScopeAddSort;
+
+  /// No description provided for @smartScopeSortNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No sort set, so books sort by title.'**
+  String get smartScopeSortNone;
+
+  /// No description provided for @smartScopeAscending.
+  ///
+  /// In en, this message translates to:
+  /// **'Ascending'**
+  String get smartScopeAscending;
+
+  /// No description provided for @smartScopeDescending.
+  ///
+  /// In en, this message translates to:
+  /// **'Descending'**
+  String get smartScopeDescending;
+
+  /// No description provided for @smartScopeDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Smart Scope'**
+  String get smartScopeDelete;
+
+  /// No description provided for @smartScopeSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the Smart Scope'**
+  String get smartScopeSaveFailed;
+
+  /// No description provided for @smartScopeDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the Smart Scope'**
+  String get smartScopeDeleteFailed;
+
+  /// No description provided for @smartScopeLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the Smart Scope'**
+  String get smartScopeLoadFailed;
+
+  /// No description provided for @smartScopeUnsupportedRule.
+  ///
+  /// In en, this message translates to:
+  /// **'This rule can only be changed on the BookOrbit web. It\'s kept as it is.'**
+  String get smartScopeUnsupportedRule;
+
+  /// No description provided for @smartScopeAnd.
+  ///
+  /// In en, this message translates to:
+  /// **'and'**
+  String get smartScopeAnd;
+
+  /// No description provided for @smartScopeDays.
+  ///
+  /// In en, this message translates to:
+  /// **'days'**
+  String get smartScopeDays;
+
+  /// No description provided for @smartScopeWeeks.
+  ///
+  /// In en, this message translates to:
+  /// **'weeks'**
+  String get smartScopeWeeks;
+
+  /// No description provided for @smartScopeMonths.
+  ///
+  /// In en, this message translates to:
+  /// **'months'**
+  String get smartScopeMonths;
+
+  /// No description provided for @smartScopePickDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a date'**
+  String get smartScopePickDate;
+
+  /// No description provided for @smartScopeAddValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a value'**
+  String get smartScopeAddValue;
+
+  /// No description provided for @smartScopeValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Value'**
+  String get smartScopeValue;
+
+  /// No description provided for @smartScopeCustomFields.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom fields'**
+  String get smartScopeCustomFields;
+
+  /// No description provided for @smartScopeAnyProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Any provider'**
+  String get smartScopeAnyProvider;
+
+  /// No description provided for @smartScopeScoreOutstanding.
+  ///
+  /// In en, this message translates to:
+  /// **'Outstanding'**
+  String get smartScopeScoreOutstanding;
+
+  /// No description provided for @smartScopeScoreGood.
+  ///
+  /// In en, this message translates to:
+  /// **'Good'**
+  String get smartScopeScoreGood;
+
+  /// No description provided for @smartScopeScoreFair.
+  ///
+  /// In en, this message translates to:
+  /// **'Fair'**
+  String get smartScopeScoreFair;
+
+  /// No description provided for @smartScopeScorePoor.
+  ///
+  /// In en, this message translates to:
+  /// **'Poor'**
+  String get smartScopeScorePoor;
+
+  /// No description provided for @smartScopeMb.
+  ///
+  /// In en, this message translates to:
+  /// **'MB'**
+  String get smartScopeMb;
+
+  /// No description provided for @smartScopeMaxValues.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to 20 values'**
+  String get smartScopeMaxValues;
+
+  /// No description provided for @scopeFieldTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get scopeFieldTitle;
+
+  /// No description provided for @scopeFieldAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'Author'**
+  String get scopeFieldAuthor;
+
+  /// No description provided for @scopeFieldSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Series'**
+  String get scopeFieldSeries;
+
+  /// No description provided for @scopeFieldSeriesIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'Series number'**
+  String get scopeFieldSeriesIndex;
+
+  /// No description provided for @scopeFieldGenre.
+  ///
+  /// In en, this message translates to:
+  /// **'Genre'**
+  String get scopeFieldGenre;
+
+  /// No description provided for @scopeFieldTag.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag'**
+  String get scopeFieldTag;
+
+  /// No description provided for @scopeFieldReadStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Read status'**
+  String get scopeFieldReadStatus;
+
+  /// No description provided for @scopeFieldReadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading progress'**
+  String get scopeFieldReadProgress;
+
+  /// No description provided for @scopeFieldRating.
+  ///
+  /// In en, this message translates to:
+  /// **'Your rating'**
+  String get scopeFieldRating;
+
+  /// No description provided for @scopeFieldFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Format'**
+  String get scopeFieldFormat;
+
+  /// No description provided for @scopeFieldLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Library'**
+  String get scopeFieldLibrary;
+
+  /// No description provided for @scopeFieldCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Collection'**
+  String get scopeFieldCollection;
+
+  /// No description provided for @scopeFieldPublisher.
+  ///
+  /// In en, this message translates to:
+  /// **'Publisher'**
+  String get scopeFieldPublisher;
+
+  /// No description provided for @scopeFieldLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get scopeFieldLanguage;
+
+  /// No description provided for @scopeFieldPublishedDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Published date'**
+  String get scopeFieldPublishedDate;
+
+  /// No description provided for @scopeFieldPublishedYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Published year'**
+  String get scopeFieldPublishedYear;
+
+  /// No description provided for @scopeFieldAddedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Date added'**
+  String get scopeFieldAddedAt;
+
+  /// No description provided for @scopeFieldStartedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Date started'**
+  String get scopeFieldStartedAt;
+
+  /// No description provided for @scopeFieldFinishedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Date finished'**
+  String get scopeFieldFinishedAt;
+
+  /// No description provided for @scopeFieldPageCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Page count'**
+  String get scopeFieldPageCount;
+
+  /// No description provided for @scopeFieldFileSize.
+  ///
+  /// In en, this message translates to:
+  /// **'File size'**
+  String get scopeFieldFileSize;
+
+  /// No description provided for @scopeFieldCommunityRating.
+  ///
+  /// In en, this message translates to:
+  /// **'Community rating'**
+  String get scopeFieldCommunityRating;
+
+  /// No description provided for @scopeFieldCommunityRatingCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Community review count'**
+  String get scopeFieldCommunityRatingCount;
+
+  /// No description provided for @scopeFieldMetadataScore.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata score'**
+  String get scopeFieldMetadataScore;
+
+  /// No description provided for @scopeFieldIsbn.
+  ///
+  /// In en, this message translates to:
+  /// **'ISBN'**
+  String get scopeFieldIsbn;
+
+  /// No description provided for @scopeFieldDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get scopeFieldDescription;
+
+  /// No description provided for @scopeFieldCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover'**
+  String get scopeFieldCover;
+
+  /// No description provided for @scopeFieldAudioCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobook cover'**
+  String get scopeFieldAudioCover;
+
+  /// No description provided for @scopeFieldFileAvailability.
+  ///
+  /// In en, this message translates to:
+  /// **'File availability'**
+  String get scopeFieldFileAvailability;
+
+  /// No description provided for @scopeFieldLockStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock status'**
+  String get scopeFieldLockStatus;
+
+  /// No description provided for @scopeFieldSeriesStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Series status'**
+  String get scopeFieldSeriesStatus;
+
+  /// No description provided for @scopeSortUpdatedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Date updated'**
+  String get scopeSortUpdatedAt;
+
+  /// No description provided for @scopeSortLastReadAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Last read'**
+  String get scopeSortLastReadAt;
+
+  /// No description provided for @scopeSortRandom.
+  ///
+  /// In en, this message translates to:
+  /// **'Random'**
+  String get scopeSortRandom;
+
+  /// No description provided for @scopeOpContains.
+  ///
+  /// In en, this message translates to:
+  /// **'contains'**
+  String get scopeOpContains;
+
+  /// No description provided for @scopeOpNotContains.
+  ///
+  /// In en, this message translates to:
+  /// **'does not contain'**
+  String get scopeOpNotContains;
+
+  /// No description provided for @scopeOpStartsWith.
+  ///
+  /// In en, this message translates to:
+  /// **'starts with'**
+  String get scopeOpStartsWith;
+
+  /// No description provided for @scopeOpEndsWith.
+  ///
+  /// In en, this message translates to:
+  /// **'ends with'**
+  String get scopeOpEndsWith;
+
+  /// No description provided for @scopeOpEq.
+  ///
+  /// In en, this message translates to:
+  /// **'is'**
+  String get scopeOpEq;
+
+  /// No description provided for @scopeOpNotEq.
+  ///
+  /// In en, this message translates to:
+  /// **'is not'**
+  String get scopeOpNotEq;
+
+  /// No description provided for @scopeOpIsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'is empty'**
+  String get scopeOpIsEmpty;
+
+  /// No description provided for @scopeOpIsNotEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'is not empty'**
+  String get scopeOpIsNotEmpty;
+
+  /// No description provided for @scopeOpGt.
+  ///
+  /// In en, this message translates to:
+  /// **'greater than'**
+  String get scopeOpGt;
+
+  /// No description provided for @scopeOpGte.
+  ///
+  /// In en, this message translates to:
+  /// **'at least'**
+  String get scopeOpGte;
+
+  /// No description provided for @scopeOpLt.
+  ///
+  /// In en, this message translates to:
+  /// **'less than'**
+  String get scopeOpLt;
+
+  /// No description provided for @scopeOpLte.
+  ///
+  /// In en, this message translates to:
+  /// **'at most'**
+  String get scopeOpLte;
+
+  /// No description provided for @scopeOpBetween.
+  ///
+  /// In en, this message translates to:
+  /// **'between'**
+  String get scopeOpBetween;
+
+  /// No description provided for @scopeOpIncludesAny.
+  ///
+  /// In en, this message translates to:
+  /// **'includes any of'**
+  String get scopeOpIncludesAny;
+
+  /// No description provided for @scopeOpIncludesAll.
+  ///
+  /// In en, this message translates to:
+  /// **'includes all of'**
+  String get scopeOpIncludesAll;
+
+  /// No description provided for @scopeOpExcludesAll.
+  ///
+  /// In en, this message translates to:
+  /// **'excludes all of'**
+  String get scopeOpExcludesAll;
+
+  /// No description provided for @scopeOpBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'before'**
+  String get scopeOpBefore;
+
+  /// No description provided for @scopeOpAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'after'**
+  String get scopeOpAfter;
+
+  /// No description provided for @scopeOpWithinLast.
+  ///
+  /// In en, this message translates to:
+  /// **'within the last'**
+  String get scopeOpWithinLast;
+
+  /// No description provided for @scopeOpIsMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'is missing'**
+  String get scopeOpIsMissing;
+
+  /// No description provided for @scopeOpIsPresent.
+  ///
+  /// In en, this message translates to:
+  /// **'is present'**
+  String get scopeOpIsPresent;
+
+  /// No description provided for @scopeOpIsUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'is unread'**
+  String get scopeOpIsUnread;
+
+  /// No description provided for @scopeOpIsInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'is in progress'**
+  String get scopeOpIsInProgress;
+
+  /// No description provided for @scopeOpIsFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'is finished'**
+  String get scopeOpIsFinished;
+
+  /// No description provided for @scopeOpIsLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'is locked'**
+  String get scopeOpIsLocked;
+
+  /// No description provided for @scopeOpIsUnlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'is unlocked'**
+  String get scopeOpIsUnlocked;
+
+  /// No description provided for @scopeOpIsUpNext.
+  ///
+  /// In en, this message translates to:
+  /// **'is up next'**
+  String get scopeOpIsUpNext;
+
+  /// No description provided for @scopeOpIsTrue.
+  ///
+  /// In en, this message translates to:
+  /// **'is yes'**
+  String get scopeOpIsTrue;
+
+  /// No description provided for @scopeOpIsFalse.
+  ///
+  /// In en, this message translates to:
+  /// **'is no'**
+  String get scopeOpIsFalse;
+
+  /// No description provided for @smartScopeMatchCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No books match} =1{1 book matches} other{{count} books match}}'**
+  String smartScopeMatchCount(int count);
+
+  /// No description provided for @smartScopeDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"? This can\'t be undone.'**
+  String smartScopeDeleteConfirm(String name);
+
   /// No description provided for @collectionDetailBookCount.
   ///
   /// In en, this message translates to:
@@ -17073,6 +17805,12 @@ abstract class AppLocalizations {
   /// **'Already the default version'**
   String get ebookAlreadyDefault;
 
+  /// No description provided for @fileSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get fileSize;
+
   /// No description provided for @homeTapCardToResume.
   ///
   /// In en, this message translates to:
@@ -17553,6 +18291,12 @@ abstract class AppLocalizations {
   /// **'This ebook format can\'t be opened in the reader yet'**
   String get readerFormatUnsupported;
 
+  /// No description provided for @readerCouldNotOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'This ebook couldn\'t be opened. The file may be damaged.'**
+  String get readerCouldNotOpen;
+
   /// No description provided for @moreActions.
   ///
   /// In en, this message translates to:
@@ -17630,6 +18374,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Pins them above the page instead of showing them on tap. The page gets a little shorter so no text is covered.'**
   String get readerPinTopBarHint;
+
+  /// No description provided for @readerScrollMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Scroll mode'**
+  String get readerScrollMode;
+
+  /// No description provided for @readerScrollModeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Scroll down through the book instead of turning pages. Applies to every book.'**
+  String get readerScrollModeHint;
 
   /// No description provided for @readerKeepAwake.
   ///
@@ -18939,6 +19695,12 @@ abstract class AppLocalizations {
   /// **'Can\'t find the narration on the page'**
   String get readAlongLost;
 
+  /// Ebook reader button that returns the page to the sentence being narrated after the reader moved away during read along
+  ///
+  /// In en, this message translates to:
+  /// **'Back to narration'**
+  String get readAlongBackToNarration;
+
   /// No description provided for @findInEbook.
   ///
   /// In en, this message translates to:
@@ -19838,6 +20600,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reading direction'**
   String get comicReadingDirection;
+
+  /// No description provided for @comicPageNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {page}'**
+  String comicPageNumber(int page);
+
+  /// No description provided for @comicBookmarkRemoveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove the bookmark from the server. Try again when you\'re online.'**
+  String get comicBookmarkRemoveFailed;
 
   /// No description provided for @comicLeftToRight.
   ///

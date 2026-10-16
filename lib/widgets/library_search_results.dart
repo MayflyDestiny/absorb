@@ -44,6 +44,7 @@ class BookResultTile extends StatelessWidget {
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = itemId != null && DownloadService().isDownloaded(itemId);
     final isFinished = itemId != null && lib.getProgressData(itemId)?['isFinished'] == true;
+    final isSkimmed = itemId != null && lib.getProgressData(itemId)?['skimmed'] == true;
 
     String? coverUrl;
     final bookOrbitApi = context.read<AuthProvider>().apiService;
@@ -110,9 +111,9 @@ class BookResultTile extends StatelessWidget {
                         ),
                       ),
                     if (isFinished)
-                      const Positioned(
+                      Positioned(
                         top: 3, right: 3,
-                        child: CoverFinishedBadge(),
+                        child: CoverFinishedBadge(isSkimmed: isSkimmed),
                       ),
                     if (isExplicit)
                       Positioned(

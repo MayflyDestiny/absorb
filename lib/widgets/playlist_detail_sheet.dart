@@ -620,6 +620,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         final progressKey = episodeId != null ? '$libraryItemId-$episodeId' : libraryItemId;
         final progress = lib.getProgress(progressKey);
         final isFinished = lib.getProgressData(progressKey)?['isFinished'] == true;
+        final isSkimmed = lib.getProgressData(progressKey)?['skimmed'] == true;
         final isDownloaded = DownloadService().isDownloaded(progressKey);
 
         String? episodeTitle;
@@ -684,9 +685,9 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                             ),
                           ),
                         if (isFinished)
-                          const Positioned(
+                          Positioned(
                             top: 3, right: 3,
-                            child: CoverFinishedBadge(),
+                            child: CoverFinishedBadge(isSkimmed: isSkimmed),
                           ),
                         if (isDownloaded)
                           Positioned(
@@ -751,6 +752,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
         final progressKey = episodeId != null ? '$libraryItemId-$episodeId' : libraryItemId;
         final progress = lib.getProgress(progressKey);
         final isFinished = lib.getProgressData(progressKey)?['isFinished'] == true;
+        final isSkimmed = lib.getProgressData(progressKey)?['skimmed'] == true;
         final isDownloaded = DownloadService().isDownloaded(progressKey);
 
         String? episodeTitle;
@@ -785,7 +787,7 @@ class _PlaylistDetailSheetState extends State<PlaylistDetailSheet> {
                     if (isFinished)
                       Positioned(
                         top: 4, right: 4,
-                        child: CoverFinishedBadge(),
+                        child: CoverFinishedBadge(isSkimmed: isSkimmed),
                       ),
                     if (isExplicit)
                       Positioned(

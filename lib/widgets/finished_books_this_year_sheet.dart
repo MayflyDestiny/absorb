@@ -256,7 +256,8 @@ class _FinishedBooksThisYearSheetState
                     aspectRatio: 1.0,
                     child: Stack(children: [
                       Positioned.fill(child: _cover(coverUrl, lib, cs)),
-                      _finishedBadge(isDownloaded),
+                      _finishedBadge(isDownloaded,
+                          isSkimmed: progressData?['skimmed'] == true),
                     ]),
                   ),
                   Expanded(
@@ -341,7 +342,9 @@ class _FinishedBooksThisYearSheetState
                   borderRadius: BorderRadius.circular(10),
                   child: Stack(children: [
                     Positioned.fill(child: _cover(coverUrl, lib, cs)),
-                    _finishedBadge(isDownloaded),
+                    _finishedBadge(isDownloaded,
+                        isSkimmed:
+                            lib.getProgressData(itemId)?['skimmed'] == true),
                   ]),
                 ),
               ),
@@ -420,12 +423,13 @@ class _FinishedBooksThisYearSheetState
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
 
-  Widget _finishedBadge(bool isDownloaded) => Positioned.fill(
+  Widget _finishedBadge(bool isDownloaded, {bool isSkimmed = false}) =>
+      Positioned.fill(
         child: Stack(children: [
-          const Positioned(
+          Positioned(
             top: 4,
             right: 4,
-            child: CoverFinishedBadge(),
+            child: CoverFinishedBadge(isSkimmed: isSkimmed),
           ),
           if (isDownloaded)
             const Positioned(

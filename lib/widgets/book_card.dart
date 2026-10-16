@@ -61,6 +61,7 @@ class BookCard extends StatelessWidget {
     // Progress from LibraryProvider (fetched via /api/me, same source as book detail)
     final progress = lib.getProgress(itemId);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
+    final isSkimmed = lib.getProgressData(itemId)?['skimmed'] == true;
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = DownloadService().isDownloaded(itemId ?? '');
     // Partial downloads read as "已保存 2/1097"; full ones stay a bare
@@ -87,6 +88,7 @@ class BookCard extends StatelessWidget {
             totalChapters: totalChapters)
         : _buildCompactCard(context, cs, tt, l, title, subtitle, authorName, coverUrl, progress, headers,
             isFinished: isFinished,
+            isSkimmed: isSkimmed,
             isDownloaded: isDownloaded,
             hasEbook: hasEbook,
             savedChapters: savedChapters,
@@ -348,6 +350,7 @@ class BookCard extends StatelessWidget {
     double progress,
     Map<String, String> headers, {
     bool isFinished = false,
+    bool isSkimmed = false,
     bool isDownloaded = false,
     bool isExplicit = false,
     int unfinishedCount = 0,
@@ -396,10 +399,10 @@ class BookCard extends StatelessWidget {
                       ),
                     ),
                   if (isFinished)
-                    const Positioned(
+                    Positioned(
                       top: 4,
                       right: 4,
-                      child: CoverFinishedBadge(),
+                      child: CoverFinishedBadge(isSkimmed: isSkimmed),
                     ),
                   if (isExplicit)
                     Positioned(

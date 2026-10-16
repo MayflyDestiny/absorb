@@ -31,6 +31,7 @@ import 'download_confirm.dart';
 import '../services/api_service.dart';
 import '../utils/duration_format.dart';
 import '../services/app_log.dart';
+import '../utils/series_number_match.dart';
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
 /// Can be called from any screen.
@@ -897,9 +898,10 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     );
     if (proceed != true || !mounted) return;
 
-    // Collect owned titles and ASINs for cross-referencing
+    // Collect owned titles, ASINs and series numbers for cross-referencing
     final ownedTitles = <String>{};
     final ownedAsins = <String>{};
+    final ownedNumbers = SeriesNumberOwnership();
     for (final book in _books) {
       final media = book['media'] as Map<String, dynamic>? ?? {};
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
@@ -907,6 +909,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       final asin = metadata['asin'] as String? ?? '';
       if (title.isNotEmpty) ownedTitles.add(title);
       if (asin.isNotEmpty) ownedAsins.add(asin);
+      ownedNumbers.add(_getRawSequence(book), title, asin);
     }
 
     // Try to get a series ASIN from one of the books via Audnexus
@@ -973,6 +976,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       seriesAsin: seriesAsin,
       ownedTitles: ownedTitles,
       ownedAsins: ownedAsins,
+      ownedNumbers: ownedNumbers,
     );
   }
 
@@ -1561,6 +1565,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final progress = lib.getProgress(bookId);
     final isFinished = lib.getProgressData(bookId)?['isFinished'] == true;
+    final isSkimmed = lib.getProgressData(bookId)?['skimmed'] == true;
     final isDownloaded = DownloadService().isDownloaded(bookId);
     final isDownloading = DownloadService().isDownloading(bookId);
     final downloadPct = (DownloadService().downloadProgress(bookId) * 100).clamp(0, 100).round();
@@ -1626,8 +1631,8 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                         ),
                       ),
                     if (isFinished)
-                      const Positioned(top: 3, right: 3,
-                        child: CoverFinishedBadge(),
+                      Positioned(top: 3, right: 3,
+                        child: CoverFinishedBadge(isSkimmed: isSkimmed),
                       ),
                     if (isExplicit)
                       Positioned(top: 4 + (isFinished ? 24 : 0), right: 4,

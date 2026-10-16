@@ -156,6 +156,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
               }
             } else {
               if (!shouldIncludeBook(itemId)) continue;
+              if (_isEbookOnlyEntry(e)) continue;
               if (isDownloadedOnly &&
                   !_progressMap.containsKey(itemId) &&
                   !_manualAbsorbAdds.contains(itemId)) {
@@ -291,7 +292,10 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
     final toRemove = <String>[];
     for (final key in _absorbingBookIds) {
-      if (key.length <= 36 && !shouldIncludeBook(key)) {
+      if (key.length <= 36 &&
+          (!shouldIncludeBook(key) ||
+              (_isEbookOnlyEntry(_absorbingItemCache[key]) &&
+                  !(player.hasBook && key == activeKey)))) {
         toRemove.add(key);
         continue;
       }
@@ -396,6 +400,15 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       await _saveManualAbsorbing();
       notifyListeners();
     }
+  }
+
+  /// Absorbing is the listening queue, and its cards are built around the
+  /// player. A book with nothing to play stays off it; Home's Continue row
+  /// opens it in the reader instead.
+  bool _isEbookOnlyEntry(Map<String, dynamic>? e) {
+    if (e == null) return false;
+    final nested = e['libraryItem'];
+    return PlayerSettings.isEbookOnly(nested is Map<String, dynamic> ? nested : e);
   }
 
   Future<void> addToAbsorbing(String itemId) async {
@@ -669,9 +682,11 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     if (itemId.length > 36 && existing['isFinished'] != true) {
       nudgeUnfinishedEpisodeCount(itemId.substring(0, 36), -1);
     }
+    // Finished from here is BookOrbit's "read", not "skimmed".
     _progressMap[itemId] = {
       ...existing,
       'isFinished': true,
+      if (!fromRemote) 'skimmed': false,
       // Keep a finished date so the stats widget's "books this year" count
       // reflects the finish immediately, before the server round-trip.
       'finishedAt':

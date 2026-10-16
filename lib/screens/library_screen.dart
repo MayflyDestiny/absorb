@@ -46,6 +46,8 @@ import '../services/scoped_prefs.dart';
 import '../services/server_backend.dart';
 import '../services/user_account_service.dart';
 import '../l10n/app_localizations.dart';
+import 'smart_scope_editor_screen.dart';
+import '../widgets/new_list_flow.dart';
 
 /// Responsive grid column count based on available width and the cover size
 /// setting; scales up on tablets/iPads.
@@ -113,6 +115,8 @@ enum LibraryFilter {
   missingMetadata,
   genre,
   tag,
+  // BookOrbit only: one reading status, carried as the filter value.
+  readStatus,
 }
 
 extension LibraryFilterProgressValue on LibraryFilter {
@@ -224,6 +228,8 @@ String? buildLibraryFilterQuery(
     LibraryFilter.genre when genre != null =>
       _encodedLibraryFilter('genres', genre),
     LibraryFilter.tag when tag != null => _encodedLibraryFilter('tags', tag),
+    LibraryFilter.readStatus when filterValue != null =>
+      _encodedLibraryFilter('readStatus', filterValue),
     LibraryFilter.missingMetadata when missingMetadata != null =>
       _encodedLibraryFilter('missing', missingMetadata.filterValue),
     _ => null,
@@ -264,9 +270,11 @@ LibrarySort librarySortForServer(LibrarySort sort) {
 }
 
 /// BookOrbit has no supplementary ebooks, track counts, abridged or explicit
-/// flags, or RSS feeds to filter on.
+/// flags, or RSS feeds to filter on. Audiobookshelf has no reading statuses.
 bool libraryFilterSupportedOnServer(LibraryFilter filter) {
-  if (!ServerBackend.active.isBookOrbit) return true;
+  if (!ServerBackend.active.isBookOrbit) {
+    return filter != LibraryFilter.readStatus;
+  }
   return switch (filter) {
     LibraryFilter.hasSupplementaryEbook ||
     LibraryFilter.noSupplementaryEbook ||
@@ -296,7 +304,8 @@ bool libraryFilterRequiresValue(LibraryFilter filter) => switch (filter) {
   LibraryFilter.narrator ||
   LibraryFilter.language ||
   LibraryFilter.publisher ||
-  LibraryFilter.publishedDecade => true,
+  LibraryFilter.publishedDecade ||
+  LibraryFilter.readStatus => true,
   _ => false,
 };
 
@@ -3139,6 +3148,7 @@ lib.registerHasCoverFromItem(id, r);
         : missingMetadataFieldLabel(l, _missingMetadataFilter!),
     LibraryFilter.genre => _genreFilter ?? l.genre,
     LibraryFilter.tag => _tagFilter ?? l.tag,
+    LibraryFilter.readStatus => _filterValueLabel ?? l.readStatusTitle,
     LibraryFilter.none => '',
   };
 
@@ -3318,6 +3328,29 @@ lib.registerHasCoverFromItem(id, r);
             ? () {
                 Navigator.pop(ctx);
                 _openUpcomingReleases();
+              }
+            : null,
+        // Audiobookshelf only lets users with update permission make
+        // collections, and they hold books only; BookOrbit has no playlists.
+        onNewCollection: tab == LibraryTab.lists &&
+                !context.read<LibraryProvider>().isOffline &&
+                !context.read<LibraryProvider>().isPodcastLibrary &&
+                (ServerBackend.active.isBookOrbit || context.read<AuthProvider>().canUpdateMetadata)
+            ? () {
+                Navigator.pop(ctx);
+                startNewList(context, playlist: false);
+              }
+            : null,
+        onNewPlaylist: tab == LibraryTab.lists && !context.read<LibraryProvider>().isOffline && !ServerBackend.active.isBookOrbit
+            ? () {
+                Navigator.pop(ctx);
+                startNewList(context, playlist: true);
+              }
+            : null,
+        onNewSmartScope: tab == LibraryTab.lists && !context.read<LibraryProvider>().isOffline && ServerBackend.active.isBookOrbit
+            ? () {
+                Navigator.pop(ctx);
+                SmartScopeEditorScreen.open(context);
               }
             : null,
         currentSeriesFilter: _seriesFilter,

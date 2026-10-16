@@ -3,13 +3,15 @@ import '../l10n/app_localizations.dart';
 import '../services/player_settings.dart';
 
 /// State banner across the bottom of cover art: a finished check + "Finished"
-/// (green) and a downloaded arrow + "Downloaded" (white), stacked, over a strong
+/// (green, or "Skimmed" in amber for a BookOrbit book marked skimmed) and a
+/// downloaded arrow + "Downloaded" (white), stacked, over a strong
 /// dark scrim so they stay legible on any artwork. Place across the bottom of a
 /// cover Stack:
 ///   Positioned(left: 0, right: 0, bottom: 0, child: CoverStateBadges(...))
 class CoverStateBadges extends StatelessWidget {
   final bool isDownloaded;
   final bool isFinished;
+  final bool isSkimmed;
   final double iconSize;
 
   /// Shows just the icons (no text labels), for covers too small to fit the
@@ -24,6 +26,7 @@ class CoverStateBadges extends StatelessWidget {
     super.key,
     required this.isDownloaded,
     this.isFinished = false,
+    this.isSkimmed = false,
     this.iconSize = 13,
     this.iconOnly = false,
     this.borderRadius,
@@ -34,7 +37,10 @@ class CoverStateBadges extends StatelessWidget {
     if (!isDownloaded && !isFinished) return const SizedBox.shrink();
     final l = AppLocalizations.of(context)!;
     final green = Colors.greenAccent.shade400;
-    if (iconOnly) return _iconOnly(green);
+    final skimmed = isFinished && isSkimmed;
+    final doneIcon = skimmed ? Icons.fast_forward_rounded : Icons.check_circle_rounded;
+    final doneColor = skimmed ? Colors.amberAccent.shade200 : green;
+    if (iconOnly) return _iconOnly(doneIcon, doneColor);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
       decoration: BoxDecoration(
@@ -54,7 +60,8 @@ class CoverStateBadges extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (isFinished) _row(Icons.check_circle_rounded, l.finished, green),
+          if (isFinished)
+            _row(doneIcon, skimmed ? l.readStatusSkimmed : l.finished, doneColor),
           if (isFinished && isDownloaded) const SizedBox(height: 2),
           if (isDownloaded) _row(Icons.download_rounded, l.saved, Colors.white),
         ],
@@ -62,7 +69,7 @@ class CoverStateBadges extends StatelessWidget {
     );
   }
 
-  Widget _iconOnly(Color green) {
+  Widget _iconOnly(IconData doneIcon, Color doneColor) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       decoration: BoxDecoration(
@@ -80,7 +87,7 @@ class CoverStateBadges extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isFinished) Icon(Icons.check_circle_rounded, size: iconSize, color: green),
+          if (isFinished) Icon(doneIcon, size: iconSize, color: doneColor),
           if (isFinished && isDownloaded) const SizedBox(width: 3),
           if (isDownloaded) Icon(Icons.download_rounded, size: iconSize, color: Colors.white),
         ],
@@ -181,7 +188,11 @@ class CoverStatusChips extends StatelessWidget {
 /// "Finished" label (default), icon-only, or hidden entirely. Rebuilds when
 /// the setting changes.
 class CoverFinishedBadge extends StatelessWidget {
-  const CoverFinishedBadge({super.key});
+  /// A BookOrbit book marked "skimmed" shows an amber fast-forward badge
+  /// instead of the green "Finished" badge.
+  final bool isSkimmed;
+
+  const CoverFinishedBadge({super.key, this.isSkimmed = false});
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +200,13 @@ class CoverFinishedBadge extends StatelessWidget {
       listenable: PlayerSettings.settingsChanged,
       builder: (context, _) {
         final l = AppLocalizations.of(context)!;
-        final background = Colors.green.shade700.withValues(alpha: 0.92);
+        final background = (isSkimmed
+                ? Colors.amber.shade700
+                : Colors.green.shade700)
+            .withValues(alpha: 0.92);
+        final icon = isSkimmed
+            ? Icons.fast_forward_rounded
+            : Icons.check_circle_rounded;
         final mode = PlayerSettings.finishedBadgeMode;
         if (mode == 'off') return const SizedBox.shrink();
         if (mode == 'icon') {
@@ -197,8 +214,7 @@ class CoverFinishedBadge extends StatelessWidget {
             padding: const EdgeInsets.all(3),
             decoration:
                 BoxDecoration(color: background, shape: BoxShape.circle),
-            child: const Icon(Icons.check_circle_rounded,
-                size: 12, color: Colors.white),
+            child: Icon(icon, size: 12, color: Colors.white),
           );
         }
         return Container(
@@ -210,11 +226,10 @@ class CoverFinishedBadge extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.check_circle_rounded,
-                  size: 11, color: Colors.white),
+              Icon(icon, size: 11, color: Colors.white),
               const SizedBox(width: 3),
               Text(
-                l.finished,
+                isSkimmed ? l.readStatusSkimmed : l.finished,
                 style: const TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.w700,

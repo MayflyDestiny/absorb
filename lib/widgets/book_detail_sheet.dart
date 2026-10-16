@@ -24,6 +24,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:intl/intl.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/read_status.dart';
 import 'book_stats_sheet.dart';
 import '../services/book_stats_service.dart';
 import '../services/wording.dart';
@@ -587,6 +588,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     if (mounted) setState(() => _bookmarks = bm);
   }
 
+  /// The cover shape set for the book's own library (or the one being
+  /// browsed until the book has loaded), the same lookup the cards use.
+  void _loadCoverShape() {
+    final libraryId = _item?['libraryId'] as String? ??
+        context.read<LibraryProvider>().selectedLibraryId;
+    PlayerSettings.getRectangleCoversFor(libraryId).then((rect) {
+      if (mounted && _squareCovers == rect) setState(() => _squareCovers = !rect);
+    });
+  }
+
   Future<void> _loadItem() async {
     debugPrint('[BookDetail] _loadItem start item=${widget.itemId}');
     final loadStart = DateTime.now();
@@ -644,6 +655,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           } else {
             setState(() { _item = finalItem; _isLoading = false; });
           }
+          _loadCoverShape();
           if (BookDockInfo.of(finalItem)?.isWorking ?? false) {
             _dockPoll?.cancel();
             _dockPoll = Timer(const Duration(seconds: 3), () {
@@ -1717,16 +1729,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     return s;
   }
 
-  static String _readStatusLabel(AppLocalizations l, String s) => switch (s) {
-        'want_to_read' => l.readStatusWantToRead,
-        'reading' => l.readStatusReading,
-        'on_hold' => l.readStatusOnHold,
-        'rereading' => l.readStatusRereading,
-        'read' => l.readStatusRead,
-        'skimmed' => l.readStatusSkimmed,
-        'abandoned' => l.readStatusAbandoned,
-        _ => l.readStatusUnread,
-      };
+  static String _readStatusLabel(AppLocalizations l, String s) => readStatusLabel(l, s);
 
   static IconData _readStatusIcon(String s) => switch (s) {
         'want_to_read' => Icons.bookmark_add_outlined,

@@ -36,6 +36,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get listsLoadFailedHint => 'Absorb 无法连接到您的服务器以获取收藏集和播放列表。';
 
   @override
+  String get listsNoneBookOrbit => '没有收藏夹或智能范围';
+
+  @override
+  String get listsNoneHintBookOrbit => '收藏夹和智能范围在你的 BookOrbit 服务器上创建，并会显示在这里。';
+
+  @override
+  String get listsLoadFailedHintBookOrbit => 'Absorb 无法连接到你的服务器以获取收藏夹和智能范围。';
+
+  @override
   String get cancel => '取消';
 
   @override
@@ -670,7 +679,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get desc => '降序';
 
   @override
-  String get fileSize => '大小';
+  String get sortFileSize => '文件大小';
 
   @override
   String get lastUpdated => '最后更新';
@@ -1849,92 +1858,92 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get bookDockBadgePending => 'Pending';
+  String get bookDockBadgePending => '待处理';
 
   @override
-  String get bookDockBadgeExtracting => 'Reading file';
+  String get bookDockBadgeExtracting => '正在读取文件';
 
   @override
-  String get bookDockBadgeFetching => 'Looking up';
+  String get bookDockBadgeFetching => '正在查询';
 
   @override
-  String get bookDockBadgeError => 'Error';
+  String get bookDockBadgeError => '错误';
 
   @override
-  String get bookDockNeedsReview => 'Needs review';
+  String get bookDockNeedsReview => '需要审核';
 
   @override
-  String get bookDockNoMatch => 'No match';
+  String get bookDockNoMatch => '无匹配';
 
   @override
-  String get bookDockApplied => 'Applied';
+  String get bookDockApplied => '已应用';
 
   @override
-  String get bookDockNotApplied => 'Found details not used';
+  String get bookDockNotApplied => '找到的详情未使用';
 
   @override
-  String get bookDockNoDestination => 'No destination set';
+  String get bookDockNoDestination => '未设置目标位置';
 
   @override
-  String get bookDockNoAuthor => 'No author yet';
+  String get bookDockNoAuthor => '暂无作者';
 
   @override
-  String get bookDockLookUpAgain => 'Look up again';
+  String get bookDockLookUpAgain => '重新查询';
 
   @override
-  String get bookDockLookingUp => 'Looking up details again';
+  String get bookDockLookingUp => '正在重新查询详情';
 
   @override
-  String get bookDockLookUpFailed => 'Couldn\'t look up details';
+  String get bookDockLookUpFailed => '无法查询详情';
 
   @override
-  String get bookDockProposedChanges => 'Proposed changes';
+  String get bookDockProposedChanges => '建议的更改';
 
   @override
-  String get bookDockNoChanges => 'No details found online yet';
+  String get bookDockNoChanges => '尚未在线找到详情';
 
   @override
-  String get bookDockStillReading => 'The server is still reading this file';
+  String get bookDockStillReading => '服务器仍在读取此文件';
 
   @override
-  String get bookDockRoleBook => 'Book';
+  String get bookDockRoleBook => '图书';
 
   @override
-  String get bookDockRoleCover => 'Cover';
+  String get bookDockRoleCover => '封面';
 
   @override
-  String get bookDockRoleMetadata => 'Metadata';
+  String get bookDockRoleMetadata => '元数据';
 
   @override
-  String get bookDockRoleExtra => 'Extra';
+  String get bookDockRoleExtra => '附加文件';
 
   @override
-  String get bookDockFieldTitle => 'Title';
+  String get bookDockFieldTitle => '标题';
 
   @override
-  String get bookDockFieldSubtitle => 'Subtitle';
+  String get bookDockFieldSubtitle => '副标题';
 
   @override
-  String get bookDockFieldAuthors => 'Authors';
+  String get bookDockFieldAuthors => '作者';
 
   @override
-  String get bookDockFieldSeries => 'Series';
+  String get bookDockFieldSeries => '系列';
 
   @override
-  String get bookDockFieldPublisher => 'Publisher';
+  String get bookDockFieldPublisher => '出版社';
 
   @override
-  String get bookDockFieldYear => 'Year';
+  String get bookDockFieldYear => '年份';
 
   @override
-  String get bookDockFieldLanguage => 'Language';
+  String get bookDockFieldLanguage => '语言';
 
   @override
   String get bookDockFieldIsbn => 'ISBN';
 
   @override
   String bookDockMatch(int percent) {
-    return '$percent% match';
+    return '匹配度 $percent%';
   }
 
   @override
@@ -1942,15 +1951,15 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count files',
-      one: '1 file',
+      other: '$count 个文件',
+      one: '1 个文件',
     );
     return '$_temp0';
   }
 
   @override
   String bookDockGoesTo(String library) {
-    return 'Goes to $library';
+    return '归入$library';
   }
 
   @override
@@ -1958,8 +1967,8 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count fields',
-      one: '1 field',
+      other: '$count 个字段',
+      one: '1 个字段',
     );
     return '$_temp0';
   }
@@ -1969,169 +1978,166 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count files in this entry',
-      one: 'File in this entry',
+      other: '此条目中有 $count 个文件',
+      one: '此条目中有 1 个文件',
     );
     return '$_temp0';
   }
 
   @override
   String bookDockAdded(String date) {
-    return 'Added $date';
+    return '添加于 $date';
   }
 
   @override
-  String get bookDockAddToLibrary => 'Add to library';
+  String get bookDockAddToLibrary => '添加到媒体库';
 
   @override
-  String get bookDockUseFound => 'Use found details';
+  String get bookDockUseFound => '使用找到的详情';
 
   @override
-  String get bookDockRemoveTitle => 'Remove from Book Dock?';
+  String get bookDockRemoveTitle => '从图书坞移除？';
 
   @override
-  String get bookDockRemoveFailed => 'Couldn\'t remove this file';
+  String get bookDockRemoveFailed => '无法移除此文件';
 
   @override
-  String get bookDockPickLibrary => 'Add to which library?';
+  String get bookDockPickLibrary => '添加到哪个媒体库？';
 
   @override
-  String get bookDockNoLibraries =>
-      'Your account can\'t add books to a library';
+  String get bookDockNoLibraries => '你的账户无法向媒体库添加图书';
 
   @override
-  String get bookDockFileFailed => 'Couldn\'t add this file to the library';
+  String get bookDockFileFailed => '无法将此文件添加到媒体库';
 
   @override
-  String get bookDockDuplicateBody =>
-      'A file with this name is already in that library. Remove it from Book Dock?';
+  String get bookDockDuplicateBody => '该媒体库中已存在同名文件。要将其从图书坞移除吗？';
 
   @override
-  String get bookDockDetailsUpdated => 'Details updated';
+  String get bookDockDetailsUpdated => '详情已更新';
 
   @override
-  String get bookDockUseFoundFailed => 'No found details to use';
+  String get bookDockUseFoundFailed => '没有可用的已找到详情';
 
   @override
   String bookDockRemoveBody(String title) {
-    return 'This deletes $title from the server.';
+    return '这将从服务器上删除 $title。';
   }
 
   @override
   String bookDockRemoved(String title) {
-    return 'Removed $title from Book Dock';
+    return '已将 $title 从图书坞移除';
   }
 
   @override
   String bookDockFiled(String title, String library) {
-    return 'Added $title to $library';
+    return '已将 $title 添加到 $library';
   }
 
   @override
   String bookDockFileFailedReason(String reason) {
-    return 'Couldn\'t add this file: $reason';
+    return '无法添加此文件：$reason';
   }
 
   @override
   String bookDockDuplicateTitle(String library) {
-    return 'Already in $library';
+    return '已存在于 $library';
   }
 
   @override
-  String get bomatchSearchAll => 'Search all sources';
+  String get bomatchSearchAll => '搜索所有来源';
 
   @override
-  String get bomatchSearching => 'Searching...';
+  String get bomatchSearching => '正在搜索...';
 
   @override
-  String get bomatchSearchFailed =>
-      'Couldn\'t search for matches. Check your connection and try again.';
+  String get bomatchSearchFailed => '无法搜索匹配项。请检查网络后重试。';
 
   @override
-  String get bomatchNoResults => 'No matches found';
+  String get bomatchNoResults => '未找到匹配项';
 
   @override
-  String get bomatchStrong => 'Strong matches';
+  String get bomatchStrong => '高度匹配';
 
   @override
-  String get bomatchPossible => 'Possible matches';
+  String get bomatchPossible => '可能匹配';
 
   @override
-  String get bomatchSourceTimeout => 'timed out';
+  String get bomatchSourceTimeout => '超时';
 
   @override
-  String get bomatchSourceBusy => 'busy';
+  String get bomatchSourceBusy => '繁忙';
 
   @override
-  String get bomatchSourceFailed => 'failed';
+  String get bomatchSourceFailed => '失败';
 
   @override
-  String get bomatchLinked => 'Linked';
+  String get bomatchLinked => '已关联';
 
   @override
-  String get bomatchSameIsbn => 'Same ISBN';
+  String get bomatchSameIsbn => '相同 ISBN';
 
   @override
-  String get bomatchFewDetails => 'Few details';
+  String get bomatchFewDetails => '信息较少';
 
   @override
-  String get bomatchBack => 'All results';
+  String get bomatchBack => '全部结果';
 
   @override
-  String get bomatchFillEmpty => 'Fill empty';
+  String get bomatchFillEmpty => '填充空白项';
 
   @override
-  String get bomatchTakeAll => 'Take all';
+  String get bomatchTakeAll => '全部采用';
 
   @override
-  String get bomatchOnlyDifferences => 'Only differences';
+  String get bomatchOnlyDifferences => '仅差异';
 
   @override
-  String get bomatchNow => 'Now';
+  String get bomatchNow => '当前';
 
   @override
-  String get bomatchEmpty => 'Empty';
+  String get bomatchEmpty => '空';
 
   @override
-  String get bomatchKindNew => 'New';
+  String get bomatchKindNew => '新增';
 
   @override
-  String get bomatchKindChange => 'Change';
+  String get bomatchKindChange => '更改';
 
   @override
-  String get bomatchKindSmall => 'Small change';
+  String get bomatchKindSmall => '细微更改';
 
   @override
-  String get bomatchKindSame => 'Same';
+  String get bomatchKindSame => '相同';
 
   @override
-  String get bomatchKindNone => 'Not in result';
+  String get bomatchKindNone => '结果中没有';
 
   @override
-  String get bomatchKeep => 'Keep';
+  String get bomatchKeep => '保留';
 
   @override
-  String get bomatchUse => 'Use';
+  String get bomatchUse => '使用';
 
   @override
-  String get bomatchMerge => 'Merge';
+  String get bomatchMerge => '合并';
 
   @override
-  String get bomatchReplace => 'Replace';
+  String get bomatchReplace => '替换';
 
   @override
-  String get bomatchUseThis => 'Use this';
+  String get bomatchUseThis => '使用此项';
 
   @override
-  String get bomatchChosen => 'Chosen';
+  String get bomatchChosen => '已选择';
 
   @override
   String bomatchOther(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count other books',
-      one: '1 other book',
+      other: '$count 本其他图书',
+      one: '1 本其他图书',
     );
     return '$_temp0';
   }
@@ -2141,8 +2147,8 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count changes',
-      one: '1 change',
+      other: '$count 项更改',
+      one: '1 项更改',
     );
     return '$_temp0';
   }
@@ -2152,8 +2158,8 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count new',
-      one: '1 new',
+      other: '$count 项新增',
+      one: '1 项新增',
     );
     return '$_temp0';
   }
@@ -2163,9 +2169,9 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Apply $count changes',
-      one: 'Apply 1 change',
-      zero: 'Apply',
+      other: '应用 $count 项更改',
+      one: '应用 1 项更改',
+      zero: '应用',
     );
     return '$_temp0';
   }
@@ -2175,330 +2181,324 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count other sources',
-      one: '1 other source',
+      other: '$count 个其他来源',
+      one: '1 个其他来源',
     );
     return '$_temp0';
   }
 
   @override
   String bomatchFrom(String source) {
-    return 'From $source';
+    return '来自 $source';
   }
 
   @override
-  String get breqTitle => 'Book requests';
+  String get breqTitle => '图书请求';
 
   @override
-  String get breqTabRequest => 'Request a book';
+  String get breqTabRequest => '请求图书';
 
   @override
-  String get breqTabMine => 'My requests';
+  String get breqTabMine => '我的请求';
 
   @override
-  String get breqTabAll => 'All requests';
+  String get breqTabAll => '所有请求';
 
   @override
-  String get breqNoAccess =>
-      'Your account can\'t request books on this server.';
+  String get breqNoAccess => '你的账户无法在此服务器上请求图书。';
 
   @override
-  String get breqTitleHint => 'Book title';
+  String get breqTitleHint => '书名';
 
   @override
-  String get breqAuthorHint => 'Author';
+  String get breqAuthorHint => '作者';
 
   @override
-  String get breqKindAudiobook => 'Audiobook';
+  String get breqKindAudiobook => '有声书';
 
   @override
-  String get breqKindEbook => 'E-book';
+  String get breqKindEbook => '电子书';
 
   @override
-  String get breqKindComic => 'Comic';
+  String get breqKindComic => '漫画';
 
   @override
-  String get breqSearch => 'Search';
+  String get breqSearch => '搜索';
 
   @override
-  String get breqSearching => 'Searching...';
+  String get breqSearching => '正在搜索...';
 
   @override
-  String get breqSearchFailed =>
-      'Couldn\'t search. Check your connection and try again.';
+  String get breqSearchFailed => '无法搜索。请检查网络后重试。';
 
   @override
-  String get breqSearchPrompt =>
-      'Search for a book the library does not have yet to request it.';
+  String get breqSearchPrompt => '搜索媒体库中还没有的图书以请求它。';
 
   @override
-  String get breqNoResults => 'No matching books found';
+  String get breqNoResults => '未找到匹配的图书';
 
   @override
-  String get breqInLibrary => 'In your library';
+  String get breqInLibrary => '在你的媒体库中';
 
   @override
-  String get breqYouAsked => 'You requested this';
+  String get breqYouAsked => '你已请求';
 
   @override
-  String get breqSomeoneAsked => 'Already requested by someone else';
+  String get breqSomeoneAsked => '已被他人请求';
 
   @override
-  String get breqView => 'View';
+  String get breqView => '查看';
 
   @override
-  String get breqRequest => 'Request';
+  String get breqRequest => '请求';
 
   @override
-  String get breqRequested => 'Requested';
+  String get breqRequested => '已请求';
 
   @override
-  String get breqAddMeToo => 'Add me too';
+  String get breqAddMeToo => '也算我一份';
 
   @override
-  String get breqLibrary => 'Library';
+  String get breqLibrary => '媒体库';
 
   @override
-  String get breqLibraryApprover => 'Let the approver decide';
+  String get breqLibraryApprover => '由审批人决定';
 
   @override
-  String get breqLibraryChoose => 'Choose a library';
+  String get breqLibraryChoose => '选择媒体库';
 
   @override
-  String get breqNote => 'Note for the approver';
+  String get breqNote => '给审批人的备注';
 
   @override
-  String get breqNoteHint => 'Anything worth knowing about this request';
+  String get breqNoteHint => '关于此请求的任何值得说明的信息';
 
   @override
-  String get breqAutoApproved => 'Your requests are approved right away.';
+  String get breqAutoApproved => '你的请求会立即获批。';
 
   @override
-  String get breqSubmitted => 'Request submitted';
+  String get breqSubmitted => '请求已提交';
 
   @override
-  String get breqJoined => 'Added you to the existing request';
+  String get breqJoined => '已将你加入现有请求';
 
   @override
-  String get breqFailed => 'Couldn\'t send the request';
+  String get breqFailed => '无法发送请求';
 
   @override
-  String get breqStatusPending => 'Pending';
+  String get breqStatusPending => '待处理';
 
   @override
-  String get breqStatusApproved => 'Approved';
+  String get breqStatusApproved => '已批准';
 
   @override
-  String get breqStatusRejected => 'Rejected';
+  String get breqStatusRejected => '已拒绝';
 
   @override
-  String get breqStatusCancelled => 'Cancelled';
+  String get breqStatusCancelled => '已取消';
 
   @override
-  String get breqStatusSearching => 'Searching';
+  String get breqStatusSearching => '正在搜索';
 
   @override
-  String get breqStatusGrabbed => 'Release found';
+  String get breqStatusGrabbed => '已找到资源';
 
   @override
-  String get breqStatusDownloading => 'Downloading';
+  String get breqStatusDownloading => '正在下载';
 
   @override
-  String get breqStatusImporting => 'Importing';
+  String get breqStatusImporting => '正在导入';
 
   @override
-  String get breqStatusNeedsReview => 'Needs review';
+  String get breqStatusNeedsReview => '需要审核';
 
   @override
-  String get breqStatusAvailable => 'Available';
+  String get breqStatusAvailable => '已可用';
 
   @override
-  String get breqStatusFailed => 'Failed';
+  String get breqStatusFailed => '失败';
 
   @override
-  String get breqWaitingApproval => 'Waiting for approval';
+  String get breqWaitingApproval => '等待批准';
 
   @override
-  String get breqWaitingRelease => 'Waiting for a release to be picked';
+  String get breqWaitingRelease => '等待选择资源';
 
   @override
-  String get breqLookingForRelease => 'Looking for a release';
+  String get breqLookingForRelease => '正在寻找资源';
 
   @override
-  String get breqStartingDownload => 'Starting the download';
+  String get breqStartingDownload => '正在开始下载';
 
   @override
-  String get breqAddingToLibrary => 'Adding to the library';
+  String get breqAddingToLibrary => '正在添加到媒体库';
 
   @override
-  String get breqWaitingCheck => 'Waiting for a manual check';
+  String get breqWaitingCheck => '等待人工检查';
 
   @override
-  String get breqReady => 'Ready in your library';
+  String get breqReady => '已在媒体库中就绪';
 
   @override
-  String get breqSomethingWrong => 'Something went wrong';
+  String get breqSomethingWrong => '出错了';
 
   @override
-  String get breqShowHidden => 'Show hidden';
+  String get breqShowHidden => '显示已隐藏';
 
   @override
-  String get breqHidden => 'Hidden';
+  String get breqHidden => '已隐藏';
 
   @override
-  String get breqMineEmpty => 'You haven\'t requested any books yet.';
+  String get breqMineEmpty => '你还没有请求任何图书。';
 
   @override
-  String get breqAllEmpty => 'No requests yet.';
+  String get breqAllEmpty => '还没有任何请求。';
 
   @override
-  String get breqLoadFailed => 'Couldn\'t load requests.';
+  String get breqLoadFailed => '无法加载请求。';
 
   @override
-  String get breqLoadMore => 'Load more';
+  String get breqLoadMore => '加载更多';
 
   @override
-  String get breqApprove => 'Approve';
+  String get breqApprove => '批准';
 
   @override
-  String get breqReject => 'Reject';
+  String get breqReject => '拒绝';
 
   @override
-  String get breqCancel => 'Cancel request';
+  String get breqCancel => '取消请求';
 
   @override
-  String get breqHide => 'Hide from my list';
+  String get breqHide => '从我的列表隐藏';
 
   @override
-  String get breqUnhide => 'Show in my list';
+  String get breqUnhide => '在我的列表中显示';
 
   @override
-  String get breqLeave => 'Leave request';
+  String get breqLeave => '退出请求';
 
   @override
-  String get breqDelete => 'Delete request';
+  String get breqDelete => '删除请求';
 
   @override
-  String get breqOpenBook => 'Open book';
+  String get breqOpenBook => '打开图书';
 
   @override
-  String get breqCancelConfirm =>
-      'Cancel this request? A download in progress stops too.';
+  String get breqCancelConfirm => '取消此请求？正在进行的下载也会停止。';
 
   @override
-  String get breqDeleteConfirm => 'Delete this request? This can\'t be undone.';
+  String get breqDeleteConfirm => '删除此请求？此操作无法撤销。';
 
   @override
-  String get breqRejectTitle => 'Reject request';
+  String get breqRejectTitle => '拒绝请求';
 
   @override
-  String get breqRejectReason => 'Reason (optional)';
+  String get breqRejectReason => '原因（可选）';
 
   @override
-  String get breqApproveTitle => 'Approve request';
+  String get breqApproveTitle => '批准请求';
 
   @override
-  String get breqApproveLibraryNeeded =>
-      'Choose the library this book goes into.';
+  String get breqApproveLibraryNeeded => '选择这本书要加入的媒体库。';
 
   @override
-  String get breqApprovedToast => 'Request approved';
+  String get breqApprovedToast => '请求已批准';
 
   @override
-  String get breqRejectedToast => 'Request rejected';
+  String get breqRejectedToast => '请求已拒绝';
 
   @override
-  String get breqCancelledToast => 'Request cancelled';
+  String get breqCancelledToast => '请求已取消';
 
   @override
-  String get breqHiddenToast => 'Hidden from your list';
+  String get breqHiddenToast => '已从你的列表隐藏';
 
   @override
-  String get breqRestoredToast => 'Back on your list';
+  String get breqRestoredToast => '已回到你的列表';
 
   @override
-  String get breqDeletedToast => 'Request deleted';
+  String get breqDeletedToast => '请求已删除';
 
   @override
-  String get breqLeftToast => 'You left this request';
+  String get breqLeftToast => '你已退出此请求';
 
   @override
-  String get breqActionFailed => 'Couldn\'t update the request';
+  String get breqActionFailed => '无法更新请求';
 
   @override
-  String get breqFactRequestedBy => 'Requested by';
+  String get breqFactRequestedBy => '请求者';
 
   @override
-  String get breqFactRequestedOn => 'Requested on';
+  String get breqFactRequestedOn => '请求时间';
 
   @override
-  String get breqFactLibrary => 'Library';
+  String get breqFactLibrary => '媒体库';
 
   @override
-  String get breqFactDecidedBy => 'Decided by';
+  String get breqFactDecidedBy => '决定者';
 
   @override
-  String get breqFactNote => 'Note from the requester';
+  String get breqFactNote => '请求者的备注';
 
   @override
-  String get breqFactDecisionNote => 'Decision note';
+  String get breqFactDecisionNote => '决定备注';
 
   @override
-  String get breqFactAlsoWanted => 'Also wanted by';
+  String get breqFactAlsoWanted => '也想请求的人';
 
   @override
-  String get breqLibraryCta => 'Request a book';
+  String get breqLibraryCta => '请求图书';
 
   @override
-  String get breqSettingsSubtitle =>
-      'Ask for books the library does not have yet';
+  String get breqSettingsSubtitle => '索取媒体库中还没有的图书';
 
   @override
-  String get navHoldBookRequests => 'Book requests';
+  String get navHoldBookRequests => '图书请求';
 
   @override
   String breqLibraryDefault(String library) {
-    return 'Default ($library)';
+    return '默认（$library）';
   }
 
   @override
   String breqFailedReason(String reason) {
-    return 'Couldn\'t send the request: $reason';
+    return '无法发送请求：$reason';
   }
 
   @override
   String breqDownloadingPercent(int percent) {
-    return 'Downloading, $percent%';
+    return '正在下载，$percent%';
   }
 
   @override
   String breqAddedTo(String library) {
-    return 'Added to $library';
+    return '已添加到 $library';
   }
 
   @override
   String breqRejectedWithNote(String note) {
-    return 'Rejected: $note';
+    return '已拒绝：$note';
   }
 
   @override
   String breqFailedWithReason(String reason) {
-    return 'Failed: $reason';
+    return '失败：$reason';
   }
 
   @override
   String breqRequestedBy(String name) {
-    return 'Requested by $name';
+    return '请求者：$name';
   }
 
   @override
   String breqActionFailedReason(String reason) {
-    return 'Couldn\'t update the request: $reason';
+    return '无法更新请求：$reason';
   }
 
   @override
   String breqFooterCta(String query) {
-    return 'Request \"$query\"';
+    return '请求「$query」';
   }
 
   @override
@@ -2506,206 +2506,196 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count requests',
-      one: '1 request',
-      zero: 'No requests',
+      other: '$count 个请求',
+      one: '1 个请求',
+      zero: '没有请求',
     );
     return '$_temp0';
   }
 
   @override
-  String get breqFindRelease => 'Find a release';
+  String get breqFindRelease => '查找资源';
 
   @override
-  String get breqTryAnotherRelease => 'Try another release';
+  String get breqTryAnotherRelease => '尝试其他资源';
 
   @override
-  String get breqApproveAndFind => 'Approve and find a release';
+  String get breqApproveAndFind => '批准并查找资源';
 
   @override
-  String get breqReviewButton => 'Review download';
+  String get breqReviewButton => '审核下载';
 
   @override
-  String get breqStopDownload => 'Stop download';
+  String get breqStopDownload => '停止下载';
 
   @override
-  String get breqStopDownloadConfirm =>
-      'Stop this download? The request goes back to approved so another release can be picked.';
+  String get breqStopDownloadConfirm => '停止此下载？请求将回到已批准状态，以便重新选择资源。';
 
   @override
-  String get breqDiscardImport => 'Discard download';
+  String get breqDiscardImport => '丢弃下载';
 
   @override
-  String get breqDiscardConfirm =>
-      'Discard this download? The request is marked failed and can be tried again with another release.';
+  String get breqDiscardConfirm => '丢弃此下载？请求将被标记为失败，可用其他资源重新尝试。';
 
   @override
-  String get breqFileAnyway => 'Add to library';
+  String get breqFileAnyway => '添加到媒体库';
 
   @override
-  String get breqFiledToast => 'Added to the library';
+  String get breqFiledToast => '已添加到媒体库';
 
   @override
-  String get breqDiscardedToast => 'Download discarded';
+  String get breqDiscardedToast => '下载已丢弃';
 
   @override
-  String get breqStoppedToast => 'Download stopped';
+  String get breqStoppedToast => '下载已停止';
 
   @override
-  String get breqGrabTitle => 'Download this release?';
+  String get breqGrabTitle => '下载此资源？';
 
   @override
-  String get breqGrab => 'Download';
+  String get breqGrab => '下载';
 
   @override
-  String get breqGrabbed => 'Download started';
+  String get breqGrabbed => '下载已开始';
 
   @override
-  String get breqGrabFailed => 'Couldn\'t start that download';
+  String get breqGrabFailed => '无法开始该下载';
 
   @override
-  String get breqReleaseVipWarning =>
-      'This tracker only lets VIP accounts download it.';
+  String get breqReleaseVipWarning => '此站点仅允许 VIP 账户下载。';
 
   @override
-  String get breqReleaseNoBookFile =>
-      'This release has no book file BookOrbit can add to a library.';
+  String get breqReleaseNoBookFile => '此资源中没有 BookOrbit 能添加到媒体库的图书文件。';
 
   @override
-  String get breqReleaseCheckFailed =>
-      'Couldn\'t check what\'s in this release. Try again or pick another one.';
+  String get breqReleaseCheckFailed => '无法检查此资源的内容。请重试或另选一个。';
 
   @override
-  String get breqCheckingRelease => 'Checking the files...';
+  String get breqCheckingRelease => '正在检查文件...';
 
   @override
-  String get breqSearchAgain => 'Search again';
+  String get breqSearchAgain => '重新搜索';
 
   @override
-  String get breqSearchTerms => 'Search terms';
+  String get breqSearchTerms => '搜索词';
 
   @override
-  String get breqIsbnHint => 'Leave empty to search by title and author';
+  String get breqIsbnHint => '留空则按书名和作者搜索';
 
   @override
-  String get breqSearchingIndexers =>
-      'Searching your indexers. This can take up to a minute.';
+  String get breqSearchingIndexers => '正在搜索你的索引器。最多可能需要一分钟。';
 
   @override
-  String get breqReleasesFailed => 'Couldn\'t search for releases.';
+  String get breqReleasesFailed => '无法搜索资源。';
 
   @override
-  String get breqNoSourcesSetUp => 'No search sources are set up in BookOrbit.';
+  String get breqNoSourcesSetUp => 'BookOrbit 中未设置任何搜索来源。';
 
   @override
-  String get breqNoSourcesOn =>
-      'Every search source is switched off in BookOrbit.';
+  String get breqNoSourcesOn => 'BookOrbit 中的所有搜索来源都已关闭。';
 
   @override
-  String get breqNoSourceCarries =>
-      'None of your search sources carry this kind of book.';
+  String get breqNoSourceCarries => '你的搜索来源都没有这类图书。';
 
   @override
-  String get breqNoReleases => 'No releases found. Try different search terms.';
+  String get breqNoReleases => '未找到资源。请尝试其他搜索词。';
 
   @override
-  String get breqFromCache => 'from a recent search';
+  String get breqFromCache => '来自最近的搜索';
 
   @override
-  String get breqIndexerUnauthorized => 'sign-in failed';
+  String get breqIndexerUnauthorized => '登录失败';
 
   @override
-  String get breqIndexerThrottled => 'busy';
+  String get breqIndexerThrottled => '繁忙';
 
   @override
-  String get breqIndexerTimeout => 'timed out';
+  String get breqIndexerTimeout => '超时';
 
   @override
-  String get breqIndexerUnreachable => 'unreachable';
+  String get breqIndexerUnreachable => '无法访问';
 
   @override
-  String get breqIndexerNoMedium => 'does not carry this';
+  String get breqIndexerNoMedium => '没有此类内容';
 
   @override
-  String get breqIndexerError => 'failed';
+  String get breqIndexerError => '失败';
 
   @override
-  String get breqSortBest => 'Best match';
+  String get breqSortBest => '最佳匹配';
 
   @override
-  String get breqSortSeeders => 'Seeders';
+  String get breqSortSeeders => '做种者';
 
   @override
-  String get breqSortSize => 'Size';
+  String get breqSortSize => '大小';
 
   @override
-  String get breqSortNewest => 'Newest';
+  String get breqSortNewest => '最新';
 
   @override
-  String get breqFreeleech => 'Freeleech';
+  String get breqFreeleech => '免费';
 
   @override
-  String get breqVipOnly => 'VIP only';
+  String get breqVipOnly => '仅限 VIP';
 
   @override
-  String get breqAlreadyGrabbed => 'Downloaded before';
+  String get breqAlreadyGrabbed => '此前已下载';
 
   @override
   String get breqReasonIsbn => 'ISBN';
 
   @override
-  String get breqReasonTitle => 'Title';
+  String get breqReasonTitle => '标题';
 
   @override
-  String get breqReasonAuthor => 'Author';
+  String get breqReasonAuthor => '作者';
 
   @override
-  String get breqReasonUnknownFormat => 'Unknown format';
+  String get breqReasonUnknownFormat => '未知格式';
 
   @override
-  String get breqReasonExpectedSize => 'Size';
+  String get breqReasonExpectedSize => '大小';
 
   @override
-  String get breqReasonSuspiciousSize => 'Unusual size';
+  String get breqReasonSuspiciousSize => '异常大小';
 
   @override
-  String get breqReasonFreeleech => 'Freeleech';
+  String get breqReasonFreeleech => '免费';
 
   @override
-  String get breqReasonSeveralBooks => 'Several books';
+  String get breqReasonSeveralBooks => '多本图书';
 
   @override
-  String get breqReviewTitle => 'Download waiting for a check';
+  String get breqReviewTitle => '等待检查的下载';
 
   @override
-  String get breqReviewFailed => 'Couldn\'t load the download details.';
+  String get breqReviewFailed => '无法加载下载详情。';
 
   @override
-  String get breqReviewDockGone =>
-      'The downloaded files are no longer in the Book Dock.';
+  String get breqReviewDockGone => '下载的文件已不在图书坞中。';
 
   @override
-  String get breqReviewNoLibrary =>
-      'This request has no library to add the book to.';
+  String get breqReviewNoLibrary => '此请求没有可添加图书的媒体库。';
 
   @override
   String breqGrabFailedReason(String reason) {
-    return 'Couldn\'t start that download: $reason';
+    return '无法开始该下载：$reason';
   }
 
   @override
   String breqReleaseCheckFailedReason(String reason) {
-    return 'Couldn\'t check what\'s in this release: $reason';
+    return '无法检查此资源的内容：$reason';
   }
 
   @override
   String breqReleasesFailedReason(String reason) {
-    return 'Couldn\'t search for releases: $reason';
+    return '无法搜索资源：$reason';
   }
 
   @override
   String breqReviewFailedReason(String reason) {
-    return 'Couldn\'t load the download details: $reason';
+    return '无法加载下载详情：$reason';
   }
 
   @override
@@ -2713,9 +2703,9 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count releases',
-      one: '1 release',
-      zero: 'No releases',
+      other: '$count 个资源',
+      one: '1 个资源',
+      zero: '没有资源',
     );
     return '$_temp0';
   }
@@ -2725,8 +2715,8 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count files',
-      one: '1 file',
+      other: '$count 个文件',
+      one: '1 个文件',
     );
     return '$_temp0';
   }
@@ -2736,25 +2726,25 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count files',
-      one: '1 file',
+      other: '$count 个文件',
+      one: '1 个文件',
     );
     return '$_temp0';
   }
 
   @override
   String breqSeeders(int seeders, int leechers) {
-    return '$seeders seeders, $leechers leechers';
+    return '$seeders 个做种者，$leechers 个下载者';
   }
 
   @override
   String breqScore(int score) {
-    return 'Score $score';
+    return '评分 $score';
   }
 
   @override
   String breqReasonPreferredFormat(String format) {
-    return 'Preferred $format';
+    return '首选 $format';
   }
 
   @override
@@ -2764,64 +2754,62 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String breqReasonSeeders(String count) {
-    return '$count seeders';
+    return '$count 个做种者';
   }
 
   @override
   String breqReviewScore(int score, int threshold) {
-    return 'Match score $score. Downloads scoring $threshold or more are added on their own.';
+    return '匹配评分 $score。评分达到 $threshold 及以上的下载会自动添加。';
   }
 
   @override
   String breqReviewRequested(String value) {
-    return 'Requested: $value';
+    return '请求：$value';
   }
 
   @override
   String breqReviewImported(String value) {
-    return 'Downloaded: $value';
+    return '已下载：$value';
   }
 
   @override
-  String get breqKindBoth => 'Both';
+  String get breqKindBoth => '两者';
 
   @override
-  String get breqEbookLibrary => 'E-book library';
+  String get breqEbookLibrary => '电子书媒体库';
 
   @override
-  String get breqAudiobookLibrary => 'Audiobook library';
+  String get breqAudiobookLibrary => '有声书媒体库';
 
   @override
-  String get breqRequestBoth => 'Request both';
+  String get breqRequestBoth => '同时请求两者';
 
   @override
-  String get breqAddMeToBoth => 'Add me to both';
+  String get breqAddMeToBoth => '两者都算我一份';
 
   @override
-  String get breqRequestEbook => 'Request e-book';
+  String get breqRequestEbook => '请求电子书';
 
   @override
-  String get breqRequestAudiobook => 'Request audiobook';
+  String get breqRequestAudiobook => '请求有声书';
 
   @override
-  String get breqAddMeEbook => 'Add me to the e-book request';
+  String get breqAddMeEbook => '电子书请求算我一份';
 
   @override
-  String get breqAddMeAudiobook => 'Add me to the audiobook request';
+  String get breqAddMeAudiobook => '有声书请求算我一份';
 
   @override
-  String get breqPairSubmitted => 'Requested the e-book and the audiobook';
+  String get breqPairSubmitted => '已请求电子书和有声书';
 
   @override
-  String get breqPairOneJoined =>
-      'Requested both. One was already on its way, so you were added to that request';
+  String get breqPairOneJoined => '已请求两者。其中一项已在处理中，因此已将你加入该请求';
 
   @override
-  String get breqJoinedBoth => 'Added you to both requests';
+  String get breqJoinedBoth => '已将你加入两个请求';
 
   @override
-  String get breqJoinsOwned =>
-      'Requested. It will join the copy already in your library';
+  String get breqJoinsOwned => '已请求。它将合并到媒体库中已有的副本';
 
   @override
   String get speedBookmarkInControls => '媒体控制中的速度和书签';
@@ -4945,6 +4933,30 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get collectionNameHint => '收藏集名称';
+
+  @override
+  String get listsNewCollectionSubtitle => '将图书归入一个你保存的收藏夹';
+
+  @override
+  String get listsNewCollectionNeedsBookSubtitle => '至少用一本图书来开始';
+
+  @override
+  String get listsNewPlaylistSubtitle => '按顺序排列要收听的图书';
+
+  @override
+  String get listsAddBooksNow => '立即添加图书';
+
+  @override
+  String get listsPickBooksNext => '接下来你将挑选图书。此服务器上的收藏夹至少需要一本。';
+
+  @override
+  String get listsCreate => '创建';
+
+  @override
+  String get listsCollectionNeedsBook => '收藏夹至少需要一本图书，因此未创建任何内容。';
+
+  @override
+  String get listsCreateFailed => '无法创建';
 
   @override
   String get castToDevice => '投屏到设备';
@@ -7414,6 +7426,352 @@ class AppLocalizationsZh extends AppLocalizations {
   String get collectionDetailDefaultName => '收藏集';
 
   @override
+  String smartScopeBookCount(int count) {
+    return '智能范围 · $count 本图书';
+  }
+
+  @override
+  String get smartScopeNew => '新建智能范围';
+
+  @override
+  String get smartScopeNewSubtitle => '将一组筛选条件保存为会自动更新的列表';
+
+  @override
+  String get smartScopeEditTitle => '编辑智能范围';
+
+  @override
+  String get smartScopeIcon => '图标';
+
+  @override
+  String get smartScopePublic => '对所有用户可见';
+
+  @override
+  String get smartScopeKobo => '同步到 Kobo';
+
+  @override
+  String get smartScopeRules => '规则';
+
+  @override
+  String get smartScopeMatchAll => '匹配全部';
+
+  @override
+  String get smartScopeMatchAny => '匹配任意';
+
+  @override
+  String get smartScopeAddRule => '添加规则';
+
+  @override
+  String get smartScopeAddGroup => '添加分组';
+
+  @override
+  String get smartScopeGroup => '分组';
+
+  @override
+  String get smartScopeStartFrom => '从以下开始';
+
+  @override
+  String get smartScopeFromScratch => '从头创建';
+
+  @override
+  String get smartScopeTplHasSeries => '有系列';
+
+  @override
+  String get smartScopeTplRecent => '最近添加';
+
+  @override
+  String get smartScopeTplPdf => '仅 PDF';
+
+  @override
+  String get smartScopeTplNoGenres => '无体裁';
+
+  @override
+  String get smartScopeTplEpub => '仅 EPUB';
+
+  @override
+  String get smartScopeCounting => '正在统计...';
+
+  @override
+  String get smartScopeSort => '默认排序';
+
+  @override
+  String get smartScopeAddSort => '添加排序级别';
+
+  @override
+  String get smartScopeSortNone => '未设置排序，因此按标题排序。';
+
+  @override
+  String get smartScopeAscending => '升序';
+
+  @override
+  String get smartScopeDescending => '降序';
+
+  @override
+  String get smartScopeDelete => '删除智能范围';
+
+  @override
+  String get smartScopeSaveFailed => '无法保存智能范围';
+
+  @override
+  String get smartScopeDeleteFailed => '无法删除智能范围';
+
+  @override
+  String get smartScopeLoadFailed => '无法加载智能范围';
+
+  @override
+  String get smartScopeUnsupportedRule => '此规则只能在 BookOrbit 网页端修改。它将保持不变。';
+
+  @override
+  String get smartScopeAnd => '且';
+
+  @override
+  String get smartScopeDays => '天';
+
+  @override
+  String get smartScopeWeeks => '周';
+
+  @override
+  String get smartScopeMonths => '月';
+
+  @override
+  String get smartScopePickDate => '选择日期';
+
+  @override
+  String get smartScopeAddValue => '添加值';
+
+  @override
+  String get smartScopeValue => '值';
+
+  @override
+  String get smartScopeCustomFields => '自定义字段';
+
+  @override
+  String get smartScopeAnyProvider => '任意提供商';
+
+  @override
+  String get smartScopeScoreOutstanding => '极佳';
+
+  @override
+  String get smartScopeScoreGood => '良好';
+
+  @override
+  String get smartScopeScoreFair => '一般';
+
+  @override
+  String get smartScopeScorePoor => '较差';
+
+  @override
+  String get smartScopeMb => 'MB';
+
+  @override
+  String get smartScopeMaxValues => '最多 20 个值';
+
+  @override
+  String get scopeFieldTitle => '标题';
+
+  @override
+  String get scopeFieldAuthor => '作者';
+
+  @override
+  String get scopeFieldSeries => '系列';
+
+  @override
+  String get scopeFieldSeriesIndex => '系列序号';
+
+  @override
+  String get scopeFieldGenre => '体裁';
+
+  @override
+  String get scopeFieldTag => '标签';
+
+  @override
+  String get scopeFieldReadStatus => '阅读状态';
+
+  @override
+  String get scopeFieldReadProgress => '阅读进度';
+
+  @override
+  String get scopeFieldRating => '你的评分';
+
+  @override
+  String get scopeFieldFormat => '格式';
+
+  @override
+  String get scopeFieldLibrary => '媒体库';
+
+  @override
+  String get scopeFieldCollection => '收藏夹';
+
+  @override
+  String get scopeFieldPublisher => '出版社';
+
+  @override
+  String get scopeFieldLanguage => '语言';
+
+  @override
+  String get scopeFieldPublishedDate => '出版日期';
+
+  @override
+  String get scopeFieldPublishedYear => '出版年份';
+
+  @override
+  String get scopeFieldAddedAt => '添加日期';
+
+  @override
+  String get scopeFieldStartedAt => '开始日期';
+
+  @override
+  String get scopeFieldFinishedAt => '完成日期';
+
+  @override
+  String get scopeFieldPageCount => '页数';
+
+  @override
+  String get scopeFieldFileSize => '文件大小';
+
+  @override
+  String get scopeFieldCommunityRating => '社区评分';
+
+  @override
+  String get scopeFieldCommunityRatingCount => '社区评论数';
+
+  @override
+  String get scopeFieldMetadataScore => '元数据评分';
+
+  @override
+  String get scopeFieldIsbn => 'ISBN';
+
+  @override
+  String get scopeFieldDescription => '简介';
+
+  @override
+  String get scopeFieldCover => '封面';
+
+  @override
+  String get scopeFieldAudioCover => '有声书封面';
+
+  @override
+  String get scopeFieldFileAvailability => '文件可用性';
+
+  @override
+  String get scopeFieldLockStatus => '锁定状态';
+
+  @override
+  String get scopeFieldSeriesStatus => '系列状态';
+
+  @override
+  String get scopeSortUpdatedAt => '更新日期';
+
+  @override
+  String get scopeSortLastReadAt => '最近阅读';
+
+  @override
+  String get scopeSortRandom => '随机';
+
+  @override
+  String get scopeOpContains => '包含';
+
+  @override
+  String get scopeOpNotContains => '不包含';
+
+  @override
+  String get scopeOpStartsWith => '开头是';
+
+  @override
+  String get scopeOpEndsWith => '结尾是';
+
+  @override
+  String get scopeOpEq => '是';
+
+  @override
+  String get scopeOpNotEq => '不是';
+
+  @override
+  String get scopeOpIsEmpty => '为空';
+
+  @override
+  String get scopeOpIsNotEmpty => '不为空';
+
+  @override
+  String get scopeOpGt => '大于';
+
+  @override
+  String get scopeOpGte => '至少';
+
+  @override
+  String get scopeOpLt => '小于';
+
+  @override
+  String get scopeOpLte => '至多';
+
+  @override
+  String get scopeOpBetween => '介于';
+
+  @override
+  String get scopeOpIncludesAny => '包含以下任意';
+
+  @override
+  String get scopeOpIncludesAll => '包含以下全部';
+
+  @override
+  String get scopeOpExcludesAll => '排除以下全部';
+
+  @override
+  String get scopeOpBefore => '早于';
+
+  @override
+  String get scopeOpAfter => '晚于';
+
+  @override
+  String get scopeOpWithinLast => '在最近';
+
+  @override
+  String get scopeOpIsMissing => '缺失';
+
+  @override
+  String get scopeOpIsPresent => '存在';
+
+  @override
+  String get scopeOpIsUnread => '未读';
+
+  @override
+  String get scopeOpIsInProgress => '在读';
+
+  @override
+  String get scopeOpIsFinished => '已读完';
+
+  @override
+  String get scopeOpIsLocked => '已锁定';
+
+  @override
+  String get scopeOpIsUnlocked => '未锁定';
+
+  @override
+  String get scopeOpIsUpNext => '是下一本';
+
+  @override
+  String get scopeOpIsTrue => '是';
+
+  @override
+  String get scopeOpIsFalse => '否';
+
+  @override
+  String smartScopeMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 本图书匹配',
+      one: '1 本图书匹配',
+      zero: '没有匹配的图书',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String smartScopeDeleteConfirm(String name) {
+    return '删除「$name」？此操作无法撤销。';
+  }
+
+  @override
   String collectionDetailBookCount(int count) {
     return '$count本书';
   }
@@ -9730,6 +10088,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ebookAlreadyDefault => '已是默认版本';
 
   @override
+  String get fileSize => '大小';
+
+  @override
   String get homeTapCardToResume => '点按卡片继续收听，长按查看详情。';
 
   @override
@@ -9976,6 +10337,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerFormatUnsupported => '阅读器暂不支持打开此电子书格式';
 
   @override
+  String get readerCouldNotOpen => '无法打开此电子书。文件可能已损坏。';
+
+  @override
   String get moreActions => '更多';
 
   @override
@@ -10013,6 +10377,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerPinTopBarHint => '将标题和进度条固定到页面顶部，而不是点击时显示。页面会稍短一些，以免遮挡文字。';
+
+  @override
+  String get readerScrollMode => '滚动模式';
+
+  @override
+  String get readerScrollModeHint => '向下滚动阅读本书，而不是翻页。适用于所有图书。';
 
   @override
   String get readerKeepAwake => '保持屏幕常亮';
@@ -10753,6 +11123,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readAlongLost => '找不到页面上的朗读内容';
 
   @override
+  String get readAlongBackToNarration => '返回朗读';
+
+  @override
   String get findInEbook => '在电子书中查找';
 
   @override
@@ -11150,8 +11523,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '该账户仍在使用默认密码。请先在 BookOrbit 中修改密码，再重新登录。';
 
   @override
-  String get authBookOrbitPasswordOff =>
-      'Password sign-in is turned off on this server. Sign in with a magic link or single sign-on.';
+  String get authBookOrbitPasswordOff => '此服务器已关闭密码登录。请使用魔法链接或单点登录。';
 
   @override
   String get authServerIsBookOrbit =>
@@ -11271,6 +11643,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get comicReadingDirection => '阅读方向';
+
+  @override
+  String comicPageNumber(int page) {
+    return '第 $page 页';
+  }
+
+  @override
+  String get comicBookmarkRemoveFailed => '无法从服务器移除书签。请在联网时重试。';
 
   @override
   String get comicLeftToRight => '从左到右';

@@ -22,6 +22,7 @@ import 'ebook_stream_cache.dart';
 import 'http_range_book_source.dart';
 import 'offline_source.dart';
 import 'scoped_prefs.dart';
+import 'user_account_service.dart';
 import 'app_log.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error, paused }
@@ -532,6 +533,57 @@ class DownloadService extends ChangeNotifier {
   static bool backgroundIsolateMode = false;
 
   final Map<String, DownloadInfo> _downloads = {};
+  // Downloads are shared on the device across accounts. Which account each
+  // one came from, so a book from another server is read here without its
+  // position going to the server you are signed in to, where the same id can
+  // be a different book.
+  final Map<String, String> _origins = {};
+
+  void _noteOrigin(String itemId) {
+    final scope = UserAccountService().activeScopeKey;
+    if (scope.isNotEmpty) _origins[itemId] = scope;
+  }
+
+  /// Whether [itemId] is a download made on a different account than the one
+  /// signed in now. Downloads from before origins were kept count as this
+  /// account's.
+  bool isFromOtherAccount(String itemId) {
+    final origin = _origins[itemId];
+    final current = UserAccountService().activeScopeKey;
+    return origin != null && current.isNotEmpty && origin != current;
+  }
+
+  static const _otherAccountSpotsKey = 'other_account_reading';
+
+  /// Where reading stopped in another account's download, kept on the device.
+  Future<({String location, double progress})?> otherAccountReadingSpot(String itemId) async {
+    final origin = _origins[itemId];
+    if (origin == null) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = jsonDecode(prefs.getString(_otherAccountSpotsKey) ?? '{}') as Map<String, dynamic>;
+      final spot = map['$origin|$itemId'];
+      if (spot is! Map) return null;
+      final loc = spot['loc'];
+      if (loc is! String || loc.isEmpty) return null;
+      return (location: loc, progress: (spot['prog'] as num?)?.toDouble() ?? 0);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveOtherAccountReadingSpot(String itemId, String location, double progress) async {
+    final origin = _origins[itemId];
+    if (origin == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = jsonDecode(prefs.getString(_otherAccountSpotsKey) ?? '{}') as Map<String, dynamic>;
+      map['$origin|$itemId'] = {'loc': location, 'prog': progress};
+      await prefs.setString(_otherAccountSpotsKey, jsonEncode(map));
+    } catch (e) {
+      debugPrint('[Download] saving the reading spot for $itemId failed: $e');
+    }
+  }
 
   // Cached saved/total chapter counts per downloaded item, keyed by the source
   // session string so a re-download (new session) recomputes. Avoids JSON
@@ -1428,6 +1480,7 @@ class DownloadService extends ChangeNotifier {
         coverPath = f.path;
       }
     } catch (_) {}
+    _noteOrigin(itemId);
     _keptEbooks[itemId] = DownloadInfo(
       itemId: itemId,
       status: DownloadStatus.downloaded,
@@ -1451,6 +1504,7 @@ class DownloadService extends ChangeNotifier {
 
   Future<void> deleteKeptEbook(String itemId) async {
     if (_keptEbooks.remove(itemId) == null) return;
+    if (!_downloads.containsKey(itemId)) _origins.remove(itemId);
     // A downloaded audiobook still reads from the same cached file.
     if (_downloads.containsKey(itemId)) {
       await deleteCachedEbookCover(itemId);
@@ -1614,6 +1668,7 @@ class DownloadService extends ChangeNotifier {
       itemId,
       api.getCoverUrl(itemId, width: 800),
     );
+    _noteOrigin(itemId);
     final sessionJson = jsonEncode({
       'libraryItem': stored,
       'mediaMetadata': metadata,
@@ -1704,6 +1759,14 @@ class DownloadService extends ChangeNotifier {
     // to write them. Drop the old setting so new downloads use SAF or internal.
     if (prefs.getString('custom_download_path') != null) {
       await prefs.remove('custom_download_path');
+    }
+    try {
+      final origins = jsonDecode(prefs.getString('download_origins') ?? '{}') as Map<String, dynamic>;
+      for (final e in origins.entries) {
+        if (e.value is String) _origins[e.key] = e.value as String;
+      }
+    } catch (e) {
+      debugPrint('[Download] download origins init error: $e');
     }
     final keptJson = prefs.getString('kept_ebooks');
     if (keptJson != null) {
@@ -2475,6 +2538,7 @@ class DownloadService extends ChangeNotifier {
       for (final e in _keptEbooks.entries) e.key: e.value.toJson(),
     }));
     await prefs.setStringList('removed_ebooks', _ebookRemovedIds.toList());
+    await prefs.setString('download_origins', jsonEncode(_origins));
   }
 
   List<String>? getLocalPaths(String itemId) {
@@ -2555,6 +2619,7 @@ class DownloadService extends ChangeNotifier {
           'podcast $itemId + episode $episodeId');
       itemId = '$itemId-$episodeId';
     }
+    _noteOrigin(itemId);
     try {
       await init().timeout(const Duration(seconds: 8));
     } on TimeoutException catch (e) {
@@ -4895,6 +4960,7 @@ class DownloadService extends ChangeNotifier {
     // Drop the offline ebook copy too, unless the reader has a claim on it.
     if (!_keptEbooks.containsKey(itemId)) await deleteCachedEbook(itemId);
 
+    if (!_keptEbooks.containsKey(itemId)) _origins.remove(itemId);
     await _save();
   }
 

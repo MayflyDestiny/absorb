@@ -464,6 +464,23 @@ class ApiService {
   /// Image of comic page [index] (from 0), when [comicPageCount] answered.
   String? comicPageUrl(String fileId, int index) => null;
 
+  /// The server's ebook bookmarks for an item, as {id, cfi, title, note},
+  /// or null when the server keeps none (Audiobookshelf) or can't be reached.
+  Future<List<Map<String, dynamic>>?> ebookBookmarks(String itemId) async => null;
+
+  /// One page of a collection's books, for a server whose collection listing
+  /// holds only the first ones. Audiobookshelf sends every book up front.
+  Future<List<Map<String, dynamic>>?> collectionBooksPage(String collectionId,
+          {required int page, int size = 100}) async =>
+      null;
+
+  /// Saves an ebook bookmark at [cfi] on the server. Returns its server id,
+  /// or null when the server keeps none or the save failed.
+  Future<String?> addEbookBookmark(String itemId, {required String cfi, required String title}) async => null;
+
+  /// Removes a server ebook bookmark. True when it's gone (or never existed).
+  Future<bool> deleteEbookBookmark(String itemId, String bookmarkId) async => false;
+
   /// The cover slots a book uses on BookOrbit ('audio', 'ebook'). Empty on
   /// Audiobookshelf, which has one cover per item.
   Future<List<String>> coverSlots(String itemId) async => const [];
@@ -2957,11 +2974,16 @@ class ApiService {
   /// Update ebook reading progress on the server. Returns whether the PATCH
   /// landed, so the caller can queue the position for a later retry.
   /// PATCH /api/me/progress/:id
+  /// HTTP status of the last [updateEbookProgress], null when it never got an
+  /// answer. A 404 means the server has no such book, so retrying is pointless.
+  int? lastEbookProgressStatus;
+
   Future<bool> updateEbookProgress(
     String itemId, {
     required String ebookLocation,
     required double ebookProgress,
   }) async {
+    lastEbookProgressStatus = null;
     try {
       final body = jsonEncode({
         'ebookLocation': ebookLocation,
@@ -2981,7 +3003,8 @@ class ApiService {
         headers: _headers,
         body: body,
       ).timeout(const Duration(seconds: 10));
-      verboseLog('[API] updateEbookProgress response: ${resp.statusCode}');
+      debugPrint('[API] updateEbookProgress response: ${resp.statusCode} ${resp.body}');
+      lastEbookProgressStatus = resp.statusCode;
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
       verboseLog('[API] updateEbookProgress error: $e');

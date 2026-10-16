@@ -158,6 +158,8 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
         final isFinished = episodeId != null
             ? (lib.getEpisodeProgressData(itemId, episodeId)?['isFinished'] == true)
             : (lib.getProgressData(itemId)?['isFinished'] == true);
+        final isSkimmed =
+            episodeId == null && lib.getProgressData(itemId)?['skimmed'] == true;
         final isDownloaded = DownloadService()
             .isDownloaded(episodeId != null ? '$itemId-$episodeId' : itemId);
         final isOnAbsorbing = lib.isOnAbsorbingList(itemId);
@@ -183,7 +185,7 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
                       if (isFinished)
                         Positioned(
                           top: 4, right: 4,
-                          child: CoverFinishedBadge(),
+                          child: CoverFinishedBadge(isSkimmed: isSkimmed),
                         ),
                       if (isExplicit)
                         _explicitBadge(l, top: 4 + (isFinished ? 24 : 0)),
@@ -281,6 +283,8 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
         final isFinished = episodeId != null
             ? (lib.getEpisodeProgressData(itemId, episodeId)?['isFinished'] == true)
             : (lib.getProgressData(itemId)?['isFinished'] == true);
+        final isSkimmed =
+            episodeId == null && lib.getProgressData(itemId)?['skimmed'] == true;
         final isDownloaded = DownloadService()
             .isDownloaded(episodeId != null ? '$itemId-$episodeId' : itemId);
 
@@ -298,7 +302,7 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
                     if (isFinished)
                       Positioned(
                         top: 4, right: 4,
-                        child: CoverFinishedBadge(),
+                        child: CoverFinishedBadge(isSkimmed: isSkimmed),
                       ),
                     if (isExplicit)
                       _explicitBadge(l, top: 4 + (isFinished ? 24 : 0)),
