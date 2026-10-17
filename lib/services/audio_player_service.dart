@@ -9976,10 +9976,12 @@ if (_chapterJumpLatchIndex >= 0) {
     final chapterBarrier = await PlayerSettings.getSkipChapterBarrier();
     if (chapterBarrier && _chapters.isNotEmpty) {
       double chapterStart = 0;
+      int? chapterIdx;
       for (int i = _chapters.length - 1; i >= 0; i--) {
         final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
         if (s <= posS + 0.5) {
           chapterStart = s;
+          chapterIdx = i;
           break;
         }
       }
@@ -9992,7 +9994,16 @@ if (_chapterJumpLatchIndex >= 0) {
       // chapter remains available via the dedicated previous-chapter button.
       if (targetS < chapterStart) {
         _disarmIntroForSameChapterRewind(posS, chapterStart);
-        await _seekAbsolute(chapterStart);
+        // Treat this as a chapter jump: snap to the file boundary (the metadata
+        // start can drift a fraction of a second into the PREVIOUS file, which
+        // would otherwise land on the previous chapter's tail and show its
+        // title with the bar near full) and pin the reported chapter to the
+        // current one for the whole engine switch.
+        await _seekAbsolute(
+          chapterStart,
+          chapterJump: true,
+          pinChapterIndex: chapterIdx,
+        );
         _logEvent(
           PlaybackEventType.skipBackward,
           detail: 'snap to chapter start',
