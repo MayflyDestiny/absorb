@@ -9793,7 +9793,19 @@ if (_chapterJumpLatchIndex >= 0) {
     if (_player != null && !_player!.playing) _seekedWhilePaused = true;
     _lastUserSeekTime = DateTime.now();
     final from = position;
-    await _seekAbsolute(pos.inMilliseconds / 1000.0, chapterJump: chapterJump);
+    final targetSec = pos.inMilliseconds / 1000.0;
+    // A precise seek (scrubber drag, bookmark/history restore) whose target
+    // lands within 1s of a chapter's metadata start is treated as a chapter
+    // jump: metadata-vs-file drift can put the target a hair BEFORE the
+    // chapter's own file, so an exact seek would land on the PREVIOUS file's
+    // tail — playing it and showing the previous chapter's title (the same
+    // mislabel as the rewind case). The boundary snap + nearest-start latch
+    // then land on the intended file and pin its title. The 1s tolerance is
+    // the same band [_latchChapterJumpTarget] accepts, so only targets that
+    // clearly mean "the start of that chapter" are promoted; mid-chapter
+    // scrubs keep their exact position.
+    final boundaryJump = !chapterJump && _isChapterStartWithin(targetSec);
+    await _seekAbsolute(targetSec, chapterJump: chapterJump || boundaryJump);
     // A scrub that reached the download boundary parks there (pause + last
     // downloaded chapter) instead of leaving the engine completed at the file
     // end with the next chapter's title — and unlike waiting for the
@@ -9976,10 +9988,12 @@ if (_chapterJumpLatchIndex >= 0) {
     final chapterBarrier = await PlayerSettings.getSkipChapterBarrier();
     if (chapterBarrier && _chapters.isNotEmpty) {
       double chapterStart = 0;
+      int? chapterIdx;
       for (int i = _chapters.length - 1; i >= 0; i--) {
         final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
         if (s <= posS + 0.5) {
           chapterStart = s;
+          chapterIdx = i;
           break;
         }
       }
@@ -9992,7 +10006,16 @@ if (_chapterJumpLatchIndex >= 0) {
       // chapter remains available via the dedicated previous-chapter button.
       if (targetS < chapterStart) {
         _disarmIntroForSameChapterRewind(posS, chapterStart);
-        await _seekAbsolute(chapterStart);
+        // Treat this as a chapter jump: snap to the file boundary (the metadata
+        // start can drift a fraction of a second into the PREVIOUS file, which
+        // would otherwise land on the previous chapter's tail and show its
+        // title with the bar near full) and pin the reported chapter to the
+        // current one for the whole engine switch.
+        await _seekAbsolute(
+          chapterStart,
+          chapterJump: true,
+          pinChapterIndex: chapterIdx,
+        );
         _logEvent(
           PlaybackEventType.skipBackward,
           detail: 'snap to chapter start',
