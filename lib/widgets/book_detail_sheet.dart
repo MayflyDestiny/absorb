@@ -41,6 +41,7 @@ import '../services/bookmark_preview_player.dart';
 import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
 import '../services/narrated_books.dart';
+import '../services/transcription_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
@@ -256,6 +257,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   // button waits for the answer rather than showing Read and then switching
   // to Absorb.
   bool _lookingForNarration = false;
+  // Whether the automatic reading and listening sync is on; with it off, an
+  // audiobook with an EPUB gets a Sync position button.
+  bool _autoSync = true;
+  // Transcription on with a model downloaded, which Sync position needs.
+  bool _transcriptionReady = false;
 
   /// Looks into an Audiobookshelf ebook-only EPUB on the server (its index
   /// and timings only) to see whether it reads itself aloud.
@@ -298,6 +304,16 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       _knownNarrated = known;
       _lookingForNarration = false;
     });
+  }
+
+  Future<void> _checkTranscriptionReady() async {
+    if (!await PlayerSettings.getTranscriptionEnabled()) return;
+    for (final size in TranscriptionModelSize.values) {
+      if (await TranscriptionService.instance.isModelDownloaded(size)) {
+        if (mounted) setState(() => _transcriptionReady = true);
+        return;
+      }
+    }
   }
 
   /// An Audiobookshelf EPUB that reads itself aloud plays from the phone, so
@@ -396,6 +412,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     NarrationService.instance.knownNarrated(widget.itemId).then((known) {
       if (known != null && mounted) setState(() => _knownNarrated = known);
     });
+    PlayerSettings.getSyncReadingListening().then((on) {
+      if (mounted && on != _autoSync) setState(() => _autoSync = on);
+    });
+    _checkTranscriptionReady();
     SocketService().addItemUpdatedListener(_onSocketItemUpdated);
     _loadCoverShape();
     PlayerSettings.getShowGoodreadsButton().then((v) { if (mounted) setState(() => _showGoodreads = v); });
@@ -1254,14 +1274,40 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           },
         ),
       ),
-      ValueListenableBuilder<Map<String, SyncTarget>>(
-        valueListenable: ReadListenSync.instance.syncing,
-        builder: (context, syncing, _) {
-          final to = syncing[widget.itemId];
+      ListenableBuilder(
+        listenable: Listenable.merge([ReadListenSync.instance.syncing, ReadListenSync.instance.failed]),
+        builder: (context, _) {
+          final to = ReadListenSync.instance.syncing.value[widget.itemId];
+          final failed = to == null && ReadListenSync.instance.failed.value.containsKey(widget.itemId);
           return AnimatedSize(
             duration: const Duration(milliseconds: 200),
-            child: to == null
+            child: to == null && !failed
                 ? const SizedBox(width: double.infinity)
+                : failed
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => ReadListenSync.instance.syncNow(widget.itemId),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.sync_problem_rounded, size: 16, color: cs.error),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              l.syncFailed,
+                              style: tt.labelMedium?.copyWith(color: cs.error),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(l.retry,
+                              style: tt.labelMedium?.copyWith(fontWeight: FontWeight.w600, color: accent)),
+                        ]),
+                      ),
+                    ),
+                  )
                 : Padding(
                     padding: const EdgeInsets.only(top: 10),
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -1364,6 +1410,46 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
             ),
           );
         }),
+      ],
+      // With the automatic sync off, an audiobook and its separate EPUB come
+      // together by hand: whichever is behind moves up to the other.
+      if (!_autoSync &&
+          _transcriptionReady &&
+          !isEbookOnly &&
+          ebookFile != null &&
+          ebookExtFromFile(ebookFile) == '.epub' &&
+          media['narration'] == null &&
+          !NarratedBooks.contains(widget.itemId)) ...[
+        const SizedBox(height: 8),
+        ValueListenableBuilder<Map<String, SyncTarget>>(
+          valueListenable: ReadListenSync.instance.syncing,
+          builder: (context, syncing, _) {
+            final busy = syncing.containsKey(widget.itemId);
+            return SizedBox(
+              height: 36,
+              child: Material(
+                color: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: accent.withValues(alpha: 0.3)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: busy ? null : () => ReadListenSync.instance.syncNow(widget.itemId),
+                  child: Center(
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.sync_rounded, size: 16, color: accent.withValues(alpha: busy ? 0.4 : 1)),
+                      const SizedBox(width: 8),
+                      Text(l.syncPosition,
+                          style: tt.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w600, color: accent.withValues(alpha: busy ? 0.4 : 1))),
+                    ]),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ],
       // Primary action row: Download | Fully Absorb | ebook download (ebook-only)
       const SizedBox(height: 12),

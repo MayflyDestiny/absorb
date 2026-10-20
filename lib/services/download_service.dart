@@ -153,6 +153,9 @@ class _PendingBook {
   /// (e.g. "Author/Title") on completion. Null for internal / iOS downloads.
   final String? safTreeUri;
   final String? safSubfolder;
+  /// An Audiobookshelf EPUB that reads itself aloud: the one task downloads
+  /// the whole EPUB, and its audio is taken out when it lands.
+  final bool narration;
 
   /// True once the user cancels, so terminal handling cleans up instead of
   /// surfacing an error.
@@ -196,6 +199,7 @@ class _PendingBook {
     this.slimSessionJson,
     this.safTreeUri,
     this.safSubfolder,
+    this.narration = false,
   }) {
     // Start the no-progress watchdog clock at creation (fresh or restored).
     lastUpdate = DateTime.now();
@@ -225,6 +229,7 @@ class _PendingBook {
         'slimSessionJson': slimSessionJson,
         if (safTreeUri != null) 'safTreeUri': safTreeUri,
         if (safSubfolder != null) 'safSubfolder': safSubfolder,
+        if (narration) 'narration': true,
       };
 
   factory _PendingBook.fromJson(Map<String, dynamic> j) => _PendingBook(
@@ -245,6 +250,7 @@ class _PendingBook {
         slimSessionJson: j['slimSessionJson'] as String?,
         safTreeUri: j['safTreeUri'] as String?,
         safSubfolder: j['safSubfolder'] as String?,
+        narration: j['narration'] == true,
       );
 }
 
@@ -754,7 +760,8 @@ class DownloadService extends ChangeNotifier {
   /// download so it plays like any downloaded audiobook. Replaces an
   /// ebook-only record for the same book.
   Future<void> registerNarration({
-    required ApiService api,
+    ApiService? api,
+    String? localCoverPath,
     required String itemId,
     required Map<String, dynamic> item,
     required String dirPath,
@@ -770,15 +777,42 @@ class DownloadService extends ChangeNotifier {
     media['tracks'] = audioTracks;
     media['narration'] = {'duration': duration, 'local': true};
     final stored = {...item, 'media': media};
-    final localCoverPath = await _cacheCover(api, itemId, api.getCoverUrl(itemId, width: 800));
-    for (final p in paths) {
-      await _excludeFromBackup(p);
+    final cover = localCoverPath ??
+        (api == null ? null : await _cacheCover(api, itemId, api.getCoverUrl(itemId, width: 800)));
+    var finalPaths = paths;
+    var finalDir = dirPath;
+    // A custom download folder gets the narration too, moved in under
+    // "Author/Title" the way a finished download is. If the move fails the
+    // book stays usable from its internal copy.
+    final tree = Platform.isAndroid ? _customDownloadUri : null;
+    if (tree != null && tree.isNotEmpty) {
+      final author = metadata?['authorName'] as String?;
+      final title = metadata?['title'] as String? ?? itemId;
+      var nested = (author != null && author.isNotEmpty)
+          ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
+          : _sanitizePath(title);
+      if (_folderTakenByOther(nested, itemId)) {
+        nested = '$nested (${itemId.substring(itemId.length - 8)})';
+      }
+      final moved = await _moveBookToSaf(tree, nested, [for (final p in paths) p.split('/').last], paths);
+      if (moved != null) {
+        finalPaths = moved.fileUris;
+        finalDir = moved.dirUri;
+        await _cleanupBookDir(dirPath, itemId);
+        debugPrint('[Download] narration for $itemId moved into the custom folder under "$nested"');
+      } else {
+        debugPrint('[Download] narration for $itemId kept in app storage: the move into the custom folder failed');
+      }
+    } else {
+      for (final p in paths) {
+        await _excludeFromBackup(p);
+      }
     }
     _noteOrigin(itemId);
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
       status: DownloadStatus.downloaded,
-      localPaths: paths,
+      localPaths: finalPaths,
       sessionData: jsonEncode({
         'libraryItem': stored,
         'mediaMetadata': metadata,
@@ -790,8 +824,8 @@ class DownloadService extends ChangeNotifier {
       }),
       title: metadata?['title'] as String?,
       author: metadata?['authorName'] as String?,
-      localCoverPath: localCoverPath,
-      localDirPath: dirPath,
+      localCoverPath: cover,
+      localDirPath: finalDir,
       libraryId: item['libraryId'] as String?,
     );
     await _save();
@@ -1657,15 +1691,6 @@ class DownloadService extends ChangeNotifier {
       return null;
     }
 
-    // An Audiobookshelf narrated EPUB: its audio comes out of the EPUB here in
-    // the app, a file at a time, rather than through the background downloader.
-    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId)) {
-      if (shouldStart?.call() == false) return null;
-      unawaited(_downloadNarration(api, itemId,
-          title: title, author: author, coverUrl: coverUrl, libraryId: libraryId));
-      return null;
-    }
-
     // If at capacity, queue this one
     if (_activeDownloadIds.length >= maxConcurrent) {
       if (shouldStart?.call() == false) return null;
@@ -1704,58 +1729,6 @@ class DownloadService extends ChangeNotifier {
       libraryId: libraryId,
     ));
     return null;
-  }
-
-  Future<void> _downloadNarration(
-    ApiService api,
-    String itemId, {
-    required String title,
-    String? author,
-    String? coverUrl,
-    String? libraryId,
-  }) async {
-    _activeDownloadIds.add(itemId);
-    _cancelledIds.remove(itemId);
-    DownloadInfo running(double progress) => DownloadInfo(
-          itemId: itemId,
-          status: DownloadStatus.downloading,
-          progress: progress,
-          title: title,
-          author: author,
-          coverUrl: coverUrl,
-          libraryId: libraryId,
-        );
-    _downloads[itemId] = running(0);
-    notifyListeners();
-    debugPrint('[Download] Starting "$title" ($itemId): the narration out of its EPUB');
-    var shown = DateTime(0);
-    var ok = false;
-    try {
-      final item = await api.getLibraryItem(itemId);
-      if (item != null) {
-        ok = await NarrationService.instance.prepareLocal(api, item, onProgress: (p) {
-          if (_cancelledIds.contains(itemId)) throw const NarrationCancelled();
-          final now = DateTime.now();
-          if (now.difference(shown) < const Duration(milliseconds: 500)) return;
-          shown = now;
-          _downloads[itemId] = running(p.clamp(0.0, 1.0));
-          notifyListeners();
-        });
-      }
-    } on NarrationCancelled {
-      debugPrint('[Download] "$title" ($itemId) cancelled');
-    } catch (e) {
-      debugPrint('[Download] "$title" ($itemId) failed: $e');
-    } finally {
-      _activeDownloadIds.remove(itemId);
-    }
-    if (ok || _downloads[itemId]?.status == DownloadStatus.downloaded) return;
-    if (_downloads[itemId]?.status == DownloadStatus.downloading) _downloads.remove(itemId);
-    try {
-      final dir = Directory('${await downloadBasePath}/$itemId');
-      if (dir.existsSync()) await dir.delete(recursive: true);
-    } catch (_) {}
-    notifyListeners();
   }
 
   /// Download entry point for short-lived background isolates (the episode
@@ -1935,6 +1908,12 @@ class DownloadService extends ChangeNotifier {
       libraryId: libraryId,
     );
     notifyListeners();
+
+    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId)) {
+      await _executeNarrationDownload(
+          api: api, itemId: itemId, title: title, author: author, coverUrl: coverUrl, libraryId: libraryId);
+      return;
+    }
 
     // SAF custom folder (Android only): files go to a flat per-book folder
     // under the user-granted tree via content URIs, no storage permission.
@@ -2187,6 +2166,192 @@ class DownloadService extends ChangeNotifier {
       await _failBook(itemId,
           cause: e, bookDirRef: bookDirRef, title: title, author: author, coverUrl: coverUrl);
     }
+  }
+
+  /// An Audiobookshelf EPUB that reads itself aloud downloads whole, as one
+  /// background task with the usual notifications, so it carries on with the
+  /// app in the background or closed. Its audio is taken out once it lands
+  /// ([_finishNarration]).
+  Future<void> _executeNarrationDownload({
+    required ApiService api,
+    required String itemId,
+    required String title,
+    String? author,
+    String? coverUrl,
+    String? libraryId,
+  }) async {
+    final useSaf = Platform.isAndroid && _customDownloadUri != null && _customDownloadUri!.isNotEmpty;
+    String? bookDirRef;
+    try {
+      final item = await api.getLibraryItem(itemId);
+      final ebookFile = resolveEbookFile(item);
+      final ino = ebookFile?['ino'] as String?;
+      if (item == null || ebookFile == null || ino == null || ino.isEmpty) {
+        throw Exception('No EPUB to download');
+      }
+      final metadata = (item['media'] as Map?)?['metadata'] as Map?;
+      final serverTitle = (metadata?['title'] as String?)?.trim() ?? '';
+      final serverAuthor = (metadata?['authorName'] as String?)?.trim() ?? '';
+      if (serverTitle.isNotEmpty) title = serverTitle;
+      if (serverAuthor.isNotEmpty) author = serverAuthor;
+
+      var nestedName = (author != null && author.isNotEmpty)
+          ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
+          : _sanitizePath(title);
+      if (_folderTakenByOther(nestedName, itemId)) {
+        nestedName = '$nestedName (${itemId.substring(itemId.length - 8)})';
+      }
+      final Directory bookDir;
+      String? relDir;
+      if (Platform.isIOS) {
+        bookDir = Directory('${await downloadBasePath}/$nestedName');
+      } else {
+        final appDir = await getApplicationDocumentsDirectory();
+        relDir = 'downloads/$nestedName';
+        bookDir = Directory('${appDir.path}/$relDir');
+      }
+      if (!bookDir.existsSync()) bookDir.createSync(recursive: true);
+      bookDirRef = bookDir.path;
+
+      final localCoverPath = await _cacheCover(api, itemId, coverUrl);
+      // What taking the audio out needs later, even with the app restarted
+      // offline: the item, without its bulky file lists.
+      final slimItem = Map<String, dynamic>.from(item)..remove('userMediaProgress');
+      slimItem['media'] = Map<String, dynamic>.from(slimItem['media'] as Map? ?? const {})
+        ..remove('audioFiles');
+      slimItem['libraryFiles'] = [ebookFile];
+
+      if (_cancelledIds.remove(itemId)) {
+        await _cleanupBookDir(bookDirRef, itemId);
+        _activeDownloadIds.remove(itemId);
+        _downloads.remove(itemId);
+        notifyListeners();
+        unawaited(_processQueue());
+        return;
+      }
+
+      final fileMeta = ebookFile['metadata'] as Map?;
+      final filename = _sanitizePath(fileMeta?['filename'] as String? ?? 'book.epub');
+      final size = (fileMeta?['size'] as num?)?.toInt();
+      final url = api.buildDownloadFileUrl(itemId, ino);
+      final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
+
+      _pending[itemId] = _PendingBook(
+        itemId: itemId,
+        apiItemId: itemId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        localCoverPath: localCoverPath,
+        libraryId: libraryId,
+        bookDir: bookDirRef,
+        trackCount: 1,
+        expectedPaths: ['${bookDir.path}/$filename'],
+        slimSessionJson: jsonEncode({'libraryItem': slimItem}),
+        narration: true,
+      );
+      await _persistPending();
+
+      final l = _l();
+      final runningNotif = Platform.isIOS
+          ? TaskNotification(title, l?.downloadNotifDownloadingTitle ?? 'Downloading')
+          : TaskNotification(title, '{progress}');
+      final completeNotif = TaskNotification(
+        l?.downloadNotifCompleteTitle ?? 'Download Complete',
+        l?.downloadNotifCompleteBody(title) ?? '$title is ready to listen offline',
+      );
+      final errorNotif = TaskNotification(l?.downloadNotifFailedTitle ?? 'Download Failed', title);
+      final meta = jsonEncode({'itemId': itemId, 'i': 0, 'n': 1});
+      final DownloadTask task;
+      if (Platform.isIOS) {
+        task = DownloadTask(
+          taskId: _taskId(itemId, 0),
+          url: url,
+          headers: api.downloadHeadersFor(url),
+          filename: filename,
+          baseDirectory: BaseDirectory.root,
+          directory: bookDir.path,
+          group: _dlGroup,
+          metaData: meta,
+          updates: Updates.statusAndProgress,
+          requiresWiFi: wifiOnly,
+          retries: 3,
+          allowPause: true,
+        );
+      } else {
+        task = DownloadTask(
+          taskId: _taskId(itemId, 0),
+          url: url,
+          headers: api.downloadHeadersFor(url),
+          filename: filename,
+          baseDirectory: BaseDirectory.applicationDocuments,
+          directory: relDir!,
+          group: _dlGroup,
+          metaData: meta,
+          updates: Updates.statusAndProgress,
+          requiresWiFi: wifiOnly,
+          retries: 3,
+          allowPause: true,
+        );
+      }
+      FileDownloader().configureNotificationForTask(
+        task,
+        running: runningNotif,
+        complete: completeNotif,
+        error: errorNotif,
+        progressBar: true,
+      );
+      final ok = await FileDownloader().enqueue(task);
+      debugPrint('[Download] narration EPUB for "$title" ($itemId) enqueued ok=$ok: $filename, '
+          '${size ?? '?'} bytes, dir=${bookDir.path}, '
+          'audio goes to ${useSaf ? 'the custom folder' : 'app storage'} once it lands');
+      if (!ok) throw Exception('Failed to enqueue the EPUB');
+    } catch (e) {
+      await _failBook(itemId,
+          cause: e, bookDirRef: bookDirRef, title: title, author: author, coverUrl: coverUrl);
+    }
+  }
+
+  /// A narrated EPUB landed: its audio is taken out and kept as the book's
+  /// download, the reader gets a copy without the audio, and the EPUB is
+  /// deleted. Runs when the download finishes, or as the app starts when it
+  /// finished while the app was closed, so it never holds the caller up.
+  Future<void> _finishNarration(String itemId, _PendingBook p, String epubPath) async {
+    final started = DateTime.now();
+    var bytes = 0;
+    try {
+      bytes = File(epubPath).lengthSync();
+    } catch (_) {}
+    debugPrint('[Download] narration EPUB for "${p.title}" ($itemId) landed ($bytes bytes) - taking its audio out');
+    Map<String, dynamic>? item;
+    try {
+      item = (jsonDecode(p.slimSessionJson ?? '{}') as Map<String, dynamic>)['libraryItem']
+          as Map<String, dynamic>?;
+    } catch (_) {}
+    var ok = false;
+    try {
+      if (item != null) {
+        ok = await NarrationService.instance
+            .keepFromEpub(item, itemId, epubPath, p.bookDir, localCoverPath: p.localCoverPath);
+      } else {
+        debugPrint('[Download] narration for $itemId has no saved item to keep it with');
+      }
+    } catch (e) {
+      debugPrint('[Download] taking the narration out of "${p.title}" ($itemId) failed: $e');
+    }
+    if (!ok) {
+      p.finalizing = false; // let _failBook proceed
+      await _failBook(itemId, cause: 'The narration could not be taken out of the EPUB');
+      return;
+    }
+    _activeDownloadIds.remove(itemId);
+    _pending.remove(itemId);
+    await _persistPending();
+    await _deleteDbRecords(itemId, p.trackCount);
+    notifyListeners();
+    debugPrint('[Download] Complete: ${p.title} (narration, kept '
+        '${DateTime.now().difference(started).inMilliseconds}ms after the EPUB landed)');
+    unawaited(_processQueue());
   }
 
   /// Rebuild forced-direct-play track URLs against the current server/token so
@@ -2619,6 +2784,11 @@ class DownloadService extends ChangeNotifier {
           'files present, treating as failure');
       p.finalizing = false; // let _failBook proceed
       await _failBook(itemId, cause: 'Missing files after download');
+      return;
+    }
+
+    if (p.narration) {
+      unawaited(_finishNarration(itemId, p, localPaths.first));
       return;
     }
 

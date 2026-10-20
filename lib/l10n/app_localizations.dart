@@ -18447,6 +18447,18 @@ abstract class AppLocalizations {
   /// **'Downloading the narration. Tap Absorb when it finishes.'**
   String get narrationDownloadStarted;
 
+  /// No description provided for @narrationTextBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This book\'s EPUB has its own words for every moment of the audio, so the text is copied straight from the book. Pick how much to add to the bookmark\'s note.'**
+  String get narrationTextBody;
+
+  /// No description provided for @narrationTextLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Getting the words from the book'**
+  String get narrationTextLoading;
+
   /// No description provided for @downloadToAbsorb.
   ///
   /// In en, this message translates to:
@@ -18530,6 +18542,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Finding your spot in the ebook'**
   String get syncFindingEbook;
+
+  /// No description provided for @syncFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t sync your place'**
+  String get syncFailed;
+
+  /// No description provided for @syncAlreadyTogether.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in sync'**
+  String get syncAlreadyTogether;
+
+  /// No description provided for @syncPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync position'**
+  String get syncPosition;
 
   /// No description provided for @readAlongFollowHint.
   ///

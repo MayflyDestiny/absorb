@@ -146,6 +146,22 @@ class ReadListenSync {
   /// sheet to show.
   final ValueNotifier<Map<String, SyncTarget>> syncing = ValueNotifier(const {});
 
+  /// Books whose last sync couldn't find the spot, and which side it was
+  /// moving, for the details sheet to say so. Cleared by the next look at the
+  /// book that finds its place, or finds nothing to move.
+  final ValueNotifier<Map<String, SyncTarget>> failed = ValueNotifier(const {});
+
+  void _setFailed(String itemId, SyncTarget? to) {
+    final now = Map<String, SyncTarget>.from(failed.value);
+    if (to == null) {
+      if (now.remove(itemId) == null) return;
+    } else {
+      if (now[itemId] == to) return;
+      now[itemId] = to;
+    }
+    failed.value = now;
+  }
+
   void _setSyncing(String itemId, SyncTarget? to) {
     final now = Map<String, SyncTarget>.from(syncing.value);
     if (to == null) {
@@ -234,7 +250,14 @@ class ReadListenSync {
   /// the words last heard, or null when it stays put.
   Future<String?> ebookSpotForReader(String itemId) {
     final done = Completer<String?>();
-    _run(() async => done.complete(await _audioToEbook(itemId, fromReader: true)));
+    _run(() async {
+      String? spot;
+      try {
+        spot = await _audioToEbook(itemId, fromReader: true);
+      } finally {
+        done.complete(spot);
+      }
+    });
     return done.future;
   }
 
@@ -252,22 +275,28 @@ class ReadListenSync {
     if (l != null) showOverlayToast(ctx, text(l), icon: icon, onTap: onTap);
   }
 
-  static Future<bool> _canListen(String itemId) async {
-    if (!await PlayerSettings.getSyncReadingListening()) return false;
+  static Future<bool> _canListen(String itemId, {bool manual = false}) async {
+    if (!manual && !await PlayerSettings.getSyncReadingListening()) return false;
+    final why = await _whyNot(itemId);
+    if (why == null) return true;
+    debugPrint('[SyncSpot] $itemId: ${why.log} - not syncing');
+    return false;
+  }
+
+  /// Why [itemId] can't be synced by transcribing right now, for the log and
+  /// to say on screen, or null when it can.
+  static Future<({String log, String Function(AppLocalizations l) say})?> _whyNot(String itemId) async {
     if (!await PlayerSettings.getTranscriptionEnabled()) {
-      debugPrint('[SyncSpot] $itemId: transcription is off - not syncing');
-      return false;
+      return (log: 'transcription is off', say: (AppLocalizations l) => l.transcriptionDisabledHint);
     }
     final t = TranscriptionService.instance;
     if (!t.canTranscribeBook(itemId)) {
-      debugPrint('[SyncSpot] $itemId: this book can not be transcribed - not syncing');
-      return false;
+      return (log: 'this book can not be transcribed', say: (AppLocalizations l) => l.transcriptionNotDownloadedBook);
     }
     for (final size in TranscriptionModelSize.values) {
-      if (await t.isModelDownloaded(size)) return true;
+      if (await t.isModelDownloaded(size)) return null;
     }
-    debugPrint('[SyncSpot] $itemId: no transcription model downloaded - not syncing');
-    return false;
+    return (log: 'no transcription model downloaded', say: (AppLocalizations l) => l.transcriptionNoModelDownloaded);
   }
 
   /// The audiobook and ebook of [itemId], when it has both and isn't done.
@@ -307,21 +336,26 @@ class ReadListenSync {
   }
 
   /// Listening stopped: the ebook spot moves to the words last heard, when
-  /// those are past it. Returns the new spot.
-  Future<String?> _audioToEbook(String itemId, {bool fromReader = false}) async {
+  /// those are past it. Returns the new spot. [manual] is the Sync position
+  /// button: the setting isn't needed, and it looks again even when nothing
+  /// was heard since the last look.
+  Future<String?> _audioToEbook(String itemId, {bool fromReader = false, bool manual = false}) async {
+    // Whether the words heard were placed in the ebook, once a look started.
+    bool? found;
     try {
       if (!fromReader && _readerOpen.contains(itemId)) return null;
-      if (!await _canListen(itemId)) return null;
+      if (!await _canListen(itemId, manual: manual)) return null;
       final api = _api;
       if (api == null) return null;
       final heard = await _heardAt(itemId);
       if (heard == null || heard < 30) return null;
       final last = await ScopedPrefs.getDouble(_heardKey(itemId));
-      if (last != null && (heard - last).abs() < 20) return null;
+      if (!manual && last != null && (heard - last).abs() < 20) return null;
       final book = await _book(api, itemId);
       if (book == null) return null;
       final started = DateTime.now();
       _setSyncing(itemId, SyncTarget.ebook);
+      found = false;
       final title = ((book.item['media'] as Map?)?['metadata'] as Map?)?['title'] as String? ?? '';
       final epub = await NarrationService.instance.readerFile(api, itemId, book.ebook, title);
       final from = max(0.0, heard - 15);
@@ -332,7 +366,10 @@ class ReadListenSync {
         preferAccuracy: false,
       );
       final transcript = segs.map((s) => s.text).join(' ').trim();
-      if (transcript.split(RegExp(r'\s+')).length < 5) return null;
+      if (transcript.split(RegExp(r'\s+')).length < 5) {
+        debugPrint('[SyncSpot] $itemId: too few words heard at ${heard.toStringAsFixed(0)}s to place them');
+        return null;
+      }
       final current = await _ebookSpot(api, itemId);
       final near = (heard / book.duration).clamp(0.0, 1.0);
       final placed = await _placeAsync(epub.path, transcript, near, current);
@@ -341,6 +378,7 @@ class ReadListenSync {
         debugPrint('[SyncSpot] $itemId: the words at ${heard.toStringAsFixed(0)}s are not in the ebook');
         return null;
       }
+      found = true;
       // BookOrbit moves a narrated EPUB along with the audiobook itself.
       if (placed.narrated && api.isBookOrbit) return null;
       final cs = placed.currentSi, co = placed.currentOffset;
@@ -373,27 +411,40 @@ class ReadListenSync {
       return placed.cfi;
     } finally {
       _setSyncing(itemId, null);
+      if (found != null) _setFailed(itemId, found ? null : SyncTarget.ebook);
     }
   }
 
   /// The reader closed after reading: the audiobook moves to the page, when
-  /// the page is past it. Returns the new spot.
-  Future<double?> _ebookToAudio(String itemId, String cfi) async {
+  /// the page is past it. Returns the new spot. [manual] is the Sync position
+  /// button: the setting isn't needed, it looks again at a page it has seen,
+  /// and it moves the audio even while it plays, since that was asked for.
+  Future<double?> _ebookToAudio(String itemId, String cfi, {bool manual = false}) async {
+    // Whether the page was found in the audio, once a look started.
+    bool? found;
     try {
       final began = DateTime.now();
-      if (!await _canListen(itemId)) return null;
-      if (await ScopedPrefs.getString(_readKey(itemId)) == cfi) return null;
+      if (!await _canListen(itemId, manual: manual)) return null;
+      if (!manual && await ScopedPrefs.getString(_readKey(itemId)) == cfi) return null;
       final api = _api;
       if (api == null) return null;
       final player = AudioPlayerService();
-      if (player.currentItemId == itemId && player.currentEpisodeId == null && player.isPlaying) return null;
+      if (!manual && player.currentItemId == itemId && player.currentEpisodeId == null && player.isPlaying) {
+        return null;
+      }
       final heard = await _heardAt(itemId) ?? 0;
       final book = await _book(api, itemId);
       if (book == null) return null;
-      final file = await ebookCacheFileFor(itemId, book.ebook);
+      final title = ((book.item['media'] as Map?)?['metadata'] as Map?)?['title'] as String? ?? '';
+      final file = await NarrationService.instance.readerFile(api, itemId, book.ebook, title);
       if (!file.existsSync()) return null;
       final spot = await _spotAsync(file.path, cfi);
-      if (spot == null || (spot.narrated && api.isBookOrbit)) return null;
+      if (spot == null) {
+        debugPrint('[SyncSpot] $itemId: the saved page is not in this ebook');
+        found = false;
+        return null;
+      }
+      if (spot.narrated && api.isBookOrbit) return null;
       final text = EpubBookText.open(file.path);
       if (text == null) return null;
       try {
@@ -412,17 +463,24 @@ class ReadListenSync {
         if (guess <= heard + 60) {
           debugPrint('[SyncSpot] $itemId: the page (about ${guess.toStringAsFixed(0)}s) '
               'is not ahead of the audio (${heard.toStringAsFixed(0)}s)');
+          found = true;
           return null;
         }
         final started = DateTime.now();
         _setSyncing(itemId, SyncTarget.audio);
+        found = false;
         final t = await locator.locate(info, api);
-        if (t == null || t <= heard + 15) return null;
+        if (t == null) {
+          debugPrint('[SyncSpot] $itemId: the page was not found in the audio');
+          return null;
+        }
+        found = true;
+        if (t <= heard + 15) return null;
         final now = AudioPlayerService();
         final inPlayer = now.currentItemId == itemId && now.currentEpisodeId == null;
         // Playback started while this was being found: the audio is never moved
         // under it. The spot is offered instead.
-        if ((_playedAt[itemId]?.isAfter(began) ?? false) || (inPlayer && now.isPlaying)) {
+        if (!manual && ((_playedAt[itemId]?.isAfter(began) ?? false) || (inPlayer && now.isPlaying))) {
           debugPrint('[SyncSpot] $itemId: found ${t.toStringAsFixed(0)}s after playback started - offering it');
           _toast((l) => l.syncAudioOffer, Icons.headphones_rounded, onTap: () {
             final p = AudioPlayerService();
@@ -456,6 +514,45 @@ class ReadListenSync {
       }
     } finally {
       _setSyncing(itemId, null);
+      if (found != null) _setFailed(itemId, found ? null : SyncTarget.audio);
     }
   }
+
+  /// The Sync position button, for when the automatic sync is off: whichever
+  /// of the audio and the ebook is behind moves up to the other, and a toast
+  /// says how it went.
+  Future<void> syncNow(String itemId) {
+    final done = Completer<void>();
+    _run(() async {
+      try {
+        await _syncNow(itemId);
+      } finally {
+        done.complete();
+      }
+    });
+    return done.future;
+  }
+
+  Future<void> _syncNow(String itemId) async {
+    final why = await _whyNot(itemId);
+    if (why != null) {
+      debugPrint('[SyncSpot] $itemId: sync asked for, but ${why.log}');
+      _toast(why.say, Icons.record_voice_over_rounded);
+      return;
+    }
+    final api = _api;
+    if (api == null) return;
+    debugPrint('[SyncSpot] $itemId: sync asked for');
+    _setFailed(itemId, null);
+    // The page first: when it is ahead, the audio moves up to it.
+    final cfi = await _ebookSpot(api, itemId);
+    if (cfi != null && await _ebookToAudio(itemId, cfi, manual: true) != null) return;
+    if (!failed.value.containsKey(itemId) && await _audioToEbook(itemId, manual: true) != null) return;
+    if (failed.value.containsKey(itemId)) {
+      _toast((l) => l.syncFailed, Icons.sync_problem_rounded);
+      return;
+    }
+    _toast((l) => l.syncAlreadyTogether, Icons.check_rounded);
+  }
+
 }

@@ -100,6 +100,9 @@ class EbookReaderView extends StatefulWidget {
   /// The audio position [findText] was transcribed at, so a not-confident
   /// first pass can transcribe a longer window and retry.
   final double? findPositionSeconds;
+  /// Find in ebook on a book whose audio is its EPUB's narration: the book
+  /// time to open at, on the sentence read then.
+  final double? openAtAudioSeconds;
   /// Turn read along on as soon as the book is displayed, for the card's
   /// Read along button.
   final bool startReadAlong;
@@ -113,6 +116,7 @@ class EbookReaderView extends StatefulWidget {
     this.findText,
     this.findChapterHint,
     this.findPositionSeconds,
+    this.openAtAudioSeconds,
     this.startReadAlong = false,
   });
 
@@ -3777,19 +3781,19 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   bool _narrationOpenedAtAudio = false;
 
   /// Opening the reader on a narrated book: go to the sentence the audio is
-  /// on when the book is in the player, or when the listening has got
-  /// further than the reading. Reading follows listening, as listening
-  /// follows reading ahead.
+  /// on. Reading ahead moved the audio along when the reader closed, so this
+  /// is where both left off; Read stands in for Find in ebook on these.
   Future<void> _narrationOpenAtAudio() async {
     final n = _narration;
     if (_narrationOpenedAtAudio || n == null || !_useNarration || !_didLoadRescue) return;
     if (widget.openAtCfi != null || widget.findText != null || widget.startReadAlong) return;
     _narrationOpenedAtAudio = true;
     final player = AudioPlayerService();
-    double? at;
-    if (player.currentItemId == widget.itemId && player.currentEpisodeId == null) {
+    // Find in ebook names the spot, whether or not it is ahead of the page.
+    double? at = widget.openAtAudioSeconds;
+    if (at == null && player.currentItemId == widget.itemId && player.currentEpisodeId == null) {
       at = player.position.inMilliseconds / 1000.0;
-    } else {
+    } else if (at == null) {
       final local = await ProgressSyncService().getLocal(widget.itemId);
       final saved = _narrationLib?.getProgressData(widget.itemId);
       final localAt = (local?['timestamp'] as num?)?.toInt() ?? 0;
@@ -3801,15 +3805,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               : (localAt >= savedAt ? local : saved);
       final heard = (newer?['currentTime'] as num?)?.toDouble() ?? 0;
       if (heard <= 0) return;
-      // Measured in narration time against the page's first sentence, so a
-      // long front matter can't make the audio look ahead when it isn't.
+      // Already on the sentence the audio stopped at: nothing moves.
       final readAt = await _narrationTimeOnPage();
-      if (readAt != null) {
-        if (heard <= readAt + 1) return;
-      } else {
-        final read = (saved?['ebookProgress'] as num?)?.toDouble() ?? _progress;
-        if (n.duration <= 0 || heard / n.duration <= read + 0.005) return;
-      }
+      if (readAt != null && (heard - readAt).abs() <= 1) return;
       at = heard;
     }
     if (!mounted) return;

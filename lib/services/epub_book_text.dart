@@ -5,6 +5,8 @@ import 'package:html/dom.dart' as html;
 import 'package:html/parser.dart' as html_parser;
 import 'package:xml/xml.dart';
 
+import 'media_overlay.dart';
+
 /// A spot found in a book's text: the spine section, where the words start
 /// and end in its text, and how well they matched (0 to 1).
 typedef TextMatch = ({int si, int s, int e, double fine});
@@ -279,6 +281,34 @@ class EpubBookText {
   String sectionText(int si) => _section(si)?.text ?? '';
 
   int sectionLength(int si) => sectionText(si).length;
+
+  /// The spine index of the document [href] names, as a media overlay or the
+  /// package names it, or -1.
+  int sectionOf(String href) {
+    for (var i = 0; i < spine.length; i++) {
+      if (MediaOverlay.sameDoc(spine[i], href)) return i;
+      if (i < _paths.length && MediaOverlay.sameDoc(_paths[i], href)) return i;
+    }
+    return -1;
+  }
+
+  /// The text of the element [id] in section [si], spaces tidied. Null when
+  /// the section has no such element.
+  String? elementText(int si, String id) {
+    final s = _section(si);
+    if (s == null) return null;
+    html.Element? find(html.Element e) {
+      if (e.id == id) return e;
+      for (final c in e.children) {
+        final hit = find(c);
+        if (hit != null) return hit;
+      }
+      return null;
+    }
+
+    final el = find(s.root);
+    return el == null ? null : _flat(el.text);
+  }
 
   /// The TOC title for a spine href, matched the way the reader matches it:
   /// by file name first, then by the end of the path.

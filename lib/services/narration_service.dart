@@ -11,6 +11,7 @@ import 'audio_file_duration.dart';
 import 'audio_player_service.dart';
 import 'download_service.dart';
 import 'ebook_cache.dart';
+import 'epub_book_text.dart';
 import 'media_overlay.dart';
 import 'narrated_books.dart';
 import 'remote_zip.dart';
@@ -52,6 +53,31 @@ List<String> _extract(({String epub, String dir, List<String> hrefs, List<String
     return out;
   } finally {
     input.closeSync();
+  }
+}
+
+/// A copy of the EPUB at [from] without the files in [skip], written to [to]:
+/// the narrated book as the reader opens it, light enough to load.
+void _copyWithout(({String from, String to, List<String> skip}) job) {
+  final input = InputFileStream(job.from);
+  final part = '${job.to}.part';
+  try {
+    File(job.to).parent.createSync(recursive: true);
+    final archive = ZipDecoder().decodeStream(input);
+    final skip = job.skip.toSet();
+    final out = ZipFileEncoder()..create(part);
+    try {
+      for (final f in archive.files) {
+        if (!skip.contains(f.name)) out.addArchiveFile(f);
+      }
+    } finally {
+      out.closeSync();
+    }
+    File(part).renameSync(job.to);
+  } finally {
+    input.closeSync();
+    final left = File(part);
+    if (left.existsSync()) left.deleteSync();
   }
 }
 
@@ -383,6 +409,17 @@ class NarrationService {
   bool hasLocalAudio(String itemId) =>
       (DownloadService().getLocalPaths(itemId)?.isNotEmpty ?? false);
 
+  /// The narration when it is the book's audio: an Audiobookshelf EPUB with
+  /// no audiobook of its own, or a book BookOrbit plays from its EPUB. Its
+  /// timings say which sentence is being read at every moment, so nothing
+  /// needs transcribing. Null for any other book, or when the timings aren't
+  /// on this phone yet.
+  Future<MediaOverlay?> audioNarration(ApiService? api, String itemId) async {
+    if (api is BookOrbitApiService) return api.narrationFor(itemId);
+    if (!NarratedBooks.contains(itemId)) return null;
+    return localOverlay(itemId);
+  }
+
   /// Puts an Audiobookshelf book's narration on the phone as its audio:
   /// just the audio files, fetched out of the EPUB on the server. Servers
   /// without range requests fall back to the whole EPUB. False when the EPUB
@@ -418,13 +455,14 @@ class NarrationService {
   /// The narration laid on the audio files' real lengths, saved, and kept as
   /// the book's download.
   Future<void> _keep(
-    ApiService api,
+    ApiService? api,
     Map<String, dynamic> item,
     String itemId,
     MediaOverlay o,
     String dir,
-    List<String> paths,
-  ) async {
+    List<String> paths, {
+    String? localCoverPath,
+  }) async {
     final measured = <double?>[];
     for (final p in paths) {
       measured.add(await audioFileDuration(p));
@@ -438,6 +476,7 @@ class NarrationService {
     if (measured.every((m) => m != null)) await ScopedPrefs.setBool(_timedKey(itemId), true);
     await DownloadService().registerNarration(
       api: api,
+      localCoverPath: localCoverPath,
       itemId: itemId,
       item: item,
       dirPath: dir,
@@ -515,6 +554,54 @@ class NarrationService {
     return true;
   }
 
+  /// A narrated EPUB downloaded whole to [epubPath]: its audio files are taken
+  /// out into [dir] and kept as the book's download, the reader gets a copy
+  /// without the audio when it has none yet, and the EPUB is deleted. False
+  /// when it holds no narration after all.
+  Future<bool> keepFromEpub(
+    Map<String, dynamic> item,
+    String itemId,
+    String epubPath,
+    String dir, {
+    String? localCoverPath,
+  }) async {
+    final started = DateTime.now();
+    final o = await compute(_parseEpub, epubPath);
+    if (o == null || o.isEmpty) {
+      debugPrint('[Narration] the downloaded EPUB for $itemId holds no narration');
+      await _remember(itemId, null);
+      return false;
+    }
+    final hrefs = o.tracks.map((t) => t.href).toList();
+    final names = _trackNames(o.audioTracks((t) => t.href));
+    final paths = await compute(_extract, (epub: epubPath, dir: dir, hrefs: hrefs, names: names));
+    debugPrint('[Narration] took ${paths.length} audio files out of the downloaded EPUB for $itemId '
+        'in ${DateTime.now().difference(started).inMilliseconds}ms');
+    final ebookFile = resolveEbookFile(item);
+    if (ebookFile != null) {
+      try {
+        final reader = await ebookCacheFileFor(itemId, ebookFile);
+        if (reader.existsSync() && reader.lengthSync() > 0) {
+          debugPrint('[EbookCache] $itemId already has a reader copy (${reader.lengthSync()} bytes)');
+        } else {
+          final at = DateTime.now();
+          await compute(_copyWithout, (from: epubPath, to: reader.path, skip: hrefs));
+          debugPrint('[EbookCache] narrated EPUB $itemId kept for the reader without its audio: '
+              '${reader.lengthSync()} bytes in ${DateTime.now().difference(at).inMilliseconds}ms');
+        }
+      } catch (e) {
+        debugPrint('[EbookCache] reader copy of $itemId not made from the download: $e');
+      }
+    }
+    try {
+      File(epubPath).deleteSync();
+    } catch (e) {
+      debugPrint('[Narration] the downloaded EPUB for $itemId was not deleted: $e');
+    }
+    await _keep(null, item, itemId, o, dir, paths, localCoverPath: localCoverPath);
+    return true;
+  }
+
   /// Plays the narration, from the sentence [from] when given (read along
   /// starting at the page in view, "play from here"). An Audiobookshelf book
   /// plays it once downloaded: false until then.
@@ -551,5 +638,32 @@ class NarrationService {
     );
     if (error != null) debugPrint('[Narration] play $itemId failed: $error');
     return error == null;
+  }
+}
+
+/// The book's own words narrated between [from] and [to] seconds: each
+/// sentence read in that stretch, in order, from the EPUB at [epubPath].
+/// Runs through [compute], so the EPUB is read off the main isolate.
+String narratedTextIn(({String epubPath, MediaOverlay overlay, double from, double to}) a) {
+  final book = EpubBookText.open(a.epubPath);
+  if (book == null) return '';
+  try {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final c in a.overlay.clips) {
+      final id = c.fragment;
+      if (id == null) continue;
+      final start = a.overlay.startOf(c);
+      final end = start + (c.end - c.begin);
+      if (end <= a.from || start >= a.to) continue;
+      if (!seen.add('${c.textHref}#$id')) continue;
+      final si = book.sectionOf(c.textHref);
+      if (si < 0) continue;
+      final text = book.elementText(si, id);
+      if (text != null && text.isNotEmpty) out.add(text);
+    }
+    return out.join(' ');
+  } finally {
+    book.close();
   }
 }
