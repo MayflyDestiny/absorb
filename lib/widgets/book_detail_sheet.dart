@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'overlay_toast.dart';
 import 'narration_download_dialog.dart';
-import 'progress_dialog.dart';
 import '../services/media_overlay.dart';
 import '../services/narration_service.dart';
 import '../services/read_listen_sync.dart';
@@ -247,9 +246,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     return _rawCoverScheme;
   }
 
-  // What this phone knows about the EPUB reading itself aloud: true, false
-  // (checked, it doesn't), or null (not looked at yet).
-  bool? _knownNarrated;
   // An Audiobookshelf ebook-only book whose EPUB reads itself aloud: the
   // sheet shows it as an audiobook, the way BookOrbit's arrive.
   MediaOverlay? _localNarration;
@@ -286,22 +282,36 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       });
     }
     MediaOverlay? o;
-    bool? known;
-    try {
-      o = await NarrationService.instance.probe(api, item);
-      if (o != null) await NarrationService.instance.markAudiobook(widget.itemId, o);
-      known = await NarrationService.instance.knownNarrated(widget.itemId);
-      // Looked at before the list kept plain EPUBs too.
-      if (o == null && known == false && !NarratedBooks.checked(widget.itemId)) {
-        await NarratedBooks.set(widget.itemId, null);
+    // A look that fails (rather than finding no narration) gets one more go,
+    // so a hiccup doesn't leave a narrated EPUB showing as a plain ebook.
+    for (var attempt = 1; attempt <= 2 && mounted; attempt++) {
+      try {
+        o = await NarrationService.instance.probe(api, item, onNarrated: (duration) {
+          // The package says it reads itself aloud: that settles the buttons
+          // while the timings are still coming.
+          if (duration == null || duration <= 0 || !mounted) return;
+          debugPrint('[Narration] ${widget.itemId}: narrated by its package - showing it as an audiobook now');
+          unawaited(NarratedBooks.set(widget.itemId, duration).then((_) {
+            if (mounted && _lookingForNarration) setState(() => _lookingForNarration = false);
+          }));
+        });
+        if (o != null) await NarrationService.instance.markAudiobook(widget.itemId, o);
+        final known = await NarrationService.instance.knownNarrated(widget.itemId);
+        // Looked at before the list kept plain EPUBs too.
+        if (o == null && known == false && !NarratedBooks.checked(widget.itemId)) {
+          await NarratedBooks.set(widget.itemId, null);
+        }
+        if (o != null || known != null) break;
+        debugPrint('[Narration] ${widget.itemId}: the EPUB on the server could not be looked into '
+            '(try $attempt of 2)');
+      } catch (e) {
+        debugPrint('[Narration] ${widget.itemId}: looking for narration failed (try $attempt of 2): $e');
       }
-    } catch (e) {
-      debugPrint('[Narration] ${widget.itemId}: looking for narration failed: $e');
+      if (attempt == 1) await Future.delayed(const Duration(seconds: 2));
     }
     if (!mounted) return;
     setState(() {
       _localNarration = o;
-      _knownNarrated = known;
       _lookingForNarration = false;
     });
   }
@@ -339,62 +349,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         ),
       );
 
-  /// Puts the narration on the phone (just the audio, out of the EPUB on the
-  /// server), with how far along it is. False when there is none.
-  Future<bool> _prepareNarration() async {
-    final l = AppLocalizations.of(context)!;
-    final api = context.read<AuthProvider>().apiService;
-    final item = _item;
-    if (api == null || item == null) return false;
-    debugPrint('[Narration] ${widget.itemId} can not stream - downloading the narration first');
-    final label = ValueNotifier<String>(l.narrationPreparing);
-    showProgressDialogListenable(context, label);
-    var ok = false;
-    try {
-      ok = await NarrationService.instance.prepareLocal(api, item, onProgress: (p) {
-        label.value = '${l.narrationPreparing} ${(p * 100).clamp(0, 100).toStringAsFixed(0)}%';
-      });
-    } catch (e) {
-      debugPrint('[Narration] getting the narration failed: $e');
-    }
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    Future.delayed(const Duration(milliseconds: 500), label.dispose);
-    if (!mounted) return false;
-    final o = ok ? await NarrationService.instance.localOverlay(widget.itemId) : null;
-    final known = await NarrationService.instance.knownNarrated(widget.itemId);
-    if (!mounted) return false;
-    setState(() {
-      _localNarration = o ?? _localNarration;
-      _knownNarrated = known;
-    });
-    if (!ok) showOverlayToast(context, l.narrationNone, icon: Icons.headphones_rounded);
-    return ok;
-  }
-
-  /// The Listen button on a big EPUB this phone couldn't look into (a server
-  /// without range requests): fetch it whole, then play like Absorb.
-  Future<void> _listenToNarration() async {
-    if (!await _prepareNarration() || !mounted) return;
-    final o = _localNarration;
-    if (o == null) return;
-    final shaped = NarrationService.instance.withNarration(_item!, o);
-    final media = shaped['media'] as Map<String, dynamic>;
-    final metadata = media['metadata'] as Map<String, dynamic>? ?? const {};
-    setState(() {
-      _item = shaped;
-      _isAbsorbing = true;
-    });
-    await _startAbsorb(
-      context,
-      auth: context.read<AuthProvider>(),
-      title: metadata['title'] as String? ?? '',
-      author: metadata['authorName'] as String? ?? '',
-      coverUrl: _coverUrl,
-      duration: (media['duration'] as num?)?.toDouble() ?? 0,
-      chapters: media['chapters'] as List<dynamic>? ?? const [],
-    );
-  }
-
   @override void initState() {
     super.initState();
     // Quick-actions sheet seeds from the tile's item map so it paints instantly
@@ -409,9 +363,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     _loadItem();
     _loadBookmarks();
     _warmStats();
-    NarrationService.instance.knownNarrated(widget.itemId).then((known) {
-      if (known != null && mounted) setState(() => _knownNarrated = known);
-    });
     PlayerSettings.getSyncReadingListening().then((on) {
       if (mounted && on != _autoSync) setState(() => _autoSync = on);
     });
@@ -1329,37 +1280,6 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
           );
         },
       ),
-      // A big EPUB this phone couldn't look into (a server without range
-      // requests) may read itself aloud; tapping finds out. A checked one
-      // shows as an audiobook instead.
-      if (isEbookOnly &&
-          !_lookingForNarration &&
-          ebookFile != null &&
-          ebookExtFromFile(ebookFile) == '.epub' &&
-          !lib.isOffline &&
-          _knownNarrated == null &&
-          ((ebookFile['metadata'] as Map?)?['size'] as num? ?? 0) > 150 * 1024 * 1024) ...[
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 40,
-          child: Material(
-            color: accent.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(14),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: _listenToNarration,
-              child: Center(
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.headphones_rounded, size: 18, color: accent),
-                  const SizedBox(width: 8),
-                  Text(l.narrationListen,
-                      style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: accent)),
-                ]),
-              ),
-            ),
-          ),
-        ),
-      ],
       // A companion ebook gets its own, smaller button under Absorb with the
       // reading progress filled in the same way. Ebook-only books already
       // have Read as the big button above.

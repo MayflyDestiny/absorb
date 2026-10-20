@@ -1607,8 +1607,14 @@ class CardActionDelegate {
 
   /// A book whose audio is its EPUB's narration: Read already opens on the
   /// sentence being heard, so Find in ebook would be the same button twice.
-  bool get _narratedEbook =>
-      episodeId == null && (NarratedBooks.contains(itemId) || _media['narration'] != null);
+  bool get _narratedEbook {
+    if (episodeId != null) return false;
+    if (NarratedBooks.contains(itemId) || _media['narration'] != null) return true;
+    // A BookOrbit card's book can arrive without its files; the narration
+    // looked up when it played or opened says so either way.
+    final api = context.read<AuthProvider>().apiService;
+    return api is BookOrbitApiService && api.knownNarrated(itemId);
+  }
 
   /// The saved button order, less what this book has no use for.
   List<String> get _shownOrder =>

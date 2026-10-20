@@ -81,11 +81,6 @@ void _copyWithout(({String from, String to, List<String> skip}) job) {
   }
 }
 
-/// Downloading the narration was called off.
-class NarrationCancelled implements Exception {
-  const NarrationCancelled();
-}
-
 /// Narrated EPUBs (EPUB 3 media overlays): the narration as the book's
 /// audio, and the sentence timings read along follows.
 ///
@@ -93,8 +88,8 @@ class NarrationCancelled implements Exception {
 /// Audiobookshelf server treats them as plain ebooks, so there it all
 /// happens on the phone: the EPUB is looked into with range requests (its
 /// index and timings), the reader gets a copy without the audio, and the
-/// narration plays once downloaded, fetched as just the audio files out of
-/// the EPUB.
+/// narration plays once downloaded: the whole EPUB comes down as a normal
+/// background download and its audio files are taken out of it here.
 class NarrationService {
   NarrationService._();
   static final NarrationService instance = NarrationService._();
@@ -251,10 +246,49 @@ class NarrationService {
   /// Looks into an Audiobookshelf book's EPUB on the server (its index and
   /// timings only) to see whether it reads itself aloud. Remembered, so it is
   /// asked once per book.
-  Future<MediaOverlay?> probe(ApiService api, Map<String, dynamic> item) async {
+  ///
+  /// [onNarrated] hears as soon as the EPUB's package shows narration, with
+  /// the length it states, while the timings are still coming. One look per
+  /// book at a time: a second caller waits on the first.
+  Future<MediaOverlay?> probe(
+    ApiService api,
+    Map<String, dynamic> item, {
+    void Function(double? duration)? onNarrated,
+  }) {
     final itemId = item['id'] as String?;
+    if (itemId == null) return Future.value(null);
+    if (onNarrated != null) {
+      if (_seenNarrated.containsKey(itemId)) {
+        onNarrated(_seenNarrated[itemId]);
+      } else {
+        (_onNarrated[itemId] ??= []).add(onNarrated);
+      }
+    }
+    final running = _probing[itemId];
+    if (running != null) {
+      debugPrint('[Narration] $itemId is already being looked into - waiting on that look');
+      return running;
+    }
+    final look = () async {
+      try {
+        return await _probe(api, item, itemId);
+      } finally {
+        _probing.remove(itemId);
+        _onNarrated.remove(itemId);
+        _seenNarrated.remove(itemId);
+      }
+    }();
+    _probing[itemId] = look;
+    return look;
+  }
+
+  final Map<String, Future<MediaOverlay?>> _probing = {};
+  final Map<String, List<void Function(double? duration)>> _onNarrated = {};
+  final Map<String, double?> _seenNarrated = {};
+
+  Future<MediaOverlay?> _probe(ApiService api, Map<String, dynamic> item, String itemId) async {
     final ebookFile = resolveEbookFile(item);
-    if (itemId == null || ebookFile == null || api.isBookOrbit) return null;
+    if (ebookFile == null || api.isBookOrbit) return null;
     if (ebookExtFromFile(ebookFile) != '.epub') return null;
     if (await knownNarrated(itemId) == false) return null;
     final local = await localOverlay(itemId);
@@ -265,6 +299,14 @@ class NarrationService {
       final o = await MediaOverlay.fromFiles((name) async {
         final e = zip.entry(name);
         return e == null ? null : utf8.decode(await zip.read(e), allowMalformed: true);
+      }, onNarrated: (duration) {
+        debugPrint('[Narration] $itemId: its package lists narration '
+            '(${duration == null ? 'no length given' : '${duration.toStringAsFixed(0)}s'}) after '
+            '${DateTime.now().difference(started).inMilliseconds}ms - reading the timings');
+        _seenNarrated[itemId] = duration;
+        for (final cb in _onNarrated.remove(itemId) ?? const <void Function(double?)>[]) {
+          cb(duration);
+        }
       });
       debugPrint('[Narration] looked into $itemId on the server in '
           '${DateTime.now().difference(started).inMilliseconds}ms: '
@@ -420,33 +462,6 @@ class NarrationService {
     return localOverlay(itemId);
   }
 
-  /// Puts an Audiobookshelf book's narration on the phone as its audio:
-  /// just the audio files, fetched out of the EPUB on the server. Servers
-  /// without range requests fall back to the whole EPUB. False when the EPUB
-  /// has no narration.
-  Future<bool> prepareLocal(
-    ApiService api,
-    Map<String, dynamic> item, {
-    void Function(double progress)? onProgress,
-  }) async {
-    final itemId = item['id'] as String?;
-    final ebookFile = resolveEbookFile(item);
-    if (itemId == null || ebookFile == null) return false;
-    final o = await probe(api, item);
-    if (o != null) {
-      try {
-        await _fetchAudio(api, item, itemId, ebookFile, o, onProgress);
-        return true;
-      } on NarrationCancelled {
-        rethrow;
-      } catch (e) {
-        debugPrint('[Narration] fetching the audio out of the EPUB failed ($e) - using the whole file');
-      }
-    }
-    if (await knownNarrated(itemId) == false) return false;
-    return _extractFromWholeEpub(api, item, itemId, ebookFile);
-  }
-
   List<String> _trackNames(List<Map<String, dynamic>> tracks) => [
         for (final t in tracks)
           ((t['metadata'] as Map)['filename'] as String).replaceAll(RegExp(r'[\\/:*?"<>|]'), '_'),
@@ -485,73 +500,6 @@ class NarrationService {
       chapters: timed.chapters(),
       audioTracks: timed.audioTracks((t) => t.href),
     );
-  }
-
-  Future<void> _fetchAudio(
-    ApiService api,
-    Map<String, dynamic> item,
-    String itemId,
-    Map<String, dynamic> ebookFile,
-    MediaOverlay o,
-    void Function(double progress)? onProgress,
-  ) async {
-    final zip = await _remote(api, itemId, ebookFile);
-    final names = _trackNames(o.audioTracks((t) => t.href));
-    final dir = '${await DownloadService().downloadBasePath}/$itemId';
-    Directory(dir).createSync(recursive: true);
-    final entries = <RemoteZipEntry>[];
-    for (final t in o.tracks) {
-      final e = zip.entry(t.href);
-      if (e == null) throw RemoteZipException('${t.href} is not in the EPUB');
-      entries.add(e);
-    }
-    final total = entries.fold<int>(0, (s, e) => s + e.compressedSize);
-    var before = 0;
-    final paths = <String>[];
-    final started = DateTime.now();
-    for (var i = 0; i < entries.length; i++) {
-      final out = File('$dir/${names[i]}');
-      if (!(out.existsSync() && out.lengthSync() == entries[i].size)) {
-        final base = before;
-        await zip.download(entries[i], out,
-            onBytes: (done) => onProgress?.call(total == 0 ? 0 : (base + done) / total));
-      }
-      before += entries[i].compressedSize;
-      onProgress?.call(total == 0 ? 0 : before / total);
-      paths.add(out.path);
-    }
-    debugPrint('[Narration] fetched ${paths.length} audio files ($total bytes) out of the EPUB for '
-        '$itemId in ${DateTime.now().difference(started).inSeconds}s');
-    await _keep(api, item, itemId, o, dir, paths);
-  }
-
-  Future<bool> _extractFromWholeEpub(
-    ApiService api,
-    Map<String, dynamic> item,
-    String itemId,
-    Map<String, dynamic> ebookFile,
-  ) async {
-    final metadata = (item['media'] as Map<String, dynamic>?)?['metadata'] as Map<String, dynamic>?;
-    final title = metadata?['title'] as String? ?? '';
-    final epub = await fetchEbookToCache(api, itemId, ebookFile, title);
-    final o = await compute(_parseEpub, epub.path);
-    if (o == null || o.isEmpty) {
-      await _remember(itemId, null);
-      return false;
-    }
-    final names = _trackNames(o.audioTracks((t) => t.href));
-    final dir = '${await DownloadService().downloadBasePath}/$itemId';
-    final started = DateTime.now();
-    final paths = await compute(_extract, (
-      epub: epub.path,
-      dir: dir,
-      hrefs: o.tracks.map((t) => t.href).toList(),
-      names: names,
-    ));
-    debugPrint('[Narration] took ${paths.length} audio files out of the whole EPUB for $itemId '
-        'in ${DateTime.now().difference(started).inSeconds}s');
-    await _keep(api, item, itemId, o, dir, paths);
-    return true;
   }
 
   /// A narrated EPUB downloaded whole to [epubPath]: its audio files are taken

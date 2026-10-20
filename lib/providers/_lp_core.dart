@@ -2610,7 +2610,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         result.add(allSections.remove(id)!);
       }
     }
+    // An order saved before Continue Reading existed (BookOrbit had none)
+    // gets it next to Continue Listening rather than at the bottom.
+    final reading = allSections.remove('continue-reading');
     result.addAll(allSections.values);
+    if (reading != null) {
+      final listening = result.indexWhere((s) => s['id'] == 'continue-listening');
+      result.insert(listening + 1, reading);
+    }
     return result;
   }
 
