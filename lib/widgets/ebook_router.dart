@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/ebook_cache.dart';
 import '../services/image_epub.dart';
+import '../services/narration_service.dart';
 import '../services/server_backend.dart';
 import 'comic_reader_view.dart';
 import 'ebook_reader_view.dart';
@@ -111,7 +112,8 @@ class _EpubGateState extends State<_EpubGate> {
     try {
       final api = context.read<AuthProvider>().apiService;
       if (api != null) {
-        final file = await fetchEbookToCache(api, widget.itemId, widget.ebookFile, widget.title);
+        final file = await NarrationService.instance
+            .readerFile(api, widget.itemId, widget.ebookFile, widget.title);
         final pages = await imageEpubPageCount(file);
         if (pages > 0) {
           debugPrint('[EbookRouter] ${widget.itemId} is $pages page pictures - opening as a comic');

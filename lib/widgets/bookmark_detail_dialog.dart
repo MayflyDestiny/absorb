@@ -14,6 +14,7 @@ import '../services/bookmark_preview_player.dart';
 import '../services/chapter_lookup.dart';
 import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/narration_service.dart';
 import '../services/transcription_service.dart';
 import '../utils/episode_key.dart';
 import '../utils/passage_match.dart';
@@ -258,7 +259,7 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
       if (!f.existsSync() || await f.length() <= 0) {
         final api = widget.api;
         if (api == null) return null;
-        f = await fetchEbookToCache(api, widget.itemId, ebookFile, '');
+        f = await NarrationService.instance.readerFile(api, widget.itemId, ebookFile, '');
       }
       return await compute(correctFromEpub, (epubPath: f.path, transcript: transcript));
     } catch (e) {

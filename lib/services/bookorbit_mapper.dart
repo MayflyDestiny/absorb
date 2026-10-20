@@ -304,9 +304,17 @@ class BookOrbitMapper {
       }
     }
 
-    final ebook = _primaryEbook(contentFiles);
+    // An EPUB 3 that reads itself aloud, with no audiobook beside it: its
+    // narration is the book's audio, and the narrated copy is the one to read
+    // so read along can follow it.
+    final narrated = audioFiles.isEmpty ? narratedEpub(contentFiles) : null;
+    final narrationSeconds =
+        ((narrated?['mediaOverlay'] as Map?)?['durationSeconds'] as num?)?.toDouble() ?? 0;
+    final ebook = narrated ?? _primaryEbook(contentFiles);
     final ebookFormat = ebook == null ? null : _format(ebook);
-    final duration = _bookDurationSeconds(manifest, audioMeta, offset);
+    final duration = narrated != null
+        ? narrationSeconds
+        : _bookDurationSeconds(manifest, audioMeta, offset);
     final size = files.fold<num>(0, (sum, f) => sum + ((f['sizeBytes'] as num?) ?? 0));
     final hasCover = detail != null
         ? detail['coverSource'] != null
@@ -335,6 +343,7 @@ class BookOrbitMapper {
               },
             },
       'ebookFormat': ebookFormat,
+      if (narrated != null) 'narration': {'fileId': _str(narrated['id']), 'duration': narrationSeconds},
       'numTracks': audioFiles.length,
       'numAudioFiles': audioFiles.length,
       'numChapters': chapters.length,
@@ -628,6 +637,17 @@ class BookOrbitMapper {
 
   static bool _hasAudio(List<Map<String, dynamic>> files) =>
       files.where(_isContent).any((f) => isAudioFormat(_format(f)));
+
+  /// An EPUB carrying its own narration (EPUB 3 media overlays) of a known
+  /// length, or null.
+  static Map<String, dynamic>? narratedEpub(List<Map<String, dynamic>> contentFiles) {
+    for (final f in contentFiles) {
+      if (_format(f) != 'epub') continue;
+      final overlay = f['mediaOverlay'] as Map?;
+      if (overlay?['available'] == true && ((overlay?['durationSeconds'] as num?) ?? 0) > 0) return f;
+    }
+    return null;
+  }
 
   static Map<String, dynamic>? _primaryEbook(List<Map<String, dynamic>> contentFiles) {
     final ebooks = contentFiles.where((f) {

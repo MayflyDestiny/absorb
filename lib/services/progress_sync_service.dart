@@ -507,6 +507,10 @@ class ProgressSyncService {
     }
   }
 
+  /// Forget a queued position the server has since moved past, so the retry
+  /// can't put the older place back.
+  Future<void> dropPendingEbookProgress(String itemId) => _removePendingEbook(itemId);
+
   Future<void> _removePendingEbook(String itemId) async {
     final pending = await getPendingEbookProgress();
     if (pending.remove(itemId) == null) return;

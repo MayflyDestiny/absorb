@@ -3453,8 +3453,26 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   String buildEbookUrl(String itemId, String ino) =>
       BookOrbitMediaProxy.instance.urlFor('/api/v1/books/files/$ino/serve');
 
+  /// A narrated EPUB's audio is hundreds of MB the reader never touches; the
+  /// server can hand over the book without it.
+  @override
+  String buildReaderEbookUrl(String itemId, String ino) {
+    final detail = _details[_key(itemId)];
+    if (detail != null) {
+      final media = BookOrbitMapper.item(detail: detail)['media'] as Map<String, dynamic>;
+      if ('${(media['narration'] as Map?)?['fileId']}' == ino) {
+        return BookOrbitMediaProxy.instance.urlFor('/api/v1/books/files/$ino/audioless-epub/download');
+      }
+    }
+    return buildEbookUrl(itemId, ino);
+  }
+
   @override
   Map<String, String> downloadHeadersFor(String url) {
+    if (url.startsWith('$_v1/watch-downloads/media-overlay/files/')) {
+      final ticket = _narrationTickets[_key(Uri.parse(url).queryParameters['book'] ?? '')];
+      if (ticket != null) return {...customHeaders, 'Authorization': 'Bearer ${ticket.token}'};
+    }
     if (url.startsWith('$_v1/watch-downloads/files/')) {
       final fileId = Uri.parse(url).pathSegments.last;
       for (final t in _tickets.values) {
@@ -3469,11 +3487,64 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   /// Background downloads outlive a fifteen-minute access token, so ask the
   /// server for a download ticket (good for twelve hours) covering the
   /// book's audio files. Without one the files go through the in-app proxy.
+  final Map<String, ({String token, DateTime expiresAt, Map<String, String> paths})> _narrationTickets = {};
+
+  @override
+  String? buildNarrationDownloadUrl(String itemId, String contentUrl) {
+    final uri = Uri.parse(contentUrl);
+    const marker = '/media-overlay/file/';
+    final at = uri.path.indexOf(marker);
+    if (at < 0) return null;
+    final href = uri.path
+        .substring(at + marker.length)
+        .split('/')
+        .map(Uri.decodeComponent)
+        .join('/');
+    final ticket = _narrationTickets[_key(itemId)];
+    final path = ticket?.paths[href];
+    if (ticket != null &&
+        path != null &&
+        ticket.expiresAt.isAfter(DateTime.now().add(const Duration(hours: 1)))) {
+      return '$_cleanBaseUrl$path?book=$itemId';
+    }
+    return buildTrackUrl(contentUrl);
+  }
+
+  /// A download ticket for a narrated EPUB's audio files, so a background
+  /// download outlives the access token like an audiobook's does.
+  Future<void> _prepareNarrationDownload(String itemId) async {
+    final n = await _narration(itemId, fresh: true);
+    if (n == null) return;
+    final hrefs = n.overlay.tracks.map((t) => t.href).take(2048).toList();
+    try {
+      final res = await _boPost('/watch-downloads/media-overlay', {
+        'bookId': int.parse(itemId),
+        'fileId': n.fileId,
+        'hrefs': hrefs,
+      }) as Map<String, dynamic>;
+      final token = res['token'] as String?;
+      final expires = DateTime.tryParse(res['expiresAt'] as String? ?? '');
+      final paths = <String, String>{
+        for (final f in (res['files'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>())
+          if (f['href'] is String && f['downloadPath'] is String) f['href'] as String: f['downloadPath'] as String,
+      };
+      if (token != null && expires != null && paths.isNotEmpty) {
+        _narrationTickets[_key(itemId)] = (token: token, expiresAt: expires, paths: paths);
+      }
+    } catch (e) {
+      debugPrint('[BookOrbit] No narration download ticket for $itemId ($e) - using the proxy');
+    }
+  }
+
   @override
   Future<void> prepareDownload(String itemId) async {
     await ensureMediaReady();
     final manifest = await _manifest(itemId, fresh: true);
-    final fileIds = (manifest?['assets'] as List<dynamic>? ?? const [])
+    if (manifest == null) {
+      await _prepareNarrationDownload(itemId);
+      return;
+    }
+    final fileIds = (manifest['assets'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map((a) => a['fileId'])
         .whereType<int>()
@@ -3538,11 +3609,26 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final state = manifest != null ? await _playbackState(bookId) : null;
     ({String? cfi, double? percent, int? updated, int? fileId}) ebook =
         (cfi: null, percent: null, updated: null, fileId: null);
-    if ((BookOrbitMapper.item(detail: detail)['media'] as Map)['ebookFile'] != null) {
+    final itemMedia = BookOrbitMapper.item(detail: detail)['media'] as Map;
+    var fp = const <dynamic>[];
+    if (itemMedia['ebookFile'] != null) {
       try {
-        final fp = await _boGet('/books/$bookId/progress') as List<dynamic>;
+        fp = await _boGet('/books/$bookId/progress') as List<dynamic>;
         ebook = _ebookFrom(detail, fp);
       } catch (_) {}
+    }
+    // A narrated EPUB with no audiobook: listening progress is the narration
+    // position kept on the EPUB.
+    final narration = itemMedia['narration'] as Map?;
+    double? narrationAt;
+    final narrationTotal = (narration?['duration'] as num?)?.toDouble() ?? 0;
+    if (narration != null) {
+      final fileId = int.tryParse('${narration['fileId']}');
+      for (final r in fp.whereType<Map<String, dynamic>>()) {
+        if ((r['fileId'] as num?)?.toInt() == fileId) {
+          narrationAt = (r['positionSeconds'] as num?)?.toDouble();
+        }
+      }
     }
     final readStatus = detail['readStatus'] as Map<String, dynamic>?;
     if (state == null && ebook.percent == null && readStatus == null) return null;
@@ -3556,6 +3642,15 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       ebookUpdatedAt: ebook.updated,
     );
     if (!hasAudio && ebook.percent != null) p['progress'] = (ebook.percent! / 100).clamp(0.0, 1.0);
+    if (narrationAt != null && narrationTotal > 0) {
+      p['duration'] = narrationTotal;
+      p['currentTime'] = narrationAt;
+      if (p['isFinished'] != true) p['progress'] = (narrationAt / narrationTotal).clamp(0.0, 1.0);
+    } else if (narration != null) {
+      // No listening spot on the EPUB (a page save from an older Absorb
+      // cleared it): nothing to move a paused player to, least of all 0.
+      p.remove('currentTime');
+    }
     return p;
   }
 
@@ -3618,7 +3713,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   /// describes the outcome for Audiobookshelf callers.
   Future<int> _putPosition(String bookId, double absoluteSeconds, {DateTime? capturedAt}) async {
     var manifest = await _manifest(bookId);
-    if (manifest == null) return 404;
+    if (manifest == null) return _putNarrationPosition(bookId, absoluteSeconds);
     final when = (capturedAt ?? DateTime.now()).toUtc();
     final operationId = _uuid();
     for (var attempt = 0; attempt < 3; attempt++) {
@@ -3714,7 +3809,8 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   Future<void> _saveEbookProgress(String bookId, String? location, double? progress) async {
     final detail = await _detail(bookId);
-    final ebook = (BookOrbitMapper.item(detail: detail)['media'] as Map)['ebookFile'] as Map?;
+    final media = BookOrbitMapper.item(detail: detail)['media'] as Map;
+    final ebook = media['ebookFile'] as Map?;
     final fileId = ebook?['ino'];
     if (fileId == null) return;
     final pct = ((progress ?? 0) * 100).clamp(0.0, 100.0);
@@ -3723,6 +3819,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       'percentage': pct,
       if (location != null && page == null) 'cfi': location,
       if (page != null) 'pageNumber': page,
+      ...await _narrationSpotToKeep(bookId, media, '$fileId'),
     });
     if (progress != null && progress >= 1.0) {
       await _setStatus(bookId, {'status': 'read'});
@@ -3752,6 +3849,22 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final bookId = progressId.startsWith('bo-') ? progressId.substring(3) : progressId;
     await _clearPosition(bookId);
     await _unfinish(bookId);
+  }
+
+  /// Only the ebook file's progress: the full item progress also reads the
+  /// audio manifest and playback state, which made the reader's open-time
+  /// check run out of time and start from the phone's older place.
+  @override
+  Future<Map<String, dynamic>?> getEbookPosition(String itemId) async {
+    final detail = await _detail(itemId);
+    final fp = await _boGet('/books/$itemId/progress') as List<dynamic>;
+    final ebook = _ebookFrom(detail, fp);
+    if (ebook.cfi == null && ebook.percent == null) return null;
+    return {
+      'ebookLocation': ebook.cfi,
+      'ebookProgress': ebook.percent == null ? null : (ebook.percent! / 100).clamp(0.0, 1.0),
+      'ebookUpdatedAt': ebook.updated,
+    };
   }
 
   @override
@@ -3831,10 +3944,207 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     }
   }
 
+  final Map<String, ({MediaOverlay overlay, int fileId})> _narrations = {};
+
+  /// The narration of a book whose only audio is its EPUB reading itself
+  /// aloud (EPUB 3 media overlays), or null for any other book.
+  Future<({MediaOverlay overlay, int fileId})?> _narration(
+    String bookId, {
+    Map<String, dynamic>? detail,
+    bool fresh = false,
+  }) async {
+    final k = _key(bookId);
+    final cached = _narrations[k];
+    if (!fresh && cached != null) return cached;
+    detail ??= await _detail(bookId);
+    final media = BookOrbitMapper.item(detail: detail)['media'] as Map<String, dynamic>;
+    final fileId = int.tryParse('${(media['narration'] as Map?)?['fileId']}');
+    if (fileId == null) return null;
+    final playlist = await _boGet('/epub/$bookId/media-overlay', {'fileId': '$fileId'}) as Map<String, dynamic>;
+    final parsed = MediaOverlay.fromBookOrbit(playlist);
+    if (parsed == null || parsed.isEmpty) return null;
+    var overlay = parsed;
+    // The playlist names each narrated file only when the contents point
+    // straight at it; the whole contents name the rest.
+    try {
+      final info = await _boGet('/epub/$bookId/info', {'fileId': '$fileId'}) as Map<String, dynamic>;
+      overlay = overlay.withBookOrbitContents(info);
+    } catch (e) {
+      debugPrint('[BookOrbit] contents for $bookId not read: $e');
+    }
+    return _narrations[k] = (overlay: overlay, fileId: fileId);
+  }
+
+  /// Public for the reader's read along: the same narration the player is
+  /// streaming, so its timings line up exactly.
+  Future<MediaOverlay?> narrationFor(String bookId) async {
+    try {
+      return (await _narration(bookId))?.overlay;
+    } catch (e) {
+      debugPrint('[BookOrbit] narration for $bookId failed: $e');
+      return null;
+    }
+  }
+
+  /// BookOrbit keeps reading sessions of its own: the time goes on the ebook
+  /// file as reading, not listening.
+  @override
+  Future<bool> logReadingTime(
+    String itemId, {
+    required String sessionId,
+    required DateTime startedAt,
+    required int seconds,
+    required double audioAt,
+    required double audioDuration,
+    String? title,
+    double? ebookStart,
+    double? ebookEnd,
+  }) async {
+    try {
+      final detail = await _detail(itemId);
+      final ebook = (BookOrbitMapper.item(detail: detail)['media'] as Map)['ebookFile'] as Map?;
+      final fileId = ebook?['ino'];
+      if (fileId == null) return false;
+      final end = DateTime.now();
+      final span = math.max(0, end.difference(startedAt).inSeconds);
+      final source = _platformSource();
+      await _boPost('/books/files/$fileId/sessions', {
+        'sessionId': sessionId.length > 64 ? sessionId.substring(0, 64) : sessionId,
+        'startedAt': _iso(startedAt),
+        'endedAt': _iso(end),
+        'durationSeconds': math.min(seconds, span),
+        if (ebookStart != null && ebookEnd != null)
+          'progressDelta': double.parse(((ebookEnd - ebookStart) * 100).toStringAsFixed(4)),
+        if (ebookEnd != null) 'endProgress': (ebookEnd * 100).clamp(0.0, 100.0),
+        'sessionType': 'read',
+        if (source != null) 'source': source,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] reading time for $itemId not logged: $e');
+      return false;
+    }
+  }
+
+  /// BookOrbit keeps a narrated EPUB's listening spot on the same row as its
+  /// page, and a page save without it clears it, so the spot rides along.
+  Future<Map<String, Object?>> _narrationSpotToKeep(String bookId, Map media, String fileId) async {
+    if ('${(media['narration'] as Map?)?['fileId']}' != fileId) return const {};
+    try {
+      final at = await _narrationPosition(bookId, int.parse(fileId));
+      if (at == null) return const {};
+      final clip = (await _narration(bookId))?.overlay.clipAt(at.seconds);
+      return {
+        'positionSeconds': at.seconds,
+        'mediaOverlayFragment': clip?.fragment,
+        'mediaOverlaySectionIndex': clip?.section,
+      };
+    } catch (e) {
+      debugPrint('[BookOrbit] narration spot for $bookId not kept: $e');
+      return const {};
+    }
+  }
+
+  /// Where the narration was left, in seconds, from the EPUB's progress.
+  Future<({double seconds, int? updatedAt})?> _narrationPosition(String bookId, int fileId) async {
+    try {
+      final rows = await _boGet('/books/$bookId/progress') as List<dynamic>;
+      for (final r in rows.whereType<Map<String, dynamic>>()) {
+        if ((r['fileId'] as num?)?.toInt() != fileId) continue;
+        final s = (r['positionSeconds'] as num?)?.toDouble();
+        if (s == null) return null;
+        return (seconds: s, updatedAt: BookOrbitMapper.ms(r['updatedAt']));
+      }
+    } on _BoHttpError catch (e) {
+      if (e.status != 404) rethrow;
+    }
+    return null;
+  }
+
+  /// Saved where BookOrbit's own read along keeps its place: the narration
+  /// position on the EPUB, with the sentence it reached.
+  Future<int> _putNarrationPosition(String bookId, double seconds) async {
+    final ({MediaOverlay overlay, int fileId})? n;
+    try {
+      n = await _narration(bookId);
+    } on _BoHttpError catch (e) {
+      return e.status;
+    }
+    if (n == null) return 404;
+    final total = n.overlay.duration;
+    final clip = n.overlay.clipAt(seconds);
+    try {
+      await _boPost('/books/files/${n.fileId}/progress', {
+        'percentage': total > 0 ? (seconds / total * 100).clamp(0.0, 100.0) : 0,
+        'positionSeconds': math.max(0.0, seconds),
+        'mediaOverlayFragment': clip?.fragment,
+        'mediaOverlaySectionIndex': clip?.section,
+        'source': 'narration',
+      });
+      return 200;
+    } on _BoHttpError catch (e) {
+      debugPrint('[BookOrbit] Narration position for $bookId not saved: ${e.status} ${e.message}');
+      return e.status;
+    }
+  }
+
+  static String _narrationTrackPath(String bookId, int fileId, OverlayTrack track) {
+    final path = track.href.split('/').map(Uri.encodeComponent).join('/');
+    return '/api/v1/epub/$bookId/media-overlay/file/$path?fileId=$fileId';
+  }
+
+  Future<Map<String, dynamic>> _startNarrationSession(String bookId, Map<String, dynamic> detail) async {
+    final n = await _narration(bookId, detail: detail, fresh: true);
+    if (n == null) throw _BoHttpError(404, 'Book has no audiobook assets');
+    final overlay = n.overlay;
+    final item = BookOrbitMapper.item(detail: detail);
+    final media = item['media'] as Map<String, dynamic>;
+    final metadata = media['metadata'] as Map<String, dynamic>;
+    final chapters = overlay.chapters();
+    final tracks = overlay.audioTracks((t) => _narrationTrackPath(bookId, n.fileId, t));
+    media['chapters'] = chapters;
+    media['tracks'] = tracks;
+    media['duration'] = overlay.duration;
+    final saved = await _narrationPosition(bookId, n.fileId);
+    final current = (saved?.seconds ?? 0).clamp(0.0, overlay.duration).toDouble();
+    final now = DateTime.now();
+    final sessionId = 'bo-$bookId-${now.millisecondsSinceEpoch}';
+    _sessions[sessionId] = _BoListenSession(bookId, _uuid(), now)
+      ..fileId = n.fileId
+      ..startPercent = overlay.duration > 0 ? (current / overlay.duration * 100).clamp(0.0, 100.0) : null;
+    debugPrint('[BookOrbit] narration session for $bookId: ${tracks.length} tracks, '
+        '${overlay.clips.length} sentences, ${overlay.duration.toStringAsFixed(0)}s, from ${current.toStringAsFixed(0)}s');
+    return {
+      'id': sessionId,
+      'userId': '',
+      'libraryId': item['libraryId'],
+      'libraryItemId': bookId,
+      'episodeId': null,
+      'mediaType': 'book',
+      'mediaMetadata': metadata,
+      'chapters': chapters,
+      'displayTitle': metadata['title'],
+      'displayAuthor': metadata['authorName'],
+      'coverPath': media['coverPath'],
+      'duration': overlay.duration,
+      'playMethod': 0,
+      'mediaPlayer': 'exo-player',
+      'deviceInfo': _deviceInfo,
+      'date': '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+      'timeListening': 0,
+      'startTime': current,
+      'currentTime': current,
+      'startedAt': now.millisecondsSinceEpoch,
+      'updatedAt': saved?.updatedAt ?? now.millisecondsSinceEpoch,
+      'audioTracks': tracks,
+      'libraryItem': item,
+    };
+  }
+
   Future<Map<String, dynamic>> _startSession(String bookId, Map<String, dynamic> body) async {
     final detail = await _detail(bookId, fresh: true);
     final manifest = await _manifest(bookId, fresh: true);
-    if (manifest == null) throw _BoHttpError(404, 'Book has no audiobook assets');
+    if (manifest == null) return _startNarrationSession(bookId, detail);
     final state = await _playbackState(bookId);
     final item = BookOrbitMapper.item(detail: detail, manifest: manifest);
     final media = item['media'] as Map<String, dynamic>;
@@ -3892,6 +4202,11 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       final manifest = await _manifest(s.bookId);
       final assets = (manifest?['assets'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>();
       fileId = assets.isEmpty ? null : (assets.first['fileId'] as num?)?.toInt();
+      if (manifest == null) {
+        try {
+          fileId = (await _narration(s.bookId))?.fileId;
+        } catch (_) {}
+      }
       s.fileId = fileId;
     }
     if (fileId == null) return;
@@ -3964,7 +4279,9 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     if (currentTime != null) {
       status = await _putPosition(s.bookId, currentTime);
       final manifest = _manifests[_key(s.bookId)];
-      final total = manifest == null ? 0.0 : BookOrbitMapper.totalSeconds(manifest);
+      final total = manifest == null
+          ? (_narrations[_key(s.bookId)]?.overlay.duration ?? 0.0)
+          : BookOrbitMapper.totalSeconds(manifest);
       if (total > 0) {
         s.lastPercent = (currentTime / total * 100).clamp(0.0, 100.0);
         s.startPercent ??= s.lastPercent;

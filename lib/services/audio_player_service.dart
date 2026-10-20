@@ -10,6 +10,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'download_service.dart';
+import 'narrated_books.dart';
 import 'offline_source.dart';
 import 'playback_history_service.dart' hide PlaybackEvent;
 import 'progress_sync_service.dart';
@@ -1381,6 +1382,9 @@ class AudioPlayerService extends ChangeNotifier {
   // LibraryProvider calls [drainPendingBookFinished] once its absorbing cache
   // is loaded so auto-advance has the state it needs.
   static String? _pendingBookFinishedKey;
+  /// A book started or resumed from the app's own controls.
+  static void Function(String itemId)? onAppPlay;
+
   static void setOnBookFinishedCallback(void Function(String itemId)? cb) {
     _onBookFinishedCallback = cb;
   }
@@ -3815,7 +3819,14 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Check if downloaded — play locally
     String? result;
-    if (_downloadService.isDownloaded(progressKey)) {
+    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId) &&
+        !_downloadService.isDownloaded(progressKey)) {
+      // An Audiobookshelf EPUB that reads itself aloud plays once downloaded.
+      debugPrint('[Player] $itemId is narration that is not downloaded - not starting');
+      _endAdvanceBuffering();
+      _clearState();
+      return 'Download this book to play its narration';
+    } else if (_downloadService.isDownloaded(progressKey)) {
       result = await _playFromLocal(
         progressKey,
         title,
@@ -3954,6 +3965,7 @@ class AudioPlayerService extends ChangeNotifier {
       _onPlaybackStateChangedCallback?.call(true);
       // Auto-navigate to Absorbing tab when an episode starts playing.
       if (episodeId != null) _onEpisodePlayStartedCallback?.call();
+      if (fromUi && episodeId == null) onAppPlay?.call(itemId);
     }
     return result;
   }
@@ -7505,6 +7517,8 @@ class AudioPlayerService extends ChangeNotifier {
     _scheduleAudioDiagnostics('resume');
     _logEvent(PlaybackEventType.play, detail: logDetail);
     _onPlaybackStateChangedCallback?.call(true);
+    final resumed = _currentItemId;
+    if (fromUi && resumed != null && _currentEpisodeId == null) onAppPlay?.call(resumed);
     // Re-create server session and check progress in the background
     // so resume is instant instead of waiting for network round-trips
     _resumeServerSync();

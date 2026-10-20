@@ -12,6 +12,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/android_auto_service.dart';
+import '../services/siri_service.dart';
 import '../services/episode_notification_service.dart';
 import '../services/sleep_timer_service.dart';
 import '../services/user_account_service.dart';
@@ -104,6 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _carBookSortReverse = false;
   String _carPodcastSort = 'title';
   bool _carEpisodesOldestFirst = false;
+  String _siriStatus = 'notDetermined';
   bool _lockSeekBar = false;
   bool _mp3IndexSeeking = false;
   bool _speedAdjustedTime = true;
@@ -1206,6 +1208,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     final libId = mounted ? context.read<LibraryProvider>().selectedLibraryId : null;
     if (libId != null) _loadCurrentLibraryOverrides(libId);
+    if (Platform.isIOS) _refreshSiriStatus();
+  }
+
+  Future<void> _refreshSiriStatus() async {
+    final status = await SiriService().authorizationStatus();
+    if (mounted) setState(() => _siriStatus = status);
   }
 
   /// (Re)loads the cover-shape + skip overrides for whichever library is
@@ -3244,6 +3252,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+
+                if (Platform.isIOS) ...[
+                  // ── Siri ──
+                  CollapsibleSection(
+                    key: _keyFor('Siri'),
+                    icon: Icons.mic_rounded,
+                    title: l.sectionSiri,
+                    cs: cs,
+                    isExpanded: _expandedSection == 'Siri',
+                    onExpansionChanged: (v) {
+                      _onSectionExpanded('Siri', v);
+                      if (v) _refreshSiriStatus();
+                    },
+                    children: [
+                      ListTile(
+                        title: Text(l.siriUseWithSiri),
+                        subtitle: Text(
+                          switch (_siriStatus) {
+                            'authorized' => l.siriStatusOn,
+                            'denied' || 'restricted' => l.siriStatusOff,
+                            _ => l.siriStatusAsk,
+                          },
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        trailing: _siriStatus == 'authorized'
+                            ? Icon(Icons.check_circle_rounded, color: cs.primary)
+                            : FilledButton.tonal(
+                                onPressed: () async {
+                                  if (_siriStatus == 'notDetermined') {
+                                    await SiriService().requestAuthorization();
+                                  } else {
+                                    await SiriService().openSystemSettings();
+                                  }
+                                  await _refreshSiriStatus();
+                                },
+                                child: Text(_siriStatus == 'notDetermined'
+                                    ? l.siriAllow
+                                    : l.siriOpenSettings),
+                              ),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        title: Text(l.siriThingsToSay),
+                        subtitle: Text(l.siriExamples,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Text(l.siriShortcutsNote,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Sleep Timer ──
                 CollapsibleSection(

@@ -8460,6 +8460,41 @@ class AppLocalizationsNo extends AppLocalizations {
   String get sectionCarIos => 'CarPlay';
 
   @override
+  String get sectionSiri => 'Siri';
+
+  @override
+  String get siriUseWithSiri => 'Use with Siri';
+
+  @override
+  String get siriStatusOn =>
+      'On. Siri can find and play your books and podcasts by name.';
+
+  @override
+  String get siriStatusAsk =>
+      'Let Siri find and play your books and podcasts by name.';
+
+  @override
+  String get siriStatusOff =>
+      'Siri is turned off for Absorb. Turn it on in iOS Settings.';
+
+  @override
+  String get siriAllow => 'Allow';
+
+  @override
+  String get siriOpenSettings => 'Open Settings';
+
+  @override
+  String get siriThingsToSay => 'Things to say';
+
+  @override
+  String get siriExamples =>
+      '\"Play [book title] on Absorb\"\n\"Play [series name] on Absorb\"\n\"Play something by [author] on Absorb\"\n\"Play the latest episode of [podcast] on Absorb\"\n\"Resume Absorb\"\n\"Skip back in Absorb\"\n\"Next chapter in Absorb\"\n\"Set a sleep timer in Absorb\"\n\"Add a bookmark in Absorb\"\n\"What am I listening to in Absorb\"';
+
+  @override
+  String get siriShortcutsNote =>
+      'Resume, pause, skips, chapters, the sleep timer, bookmarks and what\'s playing work even without this permission. They are also in the Shortcuts app for automations and the Action button.';
+
+  @override
   String get carBookOrder => 'Book order in the car';
 
   @override
@@ -9857,6 +9892,18 @@ class AppLocalizationsNo extends AppLocalizations {
       'Pins them above the page instead of showing them on tap. The page gets a little shorter so no text is covered.';
 
   @override
+  String get readerTopBarProgress => 'Top bar progress';
+
+  @override
+  String get readerTopBarProgressBook => 'Book';
+
+  @override
+  String get readerTopBarProgressChapter => 'Chapter';
+
+  @override
+  String get readerTopBarProgressBoth => 'Both';
+
+  @override
   String get readerScrollMode => 'Scroll mode';
 
   @override
@@ -10049,6 +10096,32 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get readerNoHighlights => 'No highlights yet';
+
+  @override
+  String get readerHistory => 'History';
+
+  @override
+  String get sessionReading => 'Reading';
+
+  @override
+  String get readerHistoryEmpty =>
+      'Pages you leave are listed here, so you can always get back to them.';
+
+  @override
+  String get readerHistoryClosed => 'Closed the book';
+
+  @override
+  String get readerHistoryBeforeJump => 'Before a jump';
+
+  @override
+  String get readerHistoryBeforeSync => 'Before matching the audio';
+
+  @override
+  String get readerLogReading => 'Count reading time in stats';
+
+  @override
+  String get readerLogReadingHint =>
+      'Logs your time in the reader as a session so it shows in your stats. On Audiobookshelf it counts as listening time.';
 
   @override
   String get readerNoBookmarks => 'No bookmarks yet';
@@ -10607,6 +10680,42 @@ class AppLocalizationsNo extends AppLocalizations {
   String get readAlongNeedsPlaying => 'Play this book\'s audiobook first';
 
   @override
+  String get narrationListen => 'Listen';
+
+  @override
+  String get narrationPlayFromHere => 'Play from here';
+
+  @override
+  String get narrationPreparing => 'Getting the narration ready';
+
+  @override
+  String get narrationNone => 'This ebook has no narration to play';
+
+  @override
+  String get narrationDownloadTitle => 'Download to listen';
+
+  @override
+  String get narrationDownloadBody =>
+      'This book is an EPUB3 that reads itself aloud. Audiobookshelf can\'t stream its narration, so the audio needs to be downloaded before it plays.';
+
+  @override
+  String get narrationDownloadStarted =>
+      'Downloading the narration. Tap Absorb when it finishes.';
+
+  @override
+  String get narrationUpNextTitle => 'Download what\'s up next';
+
+  @override
+  String narrationUpNextBody(String title) {
+    return '$title is next in your queue. It\'s an EPUB3 that reads itself aloud, so it needs to be downloaded before it can play.';
+  }
+
+  @override
+  String narrationQueueStopped(String title) {
+    return 'Stopped before $title. Download it to keep going.';
+  }
+
+  @override
   String get transcriptionNeedsDownload =>
       'This needs the audio on your phone. Download it now?';
 
@@ -10616,6 +10725,28 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get readAlongFollow => 'Read along follows';
+
+  @override
+  String get syncReadingListening => 'Keep reading and listening in sync';
+
+  @override
+  String get syncReadingListeningHint =>
+      'For books with an audiobook and an ebook. When you stop listening, the ebook moves to where you stopped. When you leave the reader, the audiobook moves to your page. Only moves forward.';
+
+  @override
+  String get syncEbookMoved => 'Ebook moved to where you stopped listening';
+
+  @override
+  String get syncAudioMoved => 'Audiobook moved to where you stopped reading';
+
+  @override
+  String get syncAudioOffer => 'Tap to jump to where you stopped reading';
+
+  @override
+  String get syncFindingAudio => 'Finding your page in the audiobook';
+
+  @override
+  String get syncFindingEbook => 'Finding your spot in the ebook';
 
   @override
   String get readAlongFollowHint =>
