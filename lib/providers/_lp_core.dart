@@ -2456,6 +2456,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         // Snapshot after injection so a tab flip restores the full shelf set.
         _storeSections(libId, _personalizedSections);
         _sectionsFetchedAt[libId] = DateTime.now();
+        SiriService().scheduleCatalogUpdate();
         _sectionsRetryTimer?.cancel();
         _sectionsRetryTimer = null;
         _sectionsFetchMisses = 0;

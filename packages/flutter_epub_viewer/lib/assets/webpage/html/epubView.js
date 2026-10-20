@@ -196,6 +196,20 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
   lastTheme.fontSize = fontSize;
   rendition = book.renderTo("viewer", lastRenderOpts);
 
+  // Absorb patch: scroll mode only moves up and down, down to each chapter's
+  // own page, so a drag that drifts sideways can't nudge the text aside.
+  var scrolledNow = String(flow || "").indexOf("scrolled") === 0;
+  document.body.classList.toggle("absorb-scrolled", scrolledNow);
+  if (scrolledNow) {
+    rendition.hooks.content.register(function (contents) {
+      try {
+        var st = contents.document.createElement("style");
+        st.textContent = "html, body { overflow-x: hidden !important; touch-action: pan-y; }";
+        contents.document.head.appendChild(st);
+      } catch (e) {}
+    });
+  }
+
   // Apply initial theme
   updateTheme(backgroundColor, foregroundColor, customCss);
 

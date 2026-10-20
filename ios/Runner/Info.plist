@@ -84,6 +84,21 @@
 			<string>audio</string>
 			<string>fetch</string>
 		</array>
+		<key>NSSiriUsageDescription</key>
+		<string>Siri can play, pause and find your audiobooks and podcasts in Absorb.</string>
+		<key>INIntentsSupported</key>
+		<array>
+			<string>INPlayMediaIntent</string>
+		</array>
+		<key>INSupportedMediaCategories</key>
+		<array>
+			<string>INMediaCategoryAudiobooks</string>
+			<string>INMediaCategoryPodcasts</string>
+		</array>
+		<key>NSUserActivityTypes</key>
+		<array>
+			<string>INPlayMediaIntent</string>
+		</array>
 		<key>NSAppTransportSecurity</key>
 		<dict>
 			<key>NSAllowsArbitraryLoads</key>

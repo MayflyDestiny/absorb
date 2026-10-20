@@ -8790,6 +8790,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sectionCarIos => '车载控制';
 
   @override
+  String get sectionSiri => 'Siri';
+
+  @override
+  String get siriUseWithSiri => '通过 Siri 使用';
+
+  @override
+  String get siriStatusOn => '已开启。Siri 可按名称查找并播放你的图书和播客。';
+
+  @override
+  String get siriStatusAsk => '允许 Siri 按名称查找并播放你的图书和播客。';
+
+  @override
+  String get siriStatusOff => 'Absorb 的 Siri 已关闭。请在 iOS 设置中开启。';
+
+  @override
+  String get siriAllow => '允许';
+
+  @override
+  String get siriOpenSettings => '打开设置';
+
+  @override
+  String get siriThingsToSay => '可以这样说';
+
+  @override
+  String get siriExamples =>
+      '\"在 Absorb 中播放 [book title]\"\n\"在 Absorb 中播放 [series name]\"\n\"在 Absorb 中播放 [author] 的作品\"\n\"在 Absorb 中播放 [podcast] 的最新一集\"\n\"继续播放 Absorb\"\n\"在 Absorb 中快退\"\n\"在 Absorb 中播放下一章\"\n\"在 Absorb 中设置睡眠定时器\"\n\"在 Absorb 中添加书签\"\n\"我正在 Absorb 里听什么\"';
+
+  @override
+  String get siriShortcutsNote =>
+      '继续、暂停、跳转、章节、睡眠定时器、书签以及正在播放的内容，即使没有这项权限也能使用。它们同样出现在「快捷指令」App 中，可用于自动化操作和操作按钮。';
+
+  @override
   String get carBookOrder => '车内的书籍顺序';
 
   @override
@@ -10379,6 +10411,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerPinTopBarHint => '将标题和进度条固定到页面顶部，而不是点击时显示。页面会稍短一些，以免遮挡文字。';
 
   @override
+  String get readerTopBarProgress => '顶部进度条';
+
+  @override
+  String get readerTopBarProgressBook => '全书';
+
+  @override
+  String get readerTopBarProgressChapter => '章节';
+
+  @override
+  String get readerTopBarProgressBoth => '两者';
+
+  @override
   String get readerScrollMode => '滚动模式';
 
   @override
@@ -10567,6 +10611,31 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerNoHighlights => '还没有划线';
+
+  @override
+  String get readerHistory => '历史记录';
+
+  @override
+  String get sessionReading => '阅读';
+
+  @override
+  String get readerHistoryEmpty => '你离开过的页面会列在这里，方便随时返回。';
+
+  @override
+  String get readerHistoryClosed => '关闭了本书';
+
+  @override
+  String get readerHistoryBeforeJump => '跳转前';
+
+  @override
+  String get readerHistoryBeforeSync => '匹配音频前';
+
+  @override
+  String get readerLogReading => '在统计中计入阅读时长';
+
+  @override
+  String get readerLogReadingHint =>
+      '将你在阅读器中的时长记录为一个会话，从而显示在统计中。在 Audiobookshelf 上会计入收听时长。';
 
   @override
   String get readerNoBookmarks => '还没有书签';
@@ -11099,6 +11168,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readAlongNeedsPlaying => '请先播放此书的有声书';
 
   @override
+  String get narrationListen => '朗读';
+
+  @override
+  String get narrationPlayFromHere => '从此处播放';
+
+  @override
+  String get narrationPreparing => '正在准备朗读';
+
+  @override
+  String get narrationNone => '这本电子书没有可播放的朗读';
+
+  @override
+  String get narrationDownloadTitle => '下载后收听';
+
+  @override
+  String get narrationDownloadBody =>
+      '本书是可自行朗读的 EPUB3。Audiobookshelf 无法流式传输其朗读音频，需先下载才能播放。';
+
+  @override
+  String get narrationDownloadStarted => '正在下载朗读。完成后请打开 Absorb。';
+
+  @override
+  String get narrationUpNextTitle => '下载下一本待播';
+
+  @override
+  String narrationUpNextBody(String title) {
+    return '$title 是你队列中的下一本。它是可自行朗读的 EPUB3，需先下载才能播放。';
+  }
+
+  @override
+  String narrationQueueStopped(String title) {
+    return '在 $title 前停止。下载它以继续播放。';
+  }
+
+  @override
   String get transcriptionNeedsDownload => '这需要在手机上保存音频。现在就下载吗？';
 
   @override
@@ -11106,6 +11210,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readAlongFollow => '伴读跟随方式';
+
+  @override
+  String get syncReadingListening => '保持阅读与收听同步';
+
+  @override
+  String get syncReadingListeningHint =>
+      '适用于同时有有声书和电子书的图书。停止收听时，电子书跳到你停下的位置；离开阅读器时，有声书跳到你读到的页面。仅向前推进。';
+
+  @override
+  String get syncEbookMoved => '电子书已跳到你停止收听的位置';
+
+  @override
+  String get syncAudioMoved => '有声书已跳到你停止阅读的位置';
+
+  @override
+  String get syncAudioOffer => '点击跳转到你停止阅读的位置';
+
+  @override
+  String get syncFindingAudio => '正在有声书中查找你的页面';
+
+  @override
+  String get syncFindingEbook => '正在电子书中查找你的位置';
 
   @override
   String get readAlongFollowHint => '单词时间由转录时间戳推算得出，因此句内可能会有轻微偏差。';

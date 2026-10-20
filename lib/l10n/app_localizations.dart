@@ -15393,6 +15393,66 @@ abstract class AppLocalizations {
   /// **'CarPlay'**
   String get sectionCarIos;
 
+  /// No description provided for @sectionSiri.
+  ///
+  /// In en, this message translates to:
+  /// **'Siri'**
+  String get sectionSiri;
+
+  /// No description provided for @siriUseWithSiri.
+  ///
+  /// In en, this message translates to:
+  /// **'Use with Siri'**
+  String get siriUseWithSiri;
+
+  /// No description provided for @siriStatusOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On. Siri can find and play your books and podcasts by name.'**
+  String get siriStatusOn;
+
+  /// No description provided for @siriStatusAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Let Siri find and play your books and podcasts by name.'**
+  String get siriStatusAsk;
+
+  /// No description provided for @siriStatusOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Siri is turned off for Absorb. Turn it on in iOS Settings.'**
+  String get siriStatusOff;
+
+  /// No description provided for @siriAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get siriAllow;
+
+  /// No description provided for @siriOpenSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings'**
+  String get siriOpenSettings;
+
+  /// No description provided for @siriThingsToSay.
+  ///
+  /// In en, this message translates to:
+  /// **'Things to say'**
+  String get siriThingsToSay;
+
+  /// No description provided for @siriExamples.
+  ///
+  /// In en, this message translates to:
+  /// **'\"Play [book title] on Absorb\"\n\"Play [series name] on Absorb\"\n\"Play something by [author] on Absorb\"\n\"Play the latest episode of [podcast] on Absorb\"\n\"Resume Absorb\"\n\"Skip back in Absorb\"\n\"Next chapter in Absorb\"\n\"Set a sleep timer in Absorb\"\n\"Add a bookmark in Absorb\"\n\"What am I listening to in Absorb\"'**
+  String get siriExamples;
+
+  /// No description provided for @siriShortcutsNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume, pause, skips, chapters, the sleep timer, bookmarks and what\'s playing work even without this permission. They are also in the Shortcuts app for automations and the Action button.'**
+  String get siriShortcutsNote;
+
   /// No description provided for @carBookOrder.
   ///
   /// In en, this message translates to:
@@ -18375,6 +18435,30 @@ abstract class AppLocalizations {
   /// **'Pins them above the page instead of showing them on tap. The page gets a little shorter so no text is covered.'**
   String get readerPinTopBarHint;
 
+  /// No description provided for @readerTopBarProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Top bar progress'**
+  String get readerTopBarProgress;
+
+  /// No description provided for @readerTopBarProgressBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Book'**
+  String get readerTopBarProgressBook;
+
+  /// No description provided for @readerTopBarProgressChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter'**
+  String get readerTopBarProgressChapter;
+
+  /// No description provided for @readerTopBarProgressBoth.
+  ///
+  /// In en, this message translates to:
+  /// **'Both'**
+  String get readerTopBarProgressBoth;
+
   /// No description provided for @readerScrollMode.
   ///
   /// In en, this message translates to:
@@ -18680,6 +18764,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No highlights yet'**
   String get readerNoHighlights;
+
+  /// No description provided for @readerHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get readerHistory;
+
+  /// No description provided for @sessionReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading'**
+  String get sessionReading;
+
+  /// No description provided for @readerHistoryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Pages you leave are listed here, so you can always get back to them.'**
+  String get readerHistoryEmpty;
+
+  /// No description provided for @readerHistoryClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed the book'**
+  String get readerHistoryClosed;
+
+  /// No description provided for @readerHistoryBeforeJump.
+  ///
+  /// In en, this message translates to:
+  /// **'Before a jump'**
+  String get readerHistoryBeforeJump;
+
+  /// No description provided for @readerHistoryBeforeSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Before matching the audio'**
+  String get readerHistoryBeforeSync;
+
+  /// No description provided for @readerLogReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Count reading time in stats'**
+  String get readerLogReading;
+
+  /// No description provided for @readerLogReadingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs your time in the reader as a session so it shows in your stats. On Audiobookshelf it counts as listening time.'**
+  String get readerLogReadingHint;
 
   /// No description provided for @readerNoBookmarks.
   ///
@@ -19647,6 +19779,66 @@ abstract class AppLocalizations {
   /// **'Play this book\'s audiobook first'**
   String get readAlongNeedsPlaying;
 
+  /// No description provided for @narrationListen.
+  ///
+  /// In en, this message translates to:
+  /// **'Listen'**
+  String get narrationListen;
+
+  /// No description provided for @narrationPlayFromHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Play from here'**
+  String get narrationPlayFromHere;
+
+  /// No description provided for @narrationPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Getting the narration ready'**
+  String get narrationPreparing;
+
+  /// No description provided for @narrationNone.
+  ///
+  /// In en, this message translates to:
+  /// **'This ebook has no narration to play'**
+  String get narrationNone;
+
+  /// No description provided for @narrationDownloadTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download to listen'**
+  String get narrationDownloadTitle;
+
+  /// No description provided for @narrationDownloadBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This book is an EPUB3 that reads itself aloud. Audiobookshelf can\'t stream its narration, so the audio needs to be downloaded before it plays.'**
+  String get narrationDownloadBody;
+
+  /// No description provided for @narrationDownloadStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading the narration. Tap Absorb when it finishes.'**
+  String get narrationDownloadStarted;
+
+  /// No description provided for @narrationUpNextTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download what\'s up next'**
+  String get narrationUpNextTitle;
+
+  /// No description provided for @narrationUpNextBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} is next in your queue. It\'s an EPUB3 that reads itself aloud, so it needs to be downloaded before it can play.'**
+  String narrationUpNextBody(String title);
+
+  /// No description provided for @narrationQueueStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped before {title}. Download it to keep going.'**
+  String narrationQueueStopped(String title);
+
   /// No description provided for @transcriptionNeedsDownload.
   ///
   /// In en, this message translates to:
@@ -19664,6 +19856,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Read along follows'**
   String get readAlongFollow;
+
+  /// No description provided for @syncReadingListening.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep reading and listening in sync'**
+  String get syncReadingListening;
+
+  /// No description provided for @syncReadingListeningHint.
+  ///
+  /// In en, this message translates to:
+  /// **'For books with an audiobook and an ebook. When you stop listening, the ebook moves to where you stopped. When you leave the reader, the audiobook moves to your page. Only moves forward.'**
+  String get syncReadingListeningHint;
+
+  /// No description provided for @syncEbookMoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Ebook moved to where you stopped listening'**
+  String get syncEbookMoved;
+
+  /// No description provided for @syncAudioMoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobook moved to where you stopped reading'**
+  String get syncAudioMoved;
+
+  /// No description provided for @syncAudioOffer.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to jump to where you stopped reading'**
+  String get syncAudioOffer;
+
+  /// No description provided for @syncFindingAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding your page in the audiobook'**
+  String get syncFindingAudio;
+
+  /// No description provided for @syncFindingEbook.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding your spot in the ebook'**
+  String get syncFindingEbook;
 
   /// No description provided for @readAlongFollowHint.
   ///

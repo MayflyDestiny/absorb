@@ -38,6 +38,14 @@
         overflow-anchor: none;
       }
 
+      /* Absorb patch: scroll mode only moves up and down. A drag that drifted
+         sideways nudged the text to the side. */
+      body.absorb-scrolled,
+      body.absorb-scrolled .epub-container {
+        overflow-x: hidden !important;
+        touch-action: pan-y;
+      }
+
       #viewerNext {
         display: none;
         position: fixed;
