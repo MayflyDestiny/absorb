@@ -352,6 +352,12 @@ abstract class AppLocalizations {
   /// **'Continue Listening'**
   String get continueListening;
 
+  /// No description provided for @continueReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue Reading'**
+  String get continueReading;
+
   /// No description provided for @continueSeries.
   ///
   /// In en, this message translates to:
@@ -5553,6 +5559,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Off - all library items shown'**
   String get hideEbookOnlyOffSubtitle;
+
+  /// No description provided for @homeCardsOpenDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Open details from Home'**
+  String get homeCardsOpenDetails;
+
+  /// No description provided for @homeCardsOpenDetailsOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tapping a Continue Listening or Continue Reading card opens its details'**
+  String get homeCardsOpenDetailsOnSubtitle;
+
+  /// No description provided for @homeCardsOpenDetailsOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tapping a Continue Listening or Continue Reading card picks up where you left off'**
+  String get homeCardsOpenDetailsOffSubtitle;
 
   /// No description provided for @showGoodreadsButton.
   ///
@@ -18422,6 +18446,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading the narration. Tap Absorb when it finishes.'**
   String get narrationDownloadStarted;
+
+  /// No description provided for @downloadToAbsorb.
+  ///
+  /// In en, this message translates to:
+  /// **'Download to Absorb'**
+  String get downloadToAbsorb;
 
   /// No description provided for @narrationUpNextTitle.
   ///

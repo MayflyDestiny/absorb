@@ -3081,8 +3081,11 @@ class LibraryScreenState extends State<LibraryScreen>
       elevation: 0,
       scrolledUnderElevation: 0,
       automaticallyImplyLeading: false,
+      // The bar is laid out loosely, so the header fills its full height
+      // itself rather than leaving a bare strip under the count row.
       flexibleSpace: ClipRect(
         child: Stack(
+          fit: StackFit.expand,
           children: [
             Positioned.fill(child: headerBackground),
             Column(
@@ -3160,6 +3163,9 @@ class LibraryScreenState extends State<LibraryScreen>
                               ),
                             ),
                           ),
+                        // Holds the row at the select button's height on
+                        // tabs without it, so the search bar doesn't jump.
+                        if (!canSelectItems) const SizedBox(height: 48),
                         if (canSelectItems)
                           Tooltip(
                             message: _selectionMode

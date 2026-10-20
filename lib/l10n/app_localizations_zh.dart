@@ -128,6 +128,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get continueListening => '继续收听';
 
   @override
+  String get continueReading => 'Continue Reading';
+
+  @override
   String get continueSeries => '继续收听系列';
 
   @override
@@ -3024,6 +3027,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get hideEbookOnlyOffSubtitle => '关 - 显示所有媒体库项目';
+
+  @override
+  String get homeCardsOpenDetails => 'Open details from Home';
+
+  @override
+  String get homeCardsOpenDetailsOnSubtitle => 'Tapping a Continue Listening or Continue Reading card opens its details';
+
+  @override
+  String get homeCardsOpenDetailsOffSubtitle => 'Tapping a Continue Listening or Continue Reading card picks up where you left off';
 
   @override
   String get showGoodreadsButton => '显示 Goodreads 按钮';
@@ -10295,6 +10307,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get narrationDownloadStarted => 'Downloading the narration. Tap Absorb when it finishes.';
+
+  @override
+  String get downloadToAbsorb => 'Download to Absorb';
 
   @override
   String get narrationUpNextTitle => 'Download what\'s up next';

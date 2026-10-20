@@ -133,6 +133,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get continueListening => 'Weiterhören';
 
   @override
+  String get continueReading => 'Continue Reading';
+
+  @override
   String get continueSeries => 'Serie fortsetzen';
 
   @override
@@ -3155,6 +3158,17 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get hideEbookOnlyOffSubtitle =>
       'Aus - alle Bibliothekselemente werden angezeigt';
+
+  @override
+  String get homeCardsOpenDetails => 'Open details from Home';
+
+  @override
+  String get homeCardsOpenDetailsOnSubtitle =>
+      'Tapping a Continue Listening or Continue Reading card opens its details';
+
+  @override
+  String get homeCardsOpenDetailsOffSubtitle =>
+      'Tapping a Continue Listening or Continue Reading card picks up where you left off';
 
   @override
   String get showGoodreadsButton => 'Goodreads-Button anzeigen';
@@ -10822,6 +10836,9 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get narrationDownloadStarted =>
       'Downloading the narration. Tap Absorb when it finishes.';
+
+  @override
+  String get downloadToAbsorb => 'Download to Absorb';
 
   @override
   String get narrationUpNextTitle => 'Download what\'s up next';

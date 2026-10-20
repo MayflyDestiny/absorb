@@ -1959,6 +1959,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           }
         }
       }
+      _narratedToContinueListening();
       await (this as _AbsorbingMixin)._updateAbsorbingCache();
 
       _injectDownloadedSection();
@@ -2090,6 +2091,68 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     _personalizedSections = merged;
+    _narratedToContinueListening();
+  }
+
+  /// Audiobookshelf sees only an ebook in an EPUB that reads itself aloud, so
+  /// one being listened to comes back under Continue Reading. Absorb plays it
+  /// as an audiobook, so while it has listening progress it moves to Continue
+  /// Listening. One only being read stays where it is.
+  void _narratedToContinueListening() {
+    final api = _api;
+    if (api == null || api.isBookOrbit || isPodcastLibrary) return;
+    final sections = _personalizedSections;
+    final ri = sections.indexWhere((s) => s is Map<String, dynamic> && s['id'] == 'continue-reading');
+    if (ri < 0) return;
+    final reading = sections[ri] as Map<String, dynamic>;
+    final keep = <dynamic>[];
+    final moved = <Map<String, dynamic>>[];
+    for (final e in (reading['entities'] as List<dynamic>? ?? const [])) {
+      final id = e is Map<String, dynamic> ? e['id'] as String? : null;
+      final listened = id != null &&
+          NarratedBooks.contains(id) &&
+          _progressMap[id]?['isFinished'] != true &&
+          (((_progressMap[id]?['currentTime'] as num?) ?? 0) > 0 ||
+              (_localProgressOverrides[id] ?? 0) > 0);
+      if (listened) {
+        moved.add(e as Map<String, dynamic>);
+      } else {
+        keep.add(e);
+      }
+    }
+    if (moved.isEmpty) return;
+
+    final li = sections.indexWhere((s) => s is Map<String, dynamic> && s['id'] == 'continue-listening');
+    final listening = li < 0 ? null : sections[li] as Map<String, dynamic>;
+    final entities = List<dynamic>.from(listening?['entities'] as List<dynamic>? ?? const []);
+    int at(dynamic e) {
+      if (e is! Map<String, dynamic>) return 0;
+      final v = e['progressLastUpdate'] ?? _progressMap[e['id']]?['lastUpdate'];
+      return v is num ? v.toInt() : 0;
+    }
+    for (final m in moved) {
+      if (entities.any((e) => e is Map<String, dynamic> && e['id'] == m['id'])) continue;
+      final when = at(m);
+      final i = entities.indexWhere((e) => at(e) < when);
+      entities.insert(i < 0 ? entities.length : i, m);
+    }
+
+    final next = List<dynamic>.from(sections);
+    next[ri] = {...reading, 'entities': keep};
+    final shelf = <String, dynamic>{
+      ...?listening,
+      'id': 'continue-listening',
+      'label': listening?['label'] ?? 'Continue Listening',
+      'type': listening?['type'] ?? 'book',
+      'entities': entities,
+    };
+    if (li < 0) {
+      next.insert(0, shelf);
+    } else {
+      next[li] = shelf;
+    }
+    _personalizedSections = next;
+    debugPrint('[Narration] ${moved.length} narrated book(s) moved from Continue Reading to Continue Listening');
   }
 
   void _hydrateRssFeedFieldsDeferred() {

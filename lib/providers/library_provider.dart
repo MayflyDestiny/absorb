@@ -31,6 +31,7 @@ import '../widgets/overlay_toast.dart';
 import '../services/ebook_cache.dart';
 import '../services/screen_wake.dart';
 import '../services/up_next_narration.dart';
+import '../services/narrated_books.dart';
 
 part '_lp_state.dart';
 part '_lp_core.dart';

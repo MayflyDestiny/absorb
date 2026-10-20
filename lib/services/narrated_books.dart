@@ -4,14 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Audiobookshelf books whose EPUB reads itself aloud, as found on this
-/// phone (the server only sees an ebook). Held in memory so the quick "is
-/// this ebook only" checks can count them as audiobooks. Item ids are unique
-/// across servers, so one list serves every account.
+/// phone (the server only sees an ebook), and the EPUBs looked into that
+/// don't. Held in memory so the quick "is this ebook only" checks can count
+/// them as audiobooks, and the detail sheet knows straight away which
+/// buttons a book gets. Item ids are unique across servers, so one list
+/// serves every account.
 class NarratedBooks {
   NarratedBooks._();
 
   static const _key = 'narrated_books';
+  static const _plainKey = 'plain_epubs';
   static final Map<String, double> _durations = {};
+  static final Set<String> _plain = {};
   static Future<void>? _loading;
 
   static Future<void> load() => _loading ??= _load();
@@ -26,9 +30,17 @@ class NarratedBooks {
     } catch (e) {
       debugPrint('[Narration] reading the narrated books failed: $e');
     }
+    try {
+      _plain.addAll((await SharedPreferences.getInstance()).getStringList(_plainKey) ?? const []);
+    } catch (e) {
+      debugPrint('[Narration] reading the narrated books failed: $e');
+    }
   }
 
   static bool contains(Object? itemId) => itemId is String && _durations.containsKey(itemId);
+
+  /// Whether this phone has looked into [itemId]'s EPUB, either way.
+  static bool checked(Object? itemId) => itemId is String && (_durations.containsKey(itemId) || _plain.contains(itemId));
 
   static double? duration(String itemId) => _durations[itemId];
 
@@ -38,11 +50,15 @@ class NarratedBooks {
     if (duration != null && duration > 0) {
       if (_durations[itemId] == duration) return;
       _durations[itemId] = duration;
-    } else if (_durations.remove(itemId) == null) {
-      return;
+      _plain.remove(itemId);
+    } else {
+      final dropped = _durations.remove(itemId) != null;
+      if (!_plain.add(itemId) && !dropped) return;
     }
     try {
-      await (await SharedPreferences.getInstance()).setString(_key, jsonEncode(_durations));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_key, jsonEncode(_durations));
+      await prefs.setStringList(_plainKey, _plain.toList());
     } catch (e) {
       debugPrint('[Narration] saving the narrated books failed: $e');
     }
@@ -51,6 +67,7 @@ class NarratedBooks {
   @visibleForTesting
   static void debugSet(Map<String, double> durations) {
     _loading = Future.value();
+    _plain.clear();
     _durations
       ..clear()
       ..addAll(durations);

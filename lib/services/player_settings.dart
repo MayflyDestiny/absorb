@@ -964,6 +964,11 @@ class PlayerSettings {
   static Future<bool> getHideEbookOnly() => _get('hideEbookOnly', false);
   static Future<void> setHideEbookOnly(bool value) => _set('hideEbookOnly', value, notify: true);
 
+  /// Tapping a Continue Listening or Continue Reading card on Home opens its
+  /// details instead of picking up where it left off.
+  static Future<bool> getHomeCardsOpenDetails() => _get('homeCardsOpenDetails', false);
+  static Future<void> setHomeCardsOpenDetails(bool value) => _set('homeCardsOpenDetails', value, notify: true);
+
   static Future<bool> getCollapseSeries() => _get('collapseSeries', false);
   static Future<void> setCollapseSeries(bool value) => _set('collapseSeries', value, notify: true);
 

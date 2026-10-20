@@ -126,6 +126,9 @@ class SiriQuery {
     final key = siriNormalize(_stripNoise(name ?? ''));
     return _fillerNames.contains(key) ? '' : key;
   }
+
+  /// "Podcast" or "episode" said out loud, rather than Siri's own guess.
+  bool get _saysPodcast => RegExp(r'\b(podcast|episode)s?\b', caseSensitive: false).hasMatch(name ?? '');
 }
 
 const _fillerNames = {
@@ -253,7 +256,11 @@ int _rank(SiriEntry e) => e.inProgress ? 2 : (e.finished ? 0 : 1);
 SiriMatch siriMatch(SiriQuery query, List<SiriEntry> entries) {
   final name = query._nameKey;
   final artist = query.artist == null ? '' : siriNormalize(query.artist!);
-  final pool = entries.where((e) => _kindFits(e.kind, query.type)).toList();
+  // The kind is Siri's own guess as often as the listener's word (a book
+  // title it also knows as a podcast show gets called a podcast), so it only
+  // settles ties and never hides a better match. Saying "podcast" counts.
+  final saysPodcast = query._saysPodcast;
+  final pool = saysPodcast ? entries.where((e) => _kindFits(e.kind, 'podcast')).toList() : entries;
   if (pool.isEmpty) return SiriMatch.none;
 
   if (name.isEmpty) {
@@ -263,7 +270,12 @@ SiriMatch siriMatch(SiriQuery query, List<SiriEntry> entries) {
 
   final scored = <_Scored>[];
   for (final e in pool) {
-    final titleScore = siriTextScore(name, siriNormalize(e.title));
+    // "The Dungeon Crawler Carl Podcast" is asked for the way the query is
+    // read, with "podcast" dropped. Unless "podcast" was said, a title that
+    // is the name outright beats one that only is without that word.
+    final bare = siriNormalize(_stripNoise(e.title));
+    final bareScore = bare.isEmpty ? 0.0 : siriTextScore(name, bare) * (saysPodcast ? 1.0 : 0.95);
+    final titleScore = max(siriTextScore(name, siriNormalize(e.title)), bareScore);
     var seriesScore = 0.0;
     for (final s in e.series) {
       seriesScore = max(seriesScore, siriTextScore(name, siriNormalize(s)) * 0.96);
@@ -285,9 +297,12 @@ SiriMatch siriMatch(SiriQuery query, List<SiriEntry> entries) {
   }
   if (scored.isEmpty) return SiriMatch.none;
 
+  int fits(_Scored s) => _kindFits(s.entry.kind, query.type) ? 1 : 0;
   scored.sort((a, b) {
     final c = b.score.compareTo(a.score);
     if (c != 0) return c;
+    final f = fits(b).compareTo(fits(a));
+    if (f != 0) return f;
     final r = _rank(b.entry).compareTo(_rank(a.entry));
     if (r != 0) return r;
     return b.entry.lastPlayed.compareTo(a.entry.lastPlayed);
@@ -295,6 +310,19 @@ SiriMatch siriMatch(SiriQuery query, List<SiriEntry> entries) {
 
   var top = scored.first;
   if (top.score < 60) return SiriMatch.none;
+  // A series named for its first book, which is finished while a later one
+  // is under way: the listener means the series.
+  if (top.entry.kind == 'book' && !top.bySeries && top.entry.finished) {
+    final onNow = scored
+        .map((s) => s.entry)
+        .where((e) =>
+            e.kind == 'book' &&
+            e.inProgress &&
+            e.series.any((x) => siriTextScore(name, siriNormalize(x)) >= 90))
+        .toList()
+      ..sort((a, b) => b.lastPlayed.compareTo(a.lastPlayed));
+    if (onNow.isNotEmpty) return SiriMatch('ok', [onNow.first], top.score, viaSeries: true);
+  }
   // A book and its series named the same: the book is the likelier ask.
   if (top.entry.kind == 'series') {
     final book = scored.firstWhere(
@@ -314,10 +342,14 @@ SiriMatch siriMatch(SiriQuery query, List<SiriEntry> entries) {
     return SiriMatch('ok', [_nextInSeries(inSeries)], top.score, viaSeries: true);
   }
 
+  // When the pick is the kind asked for, the other kinds don't make it a
+  // close call.
+  final topFits = fits(top) == 1;
   final rivals = scored
       .skip(1)
       .where((s) =>
           s.entry.id != top.entry.id &&
+          (!topFits || fits(s) == 1) &&
           !(s.entry.kind == 'series' && top.entry.kind == 'book' && top.score - s.score < 1))
       .toList();
   if (rivals.isEmpty ||

@@ -150,6 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _maxConcurrentDownloads = 1;
   bool _hideEbookOnly = false;
   bool _showGoodreadsButton = false;
+  bool _homeCardsOpenDetails = false;
   bool _showExplicitBadge = true;
   bool _showEbookBadge = true;
   bool _loggingEnabled = false;
@@ -1206,6 +1207,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       _loaded = true;
     });
+    final cardsOpenDetails = await PlayerSettings.getHomeCardsOpenDetails();
+    if (mounted) setState(() => _homeCardsOpenDetails = cardsOpenDetails);
     final libId = mounted ? context.read<LibraryProvider>().selectedLibraryId : null;
     if (libId != null) _loadCurrentLibraryOverrides(libId);
     if (Platform.isIOS) _refreshSiriStatus();
@@ -3959,6 +3962,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: _loaded ? (v) {
                         setState(() => _hideEbookOnly = v);
                         PlayerSettings.setHideEbookOnly(v);
+                      } : null,
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    SwitchListTile(
+                      title: Text(l.homeCardsOpenDetails),
+                      subtitle: Text(
+                        _homeCardsOpenDetails
+                            ? l.homeCardsOpenDetailsOnSubtitle
+                            : l.homeCardsOpenDetailsOffSubtitle,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                      value: _homeCardsOpenDetails,
+                      onChanged: _loaded ? (v) {
+                        setState(() => _homeCardsOpenDetails = v);
+                        PlayerSettings.setHomeCardsOpenDetails(v);
                       } : null,
                     ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
