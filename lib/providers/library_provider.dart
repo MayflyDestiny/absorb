@@ -509,6 +509,10 @@ class LibraryProvider extends ChangeNotifier
     await _rememberBookLibrary(libraryId);
     await _loadSectionPrefs();
     notifyListeners();
+    // The shelves can come from the cache without a fetch, and playlists
+    // and collections were just cleared, so they load either way.
+    unawaited(loadPlaylists());
+    unawaited(loadCollections());
     await loadPersonalizedView();
     AndroidAutoService().refresh(force: true);
     CarPlayService().refreshTemplates();

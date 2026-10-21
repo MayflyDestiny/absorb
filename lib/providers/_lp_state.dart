@@ -56,10 +56,12 @@ mixin _StateMixin on ChangeNotifier {
   List<dynamic> _playlists = [];
   bool _isLoadingPlaylists = false;
   Future<void>? _playlistsInFlight;
+  String? _playlistsInFlightFor;
 
   List<dynamic> _collections = [];
   bool _isLoadingCollections = false;
   Future<void>? _collectionsInFlight;
+  String? _collectionsInFlightFor;
 
   List<String> _sectionOrder = [];
   Set<String> _hiddenSectionIds = {};

@@ -1011,12 +1011,17 @@ class ApiService {
           if (!kIsWeb) 'User-Agent': userAgent,
         },
         body: jsonEncode({'username': username, 'password': password}),
-      );
+      // A server that takes the connection and then never answers (a proxy
+      // up with the server behind it down) left the sign-in spinning forever.
+      ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         return (jsonDecode(response.body) as Map<String, dynamic>, 200);
       }
       return (null, response.statusCode);
+    } on TimeoutException {
+      debugPrint('[API] login to $url got no answer in 20s');
+      return (null, 0);
     } catch (e) {
       return (null, 0);
     }
