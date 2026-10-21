@@ -1139,6 +1139,22 @@ class BookOrbitMapper {
               bookOrbitProviderIdFields['${e.key}']!: '${e.value}'.trim(),
       };
 
+  /// Chapters saved on a book's audio details, where the chapter editor
+  /// writes them, laid out to [duration]. Empty when none are saved.
+  static List<Map<String, dynamic>> savedChapters(Map<String, dynamic> detail, double duration) {
+    final raw = _maps((detail['audioMetadata'] as Map?)?['chapters']);
+    double start(int i) => ((raw[i]['startMs'] as num?) ?? 0) / 1000.0;
+    return [
+      for (var i = 0; i < raw.length; i++)
+        {
+          'id': i,
+          'start': start(i),
+          'end': i + 1 < raw.length ? start(i + 1) : duration,
+          'title': raw[i]['title'] ?? 'Chapter ${i + 1}',
+        },
+    ];
+  }
+
   /// Audiobookshelf chapters ({start, end, title} in seconds) as BookOrbit's
   /// audio chapters. Null clears them.
   static List<Map<String, dynamic>>? chapters(List<dynamic> abs) {

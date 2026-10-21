@@ -1691,6 +1691,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> _storeNewerServerPosition(
       String key, Map<String, dynamic> mp) async {
     if (mp['isFinished'] == true) return;
+    // BookOrbit's list carries only a percent for some books, with a
+    // currentTime of 0 that is no place at all: storing it sent the next
+    // start back to the beginning.
+    if (mp['positionUnknown'] == true) return;
     final serverTime = (mp['currentTime'] as num?)?.toDouble();
     final serverUpd = (mp['lastUpdate'] as num?)?.toInt() ?? 0;
     if (serverTime == null || serverUpd <= 0) return;

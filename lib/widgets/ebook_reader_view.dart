@@ -298,6 +298,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   bool get _useNarration =>
       _narration != null && (_narrationFromServer || !_hasAudio || _audioIsNarration);
 
+  // The narration and audio lookups started on open: read along waits for
+  // them, since which kind it is depends on their answers.
+  Future<void>? _narrationLookup;
+  Future<void>? _audioMetaLookup;
+
   // Reader settings
   int _fontSize = 16;
   double _lineHeight = 1.4;
@@ -408,7 +413,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // behind the sliding-in reader, which makes opening from a home card janky.
     PlayerSettings.settingsChanged.addListener(_loadSkipSettings);
     _loadSkipSettings();
-    _loadAudioMeta();
+    _audioMetaLookup = _loadAudioMeta();
     _volumeNav.attach();
     PlayerSettings.getTranscriptionEnabled().then((on) {
       if (mounted && on) setState(() => _transcriptionOn = true);
@@ -1133,7 +1138,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       final serverSpot = _otherAccount ? null : _pullServerPosition(api);
       final file = await NarrationService.instance
           .readerFile(api, widget.itemId, widget.ebookFile, widget.title);
-      unawaited(_loadNarration(api, file));
+      _narrationLookup = _loadNarration(api, file);
+      unawaited(_narrationLookup);
       if (_otherAccount) {
         await _restoreOtherAccountSpot();
       } else {
@@ -3996,10 +4002,21 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _stopReadAlong();
       return;
     }
+    // Following the book's own narration or transcribing depends on what the
+    // book is, so a tap in the first moments waits for that answer.
+    final lookups = [
+      if (_narrationLookup != null) _narrationLookup!,
+      if (_audioMetaLookup != null) _audioMetaLookup!,
+    ];
+    if (lookups.isNotEmpty) {
+      await Future.wait(lookups).timeout(const Duration(seconds: 8), onTimeout: () => const []);
+      if (!mounted) return;
+    }
     if (_useNarration) {
       await _startNarrationReadAlong();
       return;
     }
+    debugPrint('[ReadAlong] ${widget.itemId} is not narrated here - transcribing to follow along');
     final player = AudioPlayerService();
     if (player.currentItemId != widget.itemId ||
         player.currentEpisodeId != null) {

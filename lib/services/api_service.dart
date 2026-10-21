@@ -424,6 +424,13 @@ class ApiService {
   /// Headers for a download of [url] built by [buildDownloadFileUrl].
   Map<String, String> downloadHeadersFor(String url) => mediaHeaders;
 
+  /// Where a narrated EPUB downloads whole from, and the headers it needs,
+  /// for the download that takes its audio out on the phone.
+  Future<({String url, Map<String, String> headers})> narratedEpubDownload(String itemId, String ino) async {
+    final url = buildDownloadFileUrl(itemId, ino);
+    return (url: url, headers: downloadHeadersFor(url));
+  }
+
   /// Called once before a book's files are queued for download.
   Future<void> prepareDownload(String itemId) async {}
 
@@ -4606,6 +4613,8 @@ class ApiService {
       );
       if (r.statusCode != 200) {
         debugPrint('[API] updateChapters failed: ${r.statusCode}');
+      } else {
+        debugPrint('[API] updateChapters $itemId: ${chapters.length} chapters saved');
       }
       return r.statusCode == 200;
     } catch (e) {
