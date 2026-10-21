@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' show min;
+import 'dart:math' show max, min;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart' show CompressFormat, ScreenshotConfiguration;
 import 'package:url_launcher/url_launcher.dart';
 import 'dictionary_sheet.dart';
 import '../services/dictionary_service.dart';
@@ -42,6 +44,8 @@ import '../services/transcription_service.dart';
 import '../services/volume_key_service.dart';
 import '../utils/chapter_title_match.dart';
 import 'overlay_toast.dart';
+import 'page_curl.dart';
+import 'reader_tap_zones.dart';
 import 'transcription_download_prompt.dart';
 import 'narration_download_dialog.dart';
 import 'progress_dialog.dart';
@@ -325,6 +329,39 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   EpubSpread _spread = EpubSpread.auto;
   // Scroll down through the book instead of turning pages.
   bool _scroll = false;
+  // How a page turns: 'none', 'slide' or one of the drawn turns.
+  String _turnStyle = 'slide';
+  ReaderTapZones _tapZones = const ReaderTapZones();
+  bool _editingTapZones = false;
+  // Space after each paragraph in em; below zero keeps the book's own.
+  double _paragraphSpacing = -1;
+  // Seconds before shown controls fade again; 0 keeps them until a tap.
+  int _controlsHideAfter = 5;
+  Timer? _controlsHideTimer;
+  // The curl is drawn here over pictures of the page, taken ahead of time so
+  // a turn can start at once.
+  final PageCurlController _curl = PageCurlController();
+  ui.Image? _curlShot;
+  String? _curlShotCfi;
+  Timer? _curlShotTimer;
+  bool _curling = false;
+  // Turns asked for while one plays, each played after it.
+  final List<bool> _pendingTurns = [];
+  int _curlRun = 0; // a newer turn makes an older one stop where it is
+  Completer<bool>? _curlLanded;
+  EdgeInsets _curlInset = EdgeInsets.zero;
+  // A sideways drag curling the page.
+  int? _curlPointer;
+  Offset? _curlDownAt;
+  DateTime _curlDownTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool? _curlDragForward;
+  bool _curlDragReady = false;
+  bool? _curlDragDecision;
+  Offset _curlDragLast = Offset.zero;
+  Offset _curlDragStart = Offset.zero;
+  Offset? _lastPointerAt;
+  DateTime _lastPointerTime = DateTime.fromMillisecondsSinceEpoch(0);
+  final List<(Duration, double)> _curlDragTrack = [];
   // Keep the title and progress bar on screen above the page instead of
   // fading them in over it. The page gets shorter, never covered.
   bool _pinTop = false;
@@ -359,6 +396,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   static const _kKeepAwake = 'ereader_keep_awake';
   // App-wide, not per account: one switch for every server's books.
   static const _kScroll = 'ereader_scroll_mode';
+  static const _kTurnStyle = 'ereader_page_turn';
+  static const _kParagraphSpacing = 'ereader_paragraph_spacing';
+  static const _kControlsHide = 'ereader_controls_hide';
   static const _kBarAction = 'ereader_bar_action';
 
   // Gates the WebView mount until the entering route animation completes, so
@@ -426,12 +466,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     onPrev: () {
       if (_autoScroll) return;
       _userMoved('volume key');
-      _epubController?.prev();
+      _turnPage(false);
     },
     onNext: () {
       if (_autoScroll) return;
       _userMoved('volume key');
-      _epubController?.next();
+      _turnPage(true);
     },
   );
 
@@ -573,7 +613,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _marginV = await ScopedPrefs.getInt(_kMarginV) ?? legacyMargin;
     final si = (await ScopedPrefs.getInt(_kSpread) ?? 0).clamp(0, 2);
     _spread = _spreadModes[si];
-    _scroll = (await SharedPreferences.getInstance()).getBool(_kScroll) ?? false;
+    final prefs = await SharedPreferences.getInstance();
+    _scroll = prefs.getBool(_kScroll) ?? false;
+    final turn = prefs.getString(_kTurnStyle);
+    if (turn == 'none' || kDrawnTurnStyles.contains(turn)) _turnStyle = turn!;
+    _controlsHideAfter = prefs.getInt(_kControlsHide) ?? 5;
+    _tapZones = await ReaderTapZones.load();
+    _paragraphSpacing = await ScopedPrefs.getDouble(_kParagraphSpacing) ?? -1;
     _themeId = await ScopedPrefs.getString(_kTheme) ?? '';
     _fontId = await ScopedPrefs.getString(_kFont) ?? 'original';
     _pinTop = await ScopedPrefs.getBool(_kPinTop) ?? false;
@@ -706,6 +752,148 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     await (await SharedPreferences.getInstance()).setBool(_kScroll, on);
   }
 
+  // E-ink screens smear anything that moves, so pages turn at once there.
+  String get _turnNow => PlayerSettings.einkMode ? 'none' : _turnStyle;
+  // "Curl" in names here covers every turn drawn over pictures of the page.
+  bool get _curlOn => kDrawnTurnStyles.contains(_turnNow) && !_scroll && !_autoScroll;
+
+  // A ripple shows the new page coming through either way, so going back
+  // needs no picture of the earlier page first; only a curl plays backward.
+  bool get _revealsUnder => _turnNow != 'curl';
+
+  // The page itself only knows that the app draws these turns.
+  void _applyTurnStyle() =>
+      unawaited(_epubController?.setTurnStyle(kDrawnTurnStyles.contains(_turnNow) ? 'curl' : _turnNow));
+
+  String _turnStyleLabel(AppLocalizations l, String style) => switch (style) {
+        'none' => l.readerPageTurnNone,
+        'slide' => l.readerPageTurnSlide,
+        'curl' => l.readerPageTurnCurl,
+        _ => l.readerPageTurnRipple,
+      };
+
+  /// Where a turn starts: the finger that asked for it, or the side the page
+  /// is going to.
+  Offset _turnOrigin(bool forward) {
+    final at = _lastPointerAt;
+    if (at != null && DateTime.now().difference(_lastPointerTime) < const Duration(milliseconds: 800)) {
+      return at;
+    }
+    final size = _curl.size;
+    return Offset(size.width * (forward ? 0.85 : 0.15), size.height * 0.55);
+  }
+
+  Future<void> _updateParagraphSpacing(double em) async {
+    setState(() => _paragraphSpacing = em);
+    _applySettings();
+    await ScopedPrefs.setDouble(_kParagraphSpacing, em);
+  }
+
+  static String _emLabel(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2).replaceAll(RegExp(r'0$'), '');
+
+  Future<void> _updateControlsHideAfter(int seconds) async {
+    setState(() => _controlsHideAfter = seconds);
+    _armControlsHide();
+    await (await SharedPreferences.getInstance()).setInt(_kControlsHide, seconds);
+  }
+
+  /// Shown controls fade on their own after a while. A finger on them, a
+  /// sheet open over the reader or the tap zone editor keeps them up.
+  void _armControlsHide() {
+    _controlsHideTimer?.cancel();
+    if (!_showControls || _controlsHideAfter <= 0) return;
+    _controlsHideTimer = Timer(Duration(seconds: _controlsHideAfter), () {
+      if (!mounted || !_showControls) return;
+      if (_editingTapZones || !(ModalRoute.of(context)?.isCurrent ?? true)) {
+        _armControlsHide();
+        return;
+      }
+      setState(() => _showControls = false);
+    });
+  }
+
+  Widget _controlsTouchGuard(Widget child) => Listener(
+        onPointerDown: (_) => _controlsHideTimer?.cancel(),
+        onPointerUp: (_) => _armControlsHide(),
+        onPointerCancel: (_) => _armControlsHide(),
+        child: child,
+      );
+
+  void _editTapZones() {
+    setState(() {
+      _editingTapZones = true;
+      _showControls = false;
+    });
+  }
+
+  bool _barButtonShown(String id) => switch (id) {
+        'readalong' => _transcriptionOn || _useNarration,
+        'chapters' => _chapters.isNotEmpty,
+        _ => true,
+      };
+
+  bool _barButtonLit(String id) => switch (id) {
+        'bookmark' => _hasBookmarkAtCurrent,
+        'readalong' => _readAlongOn,
+        'autoscroll' => _autoScroll,
+        _ => false,
+      };
+
+  IconData _barButtonIcon(String id) => switch (id) {
+        'bookmark' => _hasBookmarkAtCurrent ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+        'readalong' => Icons.graphic_eq_rounded,
+        'notes' => Icons.sticky_note_2_outlined,
+        'autoscroll' => Icons.swap_vert_rounded,
+        'chapters' => Icons.list_rounded,
+        _ => Icons.text_fields_rounded,
+      };
+
+  String _barButtonLabel(AppLocalizations l, String id) => switch (id) {
+        'bookmark' => l.bookmark,
+        'readalong' => l.readAlong,
+        'notes' => l.readerBarNotes,
+        'autoscroll' => l.readerAutoScroll,
+        'chapters' => l.chapters,
+        _ => l.readerSettings,
+      };
+
+  void _runBarButton(String id) {
+    switch (id) {
+      case 'chapters':
+        _showChapterList();
+      case 'bookmark':
+        _toggleBookmark();
+      case 'readalong':
+        _toggleReadAlong();
+      case 'notes':
+        _showAnnotationsSheet();
+      case 'autoscroll':
+        _toggleAutoScroll();
+      default:
+        _showSettingsSheet();
+    }
+  }
+
+  Widget _barButton(String id, Color fg, Color accent) {
+    final button = IconButton(
+      icon: Icon(_barButtonIcon(id), color: _barButtonLit(id) ? accent : fg),
+      // No tooltip on auto scroll: its long press opens the sleep timer.
+      tooltip: id == 'autoscroll' ? null : _barButtonLabel(AppLocalizations.of(context)!, id),
+      onPressed: () => _runBarButton(id),
+    );
+    if (id != 'autoscroll') return button;
+    return GestureDetector(onLongPress: _showAutoScrollSleepSheet, child: button);
+  }
+
+  Future<void> _updateTurnStyle(String style) async {
+    if (style == _turnStyle) return;
+    setState(() => _turnStyle = style);
+    _applyTurnStyle();
+    _refreshCurlShot();
+    await (await SharedPreferences.getInstance()).setString(_kTurnStyle, style);
+  }
+
   EpubTheme _buildTheme(_ReaderPalette p) {
     // No foregroundColor on purpose: all colors live in customCss. The
     // plugin's loadBook ends with updateTheme(background, foreground) WITHOUT
@@ -754,6 +942,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         // Contain keeps a narrowed picture's shape without resizing small
         // inline ones.
         'img': {'max-width': '100% !important', 'object-fit': 'contain'},
+        if (_paragraphSpacing >= 0)
+          'p': {'margin-top': '0 !important', 'margin-bottom': '${_paragraphSpacing}em !important'},
       },
     );
   }
@@ -859,6 +1049,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _routeAnim?.removeStatusListener(_onRouteAnim);
     PlayerSettings.settingsChanged.removeListener(_loadSkipSettings);
     _pendingTapAction?.cancel();
+    _curlShotTimer?.cancel();
+    _controlsHideTimer?.cancel();
     // Restore system UI when leaving
     _setFullscreen(false);
     super.dispose();
@@ -880,6 +1072,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   void _toggleControls() {
     _wakeScreenAgain();
     setState(() => _showControls = !_showControls);
+    _armControlsHide();
   }
 
   DateTime _lastReaderTap = DateTime.fromMillisecondsSinceEpoch(0);
@@ -887,13 +1080,14 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   DateTime? _highlightTapAt;
 
   /// Shared tap handler: left quarter = previous page, right quarter = next,
-  /// center = toggle controls. [frac] is the tap's x position 0..1 across the
-  /// page. Debounced so the touch and injected-click paths can't double-fire.
+  /// center = toggle controls, or whatever the tap grid says. [frac] and [fy]
+  /// are the tap's position 0..1 across and down the page. Debounced so the
+  /// touch and injected-click paths can't double-fire.
   /// A tap on a highlight lands here too, and the markClicked event only
   /// arrives from the WebView a beat later - so when the book has highlights
   /// the action commits after a short grace window that the highlight tap can
   /// cancel. No highlights, no added latency.
-  void _readerTapAt(double frac, String source) {
+  void _readerTapAt(double frac, double fy, String source) {
     _wakeScreenAgain();
     // While auto scroll runs, the in-WebView pad owns taps: pause, resume and
     // press-and-hold to stop. This Listener sees raw pointers regardless of the
@@ -909,10 +1103,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // In scroll mode the finger moves the page, so a tap only shows or hides
     // the controls. Edge taps turn pages during read along too; the page then
     // stops following the narration until you go back to it.
-    final action = _scroll
-        ? 'menu'
-        : (frac < 0.25 ? 'prev' : (frac > 0.75 ? 'next' : 'menu'));
-    debugPrint('[ReaderTap] frac=${frac.toStringAsFixed(2)} src=$source -> $action ctrl=${_epubController != null}');
+    final action = _scroll ? 'menu' : _tapZones.actionAt(frac, fy);
+    debugPrint('[ReaderTap] frac=${frac.toStringAsFixed(2)},${fy.toStringAsFixed(2)} src=$source -> $action ctrl=${_epubController != null}');
     final hasHighlights =
         _annotations.any((a) => a.type == AnnotationType.highlight);
     if (!hasHighlights) {
@@ -933,12 +1125,276 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   void _commitReaderTap(String action) {
     if (action == 'prev') {
       _userMoved('tap');
-      _epubController?.prev();
+      _turnPage(false);
     } else if (action == 'next') {
       _userMoved('tap');
-      _epubController?.next();
-    } else {
+      _turnPage(true);
+    } else if (action == 'menu') {
       _toggleControls();
+    }
+  }
+
+  /// Turns the page the way the reader has chosen. The slide plays inside
+  /// the page itself; the curl is drawn here, over pictures of the page.
+  /// [fresh] pictures the page as it is right now rather than trusting the
+  /// one taken when it came up (read along recolors it as it goes).
+  Future<void> _turnPage(bool forward, {bool fresh = false}) async {
+    final c = _epubController;
+    if (c == null) return;
+    if (_curlOn && _curling && _curlDragForward == null && !_curlDragReady) {
+      // Quick taps each get their own turn: this one hurries along, and the
+      // next plays right after it rather than jumping the page.
+      if (_pendingTurns.length < 3) _pendingTurns.add(forward);
+      _curl.hurry();
+      return;
+    }
+    if (!_curlOn || _curling) {
+      // A turn in the middle of a drag stops it and turns at once.
+      if (_curling) _stopCurl();
+      forward ? c.next() : c.prev();
+      return;
+    }
+    final run = ++_curlRun;
+    _curling = true;
+    try {
+      final shot = (fresh ? null : _readyCurlShot) ?? await _pictureOfPage();
+      if (run != _curlRun) return;
+      if (shot == null) {
+        forward ? c.next() : c.prev();
+        return;
+      }
+      final origin = _turnOrigin(forward);
+      if (forward || _revealsUnder) {
+        _curl.show(shot, origin: origin, grabY: origin.dy);
+        // A curl lifts the page where it was touched.
+        if (_turnNow == 'curl') _curl.follow(Offset(max(origin.dx, _curl.size.width * 0.75), origin.dy));
+        await WidgetsBinding.instance.endOfFrame;
+        if (run != _curlRun) return;
+        forward ? c.next() : c.prev();
+        await _settleCurl(away: true);
+      } else {
+        final prev = await _turnUnderCurl(c, forward: false, cover: shot, run: run);
+        if (prev == null || run != _curlRun) return;
+        _curl.show(prev, under: shot, away: 1, origin: origin, grabY: origin.dy);
+        await _settleCurl(away: false);
+      }
+    } finally {
+      if (run == _curlRun) _endCurl();
+    }
+  }
+
+  /// Plays a turn out, quickly when more are waiting behind it.
+  Future<void> _settleCurl({required bool away}) {
+    final settling = _curl.settle(away: away);
+    if (_pendingTurns.isNotEmpty) _curl.hurry();
+    return settling;
+  }
+
+  void _stopCurl() {
+    _curlRun++;
+    _pendingTurns.clear();
+    _endCurl();
+  }
+
+  void _endCurl() {
+    _curling = false;
+    _curlDragReady = false;
+    _curl.hide();
+    _queueCurlShot();
+    if (_pendingTurns.isNotEmpty) unawaited(_turnPage(_pendingTurns.removeAt(0), fresh: true));
+  }
+
+  /// Turns the real page under a picture of this one, then pictures the page
+  /// it came to. Null when the page didn't move (the start or end of the
+  /// book).
+  Future<ui.Image?> _turnUnderCurl(EpubController c,
+      {required bool forward, required ui.Image cover, required int run}) async {
+    _curl.show(cover);
+    await WidgetsBinding.instance.endOfFrame;
+    if (run != _curlRun) return null;
+    if (!await _turnUnderCover(c, forward, run)) return null;
+    return _pictureOfPage();
+  }
+
+  /// Turns the real page while a picture covers it, and waits for it to land.
+  Future<bool> _turnUnderCover(EpubController c, bool forward, int run) async {
+    final landed = _curlLanded = Completer<bool>();
+    forward ? c.next() : c.prev();
+    final moved = await landed.future.timeout(const Duration(milliseconds: 700), onTimeout: () => false);
+    if (identical(_curlLanded, landed)) _curlLanded = null;
+    if (!moved || run != _curlRun) return false;
+    // Let the page paint before it is pictured.
+    await Future.delayed(const Duration(milliseconds: 40));
+    return run == _curlRun;
+  }
+
+  Future<ui.Image?> _pictureOfPage() async {
+    final wc = _epubController?.webViewController;
+    if (wc == null) return null;
+    final started = DateTime.now();
+    try {
+      final bytes = await wc.takeScreenshot(
+          screenshotConfiguration: ScreenshotConfiguration(compressFormat: CompressFormat.JPEG, quality: 92));
+      if (bytes == null || bytes.isEmpty) return null;
+      final codec = await ui.instantiateImageCodec(bytes);
+      final image = (await codec.getNextFrame()).image;
+      debugPrint('[PageCurl] pictured the page in ${DateTime.now().difference(started).inMilliseconds}ms '
+          '(${image.width}x${image.height})');
+      return image;
+    } catch (e) {
+      debugPrint('[PageCurl] could not picture the page: $e');
+      return null;
+    }
+  }
+
+  ui.Image? get _readyCurlShot => _curlShotCfi != null && _curlShotCfi == _currentCfi ? _curlShot : null;
+
+  /// Pictures the page once it has settled, so the next curl starts at once.
+  void _queueCurlShot() {
+    if (!_curlOn) return;
+    _curlShotTimer?.cancel();
+    _curlShotTimer = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted || _curling || !_curlOn) return;
+      final cfi = _currentCfi;
+      final shot = await _pictureOfPage();
+      if (shot == null || !mounted || _curling || _currentCfi != cfi) return;
+      _curlShot = shot;
+      _curlShotCfi = cfi;
+    });
+  }
+
+  /// The page looks different now (a highlight, the theme, the font).
+  void _refreshCurlShot() {
+    _curlShotCfi = null;
+    _curlShot = null;
+    _queueCurlShot();
+  }
+
+  void _curlDragDown(PointerDownEvent e) {
+    if (_curlPointer != null) {
+      // A second finger: a pinch or a slip, not a turn.
+      if (_curlDragForward == null) _curlDownAt = null;
+      return;
+    }
+    _curlPointer = e.pointer;
+    _lastPointerAt = e.localPosition + _curlInset.topLeft;
+    _lastPointerTime = DateTime.now();
+    _curlDownAt = _curlOn && !_curling && _selectionText == null ? e.localPosition : null;
+    _curlDownTime = DateTime.now();
+    _curlDragForward = null;
+    _curlDragDecision = null;
+    _curlDragTrack.clear();
+  }
+
+  void _curlDragMove(PointerMoveEvent e) {
+    final down = _curlDownAt;
+    if (down == null || e.pointer != _curlPointer) return;
+    final d = e.localPosition - down;
+    final at = e.localPosition + _curlInset.topLeft;
+    if (_curlDragForward == null) {
+      if (d.dx.abs() < 14 || d.dx.abs() < d.dy.abs() * 1.2) {
+        if (d.dy.abs() > 14) _curlDownAt = null;
+        return;
+      }
+      // A finger that rested before moving was pressing to select text.
+      if (_selectionText != null || DateTime.now().difference(_curlDownTime) > const Duration(milliseconds: 400)) {
+        _curlDownAt = null;
+        return;
+      }
+      _curlDragForward = d.dx < 0;
+      _curlDragLast = at;
+      _curlDragStart = down + _curlInset.topLeft;
+      unawaited(_startCurlDrag(_curlDragForward!, down + _curlInset.topLeft));
+    }
+    _curlDragLast = at;
+    _curlDragTrack.add((e.timeStamp, at.dx));
+    if (_curlDragTrack.length > 6) _curlDragTrack.removeAt(0);
+    if (_curlDragReady) _curl.follow(_curlDragPoint(_curlDragForward!, at));
+  }
+
+  /// Pulling back, the fold follows the finger rather than the page's edge,
+  /// so the page comes in from the left instead of half of it at once. The
+  /// other drawn turns go by how far across the page the finger has come.
+  Offset _curlDragPoint(bool forward, Offset at) {
+    final w = _curl.size.width;
+    if (_turnNow == 'curl') return forward ? at : Offset(2 * at.dx - w, at.dy);
+    final away =
+        ((forward ? _curlDragStart.dx - at.dx : at.dx - _curlDragStart.dx) / (w * 0.8)).clamp(0.0, 1.0);
+    return Offset(w - 2 * w * away, at.dy);
+  }
+
+  Future<void> _startCurlDrag(bool forward, Offset start) async {
+    final c = _epubController;
+    if (c == null) return;
+    final run = ++_curlRun;
+    _curling = true;
+    _curlDragReady = false;
+    final shot = _readyCurlShot ?? await _pictureOfPage();
+    if (run != _curlRun) return;
+    if (shot == null) {
+      _endCurl();
+      forward ? c.next() : c.prev();
+      return;
+    }
+    if (forward || _revealsUnder) {
+      _curl.show(shot, grabY: start.dy, origin: start);
+      await WidgetsBinding.instance.endOfFrame;
+      if (run != _curlRun) return;
+      forward ? c.next() : c.prev();
+    } else {
+      final prev = await _turnUnderCurl(c, forward: false, cover: shot, run: run);
+      if (run != _curlRun) return;
+      if (prev == null) {
+        _endCurl();
+        return;
+      }
+      _curl.show(prev, under: shot, away: 1, grabY: start.dy, origin: start);
+    }
+    _curlDragReady = true;
+    final decided = _curlDragDecision;
+    if (decided != null) {
+      unawaited(_endCurlDrag(forward, decided, run));
+    } else {
+      _curl.follow(_curlDragPoint(forward, _curlDragLast));
+    }
+  }
+
+  /// True when the finger was curling the page, so it isn't also a tap.
+  bool _curlDragUp(PointerEvent e, {bool cancelled = false}) {
+    if (e.pointer == _curlPointer) _curlPointer = null;
+    final forward = _curlDragForward;
+    final down = _curlDownAt;
+    _curlDownAt = null;
+    if (forward == null || down == null) return false;
+    _curlDragForward = null;
+    final w = _curl.size.width;
+    final moved = _curlDragLast.dx - (down.dx + _curlInset.left);
+    var speed = 0.0;
+    if (_curlDragTrack.length > 1) {
+      final (t0, x0) = _curlDragTrack.first;
+      final (t1, x1) = _curlDragTrack.last;
+      final ms = (t1 - t0).inMicroseconds / 1000.0;
+      if (ms > 0) speed = (x1 - x0) / ms * 1000;
+    }
+    final complete = !cancelled &&
+        (forward ? (moved < -w * 0.18 || speed < -500) : (moved > w * 0.18 || speed > 500));
+    _curlDragDecision = complete;
+    if (_curlDragReady) unawaited(_endCurlDrag(forward, complete, _curlRun));
+    return true;
+  }
+
+  Future<void> _endCurlDrag(bool forward, bool complete, int run) async {
+    final c = _epubController;
+    _curlDragReady = false;
+    try {
+      // The picture is this page with the real page turned under it, except
+      // for a curl going back: then it is the page before, and the real page
+      // is already on it.
+      await _curl.settle(away: forward || _revealsUnder ? complete : !complete);
+      if (run != _curlRun || complete || c == null) return;
+      await _turnUnderCover(c, !forward, run);
+    } finally {
+      if (run == _curlRun) _endCurl();
     }
   }
 
@@ -952,16 +1408,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       callback: (args) {
         final frac = args.isNotEmpty ? (args[0] as num?)?.toDouble() : null;
         final src = args.length > 1 ? '${args[1]}' : 'js';
-        if (frac != null) _readerTapAt(frac.clamp(0.0, 1.0), 'js:$src');
+        final fy = args.length > 2 ? (args[2] as num?)?.toDouble() : null;
+        if (frac != null) _readerTapAt(frac.clamp(0.0, 1.0), (fy ?? 0.5).clamp(0.0, 1.0), 'js:$src');
       },
     );
     _epubController?.webViewController?.evaluateJavascript(source: '''
       (function(){
         if (window.__absorbTapInit) return;
         window.__absorbTapInit = true;
-        function send(frac, kind){
-          try { if(window.flutter_inappwebview){ window.flutter_inappwebview.callHandler('absorbReaderTap', frac, kind); return; } } catch(e){}
-          try { if(window.parent && window.parent.flutter_inappwebview){ window.parent.flutter_inappwebview.callHandler('absorbReaderTap', frac, kind); } } catch(e){}
+        function send(frac, kind, fy){
+          try { if(window.flutter_inappwebview){ window.flutter_inappwebview.callHandler('absorbReaderTap', frac, kind, fy); return; } } catch(e){}
+          try { if(window.parent && window.parent.flutter_inappwebview){ window.parent.flutter_inappwebview.callHandler('absorbReaderTap', frac, kind, fy); } } catch(e){}
         }
         function onTap(e, kind){
           try {
@@ -973,7 +1430,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
             var cx = (e.clientX != null) ? e.clientX
               : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : null);
             if (cx == null) return;
-            send(cx / w, kind);
+            var h = win.innerHeight || window.innerHeight;
+            var cy = (e.clientY != null) ? e.clientY
+              : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : null);
+            send(cx / w, kind, h && cy != null ? cy / h : 0.5);
           } catch(err){}
         }
         function attach(doc){
@@ -985,13 +1445,16 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               if(e.touches.length===1){_tsx=e.touches[0].clientX;_tsy=e.touches[0].clientY;_dragged=false;}
               else{_tsx=null;}
             },{passive:true});
+            // In scroll mode nothing moves sideways, and a listener that can
+            // cancel makes every scroll wait on this script.
+            var scrolled=document.body.classList.contains('absorb-scrolled');
             doc.addEventListener('touchmove',function(e){
               if(_tsx==null)return;
               var dx=Math.abs(e.touches[0].clientX-_tsx),dy=Math.abs(e.touches[0].clientY-_tsy);
               if(dx>10||dy>10)_dragged=true;
               // Swallow horizontal drags so epub.js can't partially scroll the column.
-              if(dx>dy)e.preventDefault();
-            },{passive:false});
+              if(dx>dy&&!scrolled)e.preventDefault();
+            },{passive:scrolled});
             function onTapGuarded(e,kind){
               if(_dragged){ if(kind==='touchend')_dragged=false; return; }
               onTap(e,kind);
@@ -1289,6 +1752,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// painted synced highlights a few lines away from their own text. The marks
   /// keep live DOM ranges, so re-rendering the panes puts every box back.
   void _repaintHighlightMarks() {
+    _refreshCurlShot();
     if (!_annotations.any((a) => a.type == AnnotationType.highlight)) return;
     _epubController?.webViewController?.evaluateJavascript(source: '''
       try {
@@ -1792,6 +2256,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // Live preview for the side-margin slider so the WebView only re-paginates
     // when the drag ends, not on every step.
     int hPreview = _marginH;
+    var paraPreview = _paragraphSpacing;
+    Widget section(String title) => Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 8),
+          child: Text(title, style: tt.labelLarge?.copyWith(color: cs.primary, fontWeight: FontWeight.w600)),
+        );
     var sheetRaMode = LyricsService.instance.readAlongMode;
     var sheetRaColor = LyricsService.instance.readAlongColor;
     showModalBottomSheet(
@@ -1833,7 +2302,31 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 ),
                 const SizedBox(height: 16),
                 Text(l.readerSettings, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 20),
+                const SizedBox(height: 4),
+
+                section(l.readerSectionText),
+                // Font — opens a picker with built-in + downloadable fonts.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () async {
+                    await _showFontSheet();
+                    setSheetState(() {});
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(children: [
+                      Icon(Icons.font_download_outlined, size: 20, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      Text(l.readerFont, style: tt.bodyMedium),
+                      const Spacer(),
+                      Text(_font.label,
+                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 4),
 
                 // Font size
                 Row(children: [
@@ -1879,6 +2372,25 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 ),
                 const SizedBox(height: 8),
 
+                // Paragraph spacing; all the way left keeps the book's own.
+                Row(children: [
+                  Icon(Icons.segment_rounded, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Text(l.readerParagraphSpacing, style: tt.bodyMedium),
+                  const Spacer(),
+                  Text(paraPreview < 0 ? l.readerParagraphSpacingBook : _emLabel(paraPreview),
+                      style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                ]),
+                Slider(
+                  value: paraPreview < 0 ? -0.25 : paraPreview,
+                  min: -0.25,
+                  max: 2.0,
+                  divisions: 9,
+                  onChanged: (v) => setSheetState(() => paraPreview = v < 0 ? -1 : v),
+                  onChangeEnd: (v) => _updateParagraphSpacing(v < 0 ? -1 : v),
+                ),
+                const SizedBox(height: 8),
+
                 // Text alignment
                 Row(children: [
                   Icon(Icons.format_align_left_rounded, size: 20, color: cs.onSurfaceVariant),
@@ -1901,6 +2413,29 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 ]),
                 const SizedBox(height: 8),
 
+                // Theme (background + text colors)
+                Row(children: [
+                  Icon(Icons.palette_outlined, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Text(l.readerTheme, style: tt.bodyMedium),
+                ]),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final p in _kReaderPalettes) ...[
+                      _themeSwatch(
+                        p,
+                        (_themeId.isEmpty ? _resolvePalette(context).id : _themeId) == p.id,
+                        () { setSheetState(() {}); _updateReaderTheme(p.id); },
+                        cs,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                section(l.readerSectionPage),
                 // Side margins (left + right)
                 Row(children: [
                   Icon(Icons.padding_rounded, size: 20, color: cs.onSurfaceVariant),
@@ -1950,19 +2485,6 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     _updateScroll(v);
                   },
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l.readerLogReading, style: tt.bodyMedium),
-                  subtitle: Text(l.readerLogReadingHint,
-                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                  value: _logReading,
-                  onChanged: (v) {
-                    _setLogReading(v);
-                    setSheetState(() {});
-                  },
-                ),
-                const SizedBox(height: 4),
-
                 // Page layout — Auto shows two pages on wide screens (tablets).
                 Row(children: [
                   Icon(Icons.auto_stories_rounded, size: 20, color: cs.onSurfaceVariant),
@@ -1989,6 +2511,57 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                           },
                   ),
                 ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Icon(Icons.swipe_left_rounded, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Text(l.readerPageTurn, style: tt.bodyMedium),
+                ]),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final style in const ['none', 'slide', ...kDrawnTurnStyles])
+                      ChoiceChip(
+                        label: Text(_turnStyleLabel(l, style)),
+                        selected: _turnStyle == style,
+                        showCheckmark: false,
+                        // A scrolling book has no pages to turn.
+                        onSelected: _scroll
+                            ? null
+                            : (_) {
+                                setSheetState(() {});
+                                _updateTurnStyle(style);
+                              },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  // A scrolling book shows the controls on any tap.
+                  onTap: _scroll
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          _editTapZones();
+                        },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(children: [
+                      Icon(Icons.touch_app_outlined, size: 20, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      Text(l.readerTapZones,
+                          style: tt.bodyMedium?.copyWith(
+                              color: _scroll ? cs.onSurface.withValues(alpha: 0.38) : null)),
+                      const Spacer(),
+                      Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant),
+                    ]),
+                  ),
+                ),
+
+                section(l.readerSectionTopBar),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(l.readerPinTopBar, style: tt.bodyMedium),
@@ -2036,60 +2609,75 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 ),
                 const SizedBox(height: 8),
 
-                // Theme (background + text colors)
+                const SizedBox(height: 8),
                 Row(children: [
-                  Icon(Icons.palette_outlined, size: 20, color: cs.onSurfaceVariant),
+                  Icon(Icons.timer_outlined, size: 20, color: cs.onSurfaceVariant),
                   const SizedBox(width: 12),
-                  Text(l.readerTheme, style: tt.bodyMedium),
+                  Text(l.readerHideControls, style: tt.bodyMedium),
                 ]),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    for (final p in _kReaderPalettes) ...[
-                      _themeSwatch(
-                        p,
-                        (_themeId.isEmpty ? _resolvePalette(context).id : _themeId) == p.id,
-                        () { setSheetState(() {}); _updateReaderTheme(p.id); },
-                        cs,
-                      ),
-                      const SizedBox(width: 12),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<int>(
+                    segments: [
+                      ButtonSegment(value: 0, label: Text(l.readerHideControlsNever)),
+                      for (final secs in const [3, 5, 10])
+                        ButtonSegment(value: secs, label: Text(l.readerHideControlsAfter(secs))),
                     ],
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Font — opens a picker with built-in + downloadable fonts.
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () async {
-                    await _showFontSheet();
-                    setSheetState(() {});
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(children: [
-                      Icon(Icons.font_download_outlined, size: 20, color: cs.onSurfaceVariant),
-                      const SizedBox(width: 12),
-                      Text(l.readerFont, style: tt.bodyMedium),
-                      const Spacer(),
-                      Text(_font.label,
-                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 4),
-                      Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant),
-                    ]),
+                    selected: {_controlsHideAfter},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (sel) {
+                      setSheetState(() {});
+                      _updateControlsHideAfter(sel.first);
+                    },
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+
+                section(l.readerSectionControls),
+
+                // Volume keys turn pages (normal: up = previous, down = next)
+                Row(children: [
+                  Icon(Icons.swap_vert_rounded, size: 20, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l.readerVolumeNav, style: tt.bodyMedium)),
+                ]),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(value: 'off', label: Text(l.readerVolumeNavOff)),
+                      ButtonSegment(value: 'normal', label: Text(l.readerVolumeNavNormal)),
+                      ButtonSegment(value: 'mirrored', label: Text(l.readerVolumeNavMirrored)),
+                    ],
+                    selected: {_volumeNavMode},
+                    onSelectionChanged: (sel) {
+                      final v = sel.first;
+                      setSheetState(() {});
+                      setState(() => _volumeNavMode = v);
+                      PlayerSettings.setEreaderVolumeNav(v);
+                    },
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  ),
+                ),
+                if (_volumeNavMode != 'off')
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l.readerVolumeNavWhilePlaying, style: tt.bodyMedium),
+                    value: _volumeNavWhilePlaying,
+                    onChanged: (v) {
+                      setSheetState(() {});
+                      setState(() => _volumeNavWhilePlaying = v);
+                      PlayerSettings.setEreaderVolumeNavWhilePlaying(v);
+                    },
+                  ),
 
                 // Read along, mirrored from the transcription settings so the
                 // reader can change them without leaving the book.
                 if (_transcriptionOn || _useNarration) ...[
-                  Row(children: [
-                    Icon(Icons.graphic_eq_rounded, size: 20, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(l.readAlong, style: tt.bodyMedium)),
-                  ]),
-                  const SizedBox(height: 8),
+                  section(l.readAlong),
                   // E-ink always follows by sentence, and an EPUB's own
                   // narration is timed by the sentence, so the choice is hidden.
                   if (!PlayerSettings.einkMode && !_useNarration) ...[
@@ -2136,43 +2724,19 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   const SizedBox(height: 16),
                 ],
 
-                // Volume keys turn pages (normal: up = previous, down = next)
-                Row(children: [
-                  Icon(Icons.swap_vert_rounded, size: 20, color: cs.onSurfaceVariant),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(l.readerVolumeNav, style: tt.bodyMedium)),
-                ]),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<String>(
-                    showSelectedIcon: false,
-                    segments: [
-                      ButtonSegment(value: 'off', label: Text(l.readerVolumeNavOff)),
-                      ButtonSegment(value: 'normal', label: Text(l.readerVolumeNavNormal)),
-                      ButtonSegment(value: 'mirrored', label: Text(l.readerVolumeNavMirrored)),
-                    ],
-                    selected: {_volumeNavMode},
-                    onSelectionChanged: (sel) {
-                      final v = sel.first;
-                      setSheetState(() {});
-                      setState(() => _volumeNavMode = v);
-                      PlayerSettings.setEreaderVolumeNav(v);
-                    },
-                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                  ),
+                section(l.readerSectionStats),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l.readerLogReading, style: tt.bodyMedium),
+                  subtitle: Text(l.readerLogReadingHint,
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  value: _logReading,
+                  onChanged: (v) {
+                    _setLogReading(v);
+                    setSheetState(() {});
+                  },
                 ),
-                if (_volumeNavMode != 'off')
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(l.readerVolumeNavWhilePlaying, style: tt.bodyMedium),
-                    value: _volumeNavWhilePlaying,
-                    onChanged: (v) {
-                      setSheetState(() {});
-                      setState(() => _volumeNavWhilePlaying = v);
-                      PlayerSettings.setEreaderVolumeNavWhilePlaying(v);
-                    },
-                  ),
+
               ],
             ),
           ),
@@ -2181,7 +2745,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         );
         },
       ),
-    );
+    ).whenComplete(_refreshCurlShot);
   }
 
   static const double _autoScrollMin = 6;
@@ -3976,11 +4540,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       } else if (where == 'after' || where == 'before') {
         _narrationTurnAt = now;
         _readAlongTurnPending = now;
-        if (where == 'after') {
-          _epubController?.next();
-        } else {
-          _epubController?.prev();
-        }
+        unawaited(_turnPage(where == 'after', fresh: true));
       } else if (where == 'missing' && !identical(_narrationWentTo, clip)) {
         _narrationWentTo = clip;
         _narrationTurnAt = now;
@@ -4860,11 +5420,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // position jump silently did nothing on some devices, and a target more
     // than a page away simply takes another step on the next tick.
     debugPrint('[ReadAlong] turning ${back ? 'back' : 'forward'}: $why');
-    if (back) {
-      _epubController?.prev();
-    } else {
-      _epubController?.next();
-    }
+    unawaited(_turnPage(!back, fresh: true));
   }
 
   /// Find the line's text in the rendered pages and move the follow-coloring
@@ -5508,32 +6064,74 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         ? (_chapterPageTotal > 0 ? '${(chapterProgress * 100).round()}%' : '')
         : '${(bookProgress * 100).toStringAsFixed(1)}%';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            widget.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: fg,
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
+          Row(
+            children: [
+              SizedBox(
+                width: 40,
+                height: 36,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 22,
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  icon: Icon(Icons.arrow_back_rounded, color: fg),
+                  onPressed: _handleClose,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 40,
+                height: 36,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 22,
+                  tooltip: AppLocalizations.of(context)!.readerTooltipSearch,
+                  icon: Icon(Icons.search_rounded, color: fg),
+                  onPressed: _openSearchScreen,
+                ),
+              ),
+            ],
           ),
           // Both bars fit in the height one bar takes, so a pinned page
           // doesn't change size and re-paginate when this is switched.
-          SizedBox(height: both ? 4 : 8),
-          if (both) ...[
-            bar(chapterProgress, 3),
-            const SizedBox(height: 2),
-            bar(bookProgress, 2),
-          ] else
-            bar(chapterOnly ? chapterProgress : bookProgress, 3),
-          const SizedBox(height: 4),
-          Row(
+          SizedBox(height: both ? 2 : 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              children: [
+                if (both) ...[
+                  bar(chapterProgress, 3),
+                  const SizedBox(height: 2),
+                  bar(bookProgress, 2),
+                ] else
+                  bar(chapterOnly ? chapterProgress : bookProgress, 3),
+                const SizedBox(height: 4),
+                _topBarDetails(fgDim, percent),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _topBarDetails(Color fgDim, String percent) {
+    return Row(
             children: [
               if (_chapterPageTotal > 0)
                 Text(
@@ -5557,10 +6155,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 style: TextStyle(color: fgDim, fontSize: 11),
               ),
             ],
-          ),
-        ],
-      ),
-    );
+          );
   }
 
   /// The page on its own, or under the always-visible bar when pinned. The
@@ -5616,30 +6211,64 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final frozen = _frozenViewerPadding();
     // With the bar pinned above the page, the bar already clears the cutout.
     final padding = _pinTop ? frozen.copyWith(top: 0) : frozen;
-    return Padding(
-      padding: padding,
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: _marginH.toDouble()),
-        child: LayoutBuilder(
-          builder: (ctx, cons) => Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (e) {
-              _ptrDownX = e.localPosition.dx;
-              _ptrDownY = e.localPosition.dy;
-            },
-            onPointerUp: (e) {
-              final w = cons.maxWidth;
-              final dx = _ptrDownX != null ? (e.localPosition.dx - _ptrDownX!).abs() : 0.0;
-              final dy = _ptrDownY != null ? (e.localPosition.dy - _ptrDownY!).abs() : 0.0;
-              _ptrDownX = null;
-              _ptrDownY = null;
-              if (dx > 16 || dy > 16 || w <= 0) return;
-              _readerTapAt(e.localPosition.dx / w, 'flutterPtr');
-            },
-            child: SizedBox.expand(child: viewer),
+    // The curl covers the whole page, margins too; the picture sits where
+    // the web view does.
+    _curlInset = padding + EdgeInsets.symmetric(horizontal: _marginH.toDouble());
+    return Stack(
+      children: [
+        Padding(
+          padding: padding,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: _marginH.toDouble()),
+            child: LayoutBuilder(
+              builder: (ctx, cons) => Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (e) {
+                  _ptrDownX = e.localPosition.dx;
+                  _ptrDownY = e.localPosition.dy;
+                  _curlDragDown(e);
+                },
+                onPointerMove: _curlDragMove,
+                onPointerCancel: (e) => _curlDragUp(e, cancelled: true),
+                onPointerUp: (e) {
+                  final w = cons.maxWidth;
+                  final dx = _ptrDownX != null ? (e.localPosition.dx - _ptrDownX!).abs() : 0.0;
+                  final dy = _ptrDownY != null ? (e.localPosition.dy - _ptrDownY!).abs() : 0.0;
+                  _ptrDownX = null;
+                  _ptrDownY = null;
+                  if (_curlDragUp(e)) return;
+                  if (dx > 16 || dy > 16 || w <= 0) return;
+                  final h = cons.maxHeight;
+                  _readerTapAt(e.localPosition.dx / w, h > 0 ? e.localPosition.dy / h : 0.5, 'flutterPtr');
+                },
+                child: SizedBox.expand(child: viewer),
+              ),
+            ),
           ),
         ),
-      ),
+        Positioned.fill(
+          child: PageCurlLayer(
+            controller: _curl,
+            pageColor: _resolvePalette(context).bgColor,
+            style: kDrawnTurnStyles.contains(_turnNow) ? _turnNow : 'curl',
+            inset: _curlInset,
+          ),
+        ),
+        if (_editingTapZones)
+          Positioned.fill(
+            child: Padding(
+              padding: _curlInset,
+              child: TapZonesEditor(
+                zones: _tapZones,
+                onChanged: (z) {
+                  setState(() => _tapZones = z);
+                  unawaited(z.save());
+                },
+                onDone: () => setState(() => _editingTapZones = false),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -6451,6 +7080,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   _loadAnnotations().then((_) => _restoreHighlights());
                   _setupPageInfoHandler();
                   _setupTapHandler();
+                  _applyTurnStyle();
+                  _queueCurlShot();
                   _setupAutoScrollHandlers();
                   _setupFontInjector();
                   _applyFontFace();
@@ -6481,6 +7112,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               },
               onRelocated: (value) {
                 if (!mounted) return;
+                final landed = _curlLanded;
+                if (landed != null && !landed.isCompleted) landed.complete(true);
                 _readAlongTurnPending = null;
                 // Ignore relocations while backgrounded: the recents/resize
                 // re-paginate fires a stray one that would save the wrong page.
@@ -6491,6 +7124,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 }
                 _currentCfi = value.startCfi;
                 _firstShownCfi ??= value.startCfi;
+                _queueCurlShot();
                 _updateBookmarkState();
                 _repaintHighlightMarks();
                 // The start page shown while waiting to jump to another app's
@@ -6540,7 +7174,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   }
                   return;
                 }
-                _readerTapAt(x, 'touch');
+                _readerTapAt(x, y, 'touch');
               },
           ))),
 
@@ -6553,7 +7187,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               duration: const Duration(milliseconds: 200),
               child: IgnorePointer(
                 ignoring: !_showControls,
-                child: Container(
+                child: _controlsTouchGuard(Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
@@ -6570,7 +7204,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     bottom: false,
                     child: _buildTopBarContent(fg, fgDim, accent),
                   ),
-                ),
+                )),
               ),
             ),
 
@@ -6582,7 +7216,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               duration: const Duration(milliseconds: 200),
               child: IgnorePointer(
                 ignoring: !_showControls,
-                child: Container(
+                child: _controlsTouchGuard(Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
@@ -6624,79 +7258,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                           // the buttons' 48dp instead of overflowing the row.
                           Row(
                             children: [
-                              Expanded(
-                                child: IconButton(
-                                  icon: Icon(Icons.arrow_back_rounded, color: fg),
-                                  onPressed: _handleClose,
-                                ),
-                              ),
-                              Expanded(
-                                child: IconButton(
-                                  icon: Icon(
-                                    _hasBookmarkAtCurrent
-                                        ? Icons.bookmark_rounded
-                                        : Icons.bookmark_border_rounded,
-                                    color: _hasBookmarkAtCurrent ? accent : fg,
-                                  ),
-                                  onPressed: _toggleBookmark,
-                                ),
-                              ),
-                              Expanded(
-                                child: IconButton(
-                                  icon: Icon(Icons.search_rounded, color: fg),
-                                  tooltip: AppLocalizations.of(context)!.readerTooltipSearch,
-                                  onPressed: _openSearchScreen,
-                                ),
-                              ),
-                              if (_transcriptionOn || _useNarration)
-                                Expanded(
-                                  child: IconButton(
-                                    icon: Icon(Icons.graphic_eq_rounded,
-                                        color: _readAlongOn ? accent : fg),
-                                    tooltip: AppLocalizations.of(context)!.readAlong,
-                                    onPressed: _toggleReadAlong,
-                                  ),
-                                ),
-                              Expanded(
-                                child: IconButton(
-                                  icon: Icon(Icons.sticky_note_2_outlined, color: fg),
-                                  onPressed: _showAnnotationsSheet,
-                                ),
-                              ),
-                              // No tooltip here: its long press would take the
-                              // gesture the sleep timer sheet needs.
-                              Expanded(
-                                child: GestureDetector(
-                                  onLongPress: _showAutoScrollSleepSheet,
-                                  child: IconButton(
-                                    icon: Icon(
-                                      Icons.swap_vert_rounded,
-                                      color: _autoScroll ? accent : fg,
-                                    ),
-                                    onPressed: _toggleAutoScroll,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: IconButton(
-                                  icon: Icon(Icons.text_fields_rounded, color: fg),
-                                  onPressed: _showSettingsSheet,
-                                ),
-                              ),
-                              if (_chapters.isNotEmpty)
-                                Expanded(
-                                  child: IconButton(
-                                    icon: Icon(Icons.list_rounded, color: fg),
-                                    onPressed: _showChapterList,
-                                  ),
-                                ),
+                              for (final id in const ['bookmark', 'readalong', 'notes', 'autoscroll', 'settings', 'chapters'])
+                                if (_barButtonShown(id)) Expanded(child: _barButton(id, fg, accent)),
                             ],
                           ),
                         ],
                       ),
                     ),
                   ),
-                ),
+                )),
               ),
             ),
           ),

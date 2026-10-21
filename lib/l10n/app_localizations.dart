@@ -17085,6 +17085,150 @@ abstract class AppLocalizations {
   /// **'Both'**
   String get readerTopBarProgressBoth;
 
+  /// No description provided for @readerSectionText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get readerSectionText;
+
+  /// No description provided for @readerSectionPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Page'**
+  String get readerSectionPage;
+
+  /// No description provided for @readerSectionTopBar.
+  ///
+  /// In en, this message translates to:
+  /// **'Top bar and screen'**
+  String get readerSectionTopBar;
+
+  /// No description provided for @readerSectionControls.
+  ///
+  /// In en, this message translates to:
+  /// **'Controls'**
+  String get readerSectionControls;
+
+  /// No description provided for @readerSectionStats.
+  ///
+  /// In en, this message translates to:
+  /// **'Stats'**
+  String get readerSectionStats;
+
+  /// No description provided for @readerParagraphSpacing.
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph spacing'**
+  String get readerParagraphSpacing;
+
+  /// No description provided for @readerParagraphSpacingBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Book\'s own'**
+  String get readerParagraphSpacingBook;
+
+  /// No description provided for @readerTapZones.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap zones'**
+  String get readerTapZones;
+
+  /// No description provided for @readerTapZonesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag the lines to resize the squares. Tap a square to change what it does, or start from a layout.'**
+  String get readerTapZonesHint;
+
+  /// No description provided for @readerTapPrev.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous page'**
+  String get readerTapPrev;
+
+  /// No description provided for @readerTapNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next page'**
+  String get readerTapNext;
+
+  /// No description provided for @readerTapMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Show controls'**
+  String get readerTapMenu;
+
+  /// No description provided for @readerTapNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing'**
+  String get readerTapNothing;
+
+  /// No description provided for @readerTapKeepMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'One square has to show the controls'**
+  String get readerTapKeepMenu;
+
+  /// No description provided for @readerHideControls.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide controls after'**
+  String get readerHideControls;
+
+  /// No description provided for @readerHideControlsNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get readerHideControlsNever;
+
+  /// No description provided for @readerBarNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes and highlights'**
+  String get readerBarNotes;
+
+  /// No description provided for @readerHideControlsAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds}s'**
+  String readerHideControlsAfter(int seconds);
+
+  /// No description provided for @playerDownloadStreamingInstead.
+  ///
+  /// In en, this message translates to:
+  /// **'This download couldn\'t be played, so it\'s streaming from the server. Downloading it again may fix it.'**
+  String get playerDownloadStreamingInstead;
+
+  /// No description provided for @readerPageTurn.
+  ///
+  /// In en, this message translates to:
+  /// **'Page turn'**
+  String get readerPageTurn;
+
+  /// No description provided for @readerPageTurnNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get readerPageTurnNone;
+
+  /// No description provided for @readerPageTurnSlide.
+  ///
+  /// In en, this message translates to:
+  /// **'Slide'**
+  String get readerPageTurnSlide;
+
+  /// No description provided for @readerPageTurnCurl.
+  ///
+  /// In en, this message translates to:
+  /// **'Curl'**
+  String get readerPageTurnCurl;
+
+  /// No description provided for @readerPageTurnRipple.
+  ///
+  /// In en, this message translates to:
+  /// **'Ripple'**
+  String get readerPageTurnRipple;
+
   /// No description provided for @readerScrollMode.
   ///
   /// In en, this message translates to:
