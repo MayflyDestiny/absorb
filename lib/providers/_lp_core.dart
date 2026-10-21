@@ -218,11 +218,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           }
         }
         if (name != null && name.isNotEmpty) {
-          basicLog('[AutoDL] Resolved $id -> $kind "$name"');
+          debugPrint('[AutoDL] Resolved $id -> $kind "$name"');
           _rememberRollingDownloadSource(id, name: name, kind: kind);
           resolvedAny = true;
         } else {
-          verboseLog(
+          debugPrint(
               '[AutoDL] Unresolved $id (stored kind: ${_rollingDownloadSourceNames[id]?['kind'] ?? 'none'}) - no playlist/collection/series/item answered');
         }
       }
@@ -322,7 +322,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final reachable =
           await _pingActiveServerWithFallback(const Duration(seconds: 5)) != null;
       if (!reachable) {
-        basicLog('[Library] Manual offline off but server unreachable — staying offline');
+        debugPrint('[Library] Manual offline off but server unreachable — staying offline');
         _networkOffline = true;
         // Mirror: the player's offline flag is `known || manual`. With manual
         // now off, only this keeps it offline — otherwise the UI shows the
@@ -342,7 +342,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // snapshot and navigation opens back up to the whole book.
       AudioPlayerService().setKnownOffline(false);
       if (_api != null) {
-        verboseLog('[Library] Manual offline off — flushing pending syncs');
+        debugPrint('[Library] Manual offline off — flushing pending syncs');
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
         LocalSessionService().flushPending(api: _api!);
@@ -452,7 +452,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // force-close. No-op if it's already loaded.
       unawaited(_auth?.ensureUserInfoLoaded() ?? Future.value());
       if (_api != null) {
-        verboseLog('[Library] Back online — flushing pending syncs');
+        debugPrint('[Library] Back online — flushing pending syncs');
         AudioPlayerService().resetServerSyncBackoff();
         ProgressSyncService().flushPendingSync(api: _api!);
         ProgressSyncService().flushOfflineListeningTime(api: _api!);
@@ -821,7 +821,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (_resetItems.contains(itemId)) return null;
     final data = _progressMap[itemId];
     if (_locallyFinishedItems.contains(itemId)) {
-      verboseLog('[Progress] getProgressData($itemId) — forcing isFinished from local override (server isFinished=${data?['isFinished']})');
+      debugPrint('[Progress] getProgressData($itemId) — forcing isFinished from local override (server isFinished=${data?['isFinished']})');
       return {...?data, 'isFinished': true};
     }
     return data;
@@ -1444,7 +1444,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         customHeaders: auth.customHeaders,
       ).timeout(const Duration(seconds: 6), onTimeout: () => false);
       if (localReachable) {
-        verboseLog('[Library] Local server ping succeeded — going online');
+        debugPrint('[Library] Local server ping succeeded — going online');
         await auth.checkLocalServer();
         _offlinePingInterval = _offlinePingBase;
         _stopServerPingTimer();
@@ -1463,7 +1463,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       customHeaders: auth.customHeaders,
     );
     if (reachable) {
-      verboseLog('[Library] Server ping succeeded — going online');
+      debugPrint('[Library] Server ping succeeded — going online');
       _offlinePingInterval = _offlinePingBase;
       _stopServerPingTimer();
       setNetworkOffline(false);
@@ -1473,7 +1473,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // forever.
       final next = _offlinePingInterval * 2;
       _offlinePingInterval = next > _offlinePingMax ? _offlinePingMax : next;
-      verboseLog('[Library] Server ping failed — backoff to '
+      debugPrint('[Library] Server ping failed — backoff to '
           '${_offlinePingInterval.inSeconds}s');
       _scheduleServerPing();
     }
@@ -1582,15 +1582,15 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       } else {
         _localProbeFailures++;
         if (_localProbeFailures >= _localProbeFailuresToFlip) {
-          verboseLog('[Library] Local probe failed ${_localProbeFailures}x — switching to remote (${probe.raw ?? probe.failure.name})');
+          debugPrint('[Library] Local probe failed ${_localProbeFailures}x — switching to remote (${probe.raw ?? probe.failure.name})');
           auth.clearLocalOverride();
           _localProbeFailures = 0;
         } else {
-          verboseLog('[Library] Local probe miss $_localProbeFailures/$_localProbeFailuresToFlip (${probe.raw ?? probe.failure.name})');
+          debugPrint('[Library] Local probe miss $_localProbeFailures/$_localProbeFailuresToFlip (${probe.raw ?? probe.failure.name})');
         }
       }
     } else if (reachable) {
-      verboseLog('[Library] Local probe succeeded — switching to local');
+      debugPrint('[Library] Local probe succeeded — switching to local');
       await auth.checkLocalServer();
       _localLastReachableAt = DateTime.now();
       _localProbeFailures = 0;
@@ -1603,9 +1603,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         final gap = _localProbeInterval * (1 << steps.clamp(0, 4));
         final wait = gap < _remoteProbeMaxGap ? gap : _remoteProbeMaxGap;
         _nextRemoteProbeAt = DateTime.now().add(wait);
-        verboseLog('[Library] Local probe miss while on remote (${probe.raw ?? probe.failure.name}), next in ${wait.inSeconds}s');
+        debugPrint('[Library] Local probe miss while on remote (${probe.raw ?? probe.failure.name}), next in ${wait.inSeconds}s');
       } else {
-        verboseLog('[Library] Local probe miss while on remote (${probe.raw ?? probe.failure.name})');
+        debugPrint('[Library] Local probe miss while on remote (${probe.raw ?? probe.failure.name})');
       }
     }
   }
@@ -1620,7 +1620,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   void _startHealthCheckTimer() {
     _healthCheckTimer?.cancel();
     if (_isBackgrounded || _readerQuiet || PlayerSettings.einkMode) return;
-    verboseLog('[Library] Health check timer started (60s ping while online)');
+    debugPrint('[Library] Health check timer started (60s ping while online)');
     _healthCheckTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
       if (_networkOffline || _manualOffline || !_deviceHasConnectivity) return;
       if ((_auth?.activeServerUrl ?? _auth?.serverUrl ?? '').isEmpty) return;
@@ -1638,7 +1638,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           _healthCheckMisses++;
         }
         if (_healthCheckMisses >= 2) {
-          basicLog('[Library] Health check failed twice — server unreachable, going offline');
+          debugPrint('[Library] Health check failed twice — server unreachable, going offline');
           _healthCheckMisses = 0;
           setNetworkOffline(true, reason: 'server');
         }
@@ -1911,7 +1911,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     // Never connected this session (loadAccount bailed before wiring the
     // socket). Callbacks AND credentials are both missing, so wire everything
     // and do a full connect() — there is nothing to softReconnect.
-    basicLog('[Library] Back online — establishing socket for the first time');
+    debugPrint('[Library] Back online — establishing socket for the first time');
     _wireSocketCallbacks();
     socket.connect(url, token, customHeaders: auth.customHeaders);
   }
@@ -1939,13 +1939,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           customHeaders: auth.customHeaders,
         ).timeout(const Duration(seconds: 10), onTimeout: () => false);
         if (reachable) {
-          basicLog('[Library] Socket reconnect failed but server pings OK — reconnecting socket');
+          debugPrint('[Library] Socket reconnect failed but server pings OK — reconnecting socket');
           _softReconnectSocket();
           return;
         }
       }
     }
-    basicLog('[Library] Socket reconnection failed — going offline');
+    debugPrint('[Library] Socket reconnection failed — going offline');
     _goOffline();
   }
 
@@ -1976,10 +1976,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // completed against the server), so a concurrent ping timeout is
       // congestion, not an outage. Stay online — the 60s health check keeps
       // verifying.
-      verboseLog('[Library] Server answered recently — deferring offline flip');
+      debugPrint('[Library] Server answered recently — deferring offline flip');
       return;
     }
-    basicLog('[Library] Network error — going offline');
+    debugPrint('[Library] Network error — going offline');
     setNetworkOffline(true, reason: 'server');
   }
 
@@ -2056,7 +2056,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       duration: duration,
       overridePending: true,
     );
-    verboseLog('[Sync] Stored newer server position for $key: '
+    debugPrint('[Sync] Stored newer server position for $key: '
         '${localTime?.toStringAsFixed(1) ?? '-'}s -> ${serverTime.toStringAsFixed(1)}s');
   }
 
@@ -2468,6 +2468,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
         loadPlaylists();
         loadCollections();
+        // Move a narrated EPUB that's being listened to from Continue
+        // Reading to Continue Listening (server only sees the ebook).
+        _narratedToContinueListening();
       } else {
         // A null response is a failed fetch, not "no shelves"; keep whatever is
         // on screen and give the server one short window to recover before we
@@ -2642,6 +2645,68 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     _personalizedSections = merged;
+    _narratedToContinueListening();
+  }
+
+  /// Audiobookshelf sees only an ebook in an EPUB that reads itself aloud, so
+  /// one being listened to comes back under Continue Reading. Absorb plays it
+  /// as an audiobook, so while it has listening progress it moves to Continue
+  /// Listening. One only being read stays where it is.
+  void _narratedToContinueListening() {
+    final api = _api;
+    if (api == null || api.isBookOrbit || isPodcastLibrary) return;
+    final sections = _personalizedSections;
+    final ri = sections.indexWhere((s) => s is Map<String, dynamic> && s['id'] == 'continue-reading');
+    if (ri < 0) return;
+    final reading = sections[ri] as Map<String, dynamic>;
+    final keep = <dynamic>[];
+    final moved = <Map<String, dynamic>>[];
+    for (final e in (reading['entities'] as List<dynamic>? ?? const [])) {
+      final id = e is Map<String, dynamic> ? e['id'] as String? : null;
+      final listened = id != null &&
+          NarratedBooks.contains(id) &&
+          _progressMap[id]?['isFinished'] != true &&
+          (((_progressMap[id]?['currentTime'] as num?) ?? 0) > 0 ||
+              (_localProgressOverrides[id] ?? 0) > 0);
+      if (listened) {
+        moved.add(e as Map<String, dynamic>);
+      } else {
+        keep.add(e);
+      }
+    }
+    if (moved.isEmpty) return;
+
+    final li = sections.indexWhere((s) => s is Map<String, dynamic> && s['id'] == 'continue-listening');
+    final listening = li < 0 ? null : sections[li] as Map<String, dynamic>;
+    final entities = List<dynamic>.from(listening?['entities'] as List<dynamic>? ?? const []);
+    int at(dynamic e) {
+      if (e is! Map<String, dynamic>) return 0;
+      final v = e['progressLastUpdate'] ?? _progressMap[e['id']]?['lastUpdate'];
+      return v is num ? v.toInt() : 0;
+    }
+    for (final m in moved) {
+      if (entities.any((e) => e is Map<String, dynamic> && e['id'] == m['id'])) continue;
+      final when = at(m);
+      final i = entities.indexWhere((e) => at(e) < when);
+      entities.insert(i < 0 ? entities.length : i, m);
+    }
+
+    final next = List<dynamic>.from(sections);
+    next[ri] = {...reading, 'entities': keep};
+    final shelf = <String, dynamic>{
+      ...?listening,
+      'id': 'continue-listening',
+      'label': listening?['label'] ?? 'Continue Listening',
+      'type': listening?['type'] ?? 'book',
+      'entities': entities,
+    };
+    if (li < 0) {
+      next.insert(0, shelf);
+    } else {
+      next[li] = shelf;
+    }
+    _personalizedSections = next;
+    debugPrint('[Narration] ${moved.length} narrated book(s) moved from Continue Reading to Continue Listening');
   }
 
   void _hydrateRssFeedFieldsDeferred() {
@@ -3109,7 +3174,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         result.add(allSections.remove(id)!);
       }
     }
+    // An order saved before Continue Reading existed (BookOrbit had none)
+    // gets it next to Continue Listening rather than at the bottom.
+    final reading = allSections.remove('continue-reading');
     result.addAll(allSections.values);
+    if (reading != null) {
+      final listening = result.indexWhere((s) => s['id'] == 'continue-listening');
+      result.insert(listening + 1, reading);
+    }
     return result;
   }
 
@@ -3233,7 +3305,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
 
     if (newEpisodes.isNotEmpty) {
-      verboseLog('[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
+      debugPrint('[Subscription] ${newEpisodes.length} new episode(s) for $itemId');
       int queued = 0;
 
       // Per-show choice of where the new episode lands in the absorbing queue.
@@ -3351,7 +3423,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
               freshEpIds,
             ));
           } else {
-            verboseLog('[Subscription] $itemId download deferred - leaving '
+            debugPrint('[Subscription] $itemId download deferred - leaving '
                 '${freshEpIds.length} episode(s) unseen so the next check retries');
           }
         }
@@ -3701,7 +3773,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             activeSourceEnabled: _rollingDownloadSeries.contains(activeId),
           );
       if (queueOwnsWindow) {
-        verboseLog(
+        debugPrint(
             '[QueueDL] ${source.kind} ${source.id}: active queue already covers this window');
         continue;
       }
@@ -3711,7 +3783,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         keyOf: self._playlistItemKey,
       );
       if (window.isEmpty) continue;
-      verboseLog(
+      debugPrint(
           '[QueueDL] ${source.kind} ${source.id}: ${source.items.length} items, window=${window.length} from $playingKey');
       await _downloadQueueWindow(
         items: window,
@@ -3823,11 +3895,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final planGeneration = ++_queueDownloadPlanGeneration;
       final api = _api;
       if (api == null) {
-        verboseLog('[QueueDL] stop at entry: no api (key=$playingKey)');
+        debugPrint('[QueueDL] stop at entry: no api (key=$playingKey)');
         return;
       }
       if (isOffline) {
-        verboseLog('[QueueDL] stop at entry: offline (key=$playingKey)');
+        debugPrint('[QueueDL] stop at entry: offline (key=$playingKey)');
         return;
       }
       final accountGeneration = self._accountLoadGeneration;
@@ -3864,11 +3936,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       bool stop(String stage) {
         final reason = staleReason();
         if (reason == null) return false;
-        verboseLog('[QueueDL] stop at $stage: $reason (key=$playingKey)');
+        debugPrint('[QueueDL] stop at $stage: $reason (key=$playingKey)');
         return true;
       }
 
-      verboseLog('[QueueDL] check start key=$playingKey');
+      debugPrint('[QueueDL] check start key=$playingKey');
       if (stop('start')) return;
       final isPodcastKey = playingKey.length > 36;
       final bookMode = await PlayerSettings.getBookQueueMode();
@@ -3879,7 +3951,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (stop('read merge setting')) return;
       final queueMode = isPodcastKey ? podcastMode : bookMode;
       if (queueMode == 'off') {
-        verboseLog(
+        debugPrint(
             '[QueueDL] stop: queue mode is off (isPodcastKey=$isPodcastKey book=$bookMode podcast=$podcastMode)');
         return;
       }
@@ -3889,7 +3961,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
               ? await PlayerSettings.getQueueCollectionId()
               : null;
       if (stop('read queue source')) return;
-      verboseLog(
+      debugPrint(
           '[QueueDL] mode=$queueMode sourceId=$queueSourceId merged=$merged');
 
       final autoDownloadSourceId =
@@ -3905,14 +3977,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             _rollingDownloadSeries.contains(autoDownloadSourceId),
       );
       if (!enabled) {
-        verboseLog(
+        debugPrint(
             '[QueueDL] stop: auto-download disabled (mode=$queueMode global=$globalAutoDownload autoSourceId=$autoDownloadSourceId perSource=${autoDownloadSourceId != null && _rollingDownloadSeries.contains(autoDownloadSourceId)})');
         return;
       }
       if (stop('resolve enabled')) return;
       final count = await PlayerSettings.getRollingDownloadCount();
       if (count <= 0) {
-        verboseLog('[QueueDL] stop: keep-next count is $count');
+        debugPrint('[QueueDL] stop: keep-next count is $count');
         return;
       }
       if (stop('read keep-next count')) return;
@@ -3928,7 +4000,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         final connectivity = await Connectivity().checkConnectivity();
         if (stop('check connectivity')) return;
         if (!connectivity.contains(ConnectivityResult.wifi)) {
-          verboseLog(
+          debugPrint(
               '[QueueDL] stop: wifi-only downloads on, not on wifi ($connectivity)');
           return;
         }
@@ -3993,12 +4065,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         isStale: isStale,
       );
       if (items.isEmpty) {
-        verboseLog(
+        debugPrint(
             '[QueueDL] stop: queue tail is empty (mode=$queueMode sourceId=$queueSourceId key=$playingKey) - the window starts at the playing item, so this means it was not found in the queue');
         return;
       }
       if (!await settingsStillMatch()) {
-        verboseLog(
+        debugPrint(
             '[QueueDL] stop: settings changed while planning (${items.length} items found)');
         return;
       }
@@ -4049,16 +4121,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         return downloads.isDownloaded(key) || downloads.isDownloading(key);
       },
     );
-    verboseLog(
+    debugPrint(
         '[QueueDL] plan ($logLabel): ${items.length} in window, keep-next=$count, ${pendingItems.length} need downloading -> ${pendingItems.map(keyOf).join(', ')}');
     if (pendingItems.isEmpty) {
-      verboseLog(
+      debugPrint(
           '[QueueDL] nothing to do ($logLabel) - the next $count are already downloaded or finished');
     }
 
     for (final item in pendingItems) {
       if (isStale()) {
-        verboseLog('[QueueDL] stop during download loop ($logLabel)');
+        debugPrint('[QueueDL] stop during download loop ($logLabel)');
         return;
       }
       final libraryItemId = item['libraryItemId'] as String? ?? '';
@@ -4130,7 +4202,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> _catchUpQueueAutoDownloads() async {
     final itemId = AudioPlayerService().currentItemId;
     if (itemId == null) {
-      verboseLog(
+      debugPrint(
           '[QueueDL] stop: nothing is playing, so there is no queue position to download from');
       _queueDownloadPlanGeneration++;
       return;

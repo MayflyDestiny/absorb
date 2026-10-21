@@ -376,6 +376,12 @@ abstract class AppLocalizations {
   /// **'Continue Listening'**
   String get continueListening;
 
+  /// No description provided for @continueReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue Reading'**
+  String get continueReading;
+
   /// No description provided for @continueSeries.
   ///
   /// In en, this message translates to:
@@ -6021,6 +6027,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Off - all library items shown'**
   String get hideEbookOnlyOffSubtitle;
+
+  /// No description provided for @homeCardsOpenDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Open details from Home'**
+  String get homeCardsOpenDetails;
+
+  /// No description provided for @homeCardsOpenDetailsOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tapping a Continue Listening or Continue Reading card opens its details'**
+  String get homeCardsOpenDetailsOnSubtitle;
+
+  /// No description provided for @homeCardsOpenDetailsOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tapping a Continue Listening or Continue Reading card picks up where you left off'**
+  String get homeCardsOpenDetailsOffSubtitle;
 
   /// No description provided for @showGoodreadsButton.
   ///
@@ -19821,6 +19845,24 @@ abstract class AppLocalizations {
   /// **'Downloading the narration. Tap Absorb when it finishes.'**
   String get narrationDownloadStarted;
 
+  /// No description provided for @narrationTextBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This book\'s EPUB has its own words for every moment of the audio, so the text is copied straight from the book. Pick how much to add to the bookmark\'s note.'**
+  String get narrationTextBody;
+
+  /// No description provided for @narrationTextLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Getting the words from the book'**
+  String get narrationTextLoading;
+
+  /// No description provided for @downloadToAbsorb.
+  ///
+  /// In en, this message translates to:
+  /// **'Download to Absorb'**
+  String get downloadToAbsorb;
+
   /// No description provided for @narrationUpNextTitle.
   ///
   /// In en, this message translates to:
@@ -19898,6 +19940,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Finding your spot in the ebook'**
   String get syncFindingEbook;
+
+  /// No description provided for @syncFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t sync your place'**
+  String get syncFailed;
+
+  /// No description provided for @syncAlreadyTogether.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in sync'**
+  String get syncAlreadyTogether;
+
+  /// No description provided for @syncPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync position'**
+  String get syncPosition;
 
   /// No description provided for @readAlongFollowHint.
   ///

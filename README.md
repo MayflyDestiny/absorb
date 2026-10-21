@@ -130,7 +130,15 @@ Absorb 支持 Android Auto 车载浏览和收听。使用 GitHub 版本需要启
 > 详细变更请查看 [CHANGELOG_FULL.md](CHANGELOG_FULL.md)
 
 <details>
-<summary><b>展开查看更新日志（精简版，v1.11.2+280 → v1.22.4+437）</b></summary>
+<summary><b>展开查看更新日志（精简版，v1.11.2+280 → v1.22.5+438）</b></summary>
+
+### v1.22.5+438 — 同步上游 1.12.1+300、日志体系整理与脱敏加固
+
+- 合并上游 `upstream/main`（`fc560c9e` → `9428a792`）：Siri 改为播放指定的书、继续阅读大卡片与「点按开详情」开关、后台带通知下载 EPUB3 旁白、阅读器同步位置按钮、BookOrbit 独立继续阅读书架
+- 主页卡片开详情、旁白文字、下载到 Absorb、同步位置等界面新增 10 条中文翻译
+- 日志统一回归原生 `debugPrint`，取消 debug/稳定版分层，精简冗余封装
+- 加固脱敏：覆盖 Cookie、PKCE `code_verifier`、JSON token 字段、ws/wss 地址与 URL 敏感参数；收紧凭据匹配，不再误掩 `cacheKey` 等非敏感值，保留接口路径便于排查
+- 日志分享导出副本同样经过完整脱敏
 
 ### v1.22.4+437 — 合并上游 1.12.1+298（EPUB3 旁白、Siri、阅读收听同步）
 

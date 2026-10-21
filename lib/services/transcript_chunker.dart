@@ -7,7 +7,6 @@ import '../utils/transcript_align.dart';
 import 'ebook_cache.dart';
 import 'transcript_line_store.dart';
 import 'transcription_service.dart';
-import 'app_log.dart';
 
 /// What one transcribed window produced.
 typedef ChunkOutcome = ({
@@ -117,7 +116,7 @@ class TranscriptChunker {
       segs.add((start: b, end: e, text: s.text));
     }
     if (clipped > 0) {
-      verboseLog('[Transcript] clipped $clipped segment stamps that ran past '
+      debugPrint('[Transcript] clipped $clipped segment stamps that ran past '
           'the ${windowSeconds.toStringAsFixed(0)}s window');
     }
     final heard = wordsFromSegments([

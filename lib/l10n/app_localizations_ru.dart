@@ -147,6 +147,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get continueListening => 'Continue Listening';
 
   @override
+  String get continueReading => 'Continue Reading';
+
+  @override
   String get continueSeries => 'Continue Series';
 
   @override
@@ -3406,6 +3409,17 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get hideEbookOnlyOffSubtitle => 'Off - all library items shown';
+
+  @override
+  String get homeCardsOpenDetails => 'Open details from Home';
+
+  @override
+  String get homeCardsOpenDetailsOnSubtitle =>
+      'Tapping a Continue Listening or Continue Reading card opens its details';
+
+  @override
+  String get homeCardsOpenDetailsOffSubtitle =>
+      'Tapping a Continue Listening or Continue Reading card picks up where you left off';
 
   @override
   String get showGoodreadsButton => 'Show Goodreads button';
@@ -11555,6 +11569,16 @@ class AppLocalizationsRu extends AppLocalizations {
       'Downloading the narration. Tap Absorb when it finishes.';
 
   @override
+  String get narrationTextBody =>
+      'This book\'s EPUB has its own words for every moment of the audio, so the text is copied straight from the book. Pick how much to add to the bookmark\'s note.';
+
+  @override
+  String get narrationTextLoading => 'Getting the words from the book';
+
+  @override
+  String get downloadToAbsorb => 'Download to Absorb';
+
+  @override
   String get narrationUpNextTitle => 'Download what\'s up next';
 
   @override
@@ -11599,6 +11623,15 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get syncFindingEbook => 'Finding your spot in the ebook';
+
+  @override
+  String get syncFailed => 'Couldn\'t sync your place';
+
+  @override
+  String get syncAlreadyTogether => 'Already in sync';
+
+  @override
+  String get syncPosition => 'Sync position';
 
   @override
   String get readAlongFollowHint =>

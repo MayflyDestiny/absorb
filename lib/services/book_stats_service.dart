@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 
 import 'api_service.dart';
 import 'scoped_prefs.dart';
-import 'app_log.dart';
 
 /// One other user's standing on a book, from the admin scan.
 class BookUserStat {
@@ -262,14 +261,14 @@ class BookStatsService {
         s.scanDone++;
         s.bump();
       }
-      verboseLog('[BookStats] item=${s.itemId} users=${userList.length} '
+      debugPrint('[BookStats] item=${s.itemId} users=${userList.length} '
           'withProgress=${found.length} rescanned=${pending.length}');
       s.users = found.values.toList()
         ..sort((a, b) => b.seconds.compareTo(a.seconds));
       s.checkedAt = DateTime.now().millisecondsSinceEpoch;
       await _saveCache(s);
     } catch (e) {
-      basicLog('[BookStats] server-wide scan failed for ${s.itemId}: $e');
+      debugPrint('[BookStats] server-wide scan failed for ${s.itemId}: $e');
     } finally {
       s.serverLoading = false;
       s.bump();

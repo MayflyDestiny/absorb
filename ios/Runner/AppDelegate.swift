@@ -139,14 +139,12 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 
   /// Siri's "Play <book> on Absorb" runs here in the app process (in-app
   /// intent handling), so playback starts without an Intents extension.
-  /// FlutterAppDelegate doesn't implement this, so it is not an override; the
-  /// selector is spelled out so UIKit finds it.
-  @objc(application:handlerForIntent:)
-  func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+  /// Anything else goes on to Flutter's own handling for plugins.
+  override func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
     if intent is INPlayMediaIntent {
       return SiriMediaHandler.shared
     }
-    return nil
+    return super.application(application, handlerFor: intent)
   }
 
   private func registerAudioSessionObservers() {

@@ -140,6 +140,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get continueListening => '继续收听';
 
   @override
+  String get continueReading => '继续阅读';
+
+  @override
   String get continueSeries => '继续收听系列';
 
   @override
@@ -3288,6 +3291,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get hideEbookOnlyOffSubtitle => '关 - 显示所有媒体库项目';
+
+  @override
+  String get homeCardsOpenDetails => '在主页打开详情';
+
+  @override
+  String get homeCardsOpenDetailsOnSubtitle => '点按「继续收听」或「继续阅读」卡片将打开其详情';
+
+  @override
+  String get homeCardsOpenDetailsOffSubtitle => '点按「继续收听」或「继续阅读」卡片将从上次位置继续播放';
 
   @override
   String get showGoodreadsButton => '显示 Goodreads 按钮';
@@ -11190,6 +11202,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get narrationDownloadStarted => '正在下载朗读。完成后请打开 Absorb。';
 
   @override
+  String get narrationTextBody =>
+      '本书的 EPUB 已为音频的每个时刻配好对应文字，因此文本直接取自原书。请选择要添加到书签备注中的内容。';
+
+  @override
+  String get narrationTextLoading => '正在从原书提取文字';
+
+  @override
+  String get downloadToAbsorb => '下载到 Absorb';
+
+  @override
   String get narrationUpNextTitle => '下载下一本待播';
 
   @override
@@ -11232,6 +11254,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get syncFindingEbook => '正在电子书中查找你的位置';
+
+  @override
+  String get syncFailed => '同步进度位置失败';
+
+  @override
+  String get syncAlreadyTogether => '已是同步状态';
+
+  @override
+  String get syncPosition => '同步进度位置';
 
   @override
   String get readAlongFollowHint => '单词时间由转录时间戳推算得出，因此句内可能会有轻微偏差。';

@@ -16,7 +16,6 @@ import 'scoped_prefs.dart';
 import 'user_account_service.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
-import 'app_log.dart';
 
 // ─── Media ID scheme ─────────────────────────────────────────────────
 //
@@ -2060,7 +2059,7 @@ class AndroidAutoService {
       }
       if (title.isEmpty) return const [];
       final cover = Uri.tryParse(localCoverUri(itemId));
-      verboseLog('[AutoBrowse] Recent for media resumption: $key "$title"');
+      debugPrint('[AutoBrowse] Recent for media resumption: $key "$title"');
       return [
         MediaItem(
           id: AutoMediaIds.itemId(key),
@@ -2073,7 +2072,7 @@ class AndroidAutoService {
         ),
       ];
     } catch (e) {
-      basicLog('[AutoBrowse] Recent for media resumption failed: $e');
+      debugPrint('[AutoBrowse] Recent for media resumption failed: $e');
       return const [];
     }
   }

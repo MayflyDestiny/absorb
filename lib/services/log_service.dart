@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../build_info.dart';
 import 'api_service.dart';
-import 'app_log.dart';
 
 class LogService {
   static final LogService _instance = LogService._();
@@ -23,10 +22,22 @@ class LogService {
 
   // Compiled once: every logged line runs these, and building a RegExp per
   // call is pure overhead on the hottest path in the app.
-  static final _reUrl = RegExp(r'https?://[^\s\]"]+');
+  static final _reUrl = RegExp(r'(?:https?|wss?)://[^\s\]"]+');
   static final _reBearer = RegExp(r'Bearer [A-Za-z0-9_\-.]{12,}', caseSensitive: false);
-  static final _reKeyValue = RegExp(r'(token|secret|password|authorization|bearer|\w*refresh|\w*access|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+', caseSensitive: false);
+  // Bare key=value credentials outside URLs. Explicit credential names only, so
+  // non-secret keys like cacheKey/storageKey stay readable for debugging.
+  static final _reKeyValue = RegExp(
+      r'((?:access|refresh|id|auth)[_-]?token|code[_-]?verifier|client[_-]?secret|api[_-]?key|secret[_-]?key|token|secret|password|passwd|authorization|bearer|session[_-]?id|cookie)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+',
+      caseSensitive: false);
   static final _reJwt = RegExp(r'(?:(?<=Bearer\s)|\b)([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{8,})');
+  // Whole Cookie / Set-Cookie header lines: the value (session/refresh token) is
+  // the secret, the name alone is not, so redact the whole line.
+  static final _reCookie = RegExp(r'(?:Set-Cookie|Cookie)\s*:\s*[^\n\r]+', caseSensitive: false);
+  // JSON string fields carrying tokens/secrets, e.g. `"accessToken":"..."` in a
+  // logged response body. Keeps the field name, masks only the value.
+  static final _reJsonSecret = RegExp(
+      r'"((?:accessToken|refreshToken|idToken|access_token|refresh_token|id_token|token|secret|password|apiKey|api_key))"\s*:\s*"[^"]*"',
+      caseSensitive: false);
   static final _reLocalPath = RegExp(r'(?<![A-Za-z0-9])(?:/data|/storage|/home|/var|/private|/Users|[A-Za-z]:)(?:[/\\][^,\s\]\)"<>]+)+');
 
   File? _logFile;
@@ -36,14 +47,13 @@ class LogService {
 
   bool get enabled => _enabled;
 
-  /// Call once at startup. Always overrides [debugPrint] so the platform
-  /// logcat is sanitized and (in release builds) filtered down to [basicLog]
-  /// lines. If [loggingEnabled] is true it additionally captures all sanitized
-  /// output to a rotating log file for sharing.
+  /// Call once at startup. Always overrides [debugPrint] so every line reaching
+  /// logcat is sanitized (no debug/release filtering). If [loggingEnabled] is
+  /// true it additionally captures all sanitized output to a rotating log file
+  /// for sharing.
   Future<void> init(bool loggingEnabled) async {
     // Override debugPrint globally no matter what: it must run before any
-    // other service logs, so distribution releases never spew verbose
-    // diagnostics into logcat and never leak unsanitized URLs/tokens.
+    // other service logs, so URLs/tokens are sanitized before reaching logcat.
     //
     // Idempotence guard: re-entering here would capture our own interceptor as
     // [_originalDebugPrint] and every later log line would recurse until the
@@ -104,26 +114,19 @@ class LogService {
   }
 
   void _interceptedDebugPrint(String? message, {int? wrapWidth}) {
-    // Decide before sanitizing: `debugPrint(null)` is a bare newline, not an
-    // error, and folding it into `pass` swallowed it in EVERY build. Deciding
-    // early also skips ~5 regex passes over lines a release is about to drop.
-    final pass = verboseDiagnostics ||
-        (message != null && message.startsWith('[L]'));
-    final toFile = _logFile != null && message != null;
-    if (!pass && !toFile) return;
-    // Once per line, however many sinks take it: the logcat forward is
-    // unguarded, so raw tokens/URLs would leak there.
+    // Forward every line in full (no debug/release filtering); sanitize once
+    // before it reaches logcat so raw URLs/tokens never leak. When a log file
+    // is active, the same sanitized copy is appended to it.
     final sanitized = message == null ? null : _sanitize(message);
-    if (pass) {
-      _originalDebugPrint?.call(sanitized, wrapWidth: wrapWidth);
+    _originalDebugPrint?.call(sanitized, wrapWidth: wrapWidth);
+    if (_logFile != null && message != null) {
+      final ts = DateTime.now().toIso8601String();
+      _logFile!.writeAsStringSync(
+        '[$ts] $sanitized\n',
+        mode: FileMode.append,
+      );
+      _maybeRotate();
     }
-    if (!toFile) return;
-    final ts = DateTime.now().toIso8601String();
-    _logFile!.writeAsStringSync(
-      '[$ts] $sanitized\n',
-      mode: FileMode.append,
-    );
-    _maybeRotate();
   }
 
   /// Write a log entry directly (for error handlers that bypass debugPrint).
@@ -210,7 +213,7 @@ class LogService {
 
   /// Params whose values should be masked in logged URLs.
   static final _sensitiveParamPattern = RegExp(
-    r'token|code|secret|password|key|verifier|challenge|state|cookie|auth|bearer',
+    r'token|code|code_verifier|secret|client_secret|password|key|verifier|challenge|state|cookie|auth|bearer|nonce|refresh_token|access_token|id_token',
     caseSensitive: false,
   );
 
@@ -218,7 +221,12 @@ class LogService {
   /// tokens (JWT / header / ref, incl. "Bearer xxx"), and bare key=value
   /// pairs that look like credentials.
   static String _sanitize(String message) {
-    var result = _sanitizeUrls(message);
+    // Whole Cookie / Set-Cookie lines first, before URL/key scans, so the
+    // session/refresh value inside is removed regardless of its format.
+    var result = message.replaceAllMapped(_reCookie, (_) => '[cookie-redacted]');
+    result = _sanitizeUrls(result);
+    // JSON token fields in a logged response body.
+    result = result.replaceAllMapped(_reJsonSecret, (m) => '"${m.group(1)}":"***"');
     // Standalone key=value credentials outside a URL, e.g. "token=abc123".
     result = result.replaceAllMapped(_reKeyValue, (m) => '${m.group(1)}=***');
     // Opaque tokens in prose: three dot-separated base64url segments, plus
@@ -257,7 +265,7 @@ class LogService {
           label = '[tailscale]';
         } else if (_isPrivateIp(host)) {
           label = '[local-ip]';
-        } else if (uri.scheme == 'https') {
+        } else if (uri.scheme == 'https' || uri.scheme == 'wss') {
           label = '[reverse-proxy]';
         } else {
           label = '[remote-http]';
@@ -310,9 +318,11 @@ class LogService {
         _logFile != null && await _logFile!.exists() && await _logFile!.length() > 0;
 
     if (hasFile) {
-      // Write sanitized copy to share instead of raw logs
+      // Write sanitized copy to share instead of raw logs. Run the full
+      // sanitizer (URLs, query params, Bearer/JWT, key=value, local paths),
+      // not just URL scrubbing, so no credential leaks into the shared file.
       final raw = await _logFile!.readAsString();
-      final sanitized = _sanitizeUrls(raw);
+      final sanitized = _sanitize(raw);
       final dir = _logFile!.parent;
       final sanitizedFile = File('${dir.path}/absorb_logs_share.txt');
       await sanitizedFile.writeAsString(sanitized);

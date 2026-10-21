@@ -8,7 +8,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'auth_tokens.dart';
-import 'app_log.dart';
 import 'json_file_cache.dart';
 import 'book_dock.dart';
 import 'book_requests.dart';
@@ -226,7 +225,7 @@ class ApiService {
       ).replace(queryParameters: {'ext': extension});
       final r = await _authPost(uri, timeout: const Duration(minutes: 30));
       if (r.statusCode != 200) {
-        basicLog('[API] removeLibraryMetadataFiles failed: ${r.statusCode}');
+        debugPrint('[API] removeLibraryMetadataFiles failed: ${r.statusCode}');
         return null;
       }
       final data = jsonDecode(r.body) as Map<String, dynamic>;
@@ -235,7 +234,7 @@ class ApiService {
         removed: (data['removed'] as num?)?.toInt() ?? 0,
       );
     } catch (e) {
-      basicLog('[API] removeLibraryMetadataFiles error: $e');
+      debugPrint('[API] removeLibraryMetadataFiles error: $e');
       return null;
     }
   }
@@ -250,7 +249,7 @@ class ApiService {
       final message = r.body.trim();
       return message.isEmpty ? 'Invalid cron expression' : message;
     } catch (e) {
-      basicLog('[API] validateCronExpression error: $e');
+      debugPrint('[API] validateCronExpression error: $e');
       return 'Could not validate the cron expression';
     }
   }
@@ -263,7 +262,7 @@ class ApiService {
     try {
       final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/logger-data'));
       if (r.statusCode != 200) {
-        basicLog('[API] getServerLogs failed: ${r.statusCode}');
+        debugPrint('[API] getServerLogs failed: ${r.statusCode}');
         return null;
       }
       final decoded = jsonDecode(r.body);
@@ -277,7 +276,7 @@ class ApiService {
           )
           .toList(growable: false);
     } catch (e) {
-      basicLog('[API] getServerLogs error: $e');
+      debugPrint('[API] getServerLogs error: $e');
       return null;
     }
   }
@@ -681,8 +680,7 @@ class ApiService {
   /// Logs response body size so cold-start traffic can be attributed to a
   /// specific endpoint straight from the verbose log (`[NET]`).
   void _netLog(String method, Uri url, http.Response r) {
-    if (!verboseDiagnostics) return;
-    verboseLog('[NET] $method ${url.path} ${r.statusCode} ${r.bodyBytes.length}B');
+    debugPrint('[NET] $method ${url.path} ${r.statusCode} ${r.bodyBytes.length}B');
   }
 
   Future<http.Response> _get(Uri url, {Map<String, String>? headers}) {
@@ -796,7 +794,7 @@ class ApiService {
       }
       final adopted = _accessToken != previousAccess;
       if (adopted) {
-        verboseLog(
+        debugPrint(
           '[API] Adopted persisted tokens: access=${tokenFp(_accessToken)} '
           'refresh=${tokenFp(_refreshToken)}',
         );
@@ -804,7 +802,7 @@ class ApiService {
       }
       return adopted;
     } catch (e) {
-      basicLog('[API] Failed to reload persisted tokens: $e');
+      debugPrint('[API] Failed to reload persisted tokens: $e');
       return false;
     }
   }
@@ -812,7 +810,7 @@ class ApiService {
   Future<void> _notifyTokensRefreshed() async {
     try {
       final persisted = await onTokensRefreshed?.call(_accessToken, _refreshToken);
-      verboseLog(
+      debugPrint(
         persisted == false
             ? '[API] Tokens NOT persisted (rotation held in memory only): '
                   'access=${tokenFp(_accessToken)} '
@@ -821,7 +819,7 @@ class ApiService {
                   'refresh=${tokenFp(_refreshToken)}',
       );
     } catch (e) {
-      basicLog('[API] Failed to persist refreshed tokens: $e');
+      debugPrint('[API] Failed to persist refreshed tokens: $e');
     }
   }
 
@@ -857,7 +855,7 @@ class ApiService {
       final response = await _sendRefresh(refreshToken)
           .timeout(const Duration(seconds: 15));
       if (response.statusCode != 200) {
-        verboseLog(
+        debugPrint(
           '[API] Proactive token refresh failed: ${response.statusCode} '
           '(refresh=${tokenFp(refreshToken)})',
         );
@@ -869,7 +867,7 @@ class ApiService {
       _accessToken = tokens.accessToken!;
       _refreshToken = tokens.refreshToken!;
       await _notifyTokensRefreshed();
-      verboseLog(
+      debugPrint(
         '[API] Proactive token refresh ok -> '
         'refresh=${tokenFp(_refreshToken)}',
       );
@@ -896,7 +894,7 @@ class ApiService {
         final r = await _get(Uri.parse('$_cleanBaseUrl/api/me'), headers: _headers)
             .timeout(const Duration(seconds: 15));
         if (r.statusCode == 401) {
-          basicLog('[API] The server no longer accepts this API key');
+          debugPrint('[API] The server no longer accepts this API key');
           onAuthExpired?.call();
         }
       } catch (_) {
@@ -911,17 +909,17 @@ class ApiService {
   /// an explicit 401/403 can expire the local session.
   Future<_RefreshOutcome> _refreshAccessToken() async {
     if (_isLegacyToken || _refreshToken == null) {
-      verboseLog('[API] Cannot refresh: isLegacy=$_isLegacyToken, hasRefreshToken=${_refreshToken != null}');
+      debugPrint('[API] Cannot refresh: isLegacy=$_isLegacyToken, hasRefreshToken=${_refreshToken != null}');
       return _RefreshOutcome.transientFailure;
     }
 
     // If a refresh is already in progress, wait for it
     if (_refreshCompleter != null) {
-      verboseLog('[API] Token refresh joining in-flight attempt');
+      debugPrint('[API] Token refresh joining in-flight attempt');
       return _refreshCompleter!.future;
     }
 
-    verboseLog(
+    debugPrint(
       '[API] Token refresh start: access=${tokenFp(_accessToken)} '
       'refresh=${tokenFp(_refreshToken)}',
     );
@@ -953,7 +951,7 @@ class ApiService {
               _accessToken = newAccess;
               if (newRefresh != null) _refreshToken = newRefresh;
               await _notifyTokensRefreshed();
-              verboseLog(
+              debugPrint(
                 '[API] Token refreshed successfully -> '
                 'access=${tokenFp(newAccess)} refresh=${tokenFp(newRefresh)} '
                 'rotated=${newRefresh != null && newRefresh != refreshTokenSent}',
@@ -969,7 +967,7 @@ class ApiService {
               return _RefreshOutcome.refreshed;
             }
             if (_refreshToken != refreshTokenSent && attempt == 0) continue;
-            verboseLog(
+            debugPrint(
               '[API] Token refresh rejected: ${response.statusCode} '
               '(sent refresh=${tokenFp(refreshTokenSent)})'
               '${_refreshToken == refreshTokenSent ? " - storage holds the same spent token, session is dead until re-login" : ""}',
@@ -978,9 +976,9 @@ class ApiService {
             return _RefreshOutcome.rejected;
           }
 
-          basicLog('[API] Token refresh failed: ${response.statusCode}');
+          debugPrint('[API] Token refresh failed: ${response.statusCode}');
         } catch (e) {
-          basicLog('[API] Token refresh error: $e');
+          debugPrint('[API] Token refresh error: $e');
         }
 
         if (attempt == 0) {
@@ -1068,7 +1066,7 @@ class ApiService {
         onAuthExpired?.call();
       case _RefreshOutcome.transientFailure:
         _preflightCooldownUntil = DateTime.now().add(_preflightCooldown);
-        verboseLog(
+        debugPrint(
           '[API] Pre-flight refresh could not reach the server - '
           'falling back to on-401 refresh for '
           '${_preflightCooldown.inMinutes}m',
@@ -1093,7 +1091,7 @@ class ApiService {
       'GET ${url.path}',
     );
     if (response.statusCode == 401) {
-      verboseLog('[API] 401 on GET ${url.path} - isLegacy=$_isLegacyToken, hasRefresh=${_refreshToken != null}, tokenLen=${_accessToken.length}');
+      debugPrint('[API] 401 on GET ${url.path} - isLegacy=$_isLegacyToken, hasRefresh=${_refreshToken != null}, tokenLen=${_accessToken.length}');
     }
     if (response.statusCode == 401 && !_isLegacyToken) {
       final outcome = await _refreshAccessToken();
@@ -1634,13 +1632,13 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final libs = (data['libraries'] as List?) ?? [];
-        verboseLog('[API] getLibraries: ${libs.length} libraries');
+        debugPrint('[API] getLibraries: ${libs.length} libraries');
         return libs;
       } else {
-        basicLog('[API] getLibraries failed: ${response.statusCode}');
+        debugPrint('[API] getLibraries failed: ${response.statusCode}');
       }
     } catch (e) {
-      basicLog('[API] getLibraries error: $e');
+      debugPrint('[API] getLibraries error: $e');
     }
     return [];
   }
@@ -1723,10 +1721,10 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-      basicLog('[API] getLibraryItems page=$page limit=$limit: '
+      debugPrint('[API] getLibraryItems page=$page limit=$limit: '
           'HTTP ${response.statusCode}');
     } catch (e) {
-      basicLog('[API] getLibraryItems page=$page limit=$limit failed: $e');
+      debugPrint('[API] getLibraryItems page=$page limit=$limit failed: $e');
     }
     return null;
   }
@@ -1785,9 +1783,9 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-      verboseLog('[API] authorize failed: ${response.statusCode}');
+      debugPrint('[API] authorize failed: ${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] authorize error: $e');
+      debugPrint('[API] authorize error: $e');
     }
     return null;
   }
@@ -1802,9 +1800,9 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-      verboseLog('[API] getMe failed: ${response.statusCode}');
+      debugPrint('[API] getMe failed: ${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getMe error: $e');
+      debugPrint('[API] getMe error: $e');
     }
     return null;
   }
@@ -1827,7 +1825,7 @@ class ApiService {
           .whereType<Map<String, dynamic>>()
           .toList();
     } catch (e) {
-      verboseLog('[API] getAllProgress error: $e');
+      debugPrint('[API] getAllProgress error: $e');
       return null;
     }
   }
@@ -1850,7 +1848,7 @@ class ApiService {
           .whereType<Map<String, dynamic>>()
           .toList();
     } catch (e) {
-      verboseLog('[API] getAllBookmarks error: $e');
+      debugPrint('[API] getAllBookmarks error: $e');
       return null;
     }
   }
@@ -1875,7 +1873,7 @@ class ApiService {
         AuthSessionsStatus.supported,
         AuthSessionsPage.fromJson(data));
     } catch (e) {
-      verboseLog('[API] getAuthSessions error: $e');
+      debugPrint('[API] getAuthSessions error: $e');
       return const AuthSessionsResult(AuthSessionsStatus.failed);
     }
   }
@@ -1888,7 +1886,7 @@ class ApiService {
         timeout: const Duration(seconds: 10));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      verboseLog('[API] deleteAuthSession error: $e');
+      debugPrint('[API] deleteAuthSession error: $e');
       return false;
     }
   }
@@ -1907,7 +1905,7 @@ class ApiService {
         }).timeout(const Duration(seconds: 10));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      verboseLog('[API] logout error: $e');
+      debugPrint('[API] logout error: $e');
       return false;
     }
   }
@@ -1973,7 +1971,7 @@ class ApiService {
       // Older servers return an empty 200 and keep the current pair valid.
       return const PasswordChangeResult(PasswordChangeStatus.success);
     } catch (e) {
-      verboseLog('[API] changeMyPassword error: $e');
+      debugPrint('[API] changeMyPassword error: $e');
       return const PasswordChangeResult(PasswordChangeStatus.failed);
     } finally {
       _releaseTokenMutationLock(mutationLock);
@@ -2013,7 +2011,7 @@ class ApiService {
         return (data['sessions'] as List<dynamic>?) ?? [];
       }
     } catch (e) {
-      verboseLog('getMyItemListeningSessions error: $e');
+      debugPrint('getMyItemListeningSessions error: $e');
     }
     return [];
   }
@@ -2107,9 +2105,9 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-      verboseLog('[API] getLibrarySeries page=$page: HTTP ${response.statusCode}');
+      debugPrint('[API] getLibrarySeries page=$page: HTTP ${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getLibrarySeries page=$page failed: $e');
+      debugPrint('[API] getLibrarySeries page=$page failed: $e');
     }
     return null;
   }
@@ -2159,7 +2157,7 @@ class ApiService {
         return data['results'] as List<dynamic>? ?? [];
       }
     } catch (e) {
-      verboseLog('[API] getBooksByAuthor error: $e');
+      debugPrint('[API] getBooksByAuthor error: $e');
     }
     return [];
   }
@@ -2177,7 +2175,7 @@ class ApiService {
         return authors.cast<Map<String, dynamic>>();
       }
     } catch (e) {
-      verboseLog('[API] getLibraryAuthors error: $e');
+      debugPrint('[API] getLibraryAuthors error: $e');
     }
     return [];
   }
@@ -2200,13 +2198,13 @@ class ApiService {
             '?limit=$limit&page=$page&sort=$sort&desc=$desc'),
         timeout: const Duration(seconds: 30),
       );
-      verboseLog('[API] getLibraryAuthorsPage page=$page: HTTP '
+      debugPrint('[API] getLibraryAuthorsPage page=$page: HTTP '
           '${response.statusCode} in ${sw.elapsedMilliseconds}ms');
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
-      verboseLog('[API] getLibraryAuthorsPage page=$page failed: $e');
+      debugPrint('[API] getLibraryAuthorsPage page=$page failed: $e');
     }
     return null;
   }
@@ -2223,7 +2221,7 @@ class ApiService {
         body: jsonEncode({'libraryItemIds': ids}),
         timeout: const Duration(seconds: 30),
       );
-      verboseLog('[API] getLibraryItemsBatch ${ids.length} ids: HTTP '
+      debugPrint('[API] getLibraryItemsBatch ${ids.length} ids: HTTP '
           '${response.statusCode} in ${sw.elapsedMilliseconds}ms');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -2232,7 +2230,7 @@ class ApiService {
             .toList();
       }
     } catch (e) {
-      verboseLog('[API] getLibraryItemsBatch failed: $e');
+      debugPrint('[API] getLibraryItemsBatch failed: $e');
     }
     return const [];
   }
@@ -2249,7 +2247,7 @@ class ApiService {
           .where((s) => s.isNotEmpty)
           .toList();
     } catch (e) {
-      verboseLog('[API] getLibraryNarrators error: $e');
+      debugPrint('[API] getLibraryNarrators error: $e');
     }
     return [];
   }
@@ -2276,9 +2274,9 @@ class ApiService {
         }
         return counts;
       }
-      verboseLog('[API] getLibraryNarratorCounts: HTTP ${response.statusCode}');
+      debugPrint('[API] getLibraryNarratorCounts: HTTP ${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getLibraryNarratorCounts failed: $e');
+      debugPrint('[API] getLibraryNarratorCounts failed: $e');
     }
     return const {};
   }
@@ -2303,7 +2301,7 @@ class ApiService {
         return data['results'] as List<dynamic>? ?? [];
       }
     } catch (e) {
-      verboseLog('[API] getBooksByNarrator error: $e');
+      debugPrint('[API] getBooksByNarrator error: $e');
     }
     return [];
   }
@@ -2321,7 +2319,7 @@ class ApiService {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
-      verboseLog('[API] getAuthorById error: $e');
+      debugPrint('[API] getAuthorById error: $e');
     }
     return null;
   }
@@ -2349,7 +2347,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/authors/$authorId'),
         body: jsonEncode(body),
       );
-      verboseLog('[API] updateAuthor $authorId -> ${r.statusCode}: ${r.body}');
+      debugPrint('[API] updateAuthor $authorId -> ${r.statusCode}: ${r.body}');
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body) as Map<String, dynamic>;
         if (data['merged'] != null) {
@@ -2357,7 +2355,7 @@ class ApiService {
         }
         return {'ok': true, 'author': data['author'] ?? data};
       }
-    } catch (e) { verboseLog('updateAuthor error: $e'); }
+    } catch (e) { debugPrint('updateAuthor error: $e'); }
     return {'ok': false};
   }
 
@@ -2406,7 +2404,7 @@ class ApiService {
         body: jsonEncode(body),
         timeout: const Duration(seconds: 30),
       );
-      verboseLog(
+      debugPrint(
         '[API] quickMatchAuthor $authorId -> ${r.statusCode}: ${r.body}',
       );
       if (r.statusCode == 200) {
@@ -2427,7 +2425,7 @@ class ApiService {
       }
       return AuthorQuickMatchResult(statusCode: r.statusCode);
     } catch (e) {
-      verboseLog('quickMatchAuthor error: $e');
+      debugPrint('quickMatchAuthor error: $e');
     }
     return const AuthorQuickMatchResult(statusCode: 0);
   }
@@ -2441,9 +2439,9 @@ class ApiService {
         body: jsonEncode({'url': url}),
         timeout: const Duration(seconds: 30),
       );
-      verboseLog('[API] updateAuthorImageFromUrl $authorId -> ${r.statusCode}');
+      debugPrint('[API] updateAuthorImageFromUrl $authorId -> ${r.statusCode}');
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateAuthorImageFromUrl error: $e'); }
+    } catch (e) { debugPrint('updateAuthorImageFromUrl error: $e'); }
     return false;
   }
 
@@ -2455,7 +2453,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/authors/$authorId/image'),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('deleteAuthorImage error: $e'); }
+    } catch (e) { debugPrint('deleteAuthorImage error: $e'); }
     return false;
   }
 
@@ -2480,7 +2478,7 @@ class ApiService {
         return data['results'] as List<dynamic>? ?? [];
       }
     } catch (e) {
-      verboseLog('[API] getBooksBySeries error: $e');
+      debugPrint('[API] getBooksBySeries error: $e');
     }
     return [];
   }
@@ -2506,13 +2504,13 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final results = data['results'] as List<dynamic>? ?? [];
-        verboseLog('[API] getAllBooksBySeries $seriesId: ${results.length} books '
+        debugPrint('[API] getAllBooksBySeries $seriesId: ${results.length} books '
             '(total=${data['total']}) in ${sw.elapsedMilliseconds}ms');
         return results;
       }
-      verboseLog('[API] getAllBooksBySeries $seriesId: HTTP ${response.statusCode}');
+      debugPrint('[API] getAllBooksBySeries $seriesId: HTTP ${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getAllBooksBySeries error: $e');
+      debugPrint('[API] getAllBooksBySeries error: $e');
     }
     return [];
   }
@@ -2551,7 +2549,7 @@ class ApiService {
     try {
       final epPath = episodeId != null ? '/$episodeId' : '';
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
-      verboseLog('[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
+      debugPrint('[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
       final body = <String, dynamic>{
         'deviceInfo': _deviceInfo,
         'forceDirectPlay': !forceTranscode,
@@ -2585,29 +2583,29 @@ class ApiService {
         attempts: 2,
         totalDeadline: const Duration(seconds: 40));
 
-      verboseLog('[ABS] Play session response: ${response.statusCode}');
+      debugPrint('[ABS] Play session response: ${response.statusCode}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final tracks = data['audioTracks'] as List<dynamic>?;
-        verboseLog('[ABS] Session ID: ${data['id']}');
-        verboseLog('[ABS] Audio tracks: ${tracks?.length ?? 0}');
+        debugPrint('[ABS] Session ID: ${data['id']}');
+        debugPrint('[ABS] Audio tracks: ${tracks?.length ?? 0}');
         if (tracks != null && tracks.isNotEmpty) {
           final firstTrack = tracks.first as Map<String, dynamic>;
           // contentUrl paths can carry the session-id credential; keep it
           // verbose-only (compiled out of release logs).
-          verboseLog('[ABS] First track contentUrl: ${firstTrack['contentUrl']}');
+          debugPrint('[ABS] First track contentUrl: ${firstTrack['contentUrl']}');
         }
         return data;
       } else {
         // Body can carry server/pod details; keep it verbose-only (compiled out
         // of release) and truncated so user/device data never reaches shipped logs.
         final failedBody = response.body;
-        verboseLog(
+        debugPrint(
           '[ABS] Play session failed: ${failedBody.length > 500 ? failedBody.substring(0, 500) : failedBody}',
         );
       }
     } catch (e) {
-      verboseLog('[ABS] Play session error: $e');
+      debugPrint('[ABS] Play session error: $e');
     } finally {
       sw.stop();
       _recordPlaySessionLatency(sw.elapsedMilliseconds);
@@ -3024,7 +3022,7 @@ class ApiService {
         updateStatus = updateResponse.statusCode;
         if (updateStatus >= 200 && updateStatus < 300) return true;
       } catch (e) {
-        verboseLog('[API] updateProgressStartDate recreate error: $e');
+        debugPrint('[API] updateProgressStartDate recreate error: $e');
       }
 
       try {
@@ -3033,15 +3031,15 @@ class ApiService {
           body: jsonEncode(originalBody),
           timeout: const Duration(seconds: 10),
         );
-        verboseLog(
+        debugPrint(
           '[API] updateProgressStartDate failed ($updateStatus); '
           'restore=${restoreResponse.statusCode}',
         );
       } catch (e) {
-        verboseLog('[API] updateProgressStartDate restore error: $e');
+        debugPrint('[API] updateProgressStartDate restore error: $e');
       }
     } catch (e) {
-      verboseLog('[API] updateProgressStartDate error: $e');
+      debugPrint('[API] updateProgressStartDate error: $e');
     }
     return false;
   }
@@ -3056,7 +3054,7 @@ class ApiService {
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      verboseLog('[API] updateProgressFinishedDate error: $e');
+      debugPrint('[API] updateProgressFinishedDate error: $e');
       return false;
     }
   }
@@ -3087,7 +3085,7 @@ class ApiService {
         final unfinish = await _authPatch(url,
             body: jsonEncode({'isFinished': false}),
             timeout: const Duration(seconds: 10));
-        verboseLog('[API] updateProgress unfinish $progressPath: ${unfinish.statusCode}');
+        debugPrint('[API] updateProgress unfinish $progressPath: ${unfinish.statusCode}');
         noteLocalProgressPush(itemId);
         return unfinish.statusCode < 500;
       }
@@ -3097,16 +3095,16 @@ class ApiService {
         'progress': duration > 0 ? (currentTime / duration).clamp(0.0, 1.0) : 0,
         if (isFinished == true) 'isFinished': true,
       });
-      verboseLog('[API] updateProgress PATCH /api/me/progress/$progressPath');
-      verboseLog('[API] updateProgress body: currentTime=$currentTime');
+      debugPrint('[API] updateProgress PATCH /api/me/progress/$progressPath');
+      debugPrint('[API] updateProgress body: currentTime=$currentTime');
       final resp = await _authPatch(url,
         body: body,
         timeout: const Duration(seconds: 10));
-      verboseLog('[API] updateProgress response: ${resp.statusCode} ${resp.body}');
+      debugPrint('[API] updateProgress response: ${resp.statusCode} ${resp.body}');
       noteLocalProgressPush(itemId);
       return resp.statusCode < 500;
     } catch (e) {
-      verboseLog('[API] updateProgress error: $e');
+      debugPrint('[API] updateProgress error: $e');
       rethrow;
     }
   }
@@ -3137,7 +3135,7 @@ class ApiService {
       final progressPath = itemId.length > 36
           ? '${itemId.substring(0, 36)}/${itemId.substring(37)}'
           : itemId;
-      verboseLog('[API] updateEbookProgress PATCH /api/me/progress/$progressPath');
+      debugPrint('[API] updateEbookProgress PATCH /api/me/progress/$progressPath');
       final resp = await http.patch(
         Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
         headers: _headers,
@@ -3147,7 +3145,7 @@ class ApiService {
       lastEbookProgressStatus = resp.statusCode;
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
-      verboseLog('[API] updateEbookProgress error: $e');
+      debugPrint('[API] updateEbookProgress error: $e');
       return false;
     }
   }
@@ -3216,7 +3214,7 @@ class ApiService {
 
       return true;
     } catch (e) {
-      verboseLog('[API] resetProgress error: $e');
+      debugPrint('[API] resetProgress error: $e');
       return false;
     }
   }
@@ -3230,7 +3228,7 @@ class ApiService {
         timeout: const Duration(seconds: 10));
       return resp.statusCode == 200;
     } catch (e) {
-      verboseLog('[API] removeSeriesFromContinueListening error: $e');
+      debugPrint('[API] removeSeriesFromContinueListening error: $e');
       return false;
     }
   }
@@ -3245,7 +3243,7 @@ class ApiService {
         timeout: const Duration(seconds: 10));
       return resp.statusCode == 200;
     } catch (e) {
-      verboseLog('[API] removeItemFromContinueListening error: $e');
+      debugPrint('[API] removeItemFromContinueListening error: $e');
       return false;
     }
   }
@@ -3259,7 +3257,7 @@ class ApiService {
     final sw = Stopwatch()..start();
     try {
       final url = '$_cleanBaseUrl/api/items/$itemId/play/$episodeId';
-      verboseLog('[ABS] Starting episode session: POST $url (forceTranscode: $forceTranscode)');
+      debugPrint('[ABS] Starting episode session: POST $url (forceTranscode: $forceTranscode)');
       final response = await _authPostRetrying(
         Uri.parse(url),
         body: jsonEncode({
@@ -3287,14 +3285,14 @@ class ApiService {
         attempts: 2,
         totalDeadline: const Duration(seconds: 40));
 
-      verboseLog('[ABS] Episode session response: ${response.statusCode}');
+      debugPrint('[ABS] Episode session response: ${response.statusCode}');
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       } else {
-        verboseLog('[ABS] Episode session failed: ${response.body}');
+        debugPrint('[ABS] Episode session failed: ${response.body}');
       }
     } catch (e) {
-      verboseLog('[ABS] Episode session error: $e');
+      debugPrint('[ABS] Episode session error: $e');
     } finally {
       sw.stop();
       _recordPlaySessionLatency(sw.elapsedMilliseconds);
@@ -3337,7 +3335,7 @@ class ApiService {
         final unfinish = await _authPatch(url,
             body: jsonEncode({'isFinished': false}),
             timeout: const Duration(seconds: 10));
-        verboseLog('[API] updateEpisodeProgress unfinish $episodeId: ${unfinish.statusCode}');
+        debugPrint('[API] updateEpisodeProgress unfinish $episodeId: ${unfinish.statusCode}');
         noteLocalProgressPush('$itemId-$episodeId');
         return unfinish.statusCode < 500;
       }
@@ -3351,11 +3349,11 @@ class ApiService {
         timeout: const Duration(seconds: 10));
       noteLocalProgressPush('$itemId-$episodeId');
       if (resp.statusCode != 200) {
-        verboseLog('[API] updateEpisodeProgress $episodeId: HTTP ${resp.statusCode}');
+        debugPrint('[API] updateEpisodeProgress $episodeId: HTTP ${resp.statusCode}');
       }
       return resp.statusCode < 500;
     } catch (e) {
-      verboseLog('[API] updateEpisodeProgress error: $e');
+      debugPrint('[API] updateEpisodeProgress error: $e');
       return false;
     }
   }
@@ -3368,10 +3366,10 @@ class ApiService {
       final resp = await _authDelete(
         Uri.parse('$_cleanBaseUrl/api/me/progress/$progressId'),
         timeout: const Duration(seconds: 10));
-      verboseLog('[API] deleteMediaProgress $progressId: ${resp.statusCode}');
+      debugPrint('[API] deleteMediaProgress $progressId: ${resp.statusCode}');
       return resp.statusCode >= 200 && resp.statusCode < 300;
     } catch (e) {
-      verboseLog('[API] deleteMediaProgress error: $e');
+      debugPrint('[API] deleteMediaProgress error: $e');
       return false;
     }
   }
@@ -3397,10 +3395,10 @@ class ApiService {
             'progress': 0,
           }),
           timeout: const Duration(seconds: 10));
-      verboseLog('[API] zeroEpisodeProgress: unfinish=${unfinish.statusCode} zero=${zero.statusCode}');
+      debugPrint('[API] zeroEpisodeProgress: unfinish=${unfinish.statusCode} zero=${zero.statusCode}');
       return unfinish.statusCode == 200 && zero.statusCode == 200;
     } catch (e) {
-      verboseLog('[API] zeroEpisodeProgress error: $e');
+      debugPrint('[API] zeroEpisodeProgress error: $e');
       return false;
     }
   }
@@ -3418,7 +3416,7 @@ class ApiService {
         if (data is List) return data;
       }
     } catch (e) {
-      verboseLog('[API] getRecentEpisodes error: $e');
+      debugPrint('[API] getRecentEpisodes error: $e');
     }
     return [];
   }
@@ -3446,13 +3444,13 @@ class ApiService {
         unawaited(JsonFileCache.write(cacheKey, data));
         return data;
       }
-      verboseLog('[API] getLibraryItem $itemId: HTTP ${response.statusCode}');
+      debugPrint('[API] getLibraryItem $itemId: HTTP ${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getLibraryItem $itemId failed: $e');
+      debugPrint('[API] getLibraryItem $itemId failed: $e');
     }
     final cached = await JsonFileCache.readMap(cacheKey);
     if (cached != null) {
-      verboseLog('[API] getLibraryItem $itemId: serving cached copy');
+      debugPrint('[API] getLibraryItem $itemId: serving cached copy');
     }
     return cached;
   }
@@ -3489,11 +3487,11 @@ class ApiService {
         unawaited(JsonFileCache.write(cacheKey, data));
         return data;
       }
-      verboseLog(
+      debugPrint(
         '[API] getLibraryItemCancellable $itemId: HTTP ${response.statusCode}',
       );
     } catch (e) {
-      verboseLog('[API] getLibraryItemCancellable $itemId failed: $e');
+      debugPrint('[API] getLibraryItemCancellable $itemId failed: $e');
     }
     return JsonFileCache.readMap(cacheKey);
   }
@@ -3526,7 +3524,7 @@ class ApiService {
         }
       }
       return [];
-    } catch (e) { verboseLog('getServerBookmarks error: $e'); }
+    } catch (e) { debugPrint('getServerBookmarks error: $e'); }
     return null;
   }
 
@@ -3539,7 +3537,7 @@ class ApiService {
         body: jsonEncode({'time': time, 'title': title}),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('createBookmark error: $e'); }
+    } catch (e) { debugPrint('createBookmark error: $e'); }
     return false;
   }
 
@@ -3552,7 +3550,7 @@ class ApiService {
         body: jsonEncode({'time': time, 'title': title}),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateBookmark error: $e'); }
+    } catch (e) { debugPrint('updateBookmark error: $e'); }
     return false;
   }
 
@@ -3564,7 +3562,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/me/item/$itemId/bookmark/$time'),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('deleteBookmark error: $e'); }
+    } catch (e) { debugPrint('deleteBookmark error: $e'); }
     return false;
   }
 
@@ -3582,7 +3580,7 @@ class ApiService {
         body: jsonEncode({'libraryItemId': libraryItemId, 'deviceName': deviceName}),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] sendEBookToDevice error: $e'); }
+    } catch (e) { debugPrint('[API] sendEBookToDevice error: $e'); }
     return false;
   }
 
@@ -3599,7 +3597,7 @@ class ApiService {
         return body;
       }
       return null;
-    } catch (e) { verboseLog('[API] getEmailSettings error: $e'); }
+    } catch (e) { debugPrint('[API] getEmailSettings error: $e'); }
     return null;
   }
 
@@ -3611,7 +3609,7 @@ class ApiService {
         body: jsonEncode(patch),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] updateEmailSettings error: $e'); }
+    } catch (e) { debugPrint('[API] updateEmailSettings error: $e'); }
     return false;
   }
 
@@ -3620,7 +3618,7 @@ class ApiService {
     try {
       final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/emails/test'));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] sendTestEmail error: $e'); }
+    } catch (e) { debugPrint('[API] sendTestEmail error: $e'); }
     return false;
   }
 
@@ -3633,7 +3631,7 @@ class ApiService {
         body: jsonEncode({'ereaderDevices': devices}),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] updateEReaderDevices error: $e'); }
+    } catch (e) { debugPrint('[API] updateEReaderDevices error: $e'); }
     return false;
   }
 
@@ -3684,13 +3682,13 @@ class ApiService {
           final resp = await _authGet(
             Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/series/$seriesId'),
             timeout: const Duration(seconds: 30));
-          verboseLog('[API] getSeries $seriesId meta: HTTP ${resp.statusCode} '
+          debugPrint('[API] getSeries $seriesId meta: HTTP ${resp.statusCode} '
               'in ${sw.elapsedMilliseconds}ms');
           if (resp.statusCode == 200) {
             return jsonDecode(resp.body) as Map<String, dynamic>;
           }
         } catch (e) {
-          verboseLog('[API] getSeries $seriesId meta failed after '
+          debugPrint('[API] getSeries $seriesId meta failed after '
               '${sw.elapsedMilliseconds}ms: $e');
         }
         return null;
@@ -3710,13 +3708,13 @@ class ApiService {
         final pageSw = Stopwatch()..start();
         final itemsResp = await itemsFuture;
         if (itemsResp.statusCode != 200) {
-          verboseLog('[API] getSeries $seriesId items page $page failed: ${itemsResp.statusCode}');
+          debugPrint('[API] getSeries $seriesId items page $page failed: ${itemsResp.statusCode}');
           break;
         }
         final data = jsonDecode(itemsResp.body) as Map<String, dynamic>;
         final results = data['results'] as List<dynamic>? ?? [];
         total = (data['total'] as num?)?.toInt() ?? results.length;
-        verboseLog('[API] getSeries $seriesId items page=$page results=${results.length} '
+        debugPrint('[API] getSeries $seriesId items page=$page results=${results.length} '
             'total=$total in ${pageSw.elapsedMilliseconds}ms');
         allResults.addAll(results);
         onPageLoaded?.call(allResults, total);
@@ -3740,7 +3738,7 @@ class ApiService {
         };
       }
     } catch (e) {
-      verboseLog('[API] getSeries $seriesId failed: $e');
+      debugPrint('[API] getSeries $seriesId failed: $e');
     }
     return null;
   }
@@ -3758,13 +3756,13 @@ class ApiService {
         final url = '$_cleanBaseUrl/api/libraries/$libraryId/items?filter=series.$filterValue&sort=addedAt&limit=100&page=$page&collapseseries=1';
         final resp = await _authGet(Uri.parse(url), timeout: const Duration(seconds: 60));
         if (resp.statusCode != 200) {
-          verboseLog('[API] getSeriesCollapsed page $page failed: ${resp.statusCode}');
+          debugPrint('[API] getSeriesCollapsed page $page failed: ${resp.statusCode}');
           break;
         }
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final results = data['results'] as List<dynamic>? ?? [];
         final total = (data['total'] as num?)?.toInt() ?? results.length;
-        verboseLog('[API] getSeriesCollapsed page=$page results=${results.length} '
+        debugPrint('[API] getSeriesCollapsed page=$page results=${results.length} '
             'total=$total in ${sw.elapsedMilliseconds}ms');
         sw.reset();
         allResults.addAll(results);
@@ -3772,7 +3770,7 @@ class ApiService {
         page++;
       }
       return allResults;
-    } catch (e) { verboseLog('[API] getSeriesCollapsed error: $e'); }
+    } catch (e) { debugPrint('[API] getSeriesCollapsed error: $e'); }
     return [];
   }
 
@@ -3819,25 +3817,25 @@ class ApiService {
       }
       final uri = Uri.parse('$_cleanBaseUrl/api/search/books')
           .replace(queryParameters: params);
-      verboseLog('[API] searchBooks: $uri');
+      debugPrint('[API] searchBooks: $uri');
       final response = await _authGet(
         uri,
       );
 
-      verboseLog('[API] searchBooks status=${response.statusCode} bodyLen=${response.body.length}');
+      debugPrint('[API] searchBooks status=${response.statusCode} bodyLen=${response.body.length}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
         // ABS returns a plain List for most providers
         if (data is List) {
-          verboseLog('[API] searchBooks: got List with ${data.length} items');
+          debugPrint('[API] searchBooks: got List with ${data.length} items');
           return data.whereType<Map<String, dynamic>>().toList();
         }
 
         // Some providers may return a Map with results nested under a key
         if (data is Map<String, dynamic>) {
-          verboseLog('[API] searchBooks: got Map with keys: ${data.keys.join(', ')}');
+          debugPrint('[API] searchBooks: got Map with keys: ${data.keys.join(', ')}');
           // Try common nesting patterns
           for (final key in ['results', 'items', 'books', 'matches']) {
             final nested = data[key];
@@ -3851,10 +3849,10 @@ class ApiService {
           }
         }
 
-        verboseLog('[API] searchBooks: unexpected response type: ${data.runtimeType}');
+        debugPrint('[API] searchBooks: unexpected response type: ${data.runtimeType}');
       }
     } catch (e) {
-      verboseLog('[API] searchBooks error: $e');
+      debugPrint('[API] searchBooks error: $e');
     }
     return [];
   }
@@ -3913,7 +3911,7 @@ class ApiService {
         'asin': asin,
       };
     } catch (e) {
-      verboseLog('[API] Audible catalog rating $asin error: $e');
+      debugPrint('[API] Audible catalog rating $asin error: $e');
       return null;
     }
   }
@@ -4040,9 +4038,9 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-      verboseLog('[API] getAudnexusBook $asin region=$region status=${response.statusCode}');
+      debugPrint('[API] getAudnexusBook $asin region=$region status=${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getAudnexusBook error: $e');
+      debugPrint('[API] getAudnexusBook error: $e');
     }
     return null;
   }
@@ -4054,7 +4052,7 @@ class ApiService {
       final tld = region != null ? _audibleTldFor(region) : _audibleTld;
       final url = 'https://api.audible$tld/1.0/catalog/products/$seriesAsin'
           '?response_groups=relationships';
-      verboseLog('[API] getAudibleSeriesBooks: $url');
+      debugPrint('[API] getAudibleSeriesBooks: $url');
       final response = await http.get(Uri.parse(url))
           .timeout(const Duration(seconds: 15));
 
@@ -4076,9 +4074,9 @@ class ApiService {
         }
         return books;
       }
-      verboseLog('[API] getAudibleSeriesBooks status=${response.statusCode}');
+      debugPrint('[API] getAudibleSeriesBooks status=${response.statusCode}');
     } catch (e) {
-      verboseLog('[API] getAudibleSeriesBooks error: $e');
+      debugPrint('[API] getAudibleSeriesBooks error: $e');
     }
     return [];
   }
@@ -4098,7 +4096,7 @@ class ApiService {
         return data['product'] as Map<String, dynamic>?;
       }
     } catch (e) {
-      verboseLog('[API] getAudibleBookDetails error: $e');
+      debugPrint('[API] getAudibleBookDetails error: $e');
     }
     return null;
   }
@@ -4124,7 +4122,7 @@ class ApiService {
       // store too, since these relationship ASINs may not exist regionally.
       relationships = await getAudibleSeriesBooks(seriesAsin, region: 'us');
       if (relationships.isNotEmpty) {
-        verboseLog('[API] discoverAudibleSeries: region $region empty, using us');
+        debugPrint('[API] discoverAudibleSeries: region $region empty, using us');
         effectiveRegion = 'us';
       }
     }
@@ -4155,7 +4153,7 @@ class ApiService {
         final seqB = double.tryParse(b['sequence']?.toString() ?? '') ?? 999999;
         return seqB.compareTo(seqA); // descending
       });
-      verboseLog('[API] discoverAudibleSeries: capping ${uniqueBooks.length} books to newest 50');
+      debugPrint('[API] discoverAudibleSeries: capping ${uniqueBooks.length} books to newest 50');
       uniqueBooks = uniqueBooks.take(50).toList();
     }
 
@@ -4221,7 +4219,7 @@ class ApiService {
           }
         }
       }
-    } catch (e) { verboseLog('getUsers error: $e'); }
+    } catch (e) { debugPrint('getUsers error: $e'); }
     return [];
   }
 
@@ -4235,7 +4233,7 @@ class ApiService {
         if (data is Map && data['openSessions'] is List) return data['openSessions'] as List<dynamic>;
         if (data is List) return data;
       }
-    } catch (e) { verboseLog('getOnlineUsers error: $e'); }
+    } catch (e) { debugPrint('getOnlineUsers error: $e'); }
     return [];
   }
 
@@ -4249,7 +4247,7 @@ class ApiService {
         final data = jsonDecode(r.body);
         return (data['sessions'] as List<dynamic>?) ?? [];
       }
-    } catch (e) { verboseLog('getAllSessions error: $e'); }
+    } catch (e) { debugPrint('getAllSessions error: $e'); }
     return [];
   }
 
@@ -4278,7 +4276,7 @@ class ApiService {
         return jsonDecode(r.body) as Map<String, dynamic>;
       }
     } catch (e) {
-      verboseLog('getAllSessionsPaged error: $e');
+      debugPrint('getAllSessionsPaged error: $e');
     }
     return null;
   }
@@ -4291,7 +4289,7 @@ class ApiService {
         final data = jsonDecode(r.body);
         return (data['backups'] as List<dynamic>?) ?? [];
       }
-    } catch (e) { verboseLog('getBackups error: $e'); }
+    } catch (e) { debugPrint('getBackups error: $e'); }
     return [];
   }
 
@@ -4309,9 +4307,9 @@ class ApiService {
               .toList();
         }
       }
-      verboseLog('[API] getServerTasks failed: ${r.statusCode}');
+      debugPrint('[API] getServerTasks failed: ${r.statusCode}');
     } catch (e) {
-      verboseLog('[API] getServerTasks error: $e');
+      debugPrint('[API] getServerTasks error: $e');
     }
     return null;
   }
@@ -4346,7 +4344,7 @@ class ApiService {
         error: error.isEmpty ? 'HTTP ${response.statusCode}' : error,
       );
     } catch (e) {
-      verboseLog('[API] checkUploadPathExists error: $e');
+      debugPrint('[API] checkUploadPathExists error: $e');
       return UploadPathCheckResult(success: false, error: '$e');
     }
   }
@@ -4433,7 +4431,7 @@ class ApiService {
         error: error.isEmpty ? 'HTTP ${response.statusCode}' : error,
       );
     } catch (e) {
-      verboseLog('[API] uploadMedia error: $e');
+      debugPrint('[API] uploadMedia error: $e');
       return MediaUploadResult(success: false, error: '$e');
     }
   }
@@ -4443,7 +4441,7 @@ class ApiService {
     try {
       final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/backups'), timeout: const Duration(seconds: 60));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('createBackup error: $e'); }
+    } catch (e) { debugPrint('createBackup error: $e'); }
     return false;
   }
 
@@ -4454,7 +4452,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/scan'),
         timeout: const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('scanLibrary error: $e'); }
+    } catch (e) { debugPrint('scanLibrary error: $e'); }
     return false;
   }
 
@@ -4465,7 +4463,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/match'),
         timeout: const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('matchLibrary error: $e'); }
+    } catch (e) { debugPrint('matchLibrary error: $e'); }
     return false;
   }
 
@@ -4476,7 +4474,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/stats'),
       );
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('getLibraryStats error: $e'); }
+    } catch (e) { debugPrint('getLibraryStats error: $e'); }
     return null;
   }
 
@@ -4485,7 +4483,7 @@ class ApiService {
     try {
       final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/cache/purge'), timeout: const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('purgeCache error: $e'); }
+    } catch (e) { debugPrint('purgeCache error: $e'); }
     return false;
   }
 
@@ -4498,7 +4496,7 @@ class ApiService {
           .replace(queryParameters: path != null ? {'path': path} : null);
       final r = await _authGet(uri, timeout: const Duration(seconds: 20));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('[API] getFilesystemPaths error: $e'); }
+    } catch (e) { debugPrint('[API] getFilesystemPaths error: $e'); }
     return null;
   }
 
@@ -4510,8 +4508,8 @@ class ApiService {
       final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/libraries'),
           body: jsonEncode(body), timeout: const Duration(seconds: 30));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-      verboseLog('[API] createLibrary failed: ${r.statusCode}');
-    } catch (e) { verboseLog('[API] createLibrary error: $e'); }
+      debugPrint('[API] createLibrary failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] createLibrary error: $e'); }
     return null;
   }
 
@@ -4523,7 +4521,7 @@ class ApiService {
       final r = await _authPatch(Uri.parse('$_cleanBaseUrl/api/libraries/$id'),
           body: jsonEncode(body), timeout: const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] updateLibrary error: $e'); }
+    } catch (e) { debugPrint('[API] updateLibrary error: $e'); }
     return false;
   }
 
@@ -4533,7 +4531,7 @@ class ApiService {
       final r = await _authDelete(Uri.parse('$_cleanBaseUrl/api/libraries/$id'),
           timeout: const Duration(seconds: 30));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] deleteLibrary error: $e'); }
+    } catch (e) { debugPrint('[API] deleteLibrary error: $e'); }
     return false;
   }
 
@@ -4543,7 +4541,7 @@ class ApiService {
       final r = await _authPost(Uri.parse('$_cleanBaseUrl/api/libraries/order'),
           body: jsonEncode(order));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('[API] reorderLibraries error: $e'); }
+    } catch (e) { debugPrint('[API] reorderLibraries error: $e'); }
     return false;
   }
 
@@ -4569,7 +4567,7 @@ class ApiService {
           }
         }
       }
-    } catch (e) { verboseLog('[API] getMetadataProviders error: $e'); }
+    } catch (e) { debugPrint('[API] getMetadataProviders error: $e'); }
     return out;
   }
 
@@ -4583,8 +4581,8 @@ class ApiService {
       if (r.statusCode == 200) {
         return jsonDecode(r.body)['serverSettings'] as Map<String, dynamic>?;
       }
-      verboseLog('[API] updateServerSettings failed: ${r.statusCode}');
-    } catch (e) { verboseLog('[API] updateServerSettings error: $e'); }
+      debugPrint('[API] updateServerSettings failed: ${r.statusCode}');
+    } catch (e) { debugPrint('[API] updateServerSettings error: $e'); }
     return null;
   }
 
@@ -4598,7 +4596,7 @@ class ApiService {
       if (r.statusCode == 200) {
         return jsonDecode(r.body)['serverSettings'] as Map<String, dynamic>?;
       }
-    } catch (e) { verboseLog('[API] updateSortingPrefixes error: $e'); }
+    } catch (e) { debugPrint('[API] updateSortingPrefixes error: $e'); }
     return null;
   }
 
@@ -4646,7 +4644,7 @@ class ApiService {
     try {
       final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/stats/server'));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('[API] getServerStats error: $e'); }
+    } catch (e) { debugPrint('[API] getServerStats error: $e'); }
     return null;
   }
 
@@ -4656,7 +4654,7 @@ class ApiService {
       final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/stats/year/$year'),
           timeout: const Duration(seconds: 30));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('[API] getServerYearStats error: $e'); }
+    } catch (e) { debugPrint('[API] getServerYearStats error: $e'); }
     return null;
   }
 
@@ -4666,7 +4664,7 @@ class ApiService {
       final r = await _authGet(Uri.parse('$_cleanBaseUrl/api/me/stats/year/$year'),
           timeout: const Duration(seconds: 30));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('[API] getMyYearStats error: $e'); }
+    } catch (e) { debugPrint('[API] getMyYearStats error: $e'); }
     return null;
   }
 
@@ -4693,7 +4691,7 @@ class ApiService {
         body: jsonEncode(body),
       );
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('createUser error: $e'); }
+    } catch (e) { debugPrint('createUser error: $e'); }
     return null;
   }
 
@@ -4704,7 +4702,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/users/$userId'),
       );
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('getUser error: $e'); }
+    } catch (e) { debugPrint('getUser error: $e'); }
     return null;
   }
 
@@ -4716,7 +4714,7 @@ class ApiService {
         body: jsonEncode(updates),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateUser error: $e'); }
+    } catch (e) { debugPrint('updateUser error: $e'); }
     return false;
   }
 
@@ -4727,7 +4725,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/users/$userId'),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('deleteUser error: $e'); }
+    } catch (e) { debugPrint('deleteUser error: $e'); }
     return false;
   }
 
@@ -4740,7 +4738,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/users/$userId/openid-unlink'),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('unlinkOpenID error: $e'); }
+    } catch (e) { debugPrint('unlinkOpenID error: $e'); }
     return false;
   }
 
@@ -4755,7 +4753,7 @@ class ApiService {
         if (data is Map && data['apiKeys'] is List) return data['apiKeys'] as List<dynamic>;
         if (data is List) return data;
       }
-    } catch (e) { verboseLog('getApiKeys error: $e'); }
+    } catch (e) { debugPrint('getApiKeys error: $e'); }
     return [];
   }
 
@@ -4779,7 +4777,7 @@ class ApiService {
         final data = jsonDecode(r.body);
         if (data is Map && data['apiKey'] is Map) return Map<String, dynamic>.from(data['apiKey'] as Map);
       }
-    } catch (e) { verboseLog('createApiKey error: $e'); }
+    } catch (e) { debugPrint('createApiKey error: $e'); }
     return null;
   }
 
@@ -4795,7 +4793,7 @@ class ApiService {
         body: jsonEncode(body),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateApiKey error: $e'); }
+    } catch (e) { debugPrint('updateApiKey error: $e'); }
     return false;
   }
 
@@ -4804,7 +4802,7 @@ class ApiService {
     try {
       final r = await _authDelete(Uri.parse('$_cleanBaseUrl/api/api-keys/$keyId'));
       return r.statusCode == 200;
-    } catch (e) { verboseLog('deleteApiKey error: $e'); }
+    } catch (e) { debugPrint('deleteApiKey error: $e'); }
     return false;
   }
 
@@ -4824,9 +4822,9 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/items/$itemId/media'),
         body: jsonEncode(body),
       );
-      verboseLog('[API] updateItemMedia $itemId -> ${r.statusCode}: ${r.body}');
+      debugPrint('[API] updateItemMedia $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateItemMedia error: $e'); }
+    } catch (e) { debugPrint('updateItemMedia error: $e'); }
     return false;
   }
 
@@ -4845,9 +4843,9 @@ class ApiService {
       final r = await _authPatch(
         Uri.parse('$_cleanBaseUrl/api/items/$itemId/ebook/$fileId/status'),
       );
-      verboseLog('[API] updateEbookFileStatus $itemId/$fileId -> ${r.statusCode}');
+      debugPrint('[API] updateEbookFileStatus $itemId/$fileId -> ${r.statusCode}');
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateEbookFileStatus error: $e'); }
+    } catch (e) { debugPrint('updateEbookFileStatus error: $e'); }
     return false;
   }
 
@@ -4858,9 +4856,9 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/items/$itemId/cover'),
         body: jsonEncode({'url': url}),
         timeout: const Duration(seconds: 30));
-      verboseLog('[API] updateItemCoverUrl $itemId -> ${r.statusCode}: ${r.body}');
+      debugPrint('[API] updateItemCoverUrl $itemId -> ${r.statusCode}: ${r.body}');
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updateItemCoverUrl error: $e'); }
+    } catch (e) { debugPrint('updateItemCoverUrl error: $e'); }
     return false;
   }
 
@@ -4871,9 +4869,9 @@ class ApiService {
       final r = await _authDelete(
         Uri.parse('$_cleanBaseUrl/api/items/$itemId/cover'),
         timeout: const Duration(seconds: 30));
-      verboseLog('[API] removeItemCover $itemId -> ${r.statusCode}');
+      debugPrint('[API] removeItemCover $itemId -> ${r.statusCode}');
       return r.statusCode == 200;
-    } catch (e) { verboseLog('removeItemCover error: $e'); }
+    } catch (e) { debugPrint('removeItemCover error: $e'); }
     return false;
   }
 
@@ -4888,7 +4886,7 @@ class ApiService {
       req.files.add(await http.MultipartFile.fromPath('cover', filePath));
       final res = await req.send().timeout(const Duration(seconds: 60));
       return res.statusCode == 200;
-    } catch (e) { verboseLog('uploadItemCover error: $e'); }
+    } catch (e) { debugPrint('uploadItemCover error: $e'); }
     return false;
   }
 
@@ -4920,7 +4918,7 @@ class ApiService {
         }
       }
     } catch (e) {
-      verboseLog('[API] searchCovers error: $e');
+      debugPrint('[API] searchCovers error: $e');
     }
     return [];
   }
@@ -4943,7 +4941,7 @@ class ApiService {
           }
         }
       }
-    } catch (e) { verboseLog('searchPodcasts error: $e'); }
+    } catch (e) { debugPrint('searchPodcasts error: $e'); }
     return [];
   }
 
@@ -5007,7 +5005,7 @@ class ApiService {
         body: bodyJson,
         timeout: const Duration(seconds: 30));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('createPodcast error: $e'); }
+    } catch (e) { debugPrint('createPodcast error: $e'); }
     return null;
   }
 
@@ -5023,7 +5021,7 @@ class ApiService {
         final data = jsonDecode(r.body);
         if (data is Map<String, dynamic>) return data;
       }
-    } catch (e) { verboseLog('getPodcastFeed error: $e'); }
+    } catch (e) { debugPrint('getPodcastFeed error: $e'); }
     return null;
   }
 
@@ -5034,7 +5032,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/episode-downloads'),
         timeout: const Duration(seconds: 10));
       if (r.statusCode == 200) return jsonDecode(r.body) as Map<String, dynamic>;
-    } catch (e) { verboseLog('getEpisodeDownloads error: $e'); }
+    } catch (e) { debugPrint('getEpisodeDownloads error: $e'); }
     return null;
   }
 
@@ -5047,7 +5045,7 @@ class ApiService {
         timeout: const Duration(seconds: 30),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('downloadPodcastEpisodes error: $e'); }
+    } catch (e) { debugPrint('downloadPodcastEpisodes error: $e'); }
     return false;
   }
 
@@ -5074,7 +5072,7 @@ class ApiService {
         } catch (_) {}
       }
       return success > 0;
-    } catch (e) { verboseLog('checkNewEpisodes error: $e'); }
+    } catch (e) { debugPrint('checkNewEpisodes error: $e'); }
     return false;
   }
 
@@ -5091,7 +5089,7 @@ class ApiService {
         final data = jsonDecode(r.body);
         return (data['episodes'] as List<dynamic>?) ?? [];
       }
-    } catch (e) { verboseLog('checkNewPodcastEpisodes error: $e'); }
+    } catch (e) { debugPrint('checkNewPodcastEpisodes error: $e'); }
     return null;
   }
 
@@ -5122,7 +5120,7 @@ class ApiService {
       if (r.statusCode == 200) {
         return jsonDecode(r.body) as Map<String, dynamic>;
       }
-    } catch (e) { verboseLog('matchLibraryItem error: $e'); }
+    } catch (e) { debugPrint('matchLibraryItem error: $e'); }
     return null;
   }
 
@@ -5138,11 +5136,11 @@ class ApiService {
         timeout: const Duration(seconds: 20),
       );
       if (r.statusCode != 200) {
-        verboseLog('[API] updateChapters failed: ${r.statusCode}');
+        debugPrint('[API] updateChapters failed: ${r.statusCode}');
       }
       return r.statusCode == 200;
     } catch (e) {
-      verboseLog('[API] updateChapters error: $e');
+      debugPrint('[API] updateChapters error: $e');
       return false;
     }
   }
@@ -5160,10 +5158,10 @@ class ApiService {
         final data = jsonDecode(r.body);
         if (data is Map<String, dynamic>) return data;
       }
-      verboseLog('[API] searchChapters failed: ${r.statusCode}');
+      debugPrint('[API] searchChapters failed: ${r.statusCode}');
       return null;
     } catch (e) {
-      verboseLog('[API] searchChapters error: $e');
+      debugPrint('[API] searchChapters error: $e');
       return null;
     }
   }
@@ -5177,7 +5175,7 @@ class ApiService {
       final r = await _authPost(uri);
       return r.statusCode == 200;
     } catch (e) {
-      verboseLog('embedMetadata error: $e');
+      debugPrint('embedMetadata error: $e');
     }
     return false;
   }
@@ -5200,7 +5198,7 @@ class ApiService {
       final r = await _authPost(uri);
       return r.statusCode == 200;
     } catch (e) {
-      verboseLog('startM4bEncode error: $e');
+      debugPrint('startM4bEncode error: $e');
     }
     return false;
   }
@@ -5214,7 +5212,7 @@ class ApiService {
         body: jsonEncode(mediaUpdates),
       );
       return r.statusCode == 200;
-    } catch (e) { verboseLog('updatePodcastMedia error: $e'); }
+    } catch (e) { debugPrint('updatePodcastMedia error: $e'); }
     return false;
   }
 
@@ -5230,7 +5228,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/podcasts/$podcastId/episode/$episodeId?hard=${hard ? 1 : 0}'),
       );
       return r.statusCode;
-    } catch (e) { verboseLog('deletePodcastEpisode error: $e'); }
+    } catch (e) { debugPrint('deletePodcastEpisode error: $e'); }
     return 0;
   }
 
@@ -5244,7 +5242,7 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/items/$itemId?hard=${hard ? 1 : 0}'),
       );
       return r.statusCode;
-    } catch (e) { verboseLog('deleteLibraryItem error: $e'); }
+    } catch (e) { debugPrint('deleteLibraryItem error: $e'); }
     return 0;
   }
 
@@ -5265,7 +5263,7 @@ class ApiService {
       );
       return response.statusCode;
     } catch (e) {
-      verboseLog('deleteLibraryItems error: $e');
+      debugPrint('deleteLibraryItems error: $e');
       return 0;
     }
   }
@@ -5293,7 +5291,7 @@ class ApiService {
       );
       return response.statusCode == 200;
     } catch (e) {
-      verboseLog('quickMatchLibraryItems error: $e');
+      debugPrint('quickMatchLibraryItems error: $e');
       return false;
     }
   }
@@ -5314,7 +5312,7 @@ class ApiService {
       );
       return response.statusCode == 200;
     } catch (e) {
-      verboseLog('updateLibraryItemsFinished error: $e');
+      debugPrint('updateLibraryItemsFinished error: $e');
       return false;
     }
   }
@@ -5341,7 +5339,7 @@ class ApiService {
           timeout: const Duration(seconds: 30),
         );
         if (resp.statusCode != 200) {
-          verboseLog('[API] $path failed: HTTP ${resp.statusCode} (page $page)');
+          debugPrint('[API] $path failed: HTTP ${resp.statusCode} (page $page)');
           return null;
         }
         final data = jsonDecode(resp.body);
@@ -5354,7 +5352,7 @@ class ApiService {
       }
       return out;
     } catch (e) {
-      verboseLog('[API] $path error: $e');
+      debugPrint('[API] $path error: $e');
       return null;
     }
   }

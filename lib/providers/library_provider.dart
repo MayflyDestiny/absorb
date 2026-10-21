@@ -24,7 +24,6 @@ import '../services/socket_service.dart';
 import '../services/book_search_index.dart';
 import '../services/home_widget_service.dart';
 import '../services/queue_download_policy.dart';
-import '../services/app_log.dart';
 import '../services/siri_service.dart';
 import '../utils/absorbing_inclusion.dart';
 import '../l10n/app_localizations.dart';
@@ -34,6 +33,7 @@ import '../services/ebook_cache.dart';
 import '../services/ebook_progress_store.dart';
 import '../services/screen_wake.dart';
 import '../services/up_next_narration.dart';
+import '../services/narrated_books.dart';
 
 part '_lp_state.dart';
 part '_lp_core.dart';
@@ -241,7 +241,7 @@ class LibraryProvider extends ChangeNotifier
               '(fromCache=$_librariesFromCache selected=$_selectedLibraryId)');
           unawaited(PlayerSettings.getPodcastTabEnabled().then((on) async {
             final tabLib = await PlayerSettings.getPodcastTabLibraryId();
-            verboseLog('[Library] Offline start: podcast tab=$on library=$tabLib');
+            debugPrint('[Library] Offline start: podcast tab=$on library=$tabLib');
           }));
           _networkOffline = true;
           _buildOfflineSections();
@@ -296,7 +296,7 @@ class LibraryProvider extends ChangeNotifier
       SocketService().disconnect();
       _personalizedInFlight = null;
       _networkOffline = false;
-      basicLog('[Library] Signed out - showing what is on the phone');
+      debugPrint('[Library] Signed out - showing what is on the phone');
       () async {
         await _loadManualAbsorbing();
         await _loadRollingDownloadSeries();
@@ -388,7 +388,7 @@ class LibraryProvider extends ChangeNotifier
         _libraries = fetched;
         _librariesFromCache = false;
         await LibraryCache.save(fetched);
-        verboseLog('[Library] Saved ${fetched.length} libraries for offline starts');
+        debugPrint('[Library] Saved ${fetched.length} libraries for offline starts');
         await _restoreSelectedLibrary();
 
         await _loadSectionPrefs();
@@ -436,7 +436,7 @@ class LibraryProvider extends ChangeNotifier
     if (cached.isEmpty) {
       // Nothing saved while online, so offline there is one library at most
       // and the switcher stays hidden (#313).
-      verboseLog('[Library] No saved libraries to restore for offline use');
+      debugPrint('[Library] No saved libraries to restore for offline use');
       return;
     }
     // Widened copy: handing the cache's List<Map> to the List<dynamic> field
@@ -458,7 +458,7 @@ class LibraryProvider extends ChangeNotifier
     final defaultId = _auth?.defaultLibraryId;
     if (savedId != null && _libraries.any((l) => l['id'] == savedId)) {
       _selectedLibraryId = savedId;
-      verboseLog('[Library] Selected library $savedId (last used)');
+      debugPrint('[Library] Selected library $savedId (last used)');
       return;
     }
     if (defaultId != null && _libraries.any((l) => l['id'] == defaultId)) {

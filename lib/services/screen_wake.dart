@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'player_settings.dart';
-import 'app_log.dart';
 
 /// Keeps the screen from timing out while something hands-free is on screen,
 /// like the ebook reader's auto scroll. FLAG_KEEP_SCREEN_ON on Android, the
@@ -25,7 +24,7 @@ class ScreenWake {
     try {
       await _channel.invokeMethod('set', {'on': want});
     } catch (e) {
-      basicLog('[ScreenWake] keepOn($want) failed: $e');
+      debugPrint('[ScreenWake] keepOn($want) failed: $e');
     }
   }
 }

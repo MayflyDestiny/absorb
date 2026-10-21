@@ -1,8 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/server_url.dart';
 import 'api_service.dart';
-import 'app_log.dart';
 import 'auth_tokens.dart';
 import 'server_backend.dart';
 
@@ -124,14 +124,14 @@ class UserAccountService {
                 ))
             .toList();
       } catch (e) {
-        basicLog('[UserAccount] Failed to load accounts: $e');
+        debugPrint('[UserAccount] Failed to load accounts: $e');
       }
     }
 
     // Load active scope
     _activeScopeKey = prefs.getString(_activeKey);
     _activeScopeKey = prefs.getString(_activeKey);
-    verboseLog('[UserAccount] Loaded ${_accounts.length} accounts, active=$_activeScopeKey');
+    debugPrint('[UserAccount] Loaded ${_accounts.length} accounts, active=$_activeScopeKey');
     await _alignScopeWithSession(prefs);
   }
 
@@ -153,7 +153,7 @@ class UserAccountService {
       }
     }
     if (match == null || match.scopeKey == _activeScopeKey) return;
-    verboseLog('[UserAccount] Active scope $_activeScopeKey did not match the '
+    debugPrint('[UserAccount] Active scope $_activeScopeKey did not match the '
         'signed-in $username - switching the scope to ${match.scopeKey}');
     _activeScopeKey = match.scopeKey;
     await _persistActiveKey();
@@ -167,7 +167,7 @@ class UserAccountService {
     try {
       await beforeAccountChange?.call(account);
     } catch (e) {
-      basicLog('[UserAccount] beforeAccountChange failed: $e');
+      debugPrint('[UserAccount] beforeAccountChange failed: $e');
     }
     // Remove existing entry for same server+username (update token)
     _accounts.removeWhere(
@@ -175,7 +175,7 @@ class UserAccountService {
     _accounts.insert(0, account); // Most recent first
     _activeScopeKey = account.scopeKey;
     await _persist();
-    verboseLog('[UserAccount] Saved & activated: ${account.username}@${account.serverUrl}');
+    debugPrint('[UserAccount] Saved & activated: ${account.username}@${account.serverUrl}');
   }
 
   /// Switch to a different saved account. Returns the account or null if not found.
@@ -187,7 +187,7 @@ class UserAccountService {
     if (account.token.isEmpty) return null;
     _activeScopeKey = account.scopeKey;
     _persistActiveKey();
-    verboseLog('[UserAccount] Switched to: ${account.username}@${account.serverUrl}');
+    debugPrint('[UserAccount] Switched to: ${account.username}@${account.serverUrl}');
     return account;
   }
 
@@ -199,7 +199,7 @@ class UserAccountService {
         (a) => a.serverUrl == serverUrl && a.username == username);
     if (_accounts.length < before) {
       await _persist();
-      verboseLog('[UserAccount] Removed: $username@$serverUrl');
+      debugPrint('[UserAccount] Removed: $username@$serverUrl');
       return true;
     }
     return false;
@@ -257,7 +257,7 @@ class UserAccountService {
     if (activeServer == null ||
         normalizeServerUrl(activeServer) != normalizeServerUrl(serverUrl) ||
         activeUsername != username) {
-      basicLog(
+      debugPrint(
         '[Accounts] Not persisting rotated tokens: active session is '
         '${activeServer == null ? "(none)" : "$activeUsername@$activeServer"}, '
         'rotation was for $username@$serverUrl',
@@ -267,7 +267,7 @@ class UserAccountService {
     // Half a pair is worse than none: keep the old, still-valid pair rather
     // than pairing a fresh access token with a spent refresh token.
     if (refreshToken == null && prefs.getString('refresh_token') != null) {
-      basicLog(
+      debugPrint(
         '[Accounts] Not persisting rotated tokens: response carried no refresh '
         'token and storage already holds one - refusing to store half a pair',
       );
@@ -287,7 +287,7 @@ class UserAccountService {
     final storedRefresh = prefs.getString('refresh_token');
     if (storedAccess != accessToken ||
         (refreshToken != null && storedRefresh != refreshToken)) {
-      basicLog(
+      debugPrint(
         '[Accounts] Rotated tokens did NOT survive the write: '
         'wrote access=${ApiService.tokenFp(accessToken)} '
         'refresh=${ApiService.tokenFp(refreshToken)}, '
@@ -393,7 +393,7 @@ class UserAccountService {
       _activeScopeKey = newScope;
     }
     await _persist();
-    verboseLog(
+    debugPrint(
         '[UserAccount] Updated server URL for $username: $oldServerUrl -> $newServerUrl');
     return true;
   }
@@ -435,7 +435,7 @@ class UserAccountService {
         moved++;
       }
     }
-    verboseLog(
+    debugPrint(
         '[UserAccount] Migrated $moved scoped key(s): $oldScope -> $newScope');
   }
 

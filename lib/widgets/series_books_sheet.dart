@@ -30,7 +30,6 @@ import 'books_sheet_shared.dart';
 import 'download_confirm.dart';
 import '../services/api_service.dart';
 import '../utils/duration_format.dart';
-import '../services/app_log.dart';
 import '../utils/series_number_match.dart';
 
 /// Show a bottom sheet with all books in a series, sorted by sequence.
@@ -134,7 +133,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       if (seed == null || !mounted) return;
       setState(() => _coverScheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness));
     }).catchError((e) {
-      basicLog('[SeriesSheet] palette failed: $e');
+      debugPrint('[SeriesSheet] palette failed: $e');
     });
   }
   bool _scanExcluded = false;

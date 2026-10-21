@@ -443,7 +443,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
   Future<void> addToAbsorbingQueue(String itemId,
       {Map<String, dynamic>? item}) async {
-    verboseLog('[Absorbing] Added $itemId to the end (from ${_caller()})');
+    debugPrint('[Absorbing] Added $itemId to the end (from ${_caller()})');
     _keepInAbsorbing(itemId, item);
     _absorbingIdsAdd(itemId, atFront: false);
     await _saveManualAbsorbing();
@@ -463,7 +463,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         : player.currentEpisodeId == null
             ? player.currentItemId
             : '${player.currentItemId}-${player.currentEpisodeId}';
-    verboseLog('[Absorbing] Added $key to play next (from ${_caller()})');
+    debugPrint('[Absorbing] Added $key to play next (from ${_caller()})');
     _keepInAbsorbing(key, item);
     _absorbingBookIds.remove(key);
     final activeIdx =
@@ -660,7 +660,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
   }
 
   Future<void> removeFromAbsorbing(String key) async {
-    verboseLog('[Absorbing] Removed $key (from ${_caller()})');
+    debugPrint('[Absorbing] Removed $key (from ${_caller()})');
     _manualAbsorbRemoves.add(key);
     _manualAbsorbAdds.remove(key);
     _finishedManualAbsorbAdds.remove(key);
@@ -675,7 +675,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       {bool skipRefresh = false,
       bool skipAutoAdvance = false,
       bool fromRemote = false}) {
-    verboseLog('[Absorbing] Finished $itemId (remote=$fromRemote '
+    debugPrint('[Absorbing] Finished $itemId (remote=$fromRemote '
         'autoAdvance=${!skipAutoAdvance} playing=${AudioPlayerService().currentItemId})');
     _resetItems.remove(itemId);
     final existing = _progressMap[itemId] ?? {};
@@ -1130,7 +1130,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     }
 
     final nextSeq = candidates.keys.toList()..sort();
-    verboseLog('[Absorbing] Series $seriesId after seq $currentSeq: '
+    debugPrint('[Absorbing] Series $seriesId after seq $currentSeq: '
         'candidates ${nextSeq.take(5).join(', ')}${nextSeq.length > 5 ? '...' : ''} '
         '(server list=$usedServerList)');
     final next = candidates[nextSeq.first]!;
@@ -1161,7 +1161,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       unawaited(UpNextNarration.instance.stopped(nextKey, metadata['title'] as String? ?? ''));
       return;
     }
-    verboseLog('[Absorbing] Auto-playing next series book $nextKey after $finishedBookId');
+    debugPrint('[Absorbing] Auto-playing next series book $nextKey after $finishedBookId');
     AudioPlayerService().playItem(
       api: _api!,
       itemId: nextKey,
@@ -1221,7 +1221,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       final next = candidates[nextSeq.first]!;
       final nextKey = next.key;
       final nextData = next.value;
-      verboseLog('[AutoAdvance] Offline: playing downloaded $nextKey (seq ${nextSeq.first}) '
+      debugPrint('[AutoAdvance] Offline: playing downloaded $nextKey (seq ${nextSeq.first}) '
           'after $finishedBookId, candidates ${nextSeq.take(5).join(', ')}');
 
       _absorbingIdsAdd(nextKey, afterKey: finishedBookId);
@@ -2341,7 +2341,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
 
     final nextSeq = candidates.keys.toList()..sort();
     skippedFinished.sort();
-    verboseLog('[Queue] Up next in series after seq $currentSeq: '
+    debugPrint('[Queue] Up next in series after seq $currentSeq: '
         '${nextSeq.isEmpty ? 'nothing' : 'seq ${nextSeq.first} "${_entryTitle(candidates[nextSeq.first]!)}"'} '
         '(server list=$usedServerList, finished skipped: '
         '${skippedFinished.isEmpty ? 'none' : skippedFinished.take(8).join(', ')})');

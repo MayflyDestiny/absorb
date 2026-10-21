@@ -95,6 +95,21 @@
 			<string>INMediaCategoryAudiobooks</string>
 			<string>INMediaCategoryPodcasts</string>
 		</array>
+		<key>INAlternativeAppNames</key>
+		<array>
+			<dict>
+				<key>INAlternativeAppName</key>
+				<string>Absorb Audiobooks</string>
+				<key>INAlternativeAppNamePronunciationHint</key>
+				<string>ab sorb audio books</string>
+			</dict>
+			<dict>
+				<key>INAlternativeAppName</key>
+				<string>Absorb Player</string>
+				<key>INAlternativeAppNamePronunciationHint</key>
+				<string>ab sorb player</string>
+			</dict>
+		</array>
 		<key>NSUserActivityTypes</key>
 		<array>
 			<string>INPlayMediaIntent</string>

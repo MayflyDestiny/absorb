@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'api_service.dart';
-import 'app_log.dart';
 import 'scoped_prefs.dart';
 import 'sync_logic.dart';
 
@@ -56,7 +55,7 @@ class ProgressSyncService {
     // backward by minutes is almost always a bug upstream, not listening.
     final previous = (existing?['currentTime'] as num?)?.toDouble();
     if (previous != null && previous - currentTime > 300) {
-      verboseLog(
+      debugPrint(
         '[ProgressDiag] $itemId local save drops '
         '${previous.toStringAsFixed(1)}s -> ${currentTime.toStringAsFixed(1)}s',
       );
@@ -95,7 +94,7 @@ class ProgressSyncService {
   }) async {
     final pendingList = await ScopedPrefs.getStringList('pending_syncs');
     if (!overridePending && pendingList.contains(itemId)) {
-      verboseLog('[Sync] Skipping server cache for $itemId - pending local sync would be clobbered (isFinished=$isFinished)');
+      debugPrint('[Sync] Skipping server cache for $itemId - pending local sync would be clobbered (isFinished=$isFinished)');
       return false;
     }
     final data = {
@@ -177,7 +176,7 @@ class ProgressSyncService {
       }
       if (serverDur > 0) {
         if ((serverDur - localDuration).abs() > 1) {
-          verboseLog('[Sync] $itemId: using server duration '
+          debugPrint('[Sync] $itemId: using server duration '
               '${serverDur.toStringAsFixed(0)}s over local '
               '${localDuration.toStringAsFixed(0)}s');
         }
@@ -195,20 +194,20 @@ class ProgressSyncService {
     String? sessionId,
   }) async {
     if (!_isOnline) {
-      verboseLog('[Sync] Skipped — offline');
+      debugPrint('[Sync] Skipped — offline');
       return false;
     }
 
     final data = await getLocal(itemId);
     if (data == null) {
-      verboseLog('[Sync] Skipped — no local data for $itemId');
+      debugPrint('[Sync] Skipped — no local data for $itemId');
       return false;
     }
 
     final currentTime = (data['currentTime'] as num?)?.toDouble() ?? 0;
     final duration = (data['duration'] as num?)?.toDouble() ?? 0;
     final isFinished = data['isFinished'] as bool? ?? false;
-    verboseLog('[Sync] Syncing $itemId: currentTime=$currentTime, duration=$duration, isFinished=$isFinished, sessionId=$sessionId');
+    debugPrint('[Sync] Syncing $itemId: currentTime=$currentTime, duration=$duration, isFinished=$isFinished, sessionId=$sessionId');
 
     try {
       if (sessionId != null) {
@@ -225,7 +224,7 @@ class ProgressSyncService {
           isFinished: isFinished ? true : null,
         );
         if (!ok) {
-          verboseLog('[Sync] Server did not take $itemId - keeping it pending');
+          debugPrint('[Sync] Server did not take $itemId - keeping it pending');
           return false;
         }
       }
@@ -234,10 +233,10 @@ class ProgressSyncService {
       pendingList.remove(itemId);
       await ScopedPrefs.setStringList('pending_syncs', pendingList);
 
-      verboseLog('[Sync] Synced $itemId: ${currentTime}s');
+      debugPrint('[Sync] Synced $itemId: ${currentTime}s');
       return true;
     } catch (e) {
-      basicLog('[Sync] Failed for $itemId: $e');
+      debugPrint('[Sync] Failed for $itemId: $e');
       return false;
     }
   }
@@ -273,7 +272,7 @@ class ProgressSyncService {
       pendingAtStart = pendingList.length;
 
       final batch = pendingList.take(maxItems).toList();
-      verboseLog('[Sync] Flushing ${batch.length}/${pendingList.length} pending syncs');
+      debugPrint('[Sync] Flushing ${batch.length}/${pendingList.length} pending syncs');
 
       for (final itemId in batch) {
         final data = await getLocal(itemId);
@@ -313,7 +312,7 @@ class ProgressSyncService {
               localTime: localTime,
               hasOfflineListening: hasOfflineListening,
             )) {
-              verboseLog('[Sync] Server is newer for $itemId: server=$serverTime s ($serverTimestamp) vs local=$localTime s ($localTimestamp) — pulling');
+              debugPrint('[Sync] Server is newer for $itemId: server=$serverTime s ($serverTimestamp) vs local=$localTime s ($localTimestamp) — pulling');
               // The player may have saved again while the server read was in
               // flight. Then the entry we compared is gone: leave it pending
               // and let the next flush compare the new one, which will push.
@@ -321,7 +320,7 @@ class ProgressSyncService {
               final latestTimestamp =
                   (latest?['timestamp'] as num?)?.toInt() ?? 0;
               if (latestTimestamp != localTimestamp) {
-                verboseLog('[Sync] Local changed during the pull for $itemId - comparing again on the next flush');
+                debugPrint('[Sync] Local changed during the pull for $itemId - comparing again on the next flush');
                 continue;
               }
               // This entry lost to the server, so it is no longer worth
@@ -341,12 +340,12 @@ class ProgressSyncService {
               updated.remove(itemId);
               await ScopedPrefs.setStringList('pending_syncs', updated);
               if (_consecutiveFailures > 0) {
-                verboseLog('[Sync] Backoff reset (was $_consecutiveFailures)');
+                debugPrint('[Sync] Backoff reset (was $_consecutiveFailures)');
                 _consecutiveFailures = 0;
               }
               continue;
             }
-            verboseLog('[Sync] Local is newer for $itemId: local=$localTime s ($localTimestamp) vs server=$serverTime s ($serverTimestamp) — pushing');
+            debugPrint('[Sync] Local is newer for $itemId: local=$localTime s ($localTimestamp) vs server=$serverTime s ($serverTimestamp) — pushing');
           }
 
           // Use the direct progress endpoint instead of creating a new
@@ -379,15 +378,15 @@ class ProgressSyncService {
           if (!pushed) {
             // Dropping it as flushed is how a refused push lost a position
             // overnight: the next start resumed from the stale spot.
-            verboseLog('[Sync] Push for $itemId did not reach the server - keeping it for the next flush');
+            debugPrint('[Sync] Push for $itemId did not reach the server - keeping it for the next flush');
             _consecutiveFailures++;
             break;
           }
-          verboseLog('[Sync] Flushed $itemId via progress update: ${localTime}s');
+          debugPrint('[Sync] Flushed $itemId via progress update: ${localTime}s');
           // Reset backoff on success - a successful response proves
           // the server is reachable, so resume normal sync behaviour.
           if (_consecutiveFailures > 0) {
-            verboseLog('[Sync] Backoff reset (was $_consecutiveFailures)');
+            debugPrint('[Sync] Backoff reset (was $_consecutiveFailures)');
             _consecutiveFailures = 0;
           }
 
@@ -395,7 +394,7 @@ class ProgressSyncService {
           updated.remove(itemId);
           await ScopedPrefs.setStringList('pending_syncs', updated);
         } catch (e) {
-          basicLog('[Sync] Flush failed for $itemId: $e');
+          debugPrint('[Sync] Flush failed for $itemId: $e');
           // Stop the batch on any network/TLS error - don't keep hammering
           final msg = e.toString();
           if (msg.contains('SocketException') ||
@@ -407,7 +406,7 @@ class ProgressSyncService {
               msg.contains('timed out') ||
               msg.contains('TimeoutException') ||
               msg.contains('Network is unreachable')) {
-            basicLog('[Sync] Network/TLS error - stopping flush');
+            debugPrint('[Sync] Network/TLS error - stopping flush');
             _consecutiveFailures++;
             break;
           }
@@ -442,15 +441,15 @@ class ProgressSyncService {
           pendingAtStart > 0 &&
           remaining.length >= pendingAtStart) {
         _consecutiveFailures++;
-        verboseLog('[Sync] Flush made no progress (${remaining.length} still pending) - backing off');
+        debugPrint('[Sync] Flush made no progress (${remaining.length} still pending) - backing off');
       }
       // Exponential backoff: 5s, 10s, 20s, 40s, ... capped at 5 minutes
       if (_consecutiveFailures >= _maxConsecutiveFailures) {
-        basicLog('[Sync] Too many consecutive failures ($_consecutiveFailures) - waiting for next connectivity change');
+        debugPrint('[Sync] Too many consecutive failures ($_consecutiveFailures) - waiting for next connectivity change');
         return;
       }
       final clampedDelay = SyncLogic.backoffDelay(_consecutiveFailures);
-      verboseLog('[Sync] Scheduling retry in ${clampedDelay.inSeconds}s (failures=$_consecutiveFailures)');
+      debugPrint('[Sync] Scheduling retry in ${clampedDelay.inSeconds}s (failures=$_consecutiveFailures)');
 
       unawaited(
         Future<void>.delayed(clampedDelay, () {
@@ -492,7 +491,7 @@ class ProgressSyncService {
       'ts': DateTime.now().millisecondsSinceEpoch,
     };
     await ScopedPrefs.setString('pending_ebook_progress', jsonEncode(pending));
-    verboseLog('[Sync] Queued ebook progress for $itemId (offline or PATCH failed)');
+    debugPrint('[Sync] Queued ebook progress for $itemId (offline or PATCH failed)');
   }
 
   /// Queued ebook positions whose PATCH hasn't landed yet
@@ -521,7 +520,7 @@ class ProgressSyncService {
   Future<void> _flushPendingEbookProgress(ApiService api) async {
     final pending = await getPendingEbookProgress();
     if (pending.isEmpty) return;
-    verboseLog('[Sync] Flushing ${pending.length} pending ebook positions');
+    debugPrint('[Sync] Flushing ${pending.length} pending ebook positions');
     for (final entry in pending.entries) {
       final loc = entry.value['loc'] as String?;
       final prog = (entry.value['prog'] as num?)?.toDouble();
@@ -555,7 +554,7 @@ class ProgressSyncService {
     final key = 'offline_listening_$itemId';
     final existing = await ScopedPrefs.getInt(key) ?? 0;
     await ScopedPrefs.setInt(key, existing + seconds);
-    verboseLog('[Sync] Offline listening +${seconds}s for $itemId (total=${existing + seconds}s)');
+    debugPrint('[Sync] Offline listening +${seconds}s for $itemId (total=${existing + seconds}s)');
 
     // Track which items have pending offline time
     final pending = await ScopedPrefs.getStringList('pending_offline_listening');
@@ -659,7 +658,7 @@ class ProgressSyncService {
       if (pending.isEmpty) return;
       final flushed = <String>{};
 
-      verboseLog('[Sync] Flushing offline listening time for ${pending.length} item(s)');
+      debugPrint('[Sync] Flushing offline listening time for ${pending.length} item(s)');
 
       for (final itemId in pending) {
         final key = 'offline_listening_$itemId';
@@ -684,12 +683,12 @@ class ProgressSyncService {
           final serverTime =
               (serverProgress?['currentTime'] as num?)?.toDouble() ?? 0;
           if (serverTime > currentTime) {
-            verboseLog(
+            debugPrint(
                 '[Sync] Server is ahead for $itemId (${serverTime}s vs ${currentTime}s) - reporting listening at the server position');
             currentTime = serverTime;
           }
         } catch (e) {
-          basicLog('[Sync] Could not read server progress for $itemId: $e');
+          debugPrint('[Sync] Could not read server progress for $itemId: $e');
         }
 
         // A ledger holding more listening than the item is long is not a real
@@ -698,7 +697,7 @@ class ProgressSyncService {
         // say what was dropped rather than writing fiction into the stats.
         var reported = seconds;
         if (duration > 0 && reported > duration) {
-          verboseLog(
+          debugPrint(
               '[Sync] Offline listening for $itemId holds ${seconds}s but the item is only ${duration.round()}s - reporting ${duration.round()}s and dropping the rest');
           reported = duration.round();
         }
@@ -722,7 +721,7 @@ class ProgressSyncService {
                 timeListened: reported,
               );
               await api.closePlaybackSession(sid);
-              verboseLog('[Sync] Flushed ${reported}s offline listening for $itemId');
+              debugPrint('[Sync] Flushed ${reported}s offline listening for $itemId');
             }
           }
           // Subtract only what we actually synced. Any ticks added to the
@@ -738,7 +737,7 @@ class ProgressSyncService {
             flushed.add(itemId);
           }
         } catch (e) {
-          basicLog('[Sync] Failed to flush offline listening for $itemId: $e');
+          debugPrint('[Sync] Failed to flush offline listening for $itemId: $e');
           final msg = e.toString();
           if (msg.contains('SocketException') ||
               msg.contains('TimeoutException') ||

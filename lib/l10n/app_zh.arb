@@ -4489,5 +4489,15 @@
   "syncAudioMoved": "有声书已跳到你停止阅读的位置",
   "syncAudioOffer": "点击跳转到你停止阅读的位置",
   "syncFindingAudio": "正在有声书中查找你的页面",
-  "syncFindingEbook": "正在电子书中查找你的位置"
+  "syncFindingEbook": "正在电子书中查找你的位置",
+  "continueReading": "继续阅读",
+  "homeCardsOpenDetails": "在主页打开详情",
+  "homeCardsOpenDetailsOnSubtitle": "点按「继续收听」或「继续阅读」卡片将打开其详情",
+  "homeCardsOpenDetailsOffSubtitle": "点按「继续收听」或「继续阅读」卡片将从上次位置继续播放",
+  "narrationTextBody": "本书的 EPUB 已为音频的每个时刻配好对应文字，因此文本直接取自原书。请选择要添加到书签备注中的内容。",
+  "narrationTextLoading": "正在从原书提取文字",
+  "downloadToAbsorb": "下载到 Absorb",
+  "syncFailed": "同步进度位置失败",
+  "syncAlreadyTogether": "已是同步状态",
+  "syncPosition": "同步进度位置"
 }

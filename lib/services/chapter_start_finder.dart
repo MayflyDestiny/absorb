@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -6,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 
 import 'remote_audio_slice.dart';
 import 'transcription_service.dart';
-import 'app_log.dart';
 
 /// One place in the audio that might be where a chapter starts: the end of a
 /// silence, with what was heard right after it and how much that sounded
@@ -351,7 +351,7 @@ class ChapterStartFinder {
           tmpDir: (await getTemporaryDirectory()).path,
         );
       } catch (e) {
-        basicLog('[ChapterFind] slice failed: $e');
+        debugPrint('[ChapterFind] slice failed: $e');
         throw TranscriptionException(TranscriptionError.extractFailed, e);
       }
       extractFrom = slice.path;
@@ -390,7 +390,7 @@ class ChapterStartFinder {
         silences = silences.take(maxCandidatesPerWindow).toList()
           ..sort((a, b) => a.start.compareTo(b.start));
       }
-      verboseLog('[ChapterFind] window ${startLocal.toStringAsFixed(1)}s+'
+      debugPrint('[ChapterFind] window ${startLocal.toStringAsFixed(1)}s+'
           '${windowSeconds.toStringAsFixed(0)}s: ${silences.length} gaps to listen after');
       for (final s in silences) {
         if (cancelled?.call() == true) break;
@@ -420,7 +420,7 @@ class ChapterStartFinder {
           score: score,
           suggestedTitle: ChapterStartAnalysis.suggestTitle(segments),
         );
-        verboseLog('[ChapterFind] ${candidate.time.toStringAsFixed(1)}s '
+        debugPrint('[ChapterFind] ${candidate.time.toStringAsFixed(1)}s '
             'gap=${candidate.silenceSeconds.toStringAsFixed(1)}s score=$score "$heard"');
         found++;
         onCandidate(candidate);

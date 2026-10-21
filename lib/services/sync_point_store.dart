@@ -1,8 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
-import 'app_log.dart';
 
 /// One confirmed place where the audiobook and the ebook line up: [t] seconds
 /// into the audio is [off] characters into spine section [si]. Written by
@@ -140,7 +140,7 @@ class SyncPointStore {
         );
       }
     } catch (e) {
-      basicLog('[SyncPoints] load failed for $itemId: $e');
+      debugPrint('[SyncPoints] load failed for $itemId: $e');
     }
     _cache[itemId] = book;
     return book;
@@ -152,7 +152,7 @@ class SyncPointStore {
       {double? audioDuration, int? spineLength}) async {
     final book = await _load(itemId);
     if (_stale(book, audioDuration, spineLength)) {
-      verboseLog('[SyncPoints] $itemId: book changed '
+      debugPrint('[SyncPoints] $itemId: book changed '
           '(audio ${book.audioDuration?.toStringAsFixed(0)} -> '
           '${audioDuration?.toStringAsFixed(0)}s, spine ${book.spineLength} -> '
           '$spineLength) - forgetting ${book.points.length} points');
@@ -185,7 +185,7 @@ class SyncPointStore {
     final merged = merge(book.points, stamped);
     if (identical(merged, book.points)) return;
     book.points = merged;
-    verboseLog('[SyncPoints] $itemId: +${p.src} t=${p.t.toStringAsFixed(1)} '
+    debugPrint('[SyncPoints] $itemId: +${p.src} t=${p.t.toStringAsFixed(1)} '
         'si=${p.si} off=${p.off.round()} (${merged.length} points)');
     _dirty.add(itemId);
     _scheduleFlush();
@@ -244,7 +244,7 @@ class SyncPointStore {
         } catch (_) {}
       }
     } catch (e) {
-      basicLog('[SyncPoints] clear failed: $e');
+      debugPrint('[SyncPoints] clear failed: $e');
     }
   }
 
@@ -302,7 +302,7 @@ class SyncPointStore {
             'p': [for (final p in book.points) p.toJson()],
           }));
         } catch (e) {
-          basicLog('[SyncPoints] write failed for $key: $e');
+          debugPrint('[SyncPoints] write failed for $key: $e');
         }
       }
     });

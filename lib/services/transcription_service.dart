@@ -20,7 +20,6 @@ import 'inflight_temp_writes.dart';
 import 'player_settings.dart';
 import 'remote_audio_slice.dart';
 import '../utils/whisper_language.dart';
-import 'app_log.dart';
 
 /// On-device bookmark transcription using Whisper (whisper.cpp via
 /// whisper_ggml_plus). Opt-in. Downloaded books decode from their files;
@@ -166,7 +165,7 @@ class TranscriptionService {
 
   Future<void> _stampStep(String step, {required bool log}) async {
     final memory = await _memoryNumbers();
-    if (log) verboseLog('[Transcribe] step: $step ($memory)');
+    if (log) debugPrint('[Transcribe] step: $step ($memory)');
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_stepMarkerKey,
@@ -203,7 +202,7 @@ class TranscriptionService {
       final ago = DateTime.now()
           .difference(DateTime.fromMillisecondsSinceEpoch(at))
           .inMinutes;
-      verboseLog('[Transcribe] previous run ended during "${parts.sublist(2).join('|')}" '
+      debugPrint('[Transcribe] previous run ended during "${parts.sublist(2).join('|')}" '
           '${ago}min ago (${parts[1]})');
     } catch (_) {}
   }
@@ -241,7 +240,7 @@ class TranscriptionService {
   void _rememberMetadataLanguage(String itemId, String code) {
     if (_metadataLang.containsKey(itemId)) return;
     _metadataLang[itemId] = code;
-    verboseLog('[Transcribe] $itemId is tagged "$code", skipping detection');
+    debugPrint('[Transcribe] $itemId is tagged "$code", skipping detection');
   }
 
   // Model management
@@ -393,7 +392,7 @@ class TranscriptionService {
       ));
     }
     if (tracks.isEmpty) return null;
-    verboseLog('[Transcribe] $itemId streams from ${tracks.length} track(s)');
+    debugPrint('[Transcribe] $itemId streams from ${tracks.length} track(s)');
     return _streamTracks[itemId] = tracks;
   }
 
@@ -480,7 +479,7 @@ class TranscriptionService {
         tmpDir: (await getTemporaryDirectory()).path,
       );
     } catch (e) {
-      basicLog('[Transcribe] slice failed: $e');
+      debugPrint('[Transcribe] slice failed: $e');
       throw TranscriptionException(TranscriptionError.extractFailed, e);
     }
     try {
@@ -800,7 +799,7 @@ class TranscriptionService {
         if (e is TranscriptionException) rethrow;
         throw TranscriptionException(TranscriptionError.transcribeFailed, e);
       }
-      verboseLog('[Transcribe] wav model=${info.fileName} lang=$lang '
+      debugPrint('[Transcribe] wav model=${info.fileName} lang=$lang '
           'whisper=${watch.elapsedMilliseconds}ms chars=${text.length}');
       if (text.isEmpty) throw TranscriptionException(TranscriptionError.empty);
       return text;
@@ -881,13 +880,13 @@ class TranscriptionService {
     final backend = result?.backend as String?;
     if (backend != null && backend != _loggedBackend) {
       _loggedBackend = backend;
-      verboseLog('[Transcribe] whisper runs on $backend');
+      debugPrint('[Transcribe] whisper runs on $backend');
     }
     final log = (result?.log as String?)?.trim();
     if (log == null || log.isEmpty) return;
     for (final line in log.split('\n')) {
       final t = line.trim();
-      if (t.isNotEmpty) verboseLog('[WhisperCpp] $t');
+      if (t.isNotEmpty) debugPrint('[WhisperCpp] $t');
     }
   }
 

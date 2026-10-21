@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/api_service.dart';
-import '../services/app_log.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
@@ -304,7 +303,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         _resolvingEbookIds.remove(id);
       } catch (e) {
         _resolvingEbookIds.remove(id);
-        verboseLog('[Downloads] ebook row metadata failed for $id: $e');
+        debugPrint('[Downloads] ebook row metadata failed for $id: $e');
       }
     }
     if (!mounted || resolved.isEmpty) return;
@@ -859,7 +858,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   Future<void> _play(DownloadInfo info) async {
     final api = context.read<AuthProvider>().apiService;
     if (api == null || info.localPaths.isEmpty) return;
-    verboseLog('[Downloads] Play ${info.itemId} from the downloads list');
+    debugPrint('[Downloads] Play ${info.itemId} from the downloads list');
     final isEpisode = info.itemId.length > 36;
     final itemId = isEpisode ? info.itemId.substring(0, 36) : info.itemId;
     final episodeId = isEpisode ? info.itemId.substring(37) : null;

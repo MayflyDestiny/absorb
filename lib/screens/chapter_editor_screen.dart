@@ -14,7 +14,6 @@ import '../services/download_service.dart';
 import '../services/remote_audio_slice.dart';
 import '../services/transcription_service.dart';
 import '../widgets/overlay_toast.dart';
-import '../services/app_log.dart';
 
 /// Mutable working copy of one chapter. [uid] is a stable identity that
 /// survives reindexing/add/remove (used for controllers + locks); [id] is the
@@ -1873,7 +1872,7 @@ class _FindStartSheetState extends State<_FindStartSheet> {
         });
         break;
       } catch (e) {
-        basicLog('[ChapterFind] failed: $e');
+        debugPrint('[ChapterFind] failed: $e');
         if (!mounted) return;
         setState(() => _error = AppLocalizations.of(context)!.transcriptionFailedMsg);
         break;

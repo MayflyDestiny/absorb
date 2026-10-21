@@ -231,18 +231,28 @@ enum SiriLibrary {
     let query = normalize(name ?? artist ?? "")
     if query.isEmpty { return [] }
     let byAuthor = name == nil
-    let hits = catalog().filter { entry in
+    func fits(_ entry: [String: Any], _ type: String) -> Bool {
       let kind = entry["kind"] as? String ?? "book"
       switch type {
-      case "book": if kind != "book" && kind != "series" { return false }
-      case "podcast", "episode": if kind != "podcast" && kind != "episode" { return false }
-      default: break
+      case "book": return kind == "book" || kind == "series"
+      case "podcast", "episode": return kind == "podcast" || kind == "episode"
+      default: return true
       }
+    }
+    // Siri's media type is often its own guess (a book title it also knows as
+    // a podcast show comes in as a podcast), so it only orders the hits,
+    // unless "podcast" or "episode" was said.
+    let saysPodcast = (name ?? "").range(
+      of: #"\b(podcast|episode)s?\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    let hits = catalog().filter { entry in
+      if saysPodcast && !fits(entry, "podcast") { return false }
       let field = normalize(entry[byAuthor ? "author" : "title"] as? String ?? "")
       return !field.isEmpty && (field == query || field.contains(query))
     }
     let exact = hits.filter { normalize($0[byAuthor ? "author" : "title"] as? String ?? "") == query }
-    return Array((exact.isEmpty ? hits : exact).prefix(4))
+    let pool = exact.isEmpty ? hits : exact
+    let ordered = pool.filter { fits($0, type) } + pool.filter { !fits($0, type) }
+    return Array(ordered.prefix(4))
   }
 }
 

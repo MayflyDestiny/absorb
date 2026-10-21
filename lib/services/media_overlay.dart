@@ -391,8 +391,13 @@ class MediaOverlay {
       fromFiles((name) async => _text(archive, name));
 
   /// The same, with the EPUB's files read through [load] (a local zip, or
-  /// range requests to one on the server).
-  static Future<MediaOverlay?> fromFiles(Future<String?> Function(String name) load) async {
+  /// range requests to one on the server). [onNarrated] hears as soon as the
+  /// package shows the book reads itself aloud, with the length it states,
+  /// before the timing files are read.
+  static Future<MediaOverlay?> fromFiles(
+    Future<String?> Function(String name) load, {
+    void Function(double? duration)? onNarrated,
+  }) async {
     final container = await load('META-INF/container.xml');
     if (container == null) return null;
     final rootfile = _rootfileTag.firstMatch(container);
@@ -416,7 +421,26 @@ class MediaOverlay {
     final types = {for (final v in byId.values) v.href: v.type};
     final overlayIds = {for (final v in byId.values) if (v.overlay != null) v.overlay!};
     if (overlayIds.isEmpty) return null;
+    onNarrated?.call(_packageDuration(opf));
     final labels = await _navLabels(load, byId.values.where((v) => v.props.split(' ').contains('nav')).map((v) => v.href));
+
+    // On a server each timing file is a request of its own, so they come a
+    // few at a time; one after another took half a minute on a big book.
+    final smilPaths = <String>[];
+    for (final m in _itemrefTag.allMatches(opf)) {
+      final ref = _attrs(m.group(0)!)['idref'];
+      final overlayId = ref == null ? null : byId[ref]?.overlay;
+      final path = overlayId == null ? null : byId[overlayId]?.href;
+      if (path != null && !smilPaths.contains(path)) smilPaths.add(path);
+    }
+    final smils = <String, String?>{};
+    for (var i = 0; i < smilPaths.length; i += 8) {
+      final batch = smilPaths.sublist(i, min(i + 8, smilPaths.length));
+      final got = await Future.wait(batch.map(load));
+      for (var j = 0; j < batch.length; j++) {
+        smils[batch[j]] = got[j];
+      }
+    }
 
     final raw = <_RawClip>[];
     final sectionInfo = <int, ({String href, String? label})>{};
@@ -430,7 +454,7 @@ class MediaOverlay {
       final overlayId = item?.overlay;
       if (item == null || overlayId == null) continue;
       final smilPath = byId[overlayId]?.href;
-      final smil = smilPath == null ? null : await load(smilPath);
+      final smil = smilPath == null ? null : smils[smilPath];
       if (smil == null) continue;
       sectionInfo[spineIndex] = (href: item.href, label: labels[item.href]);
       for (final par in _parBlock.allMatches(smil)) {
@@ -455,6 +479,19 @@ class MediaOverlay {
     }
     return _build(raw, mediaTypes: types, sectionInfo: sectionInfo)?.withContents(spine, labels);
   }
+
+  /// The narration's whole length as the package states it: the
+  /// `media:duration` meta that refines nothing. Null when it isn't given.
+  static double? _packageDuration(String opf) {
+    for (final m in _metaTag.allMatches(opf)) {
+      final a = _attrs(m.group(1)!);
+      if (a['property'] != 'media:duration' || a.containsKey('refines')) continue;
+      return parseClock(m.group(2)!.trim());
+    }
+    return null;
+  }
+
+  static final _metaTag = RegExp(r'<(?:\w+:)?meta\b([^>]*)>([^<]*)</(?:\w+:)?meta>', caseSensitive: false);
 
   /// [withContents] from BookOrbit's book info: its spine and table of
   /// contents, the first entry in each file.

@@ -1530,13 +1530,49 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       }
     }
 
-    await add('continue-listening', () async {
+    // BookOrbit's dashboard keeps listening and reading apart, and so do the
+    // shelves here, the way Audiobookshelf has them. A narrated EPUB is
+    // listened to, so it goes with the audiobooks; a book only the
+    // library's own in-progress query found goes by whether it has audio.
+    List<Map<String, dynamic>>? inProgress;
+    var listenIds = <String>{}, readIds = <String>{};
+    Future<List<Map<String, dynamic>>> progressCards() async {
+      final had = inProgress;
+      if (had != null) return had;
       final listening = await _shelfCards('continue-listening', 50);
       final reading = await _shelfCards('continue-reading', 50);
+      listenIds = {for (final c in listening) '${c['id']}'};
+      readIds = {for (final c in reading) '${c['id']}'};
       final seen = <String>{};
       final merged = [...listening, ...reading].where((c) => seen.add('${c['id']}')).toList();
-      final cards = (await _inProgressHere(merged, libId)).take(limit).toList();
+      return inProgress = await _inProgressHere(merged, libId);
+    }
+
+    Map media(Map<String, dynamic> c) => _cardItem(c, libraryId: libId)['media'] as Map? ?? const {};
+    bool hasAudio(Map m) => m['narration'] != null || ((m['duration'] as num?) ?? 0) > 0;
+    bool listened(Map<String, dynamic> c) {
+      final id = '${c['id']}';
+      final m = media(c);
+      if (listenIds.contains(id) || m['narration'] != null) return true;
+      return !readIds.contains(id) && hasAudio(m);
+    }
+
+    bool read(Map<String, dynamic> c) {
+      final id = '${c['id']}';
+      final m = media(c);
+      if (m['narration'] != null) return false;
+      if (readIds.contains(id)) return true;
+      return !listenIds.contains(id) && !hasAudio(m);
+    }
+
+    await add('continue-listening', () async {
+      final cards = (await progressCards()).where(listened).take(limit).toList();
       return shelf('continue-listening', 'Continue Listening', cards);
+    });
+    await add('continue-reading', () async {
+      final cards = (await progressCards()).where(read).take(limit).toList();
+      debugPrint('[BookOrbit] Continue Reading: ${cards.length} of ${readIds.length} reading cards');
+      return shelf('continue-reading', 'Continue Reading', cards);
     });
     await add('continue-series', () async {
       final cards = await _hasOneLibrary()
@@ -3979,6 +4015,11 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   /// Public for the reader's read along: the same narration the player is
   /// streaming, so its timings line up exactly.
+  /// Whether [bookId] is known here to be a book whose audio is its EPUB's
+  /// narration, from a narration already looked up (playing it, or opening
+  /// it in the reader). No request.
+  bool knownNarrated(String bookId) => _narrations.containsKey(_key(bookId));
+
   Future<MediaOverlay?> narrationFor(String bookId) async {
     try {
       return (await _narration(bookId))?.overlay;

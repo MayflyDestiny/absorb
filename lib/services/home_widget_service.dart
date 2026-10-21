@@ -19,7 +19,6 @@ import 'scoped_prefs.dart';
 import 'user_account_service.dart';
 import 'wear_player_service.dart';
 import '../utils/series_id.dart';
-import 'app_log.dart';
 
 const String _androidWidgetName = 'NowPlayingWidget';
 const String _androidWidgetCompactName = 'NowPlayingWidgetCompact';
@@ -683,10 +682,6 @@ class HomeWidgetService {
     final player = AudioPlayerService();
     final hasBook = player.hasBook;
 
-    debugPrint(
-      '[WidgetDebug] _updateWidgetData hasBook=$hasBook isPlaying=${player.isPlaying} title="${player.currentTitle ?? ""}" itemId=${player.currentItemId}',
-    );
-
     await HomeWidget.saveWidgetData<bool>('widget_has_book', hasBook);
 
     // Push user's skip durations so the widget shows them on the buttons.
@@ -840,7 +835,7 @@ class HomeWidgetService {
     // started resumed the next episode from the end of the previous one).
     // The stash catches up on the update that follows a finished load.
     if (player.isLoadingNewItem) {
-      verboseLog('[WidgetDebug] Skipping np stash while $itemId is loading');
+      debugPrint('[WidgetDebug] Skipping np stash while $itemId is loading');
       return;
     }
     await HomeWidget.saveWidgetData<String>('np_item_id', itemId);
@@ -942,15 +937,6 @@ class HomeWidgetService {
       'np_author',
       player.nowPlayingSubtitle,
     );
-
-    debugPrint(
-      '[WidgetDebug] [NativeCore] Stashed: item=$itemId ep=${player.currentEpisodeId} '
-      'pos=${posSec.toStringAsFixed(1)}s tot=${player.totalDuration.toStringAsFixed(0)}s '
-      'speed=${player.speed} dl=${paths.isNotEmpty} '
-      'streams=${player.activeStreamUrls.length} '
-      'tracks=${player.trackStartOffsets.length} '
-      'server=${api?.baseUrl ?? "none"}',
-    );
   }
 
   Future<void> _updateAllWidgets() async {
@@ -1029,7 +1015,6 @@ class HomeWidgetService {
         return;
       }
 
-      debugPrint('[StatsWidget] Fetching listening-stats and progress');
       final stats = await api.getListeningStats();
       // Callers that already hold the account's progress (e.g. the library
       // provider right after marking a book finished) pass it in so this does
@@ -1059,10 +1044,6 @@ class HomeWidgetService {
       )).toSet();
       final booksYear = _countBooksFinishedThisYear(progress, hidden);
 
-      debugPrint(
-        '[StatsWidget] Computed: today=${today}s week=${week}s streak=${streak}d booksThisYear=$booksYear (dailyMapKeys=${dailyMap.length})',
-      );
-
       _todayBase = today;
       _weekBase = week;
       _localAddedToday = 0;
@@ -1077,7 +1058,6 @@ class HomeWidgetService {
         booksYear,
       );
       await _updateStatsWidget();
-      debugPrint('[StatsWidget] Pushed and updateWidget(StatsWidget) called');
     } catch (e) {
       debugPrint('[StatsWidget] Refresh failed: $e');
     } finally {
@@ -1262,7 +1242,6 @@ class HomeWidgetService {
     final coverUrl = player.currentCoverUrl;
     final cacheKey = '$itemId|$coverUrl';
     if (_lastCoverItemId == cacheKey) {
-      debugPrint('[WidgetDebug] cover unchanged, skipping (key=$cacheKey)');
       return;
     }
     _lastCoverItemId = cacheKey;

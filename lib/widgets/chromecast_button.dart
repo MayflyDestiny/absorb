@@ -3,7 +3,6 @@ import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import '../l10n/app_localizations.dart';
 import '../services/chromecast_service.dart';
 import '../services/api_service.dart';
-import '../services/app_log.dart';
 import '../services/server_backend.dart';
 import 'overlay_toast.dart';
 
@@ -116,7 +115,7 @@ Future<void> _waitAndCast(
       if (cast.isConnected) break;
     }
     if (!cast.isConnected) {
-      basicLog('[Cast] Connection timeout — giving up auto-cast');
+      debugPrint('[Cast] Connection timeout — giving up auto-cast');
       return;
     }
   }

@@ -1,9 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'app_log.dart';
 
 /// A track of a streamed book: where to fetch it and how long it runs.
 class RemoteTrack {
@@ -94,7 +94,7 @@ class RemoteAudioSlicer {
         } else {
           moov = (await _range(track, offset, end)).bytes;
         }
-        verboseLog('[Slice] moov ${moov.length} bytes at $offset of $total');
+        debugPrint('[Slice] moov ${moov.length} bytes at $offset of $total');
         return Mp4Index.parse(moov);
       }
       if (size < headerLen) break;
@@ -121,7 +121,7 @@ class RemoteAudioSlicer {
     }
     await File(path).writeAsBytes(out.takeBytes(), flush: true);
     final startWithin = (startSeconds - index.sampleTime(samples.first)).clamp(0.0, durationSeconds);
-    verboseLog('[Slice] mp4 ${samples.length} samples, ${lastOffset - firstOffset + 1} bytes, '
+    debugPrint('[Slice] mp4 ${samples.length} samples, ${lastOffset - firstOffset + 1} bytes, '
         'start ${startWithin.toStringAsFixed(2)}s into the slice');
     return AudioSlice(path, startWithin);
   }
@@ -156,7 +156,7 @@ class RemoteAudioSlicer {
     // to seconds uses the average bitrate, which is all a byte estimate has.
     final bytesPerSecond = (total - audioStart) / dur;
     final startWithin = ((byteAt(startSeconds) - (from + sync)) / bytesPerSecond).clamp(0.0, durationSeconds);
-    verboseLog('[Slice] mp3 ${to - from + 1} bytes from $from, '
+    debugPrint('[Slice] mp3 ${to - from + 1} bytes from $from, '
         'start ${startWithin.toStringAsFixed(2)}s into the slice${toc != null ? ' (xing toc)' : ''}');
     return AudioSlice(path, startWithin);
   }

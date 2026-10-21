@@ -1,8 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'download_service.dart';
 import 'user_account_service.dart';
-import 'app_log.dart';
 
 /// Using the app after the session expired. The account stays saved with its
 /// token cleared and remains the active scope, so progress and listening
@@ -36,7 +36,7 @@ class SignedOutPlayback {
 
   static void started() {
     if (!_active) {
-      basicLog(
+      debugPrint(
           '[SignedOut] Playing downloads signed out, listening queues for ${expiredAccount()?.username}');
     }
     _active = true;
@@ -51,10 +51,10 @@ class SignedOutPlayback {
     _active = false;
     UserAccountService.beforeAccountChange = null;
     if (expiredAccount()?.scopeKey == next.scopeKey) {
-      basicLog('[SignedOut] Signed back in, playback carries on');
+      debugPrint('[SignedOut] Signed back in, playback carries on');
       return;
     }
-    basicLog('[SignedOut] Signing in to another account, stopping signed-out playback first');
+    debugPrint('[SignedOut] Signing in to another account, stopping signed-out playback first');
     try {
       final player = AudioPlayerService();
       if (player.hasBook) {
@@ -62,7 +62,7 @@ class SignedOutPlayback {
         await player.stop();
       }
     } catch (e) {
-      basicLog('[SignedOut] Stopping playback failed: $e');
+      debugPrint('[SignedOut] Stopping playback failed: $e');
     }
   }
 }

@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'narrated_books.dart';
 import 'scoped_prefs.dart';
 import '../widgets/card_button_config.dart';
-import 'app_log.dart';
 
 typedef QueueModeSnapshot = ({
   String bookMode,
@@ -562,7 +561,7 @@ class PlayerSettings {
     return value ?? await getQueueMode();
   }
   static Future<void> setBookQueueMode(String value) {
-    verboseLog('[Queue] Book queue mode -> $value');
+    debugPrint('[Queue] Book queue mode -> $value');
     return _serializeQueueModeMutation(
       () => _set('bookQueueMode', value, notify: true),
     );
@@ -577,7 +576,7 @@ class PlayerSettings {
     return value ?? await getQueueMode();
   }
   static Future<void> setPodcastQueueMode(String value) {
-    verboseLog('[Queue] Podcast queue mode -> $value');
+    debugPrint('[Queue] Podcast queue mode -> $value');
     return _serializeQueueModeMutation(
       () => _set('podcastQueueMode', value, notify: true),
     );
@@ -1040,6 +1039,11 @@ class PlayerSettings {
 
   static Future<bool> getHideEbookOnly() => _get('hideEbookOnly', false);
   static Future<void> setHideEbookOnly(bool value) => _set('hideEbookOnly', value, notify: true);
+
+  /// Tapping a Continue Listening or Continue Reading card on Home opens its
+  /// details instead of picking up where it left off.
+  static Future<bool> getHomeCardsOpenDetails() => _get('homeCardsOpenDetails', false);
+  static Future<void> setHomeCardsOpenDetails(bool value) => _set('homeCardsOpenDetails', value, notify: true);
 
   static Future<bool> getCollapseSeries() => _get('collapseSeries', false);
   static Future<void> setCollapseSeries(bool value) => _set('collapseSeries', value, notify: true);

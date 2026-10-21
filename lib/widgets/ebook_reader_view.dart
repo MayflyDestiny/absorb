@@ -57,7 +57,6 @@ import 'card_chapters_sheet.dart';
 import 'chromecast_button.dart';
 import 'equalizer_sheet.dart';
 import 'sleep_timer_sheet.dart';
-import '../services/app_log.dart';
 
 typedef _ReaderAction = ({
   IconData icon,
@@ -104,6 +103,9 @@ class EbookReaderView extends StatefulWidget {
   /// The audio position [findText] was transcribed at, so a not-confident
   /// first pass can transcribe a longer window and retry.
   final double? findPositionSeconds;
+  /// Find in ebook on a book whose audio is its EPUB's narration: the book
+  /// time to open at, on the sentence read then.
+  final double? openAtAudioSeconds;
   /// Turn read along on as soon as the book is displayed, for the card's
   /// Read along button.
   final bool startReadAlong;
@@ -117,6 +119,7 @@ class EbookReaderView extends StatefulWidget {
     this.findText,
     this.findChapterHint,
     this.findPositionSeconds,
+    this.openAtAudioSeconds,
     this.startReadAlong = false,
   });
 
@@ -3024,7 +3027,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       }
     }
     if (anchor != excerpt) {
-      verboseLog('[FindEbook] anchoring on the first paragraph of the hit: '
+      debugPrint('[FindEbook] anchoring on the first paragraph of the hit: '
           '"${anchor.length > 60 ? anchor.substring(0, 60) : anchor}..."');
       excerpt = anchor;
     }
@@ -3149,13 +3152,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     try {
       page = await _audioEstimateForPage(cfi);
     } catch (e) {
-      basicLog('[CatchUp] estimate failed: $e');
+      debugPrint('[CatchUp] estimate failed: $e');
     }
     if (!mounted || page == null || _readAlongOn || _finding) return;
     final gap = page.est - audioAt;
     final apart = gap.abs() >= _catchUpMinGapSeconds &&
         (audioAt < page.lo || audioAt > page.hi);
-    verboseLog('[CatchUp] page est=${page.est.toStringAsFixed(0)}s '
+    debugPrint('[CatchUp] page est=${page.est.toStringAsFixed(0)}s '
         '(${page.lo.toStringAsFixed(0)}-${page.hi.toStringAsFixed(0)}s) '
         'audio=${audioAt.toStringAsFixed(0)}s apart=$apart '
         'audioStarting=$audioStarting');
@@ -3855,19 +3858,19 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   bool _narrationOpenedAtAudio = false;
 
   /// Opening the reader on a narrated book: go to the sentence the audio is
-  /// on when the book is in the player, or when the listening has got
-  /// further than the reading. Reading follows listening, as listening
-  /// follows reading ahead.
+  /// on. Reading ahead moved the audio along when the reader closed, so this
+  /// is where both left off; Read stands in for Find in ebook on these.
   Future<void> _narrationOpenAtAudio() async {
     final n = _narration;
     if (_narrationOpenedAtAudio || n == null || !_useNarration || !_didLoadRescue) return;
     if (widget.openAtCfi != null || widget.findText != null || widget.startReadAlong) return;
     _narrationOpenedAtAudio = true;
     final player = AudioPlayerService();
-    double? at;
-    if (player.currentItemId == widget.itemId && player.currentEpisodeId == null) {
+    // Find in ebook names the spot, whether or not it is ahead of the page.
+    double? at = widget.openAtAudioSeconds;
+    if (at == null && player.currentItemId == widget.itemId && player.currentEpisodeId == null) {
       at = player.position.inMilliseconds / 1000.0;
-    } else {
+    } else if (at == null) {
       final local = await ProgressSyncService().getLocal(widget.itemId);
       final saved = _narrationLib?.getProgressData(widget.itemId);
       final localAt = (local?['timestamp'] as num?)?.toInt() ?? 0;
@@ -3879,15 +3882,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               : (localAt >= savedAt ? local : saved);
       final heard = (newer?['currentTime'] as num?)?.toDouble() ?? 0;
       if (heard <= 0) return;
-      // Measured in narration time against the page's first sentence, so a
-      // long front matter can't make the audio look ahead when it isn't.
+      // Already on the sentence the audio stopped at: nothing moves.
       final readAt = await _narrationTimeOnPage();
-      if (readAt != null) {
-        if (heard <= readAt + 1) return;
-      } else {
-        final read = (saved?['ebookProgress'] as num?)?.toDouble() ?? _progress;
-        if (n.duration <= 0 || heard / n.duration <= read + 0.005) return;
-      }
+      if (readAt != null && (heard - readAt).abs() <= 1) return;
       at = heard;
     }
     if (!mounted) return;
@@ -4130,7 +4127,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         !TranscriptionService.instance.canTranscribeBook(widget.itemId)) {
       return;
     }
-    verboseLog('[ReadAlong] back in the foreground - picking up again');
+    debugPrint('[ReadAlong] back in the foreground - picking up again');
     await _startReadAlong(holdPlayback: false);
   }
 
@@ -4255,17 +4252,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         decision = await _decideFindTarget(r, chapterHint, nearSeconds: pos);
       }
     } catch (e) {
-      basicLog('[ReadAlong] find place failed: $e');
+      debugPrint('[ReadAlong] find place failed: $e');
     }
     if (!mounted || !_readAlongOn) return;
     if (decision == null) {
-      verboseLog('[ReadAlong] could not place the audio in the book '
+      debugPrint('[ReadAlong] could not place the audio in the book '
           '(pos ${pos.toStringAsFixed(1)}s, $source) - following from here');
       return;
     }
     final jumped = await _jumpToFindHit(
         decision['href'] as String, decision['excerpt'] as String);
-    verboseLog('[ReadAlong] placed the audio at ${pos.toStringAsFixed(1)}s '
+    debugPrint('[ReadAlong] placed the audio at ${pos.toStringAsFixed(1)}s '
         'via $source -> ${decision['href']} jumped=$jumped');
     // The window sat around the playhead, so its middle is where the audio
     // was. The lines that follow pin it exactly.
@@ -4300,7 +4297,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           if (!mounted || !_readAlongOn) return null;
           continue;
         }
-        basicLog('[ReadAlong] find place transcription failed: $e');
+        debugPrint('[ReadAlong] find place transcription failed: $e');
         return null;
       }
     }
@@ -4721,7 +4718,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         final nxt = TranscriptLineStore.instance
             .nextExactLine(widget.itemId, line.end);
         if (nxt != null) {
-          verboseLog('[ReadAlong] no anchor and this line is not the book\'s '
+          debugPrint('[ReadAlong] no anchor and this line is not the book\'s '
               'words - locating the next book line instead');
           needle = nxt.text.trim();
           needleExact = true;
@@ -5090,7 +5087,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _readAlongMissSince = null;
     _readAlongLineStart = null;
     final landed = await _jumpToFindHit(href, needle, flash: false);
-    verboseLog('[ReadAlong] whole-book scan -> $href, on the sentence: $landed');
+    debugPrint('[ReadAlong] whole-book scan -> $href, on the sentence: $landed');
     if (!landed && mounted && _readAlongOn) {
       _readAlongLastTurn = DateTime.now();
       _epubController?.display(cfi: href);
@@ -5802,7 +5799,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _autoScrollSleepEnd = DateTime.now().add(Duration(minutes: minutes));
     _autoScrollSleepTimer =
         Timer(Duration(minutes: minutes), _onAutoScrollSleepFired);
-    verboseLog('[AutoScroll] sleep timer armed for ${minutes}m');
+    debugPrint('[AutoScroll] sleep timer armed for ${minutes}m');
     showOverlayToast(context, AppLocalizations.of(context)!.readerAutoScrollSleepIn(minutes),
         icon: Icons.nightlight_round_outlined);
   }
@@ -5813,7 +5810,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _autoScrollSleepTimer = null;
     _autoScrollSleepEnd = null;
     _autoScrollSleepMinutes = 0;
-    verboseLog('[AutoScroll] sleep timer cancelled');
+    debugPrint('[AutoScroll] sleep timer cancelled');
     if (toast && mounted) {
       showOverlayToast(context, AppLocalizations.of(context)!.readerAutoScrollSleepOff,
           icon: Icons.nightlight_round_outlined);
@@ -5825,7 +5822,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _autoScrollSleepEnd = null;
     _autoScrollSleepMinutes = 0;
     if (!mounted) return;
-    verboseLog('[AutoScroll] sleep timer fired - stopping the blind and '
+    debugPrint('[AutoScroll] sleep timer fired - stopping the blind and '
         'letting the screen sleep');
     _speedToast?.dismiss();
     _speedToast = null;

@@ -45,6 +45,7 @@ Future<void> openEbookReader(
   String? findText,
   String? findChapterHint,
   double? findPositionSeconds,
+  double? openAtAudioSeconds,
   bool startReadAlong = false,
 }) async {
   final ext = ebookExt(ebookFile);
@@ -57,7 +58,8 @@ Future<void> openEbookReader(
       epubReader: () => EbookReaderView(
           itemId: itemId, title: title, ebookFile: ebookFile, openAtCfi: openAtCfi,
           findText: findText, findChapterHint: findChapterHint,
-          findPositionSeconds: findPositionSeconds, startReadAlong: startReadAlong),
+          findPositionSeconds: findPositionSeconds, openAtAudioSeconds: openAtAudioSeconds,
+          startReadAlong: startReadAlong),
     );
   } else if (comicEbookFormats.contains(ext)) {
     viewer = ComicReaderView(itemId: itemId, title: title, ebookFile: ebookFile);

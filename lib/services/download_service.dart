@@ -25,7 +25,6 @@ import 'narration_service.dart';
 import 'offline_source.dart';
 import 'scoped_prefs.dart';
 import 'user_account_service.dart';
-import 'app_log.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error, paused }
 
@@ -184,6 +183,9 @@ class _PendingBook {
   /// (e.g. "Author/Title") on completion. Null for internal / iOS downloads.
   final String? safTreeUri;
   final String? safSubfolder;
+  /// An Audiobookshelf EPUB that reads itself aloud: the one task downloads
+  /// the whole EPUB, and its audio is taken out when it lands.
+  final bool narration;
 
   /// Chapter indices the user picked when this download started, or null for
   /// the whole item. Kept so a resume that has to restart from scratch keeps
@@ -240,6 +242,7 @@ class _PendingBook {
     this.safTreeUri,
     this.safSubfolder,
     this.selectedChapters,
+    this.narration = false,
   }) {
     // Start the no-progress watchdog clock at creation (fresh or restored).
     lastUpdate = DateTime.now();
@@ -270,6 +273,7 @@ class _PendingBook {
     if (safTreeUri != null) 'safTreeUri': safTreeUri,
     if (safSubfolder != null) 'safSubfolder': safSubfolder,
     if (selectedChapters != null) 'selectedChapters': selectedChapters,
+    if (narration) 'narration': true,
     'paused': paused,
   };
 
@@ -295,6 +299,7 @@ class _PendingBook {
     selectedChapters: (j['selectedChapters'] as List<dynamic>?)
         ?.map((e) => (e as num).toInt())
         .toList(),
+    narration: j['narration'] == true,
   )..paused = j['paused'] as bool? ?? false;
 }
 
@@ -809,7 +814,7 @@ class DownloadService extends ChangeNotifier {
         'treeUri': treeUri,
       });
     } catch (e) {
-      basicLog('[Download] scanSafDirectory failed: $e');
+      debugPrint('[Download] scanSafDirectory failed: $e');
       return (recognized: 0, unknown: 0);
     }
     final known = (res?['known'] as List<dynamic>?) ?? const <dynamic>[];
@@ -854,7 +859,7 @@ class DownloadService extends ChangeNotifier {
         );
         recognized++;
       } catch (e) {
-        basicLog('[Download] scan entry failed: $e');
+        debugPrint('[Download] scan entry failed: $e');
       }
     }
     if (recognized > 0) {
@@ -894,7 +899,7 @@ class DownloadService extends ChangeNotifier {
         await recordSavedEbook(itemId, fileUri, metaUri, m['ino'] as String?);
         restored++;
       } catch (e) {
-        basicLog('[Download] ebook scan entry failed: $e');
+        debugPrint('[Download] ebook scan entry failed: $e');
       }
     }
     return restored;
@@ -926,7 +931,7 @@ class DownloadService extends ChangeNotifier {
         await _save();
         notifyListeners();
       } catch (e) {
-        basicLog('[Download] cover refresh failed for $itemId: $e');
+        debugPrint('[Download] cover refresh failed for $itemId: $e');
       }
     }
   }
@@ -1006,7 +1011,7 @@ class DownloadService extends ChangeNotifier {
       if (newPaths == null ||
           newPaths.length != sources.length ||
           newDir == null) {
-        basicLog(
+        debugPrint(
           '[Download] migrate "$title": result missing files, keeping source',
         );
         return false;
@@ -1025,10 +1030,10 @@ class DownloadService extends ChangeNotifier {
         libraryId: info.libraryId,
       );
       await _save();
-      verboseLog('[Download] migrated "$title" (${sources.length} files)');
+      debugPrint('[Download] migrated "$title" (${sources.length} files)');
       return true;
     } catch (e) {
-      basicLog('[Download] migrate "$title" failed: $e');
+      debugPrint('[Download] migrate "$title" failed: $e');
       return false;
     }
   }
@@ -1070,7 +1075,7 @@ class DownloadService extends ChangeNotifier {
             : await _relayoutInternalBook(info);
         if (ok) moved++;
       } catch (e) {
-        basicLog('[Download] relayout "${info.title}" failed: $e');
+        debugPrint('[Download] relayout "${info.title}" failed: $e');
       }
     }
     await prefs.setBool(_downloadLayoutV2Key, true);
@@ -1085,7 +1090,7 @@ class DownloadService extends ChangeNotifier {
           'treeUri': safUri,
         });
       } catch (e) {
-        basicLog('[Download] legacy marker migration failed: $e');
+        debugPrint('[Download] legacy marker migration failed: $e');
       }
     }
 
@@ -1191,7 +1196,7 @@ class DownloadService extends ChangeNotifier {
       );
       return true;
     } catch (e) {
-      basicLog('[Download] relayout SAF "${info.title}" failed: $e');
+      debugPrint('[Download] relayout SAF "${info.title}" failed: $e');
       return false;
     }
   }
@@ -1331,7 +1336,7 @@ class DownloadService extends ChangeNotifier {
           }
         }
       } catch (e) {
-        basicLog('[Download] SAF size probe incomplete: $e');
+        debugPrint('[Download] SAF size probe incomplete: $e');
       }
     }
     return out;
@@ -1362,7 +1367,7 @@ class DownloadService extends ChangeNotifier {
         'path': path,
       });
     } catch (e) {
-      basicLog('[Download] excludeFromBackup failed for $path: $e');
+      debugPrint('[Download] excludeFromBackup failed for $path: $e');
     }
   }
 
@@ -1379,7 +1384,7 @@ class DownloadService extends ChangeNotifier {
           'getGroupContainerPath',
         );
       } catch (e) {
-        basicLog('[Download] getGroupContainerPath failed: $e');
+        debugPrint('[Download] getGroupContainerPath failed: $e');
         return null;
       }
       if (groupPath == null || groupPath.isEmpty) return null;
@@ -1390,7 +1395,7 @@ class DownloadService extends ChangeNotifier {
       try {
         dir.createSync(recursive: true);
       } catch (e) {
-        basicLog('[Download] create app group audio dir failed: $e');
+        debugPrint('[Download] create app group audio dir failed: $e');
         return null;
       }
     }
@@ -1408,7 +1413,7 @@ class DownloadService extends ChangeNotifier {
         };
       }
     } catch (e) {
-      basicLog('[Download] getDeviceStorage error: $e');
+      debugPrint('[Download] getDeviceStorage error: $e');
     }
     return null;
   }
@@ -1430,7 +1435,7 @@ class DownloadService extends ChangeNotifier {
         };
       }
     } catch (e) {
-      basicLog('[Download] getStorageStats error: $e');
+      debugPrint('[Download] getStorageStats error: $e');
     }
     return null;
   }
@@ -1501,7 +1506,7 @@ class DownloadService extends ChangeNotifier {
     _ebookRemovedIds.remove(itemId);
     await _save();
     notifyListeners();
-      verboseLog('[Download] ebook kept for offline: $itemId');
+      debugPrint('[Download] ebook kept for offline: $itemId');
   }
 
   Future<void> deleteKeptEbook(String itemId) async {
@@ -1699,7 +1704,7 @@ class DownloadService extends ChangeNotifier {
     _ebookRemovedIds.remove(itemId);
     await _save();
     notifyListeners();
-        verboseLog('[Download] ebook-only book kept for offline: $itemId');
+        debugPrint('[Download] ebook-only book kept for offline: $itemId');
     return true;
   }
 
@@ -1707,7 +1712,8 @@ class DownloadService extends ChangeNotifier {
   /// download so it plays like any downloaded audiobook. Replaces an
   /// ebook-only record for the same book.
   Future<void> registerNarration({
-    required ApiService api,
+    ApiService? api,
+    String? localCoverPath,
     required String itemId,
     required Map<String, dynamic> item,
     required String dirPath,
@@ -1723,15 +1729,42 @@ class DownloadService extends ChangeNotifier {
     media['tracks'] = audioTracks;
     media['narration'] = {'duration': duration, 'local': true};
     final stored = {...item, 'media': media};
-    final localCoverPath = await _cacheCover(api, itemId, api.getCoverUrl(itemId, width: 800));
-    for (final p in paths) {
-      await _excludeFromBackup(p);
+    final cover = localCoverPath ??
+        (api == null ? null : await _cacheCover(api, itemId, api.getCoverUrl(itemId, width: 800)));
+    var finalPaths = paths;
+    var finalDir = dirPath;
+    // A custom download folder gets the narration too, moved in under
+    // "Author/Title" the way a finished download is. If the move fails the
+    // book stays usable from its internal copy.
+    final tree = Platform.isAndroid ? _customDownloadUri : null;
+    if (tree != null && tree.isNotEmpty) {
+      final author = metadata?['authorName'] as String?;
+      final title = metadata?['title'] as String? ?? itemId;
+      var nested = (author != null && author.isNotEmpty)
+          ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
+          : _sanitizePath(title);
+      if (_folderTakenByOther(nested, itemId)) {
+        nested = '$nested (${itemId.substring(itemId.length - 8)})';
+      }
+      final moved = await _moveBookToSaf(tree, nested, [for (final p in paths) p.split('/').last], paths);
+      if (moved != null) {
+        finalPaths = moved.fileUris;
+        finalDir = moved.dirUri;
+        await _cleanupBookDir(dirPath, itemId);
+        debugPrint('[Download] narration for $itemId moved into the custom folder under "$nested"');
+      } else {
+        debugPrint('[Download] narration for $itemId kept in app storage: the move into the custom folder failed');
+      }
+    } else {
+      for (final p in paths) {
+        await _excludeFromBackup(p);
+      }
     }
     _noteOrigin(itemId);
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
       status: DownloadStatus.downloaded,
-      localPaths: paths,
+      localPaths: finalPaths,
       sessionData: jsonEncode({
         'libraryItem': stored,
         'mediaMetadata': metadata,
@@ -1743,8 +1776,8 @@ class DownloadService extends ChangeNotifier {
       }),
       title: metadata?['title'] as String?,
       author: metadata?['authorName'] as String?,
-      localCoverPath: localCoverPath,
-      localDirPath: dirPath,
+      localCoverPath: cover,
+      localDirPath: finalDir,
       libraryId: item['libraryId'] as String?,
     );
     await _save();
@@ -1881,7 +1914,7 @@ class DownloadService extends ChangeNotifier {
               DownloadInfo.fromJson(entry.value as Map<String, dynamic>);
         }
       } catch (e) {
-        basicLog('[Download] kept ebooks init error: $e');
+        debugPrint('[Download] kept ebooks init error: $e');
       }
     }
     final json = prefs.getString('downloads');
@@ -1893,7 +1926,7 @@ class DownloadService extends ChangeNotifier {
           final info = DownloadInfo.fromJson(
             entry.value as Map<String, dynamic>,
           );
-          verboseLog(
+          debugPrint(
             '[Download] Loaded: ${entry.key} '
             'title="${info.title}" author="${info.author}" '
             'cover=${info.coverUrl != null ? "yes" : "null"} '
@@ -1902,13 +1935,13 @@ class DownloadService extends ChangeNotifier {
           if (info.status == DownloadStatus.downloaded) {
             _downloads[entry.key] = info;
           } else {
-            verboseLog(
+            debugPrint(
               '[Download] Skipping stale ${info.status} entry: ${entry.key}',
             );
           }
         }
       } catch (e) {
-        basicLog('[Download] Init error: $e');
+        debugPrint('[Download] Init error: $e');
       }
     }
     // On iOS, remap paths when the app container UUID changes after updates
@@ -1995,7 +2028,7 @@ class DownloadService extends ChangeNotifier {
           if (s == null || !_terminal.contains(s)) allTerminal = false;
         }
         if (allComplete) {
-          verboseLog(
+          debugPrint(
             '[Download] Reconciler finalizing missed-complete $itemId',
           );
           p.finalizing = true;
@@ -2003,7 +2036,7 @@ class DownloadService extends ChangeNotifier {
           continue;
         }
         if (allTerminal) {
-          basicLog('[Download] Reconciler failing stalled $itemId');
+          debugPrint('[Download] Reconciler failing stalled $itemId');
           // Don't pre-set p.finalizing: _failBook bails when it's already
           // true, which turned this whole cleanup into a no-op AND made the
           // zombie immortal (reconciler and cancel both skip finalizing
@@ -2021,7 +2054,7 @@ class DownloadService extends ChangeNotifier {
       final silence = DateTime.now().difference(p.lastUpdate);
       if ((p.overallProgress == 0 && silence > const Duration(minutes: 3)) ||
           silence > const Duration(minutes: 10)) {
-        basicLog(
+        debugPrint(
           '[Download] Reconciler failing stale $itemId '
           '(progress=${p.overallProgress}, silent ${silence.inMinutes}m)',
         );
@@ -2054,7 +2087,7 @@ class DownloadService extends ChangeNotifier {
           ],
         );
       } catch (e) {
-        basicLog('[Download] androidConfig failed: $e');
+        debugPrint('[Download] androidConfig failed: $e');
       }
     }
     final l = _l();
@@ -2149,7 +2182,7 @@ class DownloadService extends ChangeNotifier {
     }
 
     if (changed) {
-      verboseLog('[Download] Migrated iOS paths to current container');
+      debugPrint('[Download] Migrated iOS paths to current container');
       await _save();
     }
   }
@@ -2164,7 +2197,7 @@ class DownloadService extends ChangeNotifier {
 
     final groupBase = await _iosAppGroupAudioBase();
     if (groupBase == null) {
-      verboseLog(
+      debugPrint(
         '[Download] App group not available, skipping audio migration',
       );
       return;
@@ -2223,7 +2256,7 @@ class DownloadService extends ChangeNotifier {
           needsUpdate = true;
           moved++;
         } catch (e) {
-          basicLog('[Download] Audio migration failed for $oldPath: $e');
+          debugPrint('[Download] Audio migration failed for $oldPath: $e');
           newPaths.add(oldPath);
           failed++;
         }
@@ -2248,7 +2281,7 @@ class DownloadService extends ChangeNotifier {
     }
 
     if (changed) {
-      verboseLog(
+      debugPrint(
         '[Download] App group audio migration: moved=$moved failed=$failed',
       );
       await _save();
@@ -2260,7 +2293,7 @@ class DownloadService extends ChangeNotifier {
     try {
       await _migrateIOSAudioToAppGroup();
     } catch (e) {
-      basicLog('[Download] App group audio migration failed: $e');
+      debugPrint('[Download] App group audio migration failed: $e');
     }
   }
 
@@ -2306,7 +2339,7 @@ class DownloadService extends ChangeNotifier {
       _legacyExternalIds.add(entry.key);
     }
     if (_legacyExternalIds.isNotEmpty) {
-      verboseLog(
+      debugPrint(
         '[Download] ${_legacyExternalIds.length} legacy external download(s) need re-download',
       );
     }
@@ -2428,7 +2461,7 @@ class DownloadService extends ChangeNotifier {
             // SAF probe failed (permission revoked etc.) - be conservative and
             // keep everything rather than wiping the registry.
             ok = false;
-            basicLog('[Download] SAF existence probe incomplete: $e');
+            debugPrint('[Download] SAF existence probe incomplete: $e');
           }
         }
         _lastProbedSafSizes = safSizes;
@@ -2466,7 +2499,7 @@ class DownloadService extends ChangeNotifier {
           }
         }
         if (!allExist) {
-          verboseLog('[Download] Files missing for ${entry.key}, removing');
+          debugPrint('[Download] Files missing for ${entry.key}, removing');
           _downloads.remove(entry.key);
           orphanIds.add(entry.key);
         }
@@ -2478,7 +2511,7 @@ class DownloadService extends ChangeNotifier {
         final basePath = await downloadBasePath;
         final internalBase = await _internalBasePath;
         for (final id in orphanIds) {
-          verboseLog('[Download] Cleaning up orphaned entry: $id');
+          debugPrint('[Download] Cleaning up orphaned entry: $id');
           try {
             final dir = Directory('$basePath/$id');
             if (await dir.exists()) await dir.delete(recursive: true);
@@ -2490,7 +2523,7 @@ class DownloadService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      basicLog('[Download] Validation error: $e');
+      debugPrint('[Download] Validation error: $e');
     }
   }
 
@@ -2525,12 +2558,12 @@ class DownloadService extends ChangeNotifier {
             author = metadata['authorName'] as String? ?? author;
             coverUrl = api.getCoverUrl(apiItemId, width: 1200);
             needsUpdate = true;
-            verboseLog(
+            debugPrint(
               '[Download] Enriched metadata for ${info.itemId}: $title',
             );
           }
         } catch (e) {
-          basicLog('[Download] Enrich failed for ${info.itemId}: $e');
+          debugPrint('[Download] Enrich failed for ${info.itemId}: $e');
         }
       }
 
@@ -2568,13 +2601,13 @@ class DownloadService extends ChangeNotifier {
                 );
                 localCoverPath = coverFile.path;
                 needsUpdate = true;
-                verboseLog(
+                debugPrint(
                   '[Download] Cached cover for ${info.itemId} '
                   '(${resp.bodyBytes.length} bytes, evict=$evicted)',
                 );
               }
             } catch (e) {
-              basicLog('[Download] Cover cache failed for ${info.itemId}: $e');
+              debugPrint('[Download] Cover cache failed for ${info.itemId}: $e');
             }
           }
         }
@@ -2597,13 +2630,13 @@ class DownloadService extends ChangeNotifier {
               final coverFile = File(localCoverPath);
               await coverFile.writeAsBytes(resp.bodyBytes);
               PaintingBinding.instance.imageCache.evict(FileImage(coverFile));
-              verboseLog(
+              debugPrint(
                 '[Download] Upgraded ${width}px cover for ${info.itemId} '
                 '(${resp.bodyBytes.length} bytes)',
               );
             }
           } catch (e) {
-            basicLog('[Download] Cover upgrade failed for ${info.itemId}: $e');
+            debugPrint('[Download] Cover upgrade failed for ${info.itemId}: $e');
           }
         }
       }
@@ -2719,7 +2752,7 @@ class DownloadService extends ChangeNotifier {
     // holding the bare podcast id (the transcription download prompt did)
     // used to fail in the key math before a single request went out.
     if (episodeId != null && !itemId.endsWith('-$episodeId')) {
-      verboseLog('[Download] "$title": composing the episode key from '
+      debugPrint('[Download] "$title": composing the episode key from '
           'podcast $itemId + episode $episodeId');
       itemId = '$itemId-$episodeId';
     }
@@ -2727,16 +2760,16 @@ class DownloadService extends ChangeNotifier {
     try {
       await init().timeout(const Duration(seconds: 8));
     } on TimeoutException catch (e) {
-      verboseLog('[Download] Downloader initialization still in progress: $e');
+      debugPrint('[Download] Downloader initialization still in progress: $e');
       return 'Downloads are still starting. Please try again in a moment.';
     } catch (e) {
-      basicLog('[Download] Downloader initialization failed: $e');
+      debugPrint('[Download] Downloader initialization failed: $e');
       return 'Downloads could not start. Please try again.';
     }
     if (shouldStart?.call() == false) return null;
 
     if (automatic && _autoDownloadBlocked.contains(itemId)) {
-      verboseLog(
+      debugPrint(
         '[Download] skipped auto-download of "$title" ($itemId): the user deleted it. A manual download, or playing it with download-on-stream on, brings it back',
       );
       return null;
@@ -2776,19 +2809,10 @@ class DownloadService extends ChangeNotifier {
       return null;
     }
 
-    // An Audiobookshelf narrated EPUB: its audio comes out of the EPUB here in
-    // the app, a file at a time, rather than through the background downloader.
-    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId)) {
-      if (shouldStart?.call() == false) return null;
-      unawaited(_downloadNarration(api, itemId,
-          title: title, author: author, coverUrl: coverUrl, libraryId: libraryId));
-      return null;
-    }
-
     // If at capacity, queue this one
     if (_activeDownloadIds.length >= maxConcurrent) {
       if (shouldStart?.call() == false) return null;
-      verboseLog(
+      debugPrint(
         '[Download] Queued "$title" ($itemId); slots ${_activeDownloadIds.length}/$maxConcurrent full, ${_queue.length} waiting',
       );
       _queue.add(
@@ -2831,58 +2855,6 @@ class DownloadService extends ChangeNotifier {
       ),
     );
     return null;
-  }
-
-  Future<void> _downloadNarration(
-    ApiService api,
-    String itemId, {
-    required String title,
-    String? author,
-    String? coverUrl,
-    String? libraryId,
-  }) async {
-    _activeDownloadIds.add(itemId);
-    _cancelledIds.remove(itemId);
-    DownloadInfo running(double progress) => DownloadInfo(
-          itemId: itemId,
-          status: DownloadStatus.downloading,
-          progress: progress,
-          title: title,
-          author: author,
-          coverUrl: coverUrl,
-          libraryId: libraryId,
-        );
-    _downloads[itemId] = running(0);
-    notifyListeners();
-    debugPrint('[Download] Starting "$title" ($itemId): the narration out of its EPUB');
-    var shown = DateTime(0);
-    var ok = false;
-    try {
-      final item = await api.getLibraryItem(itemId);
-      if (item != null) {
-        ok = await NarrationService.instance.prepareLocal(api, item, onProgress: (p) {
-          if (_cancelledIds.contains(itemId)) throw const NarrationCancelled();
-          final now = DateTime.now();
-          if (now.difference(shown) < const Duration(milliseconds: 500)) return;
-          shown = now;
-          _downloads[itemId] = running(p.clamp(0.0, 1.0));
-          notifyListeners();
-        });
-      }
-    } on NarrationCancelled {
-      debugPrint('[Download] "$title" ($itemId) cancelled');
-    } catch (e) {
-      debugPrint('[Download] "$title" ($itemId) failed: $e');
-    } finally {
-      _activeDownloadIds.remove(itemId);
-    }
-    if (ok || _downloads[itemId]?.status == DownloadStatus.downloaded) return;
-    if (_downloads[itemId]?.status == DownloadStatus.downloading) _downloads.remove(itemId);
-    try {
-      final dir = Directory('${await downloadBasePath}/$itemId');
-      if (dir.existsSync()) await dir.delete(recursive: true);
-    } catch (_) {}
-    notifyListeners();
   }
 
   /// Download entry point for short-lived background isolates (the episode
@@ -3017,7 +2989,7 @@ class DownloadService extends ChangeNotifier {
             libraryId: info.libraryId,
           );
           changed = true;
-          verboseLog('[Download] ebook appeared on the server after the '
+          debugPrint('[Download] ebook appeared on the server after the '
               'download: $apiItemId (${ebookFile['ebookFormat'] ?? ebookFile['metadata']?['ext']})');
         }
         // The ebook is no longer pre-downloaded here: the reader streams it on
@@ -3025,7 +2997,7 @@ class DownloadService extends ChangeNotifier {
         // pull its whole companion ebook into the cache in the background. A
         // version the user explicitly cached for offline stays where it is.
       } catch (e) {
-        verboseLog('[Download] ebook catch-up failed for ${info.itemId}: $e');
+        debugPrint('[Download] ebook catch-up failed for ${info.itemId}: $e');
       }
     }
     if (changed) {
@@ -3054,7 +3026,7 @@ class DownloadService extends ChangeNotifier {
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
-    verboseLog('[Download] Starting "$title" ($itemId)');
+    debugPrint('[Download] Starting "$title" ($itemId)');
 
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
@@ -3066,6 +3038,12 @@ class DownloadService extends ChangeNotifier {
       libraryId: libraryId,
     );
     notifyListeners();
+
+    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId)) {
+      await _executeNarrationDownload(
+          api: api, itemId: itemId, title: title, author: author, coverUrl: coverUrl, libraryId: libraryId);
+      return;
+    }
 
     // SAF custom folder (Android only): files go to a flat per-book folder
     // under the user-granted tree via content URIs, no storage permission.
@@ -3126,12 +3104,12 @@ class DownloadService extends ChangeNotifier {
       final authorField = episodeId != null ? 'title' : 'authorName';
       final serverAuthor = (serverMeta?[authorField] as String?)?.trim() ?? '';
       if (serverTitle.isNotEmpty && serverTitle != title) {
-        verboseLog('[Download] Title from the server: "$serverTitle" (was "$title")');
+        debugPrint('[Download] Title from the server: "$serverTitle" (was "$title")');
         title = serverTitle;
       }
       var renamed = false;
       if (serverAuthor.isNotEmpty && serverAuthor != author) {
-        verboseLog('[Download] Author from the server: "$serverAuthor" (was "$author")');
+        debugPrint('[Download] Author from the server: "$serverAuthor" (was "$author")');
         author = serverAuthor;
         renamed = true;
       }
@@ -3194,7 +3172,7 @@ class DownloadService extends ChangeNotifier {
       bookDir = Directory('$basePath/$nestedName');
       if (!bookDir.existsSync()) bookDir.createSync(recursive: true);
       bookDirRef = bookDir.path;
-      verboseLog(
+      debugPrint(
         '[Download] "$title" location=${useSaf ? 'SAF' : 'default'} dir=${bookDir.path} tracks=${files.length}',
       );
 
@@ -3351,12 +3329,12 @@ class DownloadService extends ChangeNotifier {
           groupNotificationId: multiFile ? itemId : '',
         );
         final ok = await FileDownloader().enqueue(task);
-        verboseLog(
+        debugPrint(
           '[Download] enqueue ${i + 1}/${files.length} ok=$ok file=${files[i].filename}',
         );
         if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
       }
-      verboseLog('[Download] Enqueued ${files.length} task(s) for "$title"');
+      debugPrint('[Download] Enqueued ${files.length} task(s) for "$title"');
     } catch (e) {
       await _failBook(
         itemId,
@@ -3367,6 +3345,192 @@ class DownloadService extends ChangeNotifier {
         coverUrl: coverUrl,
       );
     }
+  }
+
+  /// An Audiobookshelf EPUB that reads itself aloud downloads whole, as one
+  /// background task with the usual notifications, so it carries on with the
+  /// app in the background or closed. Its audio is taken out once it lands
+  /// ([_finishNarration]).
+  Future<void> _executeNarrationDownload({
+    required ApiService api,
+    required String itemId,
+    required String title,
+    String? author,
+    String? coverUrl,
+    String? libraryId,
+  }) async {
+    final useSaf = Platform.isAndroid && _customDownloadUri != null && _customDownloadUri!.isNotEmpty;
+    String? bookDirRef;
+    try {
+      final item = await api.getLibraryItem(itemId);
+      final ebookFile = resolveEbookFile(item);
+      final ino = ebookFile?['ino'] as String?;
+      if (item == null || ebookFile == null || ino == null || ino.isEmpty) {
+        throw Exception('No EPUB to download');
+      }
+      final metadata = (item['media'] as Map?)?['metadata'] as Map?;
+      final serverTitle = (metadata?['title'] as String?)?.trim() ?? '';
+      final serverAuthor = (metadata?['authorName'] as String?)?.trim() ?? '';
+      if (serverTitle.isNotEmpty) title = serverTitle;
+      if (serverAuthor.isNotEmpty) author = serverAuthor;
+
+      var nestedName = (author != null && author.isNotEmpty)
+          ? '${_sanitizePath(author)}/${_sanitizePath(title)}'
+          : _sanitizePath(title);
+      if (_folderTakenByOther(nestedName, itemId)) {
+        nestedName = '$nestedName (${itemId.substring(itemId.length - 8)})';
+      }
+      final Directory bookDir;
+      String? relDir;
+      if (Platform.isIOS) {
+        bookDir = Directory('${await downloadBasePath}/$nestedName');
+      } else {
+        final appDir = await getApplicationDocumentsDirectory();
+        relDir = 'downloads/$nestedName';
+        bookDir = Directory('${appDir.path}/$relDir');
+      }
+      if (!bookDir.existsSync()) bookDir.createSync(recursive: true);
+      bookDirRef = bookDir.path;
+
+      final localCoverPath = await _cacheCover(api, itemId, coverUrl);
+      // What taking the audio out needs later, even with the app restarted
+      // offline: the item, without its bulky file lists.
+      final slimItem = Map<String, dynamic>.from(item)..remove('userMediaProgress');
+      slimItem['media'] = Map<String, dynamic>.from(slimItem['media'] as Map? ?? const {})
+        ..remove('audioFiles');
+      slimItem['libraryFiles'] = [ebookFile];
+
+      if (_cancelledIds.remove(itemId)) {
+        await _cleanupBookDir(bookDirRef, itemId);
+        _activeDownloadIds.remove(itemId);
+        _downloads.remove(itemId);
+        notifyListeners();
+        unawaited(_processQueue());
+        return;
+      }
+
+      final fileMeta = ebookFile['metadata'] as Map?;
+      final filename = _sanitizePath(fileMeta?['filename'] as String? ?? 'book.epub');
+      final size = (fileMeta?['size'] as num?)?.toInt();
+      final url = api.buildDownloadFileUrl(itemId, ino);
+      final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
+
+      _pending[itemId] = _PendingBook(
+        itemId: itemId,
+        apiItemId: itemId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        localCoverPath: localCoverPath,
+        libraryId: libraryId,
+        bookDir: bookDirRef,
+        trackCount: 1,
+        expectedPaths: ['${bookDir.path}/$filename'],
+        slimSessionJson: jsonEncode({'libraryItem': slimItem}),
+        narration: true,
+      );
+      await _persistPending();
+
+      final l = _l();
+      final runningNotif = Platform.isIOS
+          ? TaskNotification(title, l?.downloadNotifDownloadingTitle ?? 'Downloading')
+          : TaskNotification(title, '{progress}');
+      final completeNotif = TaskNotification(
+        l?.downloadNotifCompleteTitle ?? 'Download Complete',
+        l?.downloadNotifCompleteBody(title) ?? '$title is ready to listen offline',
+      );
+      final errorNotif = TaskNotification(l?.downloadNotifFailedTitle ?? 'Download Failed', title);
+      final meta = jsonEncode({'itemId': itemId, 'i': 0, 'n': 1});
+      final DownloadTask task;
+      if (Platform.isIOS) {
+        task = DownloadTask(
+          taskId: _taskId(itemId, 0),
+          url: url,
+          headers: api.downloadHeadersFor(url),
+          filename: filename,
+          baseDirectory: BaseDirectory.root,
+          directory: bookDir.path,
+          group: _dlGroup,
+          metaData: meta,
+          updates: Updates.statusAndProgress,
+          requiresWiFi: wifiOnly,
+          retries: 3,
+          allowPause: true,
+        );
+      } else {
+        task = DownloadTask(
+          taskId: _taskId(itemId, 0),
+          url: url,
+          headers: api.downloadHeadersFor(url),
+          filename: filename,
+          baseDirectory: BaseDirectory.applicationDocuments,
+          directory: relDir!,
+          group: _dlGroup,
+          metaData: meta,
+          updates: Updates.statusAndProgress,
+          requiresWiFi: wifiOnly,
+          retries: 3,
+          allowPause: true,
+        );
+      }
+      FileDownloader().configureNotificationForTask(
+        task,
+        running: runningNotif,
+        complete: completeNotif,
+        error: errorNotif,
+        progressBar: true,
+      );
+      final ok = await FileDownloader().enqueue(task);
+      debugPrint('[Download] narration EPUB for "$title" ($itemId) enqueued ok=$ok: $filename, '
+          '${size ?? '?'} bytes, dir=${bookDir.path}, '
+          'audio goes to ${useSaf ? 'the custom folder' : 'app storage'} once it lands');
+      if (!ok) throw Exception('Failed to enqueue the EPUB');
+    } catch (e) {
+      await _failBook(itemId,
+          cause: e, bookDirRef: bookDirRef, title: title, author: author, coverUrl: coverUrl);
+    }
+  }
+
+  /// A narrated EPUB landed: its audio is taken out and kept as the book's
+  /// download, the reader gets a copy without the audio, and the EPUB is
+  /// deleted. Runs when the download finishes, or as the app starts when it
+  /// finished while the app was closed, so it never holds the caller up.
+  Future<void> _finishNarration(String itemId, _PendingBook p, String epubPath) async {
+    final started = DateTime.now();
+    var bytes = 0;
+    try {
+      bytes = File(epubPath).lengthSync();
+    } catch (_) {}
+    debugPrint('[Download] narration EPUB for "${p.title}" ($itemId) landed ($bytes bytes) - taking its audio out');
+    Map<String, dynamic>? item;
+    try {
+      item = (jsonDecode(p.slimSessionJson ?? '{}') as Map<String, dynamic>)['libraryItem']
+          as Map<String, dynamic>?;
+    } catch (_) {}
+    var ok = false;
+    try {
+      if (item != null) {
+        ok = await NarrationService.instance
+            .keepFromEpub(item, itemId, epubPath, p.bookDir, localCoverPath: p.localCoverPath);
+      } else {
+        debugPrint('[Download] narration for $itemId has no saved item to keep it with');
+      }
+    } catch (e) {
+      debugPrint('[Download] taking the narration out of "${p.title}" ($itemId) failed: $e');
+    }
+    if (!ok) {
+      p.finalizing = false; // let _failBook proceed
+      await _failBook(itemId, cause: 'The narration could not be taken out of the EPUB');
+      return;
+    }
+    _activeDownloadIds.remove(itemId);
+    _pending.remove(itemId);
+    await _persistPending();
+    await _deleteDbRecords(itemId, p.trackCount);
+    notifyListeners();
+    debugPrint('[Download] Complete: ${p.title} (narration, kept '
+        '${DateTime.now().difference(started).inMilliseconds}ms after the EPUB landed)');
+    unawaited(_processQueue());
   }
 
   /// Rebuild forced-direct-play track URLs against the current server/token so
@@ -3413,7 +3577,7 @@ class DownloadService extends ChangeNotifier {
       // Throws on a track without a /file/:ino path.
       _resolveDurableFiles(api, apiItemId, tracks);
 
-      verboseLog('[Download] Track list read from the item, no play session opened '
+      debugPrint('[Download] Track list read from the item, no play session opened '
           '(${tracks.length} tracks)');
       return {
         'libraryItemId': apiItemId,
@@ -3428,7 +3592,7 @@ class DownloadService extends ChangeNotifier {
         'libraryItem': item,
       };
     } catch (e) {
-      verboseLog('[Download] Item has no usable track list ($e) - using a play session');
+      debugPrint('[Download] Item has no usable track list ($e) - using a play session');
       return null;
     }
   }
@@ -3576,7 +3740,7 @@ class DownloadService extends ChangeNotifier {
       }
       if (direct.isNotEmpty) {
         final ordered = direct.toList()..sort();
-        verboseLog(
+        debugPrint(
           '[Download] resolveSelected: chapters=${chapters.length} '
           'selection=$chapterSelection picked=${ordered.length}/'
           '${allTracks.length} tracks=$ordered (1:1)',
@@ -3606,7 +3770,7 @@ class DownloadService extends ChangeNotifier {
     if (picked.isEmpty) return all;
 
     final ordered = picked.toList()..sort();
-    verboseLog(
+    debugPrint(
       '[Download] resolveSelected: chapters=${chapters.length} '
       'selection=$chapterSelection picked=${ordered.length}/'
       '${allTracks.length} tracks=$ordered',
@@ -3695,11 +3859,11 @@ class DownloadService extends ChangeNotifier {
         // change - rather than when a download is deleted, which is not when the
         // artwork changed and used to flash the cover it was meant to preserve.
         PaintingBinding.instance.imageCache.evict(FileImage(coverFile));
-        verboseLog('[Download] Cached cover image: ${coverFile.path}');
+        debugPrint('[Download] Cached cover image: ${coverFile.path}');
         return coverFile.path;
       }
     } catch (e) {
-      basicLog('[Download] Cover cache failed (non-fatal): $e');
+      debugPrint('[Download] Cover cache failed (non-fatal): $e');
       try {
         final stale = File(
           '${_cachedInternalBasePath ?? ''}/$itemId/cover.jpg.part',
@@ -3764,7 +3928,7 @@ class DownloadService extends ChangeNotifier {
     if (p == null) return;
     p.lastUpdate = DateTime.now();
     p.trackStatus[trackIndex] = status;
-    verboseLog(
+    debugPrint(
       '[Download] task $itemId #$trackIndex status=${status.name}'
       '${exception != null ? ' ex=$exception' : ''}'
       '${responseCode != null ? ' code=$responseCode' : ''}',
@@ -3932,7 +4096,7 @@ class DownloadService extends ChangeNotifier {
       }
       return (dirUri: dirUri, fileUris: fileUris);
     } catch (e) {
-      basicLog('[Download] moveBookToSaf failed: $e');
+      debugPrint('[Download] moveBookToSaf failed: $e');
       return null;
     }
   }
@@ -3964,7 +4128,7 @@ class DownloadService extends ChangeNotifier {
       if (fileUri == null || fileUri.isEmpty) return null;
       return (fileUri: fileUri, metaUri: res?['metaUri'] as String?);
     } catch (e) {
-      basicLog('[Download] saveEbookToSaf failed: $e');
+      debugPrint('[Download] saveEbookToSaf failed: $e');
       return null;
     }
   }
@@ -4053,7 +4217,7 @@ class DownloadService extends ChangeNotifier {
       });
       return out;
     } catch (e) {
-      basicLog('[Download] savedEbookVersionRefs failed: $e');
+      debugPrint('[Download] savedEbookVersionRefs failed: $e');
       return const {};
     }
   }
@@ -4267,7 +4431,7 @@ class DownloadService extends ChangeNotifier {
       f.deleteSync();
       return true;
     } catch (e) {
-      basicLog('[Download] deleting saved ebook copy failed: $e');
+      debugPrint('[Download] deleting saved ebook copy failed: $e');
       return false;
     }
   }
@@ -4340,12 +4504,17 @@ class DownloadService extends ChangeNotifier {
         if (present[i]) p.expectedPaths[i],
     ];
     if (localPaths.length != p.trackCount) {
-      verboseLog(
+      debugPrint(
         '[Download] Finalize "$itemId": only ${localPaths.length}/${p.trackCount} '
         'files present, treating as failure',
       );
       p.finalizing = false; // let _failBook proceed
       await _failBook(itemId, cause: 'Missing files after download');
+      return;
+    }
+
+    if (p.narration) {
+      unawaited(_finishNarration(itemId, p, localPaths.first));
       return;
     }
 
@@ -4394,7 +4563,7 @@ class DownloadService extends ChangeNotifier {
         finalDirPath = moved.dirUri;
         await _cleanupBookDir(p.bookDir, p.itemId); // drop the now-empty internal temp dir
       } else {
-        basicLog(
+        debugPrint(
           '[Download] SAF move failed for "$itemId", keeping internal copy',
         );
       }
@@ -4449,7 +4618,7 @@ class DownloadService extends ChangeNotifier {
       }
     } catch (_) {}
 
-    verboseLog('[Download] Complete: ${p.title} (${localPaths.length} files)');
+    debugPrint('[Download] Complete: ${p.title} (${localPaths.length} files)');
     unawaited(_processQueue());
   }
 
@@ -4496,7 +4665,7 @@ class DownloadService extends ChangeNotifier {
     await _persistPending();
     await _deleteDbRecords(itemId, p?.trackCount ?? 0);
     _cancelledIds.remove(itemId);
-    basicLog(
+    debugPrint(
       '[Download] Failed "$t": $msg (${cause ?? taskException?.description})',
     );
     _toastFailure(t, cause, taskException, responseCode);
@@ -4545,7 +4714,7 @@ class DownloadService extends ChangeNotifier {
     await _persistPending();
     await _deleteDbRecords(itemId, p?.trackCount ?? 0);
     _cancelledIds.remove(itemId);
-    verboseLog('[Download] Cancelled: ${p?.title ?? itemId}');
+    debugPrint('[Download] Cancelled: ${p?.title ?? itemId}');
     notifyListeners();
     unawaited(_processQueue());
   }
@@ -4563,7 +4732,7 @@ class DownloadService extends ChangeNotifier {
         try {
           await FlutterLocalNotificationsPlugin().cancel(id);
         } catch (e) {
-          basicLog('[Download] dismiss group notification failed: $e');
+          debugPrint('[Download] dismiss group notification failed: $e');
         }
       });
     }
@@ -4632,7 +4801,7 @@ class DownloadService extends ChangeNotifier {
         ),
       );
     } catch (e) {
-      basicLog('[Download] progress notification failed: $e');
+      debugPrint('[Download] progress notification failed: $e');
     }
   }
 
@@ -4689,7 +4858,7 @@ class DownloadService extends ChangeNotifier {
       if (!await dir.exists()) return;
       final base = stopAt ?? Directory(await downloadBasePath);
       if (!_isInside(dir.path, base.path)) {
-        basicLog(
+        debugPrint(
           '[Download] skip folder delete outside download root: $bookDir',
         );
         return;
@@ -4751,7 +4920,7 @@ class DownloadService extends ChangeNotifier {
           })
           .timeout(const Duration(seconds: 10));
     } catch (e) {
-      basicLog('[Download] SAF folder prune failed: $e');
+      debugPrint('[Download] SAF folder prune failed: $e');
     }
   }
 
@@ -4888,7 +5057,7 @@ class DownloadService extends ChangeNotifier {
         );
       }
     } catch (e) {
-      basicLog('[Download] loadPending error: $e');
+      debugPrint('[Download] loadPending error: $e');
     }
   }
 
@@ -5028,7 +5197,7 @@ class DownloadService extends ChangeNotifier {
       // [byUser] marks a deliberate removal: the auto-download planners then
       // leave this item alone until a manual download, or a play with
       // download-on-stream on, brings it back - see [downloadItem].
-      verboseLog(
+      debugPrint(
         '[Download] $itemId removed by the user - auto-download leaves it alone from now on',
       );
       await _saveAutoDownloadBlocks();
@@ -5127,7 +5296,7 @@ class DownloadService extends ChangeNotifier {
       final stalePart = File('$internalBase/$itemId/cover.jpg.part');
       if (await stalePart.exists()) await stalePart.delete();
     } catch (e) {
-      basicLog('[Download] cover cleanup failed: $e');
+      debugPrint('[Download] cover cleanup failed: $e');
     }
 
     // Drop the offline ebook copy too, unless the reader has a claim on it.
@@ -5533,7 +5702,7 @@ class DownloadService extends ChangeNotifier {
       );
       return (saved: saved, total: chapters.length);
     } catch (e) {
-      basicLog('[Download] chapterDownloadCounts failed for $itemId: $e');
+      debugPrint('[Download] chapterDownloadCounts failed for $itemId: $e');
       return null;
     }
   }
@@ -5562,7 +5731,7 @@ class DownloadService extends ChangeNotifier {
       }
       return total > 0 ? total : null;
     } catch (e) {
-      verboseLog('[Download] Chapter size estimate failed for $itemId: $e');
+      debugPrint('[Download] Chapter size estimate failed for $itemId: $e');
       return null;
     }
   }
@@ -5587,7 +5756,7 @@ class DownloadService extends ChangeNotifier {
       }
       return total > 0 ? total : null;
     } catch (e) {
-      verboseLog('[Download] Episode size estimate failed for $apiItemId/$episodeId: $e');
+      debugPrint('[Download] Episode size estimate failed for $apiItemId/$episodeId: $e');
       return null;
     }
   }
@@ -5647,7 +5816,7 @@ class DownloadService extends ChangeNotifier {
           }
         }
       } catch (e) {
-        basicLog(
+        debugPrint(
           '[Download] downloadedChapterIndicesCached failed for $itemId: $e',
         );
         result = downloadedChapterIndices(itemId, chapters);
