@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart' show AudioPlayer;
 import 'package:path_provider/path_provider.dart';
 import '../providers/auth_provider.dart';
+import 'open_source_licenses_screen.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
@@ -179,6 +180,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _finishedBadgeMode = 'text';
   bool _loggingEnabled = false;
   bool _showWhatsNew = true;
+  bool _autoCheckUpdate = true;
   bool _fullScreenPlayer = false;
   bool _lockPortrait = false;
   bool _autoSeriesDownloadDefault = false;
@@ -398,8 +400,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _openSearchResult(SettingSearchEntry entry) {
     FocusManager.instance.primaryFocus?.unfocus();
-    // Permissions and Issues & Support live in popups inside the Advanced
-    // section rather than as expandable sections, so open their sheets.
+    // Permissions live in a popup inside the Advanced section rather than
+    // as an expandable section, so open its sheet directly.
     final l = AppLocalizations.of(context)!;
     final target = entry.sectionTitle;
     if (target == l.sectionPermissions) {
@@ -408,14 +410,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _settingsQuery = '';
       });
       _openPermissionsSheet();
-      return;
-    }
-    if (target == l.sectionIssuesAndSupport) {
-      setState(() {
-        _settingsSearchController.clear();
-        _settingsQuery = '';
-      });
-      _openSupportSheet();
       return;
     }
     setState(() {
@@ -1193,6 +1187,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final hiddenSections = await PlayerSettings.getSettingsHiddenSections();
     final sleepRewind = await PlayerSettings.getSleepRewindSeconds();
     final showWhatsNew = await PlayerSettings.getShowWhatsNew();
+    final autoCheckUpdate = await PlayerSettings.getAutoCheckUpdate();
     final lockPortrait = await PlayerSettings.getLockPortrait();
     final autoSeriesDownload = await PlayerSettings.getAutoSeriesDownloadDefault();
     final longSkipButtons = await PlayerSettings.getLongSkipButtons();
@@ -1291,6 +1286,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _showGoodreadsButton = showGoodreads;
         _loggingEnabled = logging;
         _showWhatsNew = showWhatsNew;
+        _autoCheckUpdate = autoCheckUpdate;
         _fullScreenPlayer = fullScreen;
         _snappyTransitions = snappyTrans;
         _classicWording = classicWording;
@@ -2776,6 +2772,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
 
                       // ── Version Info ──
+                      const SizedBox(height: 16),
                 Center(child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -5698,25 +5695,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           } : null,
                               ),
                             ],
-                            if (_isGithubBuild) ...[
-                              const Divider(height: 1, indent: 16, endIndent: 16),
-                              SwitchListTile(
-                          title: Row(children: [
-                                    Flexible(child: Text(l.includePreReleases)),
-                            _infoIcon(l.preReleaseUpdatesInfoTitle, l.preReleaseUpdatesInfoContent),
-                          ]),
-                                subtitle: Text(
-                                  _includePreReleases
-                                      ? l.includePreReleasesOnSubtitle
-                                      : l.includePreReleasesOffSubtitle,
-                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                                value: _includePreReleases,
-                          onChanged: _loaded ? (v) async {
-                                        setState(() => _includePreReleases = v);
-                            await PlayerSettings.setIncludePreReleases(v);
-                          } : null,
-                              ),
-                            ],
                             if (_bookRequestsOn) ...[
                               const Divider(height: 1, indent: 16, endIndent: 16),
                               ListTile(
@@ -5728,20 +5706,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 onTap: () => BookRequestsScreen.open(context, openList: true),
                               ),
                             ],
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            SwitchListTile(
-                              title: Text(l.showWhatsNewOnLaunch),
-                              subtitle: Text(
-                                _showWhatsNew
-                                    ? l.showWhatsNewOnLaunchOnSubtitle
-                                    : l.showWhatsNewOnLaunchOffSubtitle,
-                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              value: _showWhatsNew,
-                              onChanged: _loaded ? (v) {
-                                setState(() => _showWhatsNew = v);
-                                PlayerSettings.setShowWhatsNew(v);
-                              } : null,
-                            ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
                             ListTile(
                         leading: Icon(Icons.menu_book_rounded, color: cs.primary),
@@ -5784,7 +5748,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const TranscriptionSettingsScreen())),
                             ),
-const Divider(height: 1, indent: 16, endIndent: 16),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
                             ListTile(
                               leading: Icon(Icons.shield_outlined, color: cs.primary),
                               title: Text(l.sectionPermissions),
@@ -5793,65 +5757,310 @@ const Divider(height: 1, indent: 16, endIndent: 16),
                               trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                               onTap: _openPermissionsSheet,
                             ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            ListTile(
-                              leading: Icon(Icons.support_agent_rounded, color: cs.primary),
-                              title: Text(l.sectionIssuesAndSupport),
-                              subtitle: Text(l.sectionIssuesAndSupportSubtitle,
-                                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-                              onTap: _openSupportSheet,
-                            ),
                           ],
                         );
       case 'Backup & Sync':
-        return
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  child: Card(
-                                    elevation: 0,
-                                    color: cs.surfaceContainerHigh,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                    child: ListTile(
-                                leading: Icon(Icons.cloud_sync_rounded, color: cs.primary),
-                                      title: Text(l.backupAndSync),
-                                subtitle: Text(_backupSyncStatus(l),
-                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                                trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                      onTap: () async {
-                                  await Navigator.push(context,
-                                    MaterialPageRoute(builder: (_) => const BackupSyncScreen()));
-                                        if (mounted) await _refreshSyncStatus();
-                                      },
-                                      // Shortcut for the impatient: push straight from here
-                                      // rather than opening the screen for one button. Only
-                                      // offered while sync is on, since there is nowhere to
-                                      // send it otherwise.
-                                onLongPress: _syncOn ? () => _uploadSyncNow(l) : null,
-                                    ),
-                                  ),
-                                );
+        return Padding(
+          key: _keyFor('Backup & Sync'),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Material(
+            color: cs.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () async {
+                await Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const BackupSyncScreen()));
+                if (mounted) await _refreshSyncStatus();
+              },
+              onLongPress: _syncOn ? () => _uploadSyncNow(l) : null,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.cloud_sync_rounded,
+                          color: cs.primary, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.backupAndSync,
+                              style: tt.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600)),
+                          Text(_backupSyncStatus(l),
+                              style: tt.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
       case 'All Bookmarks':
-        return
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  child: Card(
-                                    elevation: 0,
-                                    color: cs.surfaceContainerHigh,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                    child: ListTile(
-                                leading: Icon(Icons.bookmarks_rounded, color: cs.primary),
-                                      title: Text(l.allBookmarks),
-                                subtitle: Text(l.allBookmarksSubtitle,
-                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                                trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                onTap: () => Navigator.push(context,
-                                  MaterialPageRoute(builder: (_) => const BookmarksScreen())),
-                                    ),
-                                  ),
-                                );
+        return Padding(
+          key: _keyFor('All Bookmarks'),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Material(
+            color: cs.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const BookmarksScreen())),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.bookmarks_rounded,
+                          color: cs.primary, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.allBookmarks,
+                              style: tt.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600)),
+                          Text(l.allBookmarksSubtitle,
+                              style: tt.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      case 'About':
+        return CollapsibleSection(
+          key: _keyFor('About'),
+          icon: Icons.info_outline_rounded,
+          title: l.aboutSection,
+          cs: cs,
+          isExpanded: _expandedSection == 'About',
+          onExpansionChanged: (v) => _onSectionExpanded('About', v),
+          children: [
+            ListTile(
+              leading: Icon(Icons.tag_outlined, color: cs.primary),
+              title: Text(_versionLine(l)),
+              subtitle: auth.serverVersion != null
+                  ? Text(l.appVersionServerSuffix(auth.serverVersion!),
+                      style: tt.bodySmall
+                          ?.copyWith(color: cs.onSurfaceVariant))
+                  : null,
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            ListTile(
+              leading: Icon(Icons.lightbulb_outline_rounded,
+                  color: cs.onSurfaceVariant),
+              title: Text(l.showTipsAgain),
+              subtitle: Text(l.showTipsAgainSubtitle,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              onTap: () async {
+                await FeatureHint.resetAll();
+                if (!mounted) return;
+                showOverlayToast(context, l.tipsRestored,
+                    icon: Icons.lightbulb_outline_rounded);
+                // Re-trigger the welcome dialog without an app restart.
+                WelcomeSheet.showIfNeeded(context);
+              },
+            ),
+            if (_isGithubBuild) ...[
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              SwitchListTile(
+                title: Row(children: [
+                  Flexible(child: Text(l.includePreReleases)),
+                  _infoIcon(l.preReleaseUpdatesInfoTitle,
+                      l.preReleaseUpdatesInfoContent),
+                ]),
+                subtitle: Text(
+                  _includePreReleases
+                      ? l.includePreReleasesOnSubtitle
+                      : l.includePreReleasesOffSubtitle,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                value: _includePreReleases,
+                onChanged: _loaded
+                    ? (v) async {
+                        setState(() => _includePreReleases = v);
+                        await PlayerSettings.setIncludePreReleases(v);
+                      }
+                    : null,
+              ),
+            ],
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            SwitchListTile(
+              title: Text(l.autoCheckUpdate),
+              subtitle: Text(
+                _autoCheckUpdate
+                    ? l.autoCheckUpdateOnSubtitle
+                    : l.autoCheckUpdateOffSubtitle,
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              value: _autoCheckUpdate,
+              onChanged: _loaded
+                  ? (v) {
+                      setState(() => _autoCheckUpdate = v);
+                      PlayerSettings.setAutoCheckUpdate(v);
+                    }
+                  : null,
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            SwitchListTile(
+              title: Text(l.showWhatsNewOnLaunch),
+              subtitle: Text(
+                _showWhatsNew
+                    ? l.showWhatsNewOnLaunchOnSubtitle
+                    : l.showWhatsNewOnLaunchOffSubtitle,
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              value: _showWhatsNew,
+              onChanged: _loaded
+                  ? (v) {
+                      setState(() => _showWhatsNew = v);
+                      PlayerSettings.setShowWhatsNew(v);
+                    }
+                  : null,
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            ListTile(
+              leading: Icon(Icons.description_outlined, color: cs.primary),
+              title: Text(l.openSourceLicenses),
+              trailing: Icon(Icons.chevron_right_rounded,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      OpenSourceLicensesScreen(appVersion: _appVersion),
+                ),
+              ),
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            ListTile(
+              leading: Icon(Icons.language_outlined, color: cs.primary),
+              title: Text(l.projectWebsite),
+              trailing: Icon(Icons.open_in_new_rounded,
+                  size: 18, color: cs.onSurfaceVariant),
+              onTap: () => launchUrl(
+                Uri.parse('https://github.com/MayflyDestiny/absorb'),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            ListTile(
+              leading: Icon(Icons.bug_report_outlined, color: cs.primary),
+              title: Text(l.bugsAndFeatureRequests),
+              trailing: Icon(Icons.open_in_new_rounded,
+                  size: 18, color: cs.onSurfaceVariant),
+              onTap: () => launchUrl(
+                  Uri.parse('https://github.com/MayflyDestiny/absorb/issues'),
+                  mode: LaunchMode.externalApplication),
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            SwitchListTile(
+              title: Text(l.enableLogging),
+              subtitle: Text(
+                _loggingEnabled
+                    ? l.enableLoggingOnSubtitle
+                    : l.enableLoggingOffSubtitle,
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              value: _loggingEnabled,
+              onChanged: _loaded
+                  ? (v) {
+                      setState(() => _loggingEnabled = v);
+                      PlayerSettings.setLoggingEnabled(v);
+                      showOverlayToast(
+                        context,
+                        v
+                            ? l.loggingEnabledSnackbar
+                            : l.loggingDisabledSnackbar,
+                        icon: Icons.article_outlined,
+                      );
+                    }
+                  : null,
+            ),
+            if (_loggingEnabled && LogService().enabled) ...[
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: Icon(Icons.attach_file_rounded, color: cs.primary),
+                title: Text(l.sendLogs),
+                subtitle: Text(l.sendLogsSubtitle,
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () async {
+                  try {
+                    await LogService().shareLogs(
+                      serverVersion: auth.serverVersion,
+                      sharePositionOrigin: shareOriginFor(context),
+                    );
+                  } catch (e) {
+                    if (mounted) {
+                      showOverlayToast(
+                        context,
+                        l.failedToShare(e.toString()),
+                        icon: Icons.error_outline_rounded,
+                      );
+                    }
+                  }
+                },
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: Icon(Icons.delete_outline_rounded, color: cs.error),
+                title: Text(l.clearLogs),
+                onTap: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dctx) => AlertDialog(
+                      title: Text(l.clearLogsQuestion),
+                      content: Text(l.clearLogsContent),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(dctx, false),
+                            child: Text(l.cancel)),
+                        TextButton(
+                            onPressed: () => Navigator.pop(dctx, true),
+                            child: Text(l.clear)),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true || !mounted) return;
+                  await LogService().clearLogs();
+                  if (mounted) {
+                    showOverlayToast(context, l.logsCleared,
+                        icon: Icons.delete_outline_rounded);
+                  }
+                },
+              ),
+            ],
+          ],
+        );
 
       default:
         return const SizedBox.shrink();
@@ -5885,33 +6094,6 @@ const Divider(height: 1, indent: 16, endIndent: 16),
     );
   }
 
-  Future<void> _openSupportSheet() async {
-    final cs0 = Theme.of(context).colorScheme;
-    await showStackableSheet<void>(
-      context: context,
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      backgroundColor: cs0.surface,
-      useSafeArea: true,
-      showHandle: true,
-      builder: (ctx, scrollController) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final l = AppLocalizations.of(ctx)!;
-            return ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.only(bottom: 24),
-              children: [
-                _sheetSectionHeader(ctx, Icons.support_agent_rounded, l.sectionIssuesAndSupport),
-                const SizedBox(height: 8),
-                ..._issuesSheetItems(ctx, setSheetState),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
   Widget _sheetSectionHeader(BuildContext ctx, IconData icon, String title) {
     final cs = Theme.of(ctx).colorScheme;
     final tt = Theme.of(ctx).textTheme;
@@ -5980,151 +6162,6 @@ const Divider(height: 1, indent: 16, endIndent: 16),
                                   } else {
                             final result = await Permission.ignoreBatteryOptimizations.request();
                             if (result.isPermanentlyDenied && mounted) await openAppSettings();
-                                  }
-                                },
-                              ),
-                            ],
-    ];
-  }
-
-  List<Widget> _issuesSheetItems(
-      BuildContext ctx, void Function(VoidCallback) setSheetState) {
-    final cs = Theme.of(ctx).colorScheme;
-    final tt = Theme.of(ctx).textTheme;
-    final l = AppLocalizations.of(ctx)!;
-    final auth = ctx.watch<AuthProvider>();
-    return [
-                            ListTile(
-                        leading: Icon(Icons.lightbulb_outline_rounded,
-                            color: cs.onSurfaceVariant),
-                              title: Text(l.showTipsAgain),
-                        subtitle: Text(l.showTipsAgainSubtitle,
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              onTap: () async {
-                                await FeatureHint.resetAll();
-                                if (!mounted) return;
-                          showOverlayToast(context, l.tipsRestored,
-                              icon: Icons.lightbulb_outline_rounded);
-                                // Re-trigger the welcome dialog without an app
-                                // restart. resetAll() already cleared the flag.
-                                WelcomeSheet.showIfNeeded(context);
-                              },
-                            ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            ListTile(
-                        leading: Icon(Icons.bug_report_outlined, color: cs.onSurfaceVariant),
-                              title: Text(l.bugsAndFeatureRequests),
-                        subtitle: Text(l.bugsAndFeatureRequestsSubtitle,
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                        trailing: Icon(Icons.open_in_new_rounded,
-                            size: 18, color: cs.onSurfaceVariant),
-                              onTap: () => launchUrl(
-                            Uri.parse('https://github.com/MayflyDestiny/absorb/issues'),
-                            mode: LaunchMode.externalApplication),
-                            ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            ListTile(
-                              leading: Icon(Icons.discord, color: cs.onSurfaceVariant),
-                              title: Text(l.joinDiscord),
-                              subtitle: Text(l.joinDiscordSubtitle,
-                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              trailing: Icon(Icons.open_in_new_rounded,
-                                  size: 18, color: cs.onSurfaceVariant),
-                              onTap: () => launchUrl(
-                                  Uri.parse('https://discord.gg/bwH6hdvzZ4'),
-                                  mode: LaunchMode.externalApplication),
-                            ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            ListTile(
-                              leading: Icon(Icons.email_outlined, color: cs.primary),
-                              title: Text(l.contact),
-                              subtitle: Text(l.contactSubtitle,
-                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: () {
-                                LogService().contactEmail(
-                                  serverVersion: auth.serverVersion,
-                                );
-                              },
-                            ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            ListTile(
-                              leading: Icon(Icons.coffee_rounded, color: Colors.amber.shade600),
-                              title: Text(l.supportTheDev),
-                              subtitle: Text(l.buyMeACoffee,
-                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              trailing: Icon(Icons.favorite_rounded, size: 18, color: Colors.amber.shade600),
-                              onTap: () => launchUrl(
-                                  Uri.parse('https://www.buymeacoffee.com/BarnabasApps'),
-                                  mode: LaunchMode.externalApplication),
-                            ),
-                            const Divider(height: 1, indent: 16, endIndent: 16),
-                            SwitchListTile(
-                              title: Text(l.enableLogging),
-                              subtitle: Text(
-                                _loggingEnabled
-                                    ? l.enableLoggingOnSubtitle
-                                    : l.enableLoggingOffSubtitle,
-                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                              value: _loggingEnabled,
-                        onChanged: _loaded ? (v) {
-                                      setSheetState(() => _loggingEnabled = v);
-                                      PlayerSettings.setLoggingEnabled(v);
-                                      showOverlayToast(
-                                        context,
-                                        v
-                                            ? l.loggingEnabledSnackbar
-                                            : l.loggingDisabledSnackbar,
-                                        icon: Icons.article_outlined,
-                                      );
-                        } : null,
-                            ),
-                            if (_loggingEnabled && LogService().enabled) ...[
-                              const Divider(height: 1, indent: 16, endIndent: 16),
-                              ListTile(
-                          leading: Icon(Icons.attach_file_rounded, color: cs.primary),
-                                title: Text(l.sendLogs),
-                          subtitle: Text(l.sendLogsSubtitle,
-                            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                                trailing: const Icon(Icons.chevron_right_rounded),
-                                onTap: () async {
-                                  try {
-                                    await LogService().shareLogs(
-                                      serverVersion: auth.serverVersion,
-                                sharePositionOrigin: shareOriginFor(context),
-                                    );
-                                  } catch (e) {
-                                    if (mounted) {
-                                      showOverlayToast(
-                                        context,
-                                        l.failedToShare(e.toString()),
-                                        icon: Icons.error_outline_rounded,
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                              const Divider(height: 1, indent: 16, endIndent: 16),
-                              ListTile(
-                          leading: Icon(Icons.delete_outline_rounded, color: cs.error),
-                                title: Text(l.clearLogs),
-                                onTap: () async {
-                                  final confirmed = await showDialog<bool>(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: Text(l.clearLogsQuestion),
-                                      content: Text(l.clearLogsContent),
-                                      actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
-                                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.clear)),
-                                      ],
-                                    ),
-                                  );
-                                  if (confirmed != true || !mounted) return;
-                                  await LogService().clearLogs();
-                                  if (mounted) {
-                              showOverlayToast(context, l.logsCleared,
-                                  icon: Icons.delete_outline_rounded);
                                   }
                                 },
                               ),

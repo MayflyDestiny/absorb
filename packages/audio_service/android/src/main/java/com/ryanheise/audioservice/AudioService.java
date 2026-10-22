@@ -802,6 +802,17 @@ public class AudioService extends MediaBrowserServiceCompat {
             enterPlayingState();
         } else if (wasPlaying && !playing) {
             exitPlayingState();
+        } else if (playing && processingState != AudioProcessingState.idle) {
+            // Absorb: after a long Doze / background spell the system can drop
+            // the foreground notification while the session and player stay
+            // alive. The original code only calls enterPlayingState() on a
+            // paused→playing flip, so a non-flipping push (replay while already
+            // playing, periodic position refresh) never re-binds the foreground
+            // and the controls vanish even though audio keeps playing. Keep the
+            // foreground bound on every push while playing; enterPlayingState()
+            // and startForeground() are idempotent and just refresh the same
+            // notification entry.
+            enterPlayingState();
         }
 
         if (oldProcessingState != AudioProcessingState.idle && processingState == AudioProcessingState.idle) {

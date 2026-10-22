@@ -1165,6 +1165,11 @@ class PlayerSettings {
   static Future<bool> getShowWhatsNew() => _get('showWhatsNewOnLaunch', true);
   static Future<void> setShowWhatsNew(bool value) => _set('showWhatsNewOnLaunch', value);
 
+  // Automatically check for a new release on launch (and on resume). Default
+  // on; the manual "Check for update" button always works regardless.
+  static Future<bool> getAutoCheckUpdate() => _get('autoCheckUpdate', true);
+  static Future<void> setAutoCheckUpdate(bool value) => _set('autoCheckUpdate', value);
+
   static Future<bool> getLoggingEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('loggingEnabled') ?? false;
@@ -1377,14 +1382,15 @@ class PlayerSettings {
   static const defaultSettingsSectionOrder = <String>[
     'Playback',
     'Appearance',
-    'Customize Stats',
     'Absorbing Cards',
     'Media Controls',
     'Car',
+    'Customize Stats',
     'Sleep Timer',
     'Downloads & Storage',
     'Library',
     'Advanced',
+    'About',
     'Backup & Sync',
     'All Bookmarks',
   ];
@@ -1392,10 +1398,11 @@ class PlayerSettings {
   static Future<List<String>> getSettingsSectionOrder() async {
     final raw = await _get(settingsSectionOrderKey, '');
     if (raw.trim().isNotEmpty) {
+      final known = defaultSettingsSectionOrder.toSet();
       final arr = raw
           .split(',')
           .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
+          .where((s) => s.isNotEmpty && known.contains(s))
           .toList();
       // Append sections introduced by app updates so they show up even for
       // users who already saved a custom order.

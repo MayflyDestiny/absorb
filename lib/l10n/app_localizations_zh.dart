@@ -98,7 +98,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get whatsNewSeeFull => '查看完整更新日志';
 
   @override
-  String get showWhatsNewOnLaunch => '启动时显示更新说明';
+  String get showWhatsNewOnLaunch => '显示更新说明';
 
   @override
   String get showWhatsNewOnLaunchOnSubtitle => '开启 - 更新后首次启动时展示本次更新要点';
@@ -3341,7 +3341,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sectionIssuesAndSupportSubtitle => '使用提示、问题反馈与日志';
 
   @override
-  String get bugsAndFeatureRequests => '错误报告与功能请求';
+  String get bugsAndFeatureRequests => '问题反馈';
 
   @override
   String get bugsAndFeatureRequestsSubtitle => '在 GitHub 上提交问题';
@@ -3397,7 +3397,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get clearLogsContent => '此操作无法撤销。如果之后可能需要，请先发送日志。';
 
   @override
-  String get sectionAdvanced => '高级设置';
+  String get sectionAdvanced => '高级';
 
   @override
   String get localServer => '本地服务器';
@@ -5402,6 +5402,39 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateCheckFailed => '无法检查更新';
+
+  @override
+  String get autoCheckUpdate => '自动检查新版本';
+
+  @override
+  String get autoCheckUpdateOnSubtitle => '开启 - 应用启动时自动检查是否有新版本';
+
+  @override
+  String get autoCheckUpdateOffSubtitle => '关闭 - 仅在手动点击“检查更新”时检查';
+
+  @override
+  String get openSourceLicenses => '开源许可';
+
+  @override
+  String get licensesViewRepository => '查看项目仓库';
+
+  @override
+  String get licensesThirdParty => '第三方开源组件';
+
+  @override
+  String get licensesBasedOn => '基于原项目 pounat/absorb 修改（原作者 Nathan Poulson）';
+
+  @override
+  String get projectWebsite => '项目主页';
+
+  @override
+  String get advancedGroupNetwork => '网络与连接';
+
+  @override
+  String get advancedGroupFeatures => '功能';
+
+  @override
+  String get advancedGroupSystem => '系统与支持';
 
   @override
   String get updateAvailable => '有可用更新';
@@ -10504,7 +10537,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerPageTurnSlide => '滑动';
 
   @override
-  String get readerPageTurnCurl => '卷曲';
+  String get readerPageTurnCurl => '仿真';
 
   @override
   String get readerPageTurnRipple => '波纹';
@@ -10740,7 +10773,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get backupAndSync => '备份和同步';
 
   @override
-  String get backupAndSyncSubtitle => '保存备份文件，或在多台设备间保持设置一致';
+  String get backupAndSyncSubtitle => '备份文件并在多设备间同步设置';
 
   @override
   String get syncSettingsExperimental => '实验性';

@@ -82,12 +82,14 @@ IconData settingsSectionIcon(String id) {
       return Icons.shield_outlined;
     case 'Issues & Support':
       return Icons.support_agent_rounded;
-    case 'Advanced':
-      return Icons.tune_rounded;
     case 'Backup & Sync':
       return Icons.cloud_sync_rounded;
     case 'All Bookmarks':
       return Icons.bookmarks_rounded;
+    case 'Advanced':
+      return Icons.tune_rounded;
+    case 'About':
+      return Icons.info_outline_rounded;
     default:
       return Icons.tune_rounded;
   }
@@ -117,12 +119,14 @@ String settingsSectionTitle(String id, AppLocalizations l) {
       return l.sectionPermissions;
     case 'Issues & Support':
       return l.sectionIssuesAndSupport;
-    case 'Advanced':
-      return l.sectionAdvanced;
     case 'Backup & Sync':
       return l.backupAndSync;
     case 'All Bookmarks':
       return l.allBookmarks;
+    case 'Advanced':
+      return l.sectionAdvanced;
+    case 'About':
+      return l.aboutSection;
     default:
       return id;
   }

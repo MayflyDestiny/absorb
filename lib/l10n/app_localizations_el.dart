@@ -5610,6 +5610,42 @@ class AppLocalizationsEl extends AppLocalizations {
   String get updateCheckFailed => 'Couldn\'t check for updates';
 
   @override
+  String get autoCheckUpdate => 'Check for updates on launch';
+
+  @override
+  String get autoCheckUpdateOnSubtitle =>
+      'On - automatically check for a new version when the app opens';
+
+  @override
+  String get autoCheckUpdateOffSubtitle =>
+      'Off - only check when you tap \"Check for update\"';
+
+  @override
+  String get openSourceLicenses => 'Open-source licenses';
+
+  @override
+  String get licensesViewRepository => 'View project repository';
+
+  @override
+  String get licensesThirdParty => 'Third-party open-source components';
+
+  @override
+  String get licensesBasedOn =>
+      'Based on the pounat/absorb project by Nathan Poulson.';
+
+  @override
+  String get projectWebsite => 'Project website';
+
+  @override
+  String get advancedGroupNetwork => 'Network & connection';
+
+  @override
+  String get advancedGroupFeatures => 'Features';
+
+  @override
+  String get advancedGroupSystem => 'System & support';
+
+  @override
   String get updateAvailable => 'Update available';
 
   @override
@@ -11077,7 +11113,7 @@ class AppLocalizationsEl extends AppLocalizations {
 
   @override
   String get backupAndSyncSubtitle =>
-      'Save a backup file, or keep settings in step across devices';
+      'Back up files and sync settings across devices';
 
   @override
   String get syncSettingsExperimental => 'Experimental';

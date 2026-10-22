@@ -5549,6 +5549,14 @@ class AudioPlayerService extends ChangeNotifier {
         return _abandonStart(null, null, 'local, before play');
       }
       _player!.play();
+      // A long background / overnight pause can leave the playing event
+      // throttled in Doze, so push state immediately from the live player flags
+      // and again after load settles instead of waiting for a late event; the
+      // native layer keeps the foreground notification bound on playing.
+      _handler?.refreshPlaybackState();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _handler?.refreshPlaybackState();
+      });
       _scheduleAudioDiagnostics('local');
       notifyListeners();
       _setupSync();
@@ -9445,6 +9453,18 @@ if (_chapterJumpLatchIndex >= 0) {
     _lastAccrualPos = null;
     // Start playback immediately — don't wait for server calls
     _player?.play();
+    // Long background / overnight pauses can leave the just_audio event stream
+    // throttled in Doze, so the playing=true state may not reach the MediaSession
+    // on its own and the system notification isn't rebuilt after resume. Force a
+    // fresh PlaybackState push (which flips the session from paused to playing and
+    // re-enters the foreground) and re-push the media item metadata.
+    _handler?.refreshPlaybackState();
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _handler?.refreshPlaybackState();
+    });
+    if (_currentItemId != null && _currentTitle != null) {
+      _repushNotifiedMediaItem();
+    }
     // Any paused seek up to this instant belonged to this resume (a socket
     // adoption can land between the check above and here); the flag is for
     // seeks during the NEXT pause.

@@ -9836,6 +9836,72 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check for updates'**
   String get updateCheckFailed;
 
+  /// No description provided for @autoCheckUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates on launch'**
+  String get autoCheckUpdate;
+
+  /// No description provided for @autoCheckUpdateOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - automatically check for a new version when the app opens'**
+  String get autoCheckUpdateOnSubtitle;
+
+  /// No description provided for @autoCheckUpdateOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - only check when you tap \"Check for update\"'**
+  String get autoCheckUpdateOffSubtitle;
+
+  /// No description provided for @openSourceLicenses.
+  ///
+  /// In en, this message translates to:
+  /// **'Open-source licenses'**
+  String get openSourceLicenses;
+
+  /// No description provided for @licensesViewRepository.
+  ///
+  /// In en, this message translates to:
+  /// **'View project repository'**
+  String get licensesViewRepository;
+
+  /// No description provided for @licensesThirdParty.
+  ///
+  /// In en, this message translates to:
+  /// **'Third-party open-source components'**
+  String get licensesThirdParty;
+
+  /// No description provided for @licensesBasedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Based on the pounat/absorb project by Nathan Poulson.'**
+  String get licensesBasedOn;
+
+  /// No description provided for @projectWebsite.
+  ///
+  /// In en, this message translates to:
+  /// **'Project website'**
+  String get projectWebsite;
+
+  /// No description provided for @advancedGroupNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Network & connection'**
+  String get advancedGroupNetwork;
+
+  /// No description provided for @advancedGroupFeatures.
+  ///
+  /// In en, this message translates to:
+  /// **'Features'**
+  String get advancedGroupFeatures;
+
+  /// No description provided for @advancedGroupSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System & support'**
+  String get advancedGroupSystem;
+
   /// No description provided for @updateAvailable.
   ///
   /// In en, this message translates to:
@@ -19014,7 +19080,7 @@ abstract class AppLocalizations {
   /// No description provided for @backupAndSyncSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Save a backup file, or keep settings in step across devices'**
+  /// **'Back up files and sync settings across devices'**
   String get backupAndSyncSubtitle;
 
   /// No description provided for @syncSettingsExperimental.

@@ -145,23 +145,30 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
       SettingSearchEntry('Advanced', l.sectionPermissions, l.unrestrictedBattery, [l.unrestrictedBatterySubtitle]),
     ],
 
-    // ── Issues & Support (inside Advanced sheet) ──
-    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.showTipsAgain, [l.showTipsAgainSubtitle]),
-    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
-    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
-    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.sendLogs, [l.sendLogsSubtitle]),
-    SettingSearchEntry('Advanced', l.sectionIssuesAndSupport, l.clearLogs, const []),
-
     // ── Advanced ──
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.navHoldSettingTitle, [l.navHoldSettingSubtitle]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.localServer, [l.localServerOnConnectedSubtitle, l.localServerOnRemoteSubtitle, l.localServerOffSubtitle, l.localServerUrlLabel]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.trustAllCertificates, [l.trustAllCertificatesOnSubtitle, l.trustAllCertificatesOffSubtitle]),
     if (Platform.isAndroid)
       SettingSearchEntry('Advanced', l.sectionAdvanced, l.mp3IndexSeeking, [l.mp3IndexSeekingOnSubtitle, l.mp3IndexSeekingOffSubtitle]),
-    if (const bool.fromEnvironment('GITHUB_BUILD'))
-      SettingSearchEntry('Advanced', l.sectionAdvanced, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
-    SettingSearchEntry('Advanced', l.sectionAdvanced, l.showWhatsNewOnLaunch, [l.showWhatsNewOnLaunchOnSubtitle, l.showWhatsNewOnLaunchOffSubtitle]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.adminRmab, [l.adminRmabConnected, l.adminRmabAskAdmin]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.transcriptionTitle, [l.transcriptionAdvancedSubtitle, l.syncReadingListening]),
+
+    // ── Backup & Sync / All Bookmarks ──
+    SettingSearchEntry('Backup & Sync', l.backupAndSync, l.backupAndSync, const []),
+    SettingSearchEntry('All Bookmarks', l.allBookmarks, l.allBookmarks, [l.allBookmarksSubtitle]),
+
+    // ── About ──
+    SettingSearchEntry('About', l.aboutSection, l.showTipsAgain, [l.showTipsAgainSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.sendLogs, [l.sendLogsSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.clearLogs, const []),
+    if (const bool.fromEnvironment('GITHUB_BUILD'))
+      SettingSearchEntry('About', l.aboutSection, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.autoCheckUpdate, [l.autoCheckUpdateOnSubtitle, l.autoCheckUpdateOffSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.showWhatsNewOnLaunch, [l.showWhatsNewOnLaunchOnSubtitle, l.showWhatsNewOnLaunchOffSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.projectWebsite, const []),
+    SettingSearchEntry('About', l.aboutSection, l.openSourceLicenses, const []),
   ];
 }
