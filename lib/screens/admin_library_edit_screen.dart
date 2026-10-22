@@ -452,7 +452,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
     if (!_hasValidCron()) {
       showOverlayToast(
         context,
-        'Enter a five-part cron expression before saving.',
+        l.libCronInvalid,
         icon: Icons.error_outline_rounded,
       );
       _selectSection(_LibraryEditorSection.schedule);
@@ -552,9 +552,9 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Remove all $filename files?'),
+        title: Text(l.removeMetadataConfirm(filename)),
         content: Text(
-          'This permanently removes $filename from every item folder in this library. The media files are not changed.',
+          l.removeMetadataBody(filename),
         ),
         actions: [
           TextButton(
@@ -583,25 +583,25 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
     if (result == null) {
       showOverlayToast(
         context,
-        'Could not remove $filename files.',
+        l.removeMetadataFailed(filename),
         icon: Icons.error_outline_rounded,
       );
     } else if (result.found == 0) {
       showOverlayToast(
         context,
-        'No $filename files were found.',
+        l.removeMetadataNone(filename),
         icon: Icons.info_outline_rounded,
       );
     } else if (result.removed == 0) {
       showOverlayToast(
         context,
-        '${result.found} $filename files were found, but none could be removed.',
+        l.removeMetadataPartial(result.found, filename),
         icon: Icons.error_outline_rounded,
       );
     } else {
       showOverlayToast(
         context,
-        'Removed ${result.removed} of ${result.found} $filename files.',
+        l.removeMetadataDone(result.removed, result.found, filename),
         icon: Icons.check_circle_outline_rounded,
       );
     }
@@ -620,8 +620,8 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
       _LibraryEditorSection.details => l.details,
       _LibraryEditorSection.settings => l.settingsTitle,
       _LibraryEditorSection.scanner => l.srvScannerSection,
-      _LibraryEditorSection.schedule => 'Schedule',
-      _LibraryEditorSection.tools => 'Tools',
+      _LibraryEditorSection.schedule => l.sectionSchedule,
+      _LibraryEditorSection.tools => l.sectionTools,
     };
   }
 
@@ -842,7 +842,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
       children: [
         _sectionHeading(
           l.details,
-          'Set the library name, media type, provider, icon, and folders.',
+          l.detailsSectionDesc,
         ),
         TextField(
           controller: _name,
@@ -992,7 +992,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
       children: [
         _sectionHeading(
           l.settingsTitle,
-          'Control cover display, matching, completion, and library behavior.',
+          l.settingsSectionDesc,
         ),
         _coverShape(textTheme, l),
         _switch(
@@ -1003,7 +1003,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
               ? null
               : (value) => setState(() => _disableWatcher = value),
           subtitle: watcherDisabledGlobally
-              ? 'The folder watcher is disabled in the server scanner settings.'
+              ? l.watcherDisabledGloballyNote
               : null,
         ),
         if (!isPodcast) ...[
@@ -1055,11 +1055,11 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
           ),
         ],
         const SizedBox(height: 20),
-        Text('Mark finished', style: textTheme.titleMedium),
+        Text(l.markFinishedTitle, style: textTheme.titleMedium),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _finishedMode,
-          decoration: const InputDecoration(labelText: 'Completion rule'),
+          decoration: InputDecoration(labelText: l.completionRule),
           items: [
             DropdownMenuItem(value: 'time', child: Text(l.libMarkTime)),
             DropdownMenuItem(value: 'percent', child: Text(l.libMarkPercent)),
@@ -1097,7 +1097,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
       children: [
         _sectionHeading(
           l.srvScannerSection,
-          'Choose which metadata sources are used. Drag them from highest to lowest priority.',
+          l.scannerSectionDesc,
         ),
         Align(
           alignment: Alignment.centerRight,
@@ -1124,12 +1124,12 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
             final source = _metadataSources[index];
             final activeIndex = activeSources.indexOf(source);
             final priority = !source.enabled
-                ? 'Ignored'
+                ? l.srcIgnored
                 : activeIndex == 0
-                ? 'Highest priority'
+                ? l.srcHighestPriority
                 : activeIndex == activeSources.length - 1
-                ? 'Lowest priority'
-                : 'Priority ${activeIndex + 1}';
+                ? l.srcLowestPriority
+                : l.srcPriorityN(activeIndex + 1);
             return Container(
               key: ValueKey(source.id),
               margin: const EdgeInsets.only(bottom: 8),
@@ -1150,14 +1150,14 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      tooltip: 'Move up',
+                      tooltip: l.moveUp,
                       onPressed: index == 0
                           ? null
                           : () => _moveMetadataSource(index, -1),
                       icon: const Icon(Icons.keyboard_arrow_up_rounded),
                     ),
                     IconButton(
-                      tooltip: 'Move down',
+                      tooltip: l.moveDown,
                       onPressed: index == _metadataSources.length - 1
                           ? null
                           : () => _moveMetadataSource(index, 1),
@@ -1178,7 +1178,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Disabled sources are ignored when the scanner reads metadata.',
+          l.disabledSourceNote,
           style: textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
@@ -1195,16 +1195,17 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
   }
 
   String _metadataSourceLabel(String id) {
+    final l = AppLocalizations.of(context)!;
     return switch (id) {
-      'folderStructure' => 'Folder structure',
+      'folderStructure' => l.srcFolderStructure,
       'audioMetatags' =>
         _mediaType == 'book'
-            ? 'Audio file metadata or ebook metadata'
-            : 'Audio file metadata',
-      'nfoFile' => 'NFO file',
-      'txtFiles' => 'desc.txt and reader.txt files',
-      'opfFile' => 'OPF file',
-      'absMetadata' => 'Audiobookshelf metadata file',
+            ? l.srcAudioOrEbookMeta
+            : l.srcAudioMeta,
+      'nfoFile' => l.srcNfoFile,
+      'txtFiles' => l.srcTxtFiles,
+      'opfFile' => l.srcOpfFile,
+      'absMetadata' => l.srcAbsMetadata,
       _ => id,
     };
   }
@@ -1220,8 +1221,8 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeading(
-          'Schedule',
-          'Run a library scan automatically on a recurring schedule.',
+          l.sectionSchedule,
+          l.scheduleSectionDesc,
         ),
         _switch(
           textTheme,
@@ -1247,9 +1248,9 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
                 value: 'weekly',
                 child: Text(l.adminPodcastsFreqWeekly),
               ),
-              const DropdownMenuItem(
+              DropdownMenuItem(
                 value: 'advanced',
-                child: Text('Advanced cron'),
+                child: Text(l.advancedCron),
               ),
             ],
             onChanged: (value) {
@@ -1258,7 +1259,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
           ),
           const SizedBox(height: 16),
           if (_scheduleMode == 'hourly') ...[
-            Text('Minute ${_scheduleMinute.toString().padLeft(2, '0')}'),
+            Text(l.scheduleMinuteLabel(_scheduleMinute)),
             Slider(
               min: 0,
               max: 59,
@@ -1298,7 +1299,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
             ],
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Time'),
+              title: Text(l.timeLabel),
               subtitle: Text(_scheduleTime.format(context)),
               trailing: const Icon(Icons.schedule_rounded),
               onTap: _pickScheduleTime,
@@ -1310,7 +1311,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
               decoration: InputDecoration(
                 labelText: l.libAutoScan,
                 hintText: '0 0 * * *',
-                helperText: 'Minute  Hour  Day  Month  Weekday',
+                helperText: l.cronFormatHint,
               ),
             )
           else
@@ -1352,25 +1353,24 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
 
   Widget _toolsSection() {
     final colors = Theme.of(context).colorScheme;
+    final l = AppLocalizations.of(context)!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeading(
-          'Tools',
-          'Clean up generated sidecar metadata files across this library.',
+          l.sectionTools,
+          l.toolsSectionDesc,
         ),
         _metadataRemovalCard(
           colors,
           extension: 'json',
-          description:
-              'Remove every metadata.json file found in the library item folders.',
+          description: l.removeJsonDesc,
         ),
         const SizedBox(height: 12),
         _metadataRemovalCard(
           colors,
           extension: 'abs',
-          description:
-              'Remove every metadata.abs file found in the library item folders.',
+          description: l.removeAbsDesc,
         ),
       ],
     );
@@ -1383,6 +1383,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
   }) {
     final busy = _removingMetadataExtension == extension;
     final anyBusy = _removingMetadataExtension != null;
+    final l = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1400,7 +1401,7 @@ class _AdminLibraryEditScreenState extends State<AdminLibraryEditScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.delete_outline_rounded),
-            label: Text('Remove metadata.$extension'),
+            label: Text(l.removeMetadataBtn(extension)),
           );
           final copy = Column(
             crossAxisAlignment: CrossAxisAlignment.start,

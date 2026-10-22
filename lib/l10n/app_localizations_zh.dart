@@ -11928,4 +11928,151 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get comicNoPages => '这本漫画中没有找到页面。';
+
+  @override
+  String get coverProviderBest => '最佳';
+
+  @override
+  String get coverProviderAll => '全部';
+
+  @override
+  String get clipPreviewEnding => '预览结尾';
+
+  @override
+  String get batchReplaceCovers => '替换封面';
+
+  @override
+  String get batchReplaceDetails => '替换详情';
+
+  @override
+  String get libCronInvalid => '保存前请输入五位 cron 表达式。';
+
+  @override
+  String get sectionSchedule => '计划任务';
+
+  @override
+  String get sectionTools => '工具';
+
+  @override
+  String get detailsSectionDesc => '设置书库名称、媒体类型、提供方、图标与文件夹。';
+
+  @override
+  String get settingsSectionDesc => '控制封面显示、匹配、完成标记与书库行为。';
+
+  @override
+  String get watcherDisabledGloballyNote => '文件夹监听已在服务器扫描器设置中全局关闭。';
+
+  @override
+  String get markFinishedTitle => '标记完成';
+
+  @override
+  String get completionRule => '完成规则';
+
+  @override
+  String get srcIgnored => '已忽略';
+
+  @override
+  String get srcHighestPriority => '最高优先级';
+
+  @override
+  String get srcLowestPriority => '最低优先级';
+
+  @override
+  String get moveUp => '上移';
+
+  @override
+  String get moveDown => '下移';
+
+  @override
+  String get disabledSourceNote => '禁用的来源在扫描器读取元数据时将被忽略。';
+
+  @override
+  String get srcFolderStructure => '文件夹结构';
+
+  @override
+  String get srcAudioOrEbookMeta => '音频文件元数据或电子书元数据';
+
+  @override
+  String get srcAudioMeta => '音频文件元数据';
+
+  @override
+  String get srcNfoFile => 'NFO 文件';
+
+  @override
+  String get srcTxtFiles => 'desc.txt 与 reader.txt 文件';
+
+  @override
+  String get srcOpfFile => 'OPF 文件';
+
+  @override
+  String get srcAbsMetadata => 'Audiobookshelf 元数据文件';
+
+  @override
+  String get scheduleSectionDesc => '按周期自动执行书库扫描。';
+
+  @override
+  String get advancedCron => '高级 cron';
+
+  @override
+  String get timeLabel => '时间';
+
+  @override
+  String get cronFormatHint => '分  时  日  月  星期';
+
+  @override
+  String get toolsSectionDesc => '清理本书库中生成的附属元数据文件。';
+
+  @override
+  String get removeJsonDesc => '删除书库条目文件夹中的所有 metadata.json 文件。';
+
+  @override
+  String get removeAbsDesc => '删除书库条目文件夹中的所有 metadata.abs 文件。';
+
+  @override
+  String srcPriorityN(int n) {
+    return '优先级 $n';
+  }
+
+  @override
+  String scheduleMinuteLabel(int minute) {
+    return '分钟 $minute';
+  }
+
+  @override
+  String removeMetadataConfirm(String filename) {
+    return '是否删除所有 $filename 文件？';
+  }
+
+  @override
+  String removeMetadataBody(String filename) {
+    return '此操作将从本书库的每个条目文件夹中永久删除 $filename，媒体文件不会被改动。';
+  }
+
+  @override
+  String removeMetadataFailed(String filename) {
+    return '无法删除 $filename 文件。';
+  }
+
+  @override
+  String removeMetadataNone(String filename) {
+    return '未找到 $filename 文件。';
+  }
+
+  @override
+  String removeMetadataPartial(int found, String filename) {
+    return '找到 $found 个 $filename 文件，但均无法删除。';
+  }
+
+  @override
+  String removeMetadataDone(int removed, int found, String filename) {
+    return '已删除 $removed / $found 个 $filename 文件。';
+  }
+
+  @override
+  String removeMetadataBtn(String extension) {
+    return '删除 metadata.$extension';
+  }
+
+  @override
+  String get scannerSectionDesc => '选择使用哪些元数据来源，按优先级从高到低拖动排序。';
 }

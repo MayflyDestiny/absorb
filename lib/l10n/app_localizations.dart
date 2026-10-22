@@ -21140,6 +21140,264 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No pages found in this comic.'**
   String get comicNoPages;
+
+  /// No description provided for @coverProviderBest.
+  ///
+  /// In en, this message translates to:
+  /// **'Best'**
+  String get coverProviderBest;
+
+  /// No description provided for @coverProviderAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get coverProviderAll;
+
+  /// No description provided for @clipPreviewEnding.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview ending'**
+  String get clipPreviewEnding;
+
+  /// No description provided for @batchReplaceCovers.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace covers'**
+  String get batchReplaceCovers;
+
+  /// No description provided for @batchReplaceDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace details'**
+  String get batchReplaceDetails;
+
+  /// No description provided for @libCronInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a five-part cron expression before saving.'**
+  String get libCronInvalid;
+
+  /// No description provided for @sectionSchedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedule'**
+  String get sectionSchedule;
+
+  /// No description provided for @sectionTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools'**
+  String get sectionTools;
+
+  /// No description provided for @detailsSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Set the library name, media type, provider, icon, and folders.'**
+  String get detailsSectionDesc;
+
+  /// No description provided for @settingsSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Control cover display, matching, completion, and library behavior.'**
+  String get settingsSectionDesc;
+
+  /// No description provided for @watcherDisabledGloballyNote.
+  ///
+  /// In en, this message translates to:
+  /// **'The folder watcher is disabled in the server scanner settings.'**
+  String get watcherDisabledGloballyNote;
+
+  /// No description provided for @markFinishedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark finished'**
+  String get markFinishedTitle;
+
+  /// No description provided for @completionRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Completion rule'**
+  String get completionRule;
+
+  /// No description provided for @srcIgnored.
+  ///
+  /// In en, this message translates to:
+  /// **'Ignored'**
+  String get srcIgnored;
+
+  /// No description provided for @srcHighestPriority.
+  ///
+  /// In en, this message translates to:
+  /// **'Highest priority'**
+  String get srcHighestPriority;
+
+  /// No description provided for @srcLowestPriority.
+  ///
+  /// In en, this message translates to:
+  /// **'Lowest priority'**
+  String get srcLowestPriority;
+
+  /// No description provided for @moveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move up'**
+  String get moveUp;
+
+  /// No description provided for @moveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move down'**
+  String get moveDown;
+
+  /// No description provided for @disabledSourceNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled sources are ignored when the scanner reads metadata.'**
+  String get disabledSourceNote;
+
+  /// No description provided for @srcFolderStructure.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder structure'**
+  String get srcFolderStructure;
+
+  /// No description provided for @srcAudioOrEbookMeta.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio file metadata or ebook metadata'**
+  String get srcAudioOrEbookMeta;
+
+  /// No description provided for @srcAudioMeta.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio file metadata'**
+  String get srcAudioMeta;
+
+  /// No description provided for @srcNfoFile.
+  ///
+  /// In en, this message translates to:
+  /// **'NFO file'**
+  String get srcNfoFile;
+
+  /// No description provided for @srcTxtFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'desc.txt and reader.txt files'**
+  String get srcTxtFiles;
+
+  /// No description provided for @srcOpfFile.
+  ///
+  /// In en, this message translates to:
+  /// **'OPF file'**
+  String get srcOpfFile;
+
+  /// No description provided for @srcAbsMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobookshelf metadata file'**
+  String get srcAbsMetadata;
+
+  /// No description provided for @scheduleSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a library scan automatically on a recurring schedule.'**
+  String get scheduleSectionDesc;
+
+  /// No description provided for @advancedCron.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced cron'**
+  String get advancedCron;
+
+  /// No description provided for @timeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Time'**
+  String get timeLabel;
+
+  /// No description provided for @cronFormatHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Minute  Hour  Day  Month  Weekday'**
+  String get cronFormatHint;
+
+  /// No description provided for @toolsSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean up generated sidecar metadata files across this library.'**
+  String get toolsSectionDesc;
+
+  /// No description provided for @removeJsonDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove every metadata.json file found in the library item folders.'**
+  String get removeJsonDesc;
+
+  /// No description provided for @removeAbsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove every metadata.abs file found in the library item folders.'**
+  String get removeAbsDesc;
+
+  /// No description provided for @srcPriorityN.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority {n}'**
+  String srcPriorityN(int n);
+
+  /// No description provided for @scheduleMinuteLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Minute {minute}'**
+  String scheduleMinuteLabel(int minute);
+
+  /// No description provided for @removeMetadataConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove all {filename} files?'**
+  String removeMetadataConfirm(String filename);
+
+  /// No description provided for @removeMetadataBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently removes {filename} from every item folder in this library. The media files are not changed.'**
+  String removeMetadataBody(String filename);
+
+  /// No description provided for @removeMetadataFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not remove {filename} files.'**
+  String removeMetadataFailed(String filename);
+
+  /// No description provided for @removeMetadataNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No {filename} files were found.'**
+  String removeMetadataNone(String filename);
+
+  /// No description provided for @removeMetadataPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'{found} {filename} files were found, but none could be removed.'**
+  String removeMetadataPartial(int found, String filename);
+
+  /// No description provided for @removeMetadataDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed {removed} of {found} {filename} files.'**
+  String removeMetadataDone(int removed, int found, String filename);
+
+  /// No description provided for @removeMetadataBtn.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove metadata.{extension}'**
+  String removeMetadataBtn(String extension);
+
+  /// No description provided for @scannerSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose which metadata sources are used. Drag them from highest to lowest priority.'**
+  String get scannerSectionDesc;
 }
 
 class _AppLocalizationsDelegate

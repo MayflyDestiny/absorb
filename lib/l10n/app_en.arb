@@ -6684,5 +6684,82 @@
   "comicLeftToRight": "Left to right",
   "comicRightToLeft": "Right to left (manga)",
   "comicNeedsConnection": "This comic opens page by page from your server, so it needs a connection.",
-  "comicNoPages": "No pages found in this comic."
+  "comicNoPages": "No pages found in this comic.",
+  "coverProviderBest": "Best",
+  "coverProviderAll": "All",
+  "clipPreviewEnding": "Preview ending",
+  "batchReplaceCovers": "Replace covers",
+  "batchReplaceDetails": "Replace details",
+  "libCronInvalid": "Enter a five-part cron expression before saving.",
+  "sectionSchedule": "Schedule",
+  "sectionTools": "Tools",
+  "detailsSectionDesc": "Set the library name, media type, provider, icon, and folders.",
+  "settingsSectionDesc": "Control cover display, matching, completion, and library behavior.",
+  "watcherDisabledGloballyNote": "The folder watcher is disabled in the server scanner settings.",
+  "markFinishedTitle": "Mark finished",
+  "completionRule": "Completion rule",
+  "srcIgnored": "Ignored",
+  "srcHighestPriority": "Highest priority",
+  "srcLowestPriority": "Lowest priority",
+  "moveUp": "Move up",
+  "moveDown": "Move down",
+  "disabledSourceNote": "Disabled sources are ignored when the scanner reads metadata.",
+  "srcFolderStructure": "Folder structure",
+  "srcAudioOrEbookMeta": "Audio file metadata or ebook metadata",
+  "srcAudioMeta": "Audio file metadata",
+  "srcNfoFile": "NFO file",
+  "srcTxtFiles": "desc.txt and reader.txt files",
+  "srcOpfFile": "OPF file",
+  "srcAbsMetadata": "Audiobookshelf metadata file",
+  "scheduleSectionDesc": "Run a library scan automatically on a recurring schedule.",
+  "advancedCron": "Advanced cron",
+  "timeLabel": "Time",
+  "cronFormatHint": "Minute  Hour  Day  Month  Weekday",
+  "toolsSectionDesc": "Clean up generated sidecar metadata files across this library.",
+  "removeJsonDesc": "Remove every metadata.json file found in the library item folders.",
+  "removeAbsDesc": "Remove every metadata.abs file found in the library item folders.",
+  "srcPriorityN": "Priority {n}",
+  "@srcPriorityN": {
+    "placeholders": { "n": { "type": "int" } }
+  },
+  "scheduleMinuteLabel": "Minute {minute}",
+  "@scheduleMinuteLabel": {
+    "placeholders": { "minute": { "type": "int" } }
+  },
+  "removeMetadataConfirm": "Remove all {filename} files?",
+  "@removeMetadataConfirm": {
+    "placeholders": { "filename": { "type": "String" } }
+  },
+  "removeMetadataBody": "This permanently removes {filename} from every item folder in this library. The media files are not changed.",
+  "@removeMetadataBody": {
+    "placeholders": { "filename": { "type": "String" } }
+  },
+  "removeMetadataFailed": "Could not remove {filename} files.",
+  "@removeMetadataFailed": {
+    "placeholders": { "filename": { "type": "String" } }
+  },
+  "removeMetadataNone": "No {filename} files were found.",
+  "@removeMetadataNone": {
+    "placeholders": { "filename": { "type": "String" } }
+  },
+  "removeMetadataPartial": "{found} {filename} files were found, but none could be removed.",
+  "@removeMetadataPartial": {
+    "placeholders": {
+      "found": { "type": "int" },
+      "filename": { "type": "String" }
+    }
+  },
+  "removeMetadataDone": "Removed {removed} of {found} {filename} files.",
+  "@removeMetadataDone": {
+    "placeholders": {
+      "removed": { "type": "int" },
+      "found": { "type": "int" },
+      "filename": { "type": "String" }
+    }
+  },
+  "removeMetadataBtn": "Remove metadata.{extension}",
+  "@removeMetadataBtn": {
+    "placeholders": { "extension": { "type": "String" } }
+  },
+  "scannerSectionDesc": "Choose which metadata sources are used. Drag them from highest to lowest priority."
 }

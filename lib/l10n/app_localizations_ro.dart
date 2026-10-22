@@ -12323,4 +12323,161 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get comicNoPages => 'No pages found in this comic.';
+
+  @override
+  String get coverProviderBest => 'Best';
+
+  @override
+  String get coverProviderAll => 'All';
+
+  @override
+  String get clipPreviewEnding => 'Preview ending';
+
+  @override
+  String get batchReplaceCovers => 'Replace covers';
+
+  @override
+  String get batchReplaceDetails => 'Replace details';
+
+  @override
+  String get libCronInvalid =>
+      'Enter a five-part cron expression before saving.';
+
+  @override
+  String get sectionSchedule => 'Schedule';
+
+  @override
+  String get sectionTools => 'Tools';
+
+  @override
+  String get detailsSectionDesc =>
+      'Set the library name, media type, provider, icon, and folders.';
+
+  @override
+  String get settingsSectionDesc =>
+      'Control cover display, matching, completion, and library behavior.';
+
+  @override
+  String get watcherDisabledGloballyNote =>
+      'The folder watcher is disabled in the server scanner settings.';
+
+  @override
+  String get markFinishedTitle => 'Mark finished';
+
+  @override
+  String get completionRule => 'Completion rule';
+
+  @override
+  String get srcIgnored => 'Ignored';
+
+  @override
+  String get srcHighestPriority => 'Highest priority';
+
+  @override
+  String get srcLowestPriority => 'Lowest priority';
+
+  @override
+  String get moveUp => 'Move up';
+
+  @override
+  String get moveDown => 'Move down';
+
+  @override
+  String get disabledSourceNote =>
+      'Disabled sources are ignored when the scanner reads metadata.';
+
+  @override
+  String get srcFolderStructure => 'Folder structure';
+
+  @override
+  String get srcAudioOrEbookMeta => 'Audio file metadata or ebook metadata';
+
+  @override
+  String get srcAudioMeta => 'Audio file metadata';
+
+  @override
+  String get srcNfoFile => 'NFO file';
+
+  @override
+  String get srcTxtFiles => 'desc.txt and reader.txt files';
+
+  @override
+  String get srcOpfFile => 'OPF file';
+
+  @override
+  String get srcAbsMetadata => 'Audiobookshelf metadata file';
+
+  @override
+  String get scheduleSectionDesc =>
+      'Run a library scan automatically on a recurring schedule.';
+
+  @override
+  String get advancedCron => 'Advanced cron';
+
+  @override
+  String get timeLabel => 'Time';
+
+  @override
+  String get cronFormatHint => 'Minute  Hour  Day  Month  Weekday';
+
+  @override
+  String get toolsSectionDesc =>
+      'Clean up generated sidecar metadata files across this library.';
+
+  @override
+  String get removeJsonDesc =>
+      'Remove every metadata.json file found in the library item folders.';
+
+  @override
+  String get removeAbsDesc =>
+      'Remove every metadata.abs file found in the library item folders.';
+
+  @override
+  String srcPriorityN(int n) {
+    return 'Priority $n';
+  }
+
+  @override
+  String scheduleMinuteLabel(int minute) {
+    return 'Minute $minute';
+  }
+
+  @override
+  String removeMetadataConfirm(String filename) {
+    return 'Remove all $filename files?';
+  }
+
+  @override
+  String removeMetadataBody(String filename) {
+    return 'This permanently removes $filename from every item folder in this library. The media files are not changed.';
+  }
+
+  @override
+  String removeMetadataFailed(String filename) {
+    return 'Could not remove $filename files.';
+  }
+
+  @override
+  String removeMetadataNone(String filename) {
+    return 'No $filename files were found.';
+  }
+
+  @override
+  String removeMetadataPartial(int found, String filename) {
+    return '$found $filename files were found, but none could be removed.';
+  }
+
+  @override
+  String removeMetadataDone(int removed, int found, String filename) {
+    return 'Removed $removed of $found $filename files.';
+  }
+
+  @override
+  String removeMetadataBtn(String extension) {
+    return 'Remove metadata.$extension';
+  }
+
+  @override
+  String get scannerSectionDesc =>
+      'Choose which metadata sources are used. Drag them from highest to lowest priority.';
 }

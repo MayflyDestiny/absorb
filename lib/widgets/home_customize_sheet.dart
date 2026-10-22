@@ -60,6 +60,7 @@ class _HomeCustomizeSheetState extends State<HomeCustomizeSheet> {
     'listen-again': Icons.replay_rounded,
     'discover': Icons.explore_outlined,
     'episodes-recently-added': Icons.podcasts_rounded,
+    'newest-episodes': Icons.podcasts_rounded,
     'downloaded-books': Icons.download_done_rounded,
   };
 

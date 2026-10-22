@@ -63,14 +63,14 @@ Future<DesktopQuickMatchOptions?> showDesktopQuickMatchDialog(
               const SizedBox(height: 12),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Replace covers'),
+                title: Text(l.batchReplaceCovers),
                 value: overrideCover,
                 onChanged: (value) =>
                     setLocalState(() => overrideCover = value ?? false),
               ),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Replace details'),
+                title: Text(l.batchReplaceDetails),
                 value: overrideDetails,
                 onChanged: (value) =>
                     setLocalState(() => overrideDetails = value ?? false),

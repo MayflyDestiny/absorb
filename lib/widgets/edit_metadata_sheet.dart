@@ -1864,13 +1864,13 @@ class _MetadataEditViewState extends State<MetadataEditView>
                               'duckduckgo' => 'DuckDuckGo',
                               'itunes' => 'iTunes',
                               'audiobookcovers' => 'AudiobookCovers.com',
-                              _ => 'All',
+                              _ => l.coverProviderAll,
                             }),
                           ),
                       ]
-                    : const [
-                        DropdownMenuItem(value: 'best', child: Text('Best')),
-                        DropdownMenuItem(value: 'all', child: Text('All')),
+                    : [
+                        DropdownMenuItem(value: 'best', child: Text(l.coverProviderBest)),
+                        DropdownMenuItem(value: 'all', child: Text(l.coverProviderAll)),
                         DropdownMenuItem(value: 'google', child: Text('Google')),
                         DropdownMenuItem(value: 'fantlab', child: Text('FantLab')),
                         DropdownMenuItem(value: 'audible', child: Text('Audible')),

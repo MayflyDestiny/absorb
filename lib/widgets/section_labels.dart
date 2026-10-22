@@ -19,6 +19,7 @@ String sectionLabel(String id, String? fallback, AppLocalizations l) {
     case 'discover':
       return l.discover;
     case 'episodes-recently-added':
+    case 'newest-episodes':
       return l.newEpisodes;
     case 'downloaded-books':
       return l.downloads;

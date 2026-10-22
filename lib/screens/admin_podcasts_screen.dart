@@ -310,6 +310,10 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
     1487: l.adminPodcastsGenreHistory,
     1488: l.adminPodcastsGenreKidsFamily,
   };
+  /// 跟随 App 显示语言选择 iTunes 商店地区：中文界面用中国区，其余回退美国区。
+  String get _storeCountry =>
+      Localizations.localeOf(context).languageCode == 'zh' ? 'cn' : 'us';
+
   int _selectedGenre = 0;
   bool _loadingChart = true;
   List<dynamic> _chartResults = [];
@@ -334,7 +338,7 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
     setState(() => _loadingChart = true);
     try {
       final genrePart = _selectedGenre > 0 ? 'genre=$_selectedGenre/' : '';
-      final url = 'https://itunes.apple.com/us/rss/toppodcasts/${genrePart}limit=25/json';
+      final url = 'https://itunes.apple.com/$_storeCountry/rss/toppodcasts/${genrePart}limit=25/json';
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200 && mounted) {
         final data = jsonDecode(response.body);
@@ -356,7 +360,7 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
 
     setState(() => _lookingUp.add(itunesId));
     try {
-      final response = await http.get(Uri.parse('https://itunes.apple.com/lookup?id=$itunesId&entity=podcast'));
+      final response = await http.get(Uri.parse('https://itunes.apple.com/lookup?id=$itunesId&entity=podcast&country=$_storeCountry'));
       if (!mounted) return;
       setState(() => _lookingUp.remove(itunesId));
       if (response.statusCode == 200) {
