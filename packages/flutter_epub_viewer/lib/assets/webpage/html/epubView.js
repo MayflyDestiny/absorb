@@ -80,6 +80,8 @@ function snapToPageBoundary() {
     var container = manager.container;
     var step = (manager.layout && manager.layout.delta) || container.clientWidth;
     if (!step || step <= 0) return;
+    // A page being dragged or sliding is between pages on purpose.
+    if (turnDragActive || turnSlide) return;
     var off = container.scrollLeft;
     var mis = off % step;
     if (mis < 2 || step - mis < 2) return; // already aligned (within rounding)
@@ -194,7 +196,21 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
   lastTheme.fg = foregroundColor;
   lastTheme.css = customCss;
   lastTheme.fontSize = fontSize;
+  // Absorb patch: scroll mode lays out the chapters ahead two screens early,
+  // so reaching them doesn't wait on the layout, and keeps those it passed
+  // as long.
+  if (String(flow || "").indexOf("scrolled") === 0) {
+    lastRenderOpts.offset = Math.round((window.innerHeight || 800) * 2);
+  }
   rendition = book.renderTo("viewer", lastRenderOpts);
+  var turnsFor = rendition;
+  rendition.started.then(function () {
+    setupTurns(turnsFor);
+    setupSmoothScroll(turnsFor);
+  });
+  rendition.hooks.content.register(function (contents) {
+    attachTurnDrag(contents.document);
+  });
 
   // Absorb patch: scroll mode only moves up and down, down to each chapter's
   // own page, so a drag that drifts sideways can't nudge the text aside.
@@ -1500,7 +1516,7 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
     };
 
     // Attach to iframe document
-    doc.addEventListener('touchstart', touchStartHandler, { capture: true, passive: false });
+    doc.addEventListener('touchstart', touchStartHandler, { capture: true, passive: true });
 
     // Also attach to parent window as fallback for iOS
     // On iOS, touch events in iframes may not fire, so we also listen on the parent window
@@ -1531,7 +1547,7 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
             } catch (err) {
               // Ignore errors in event handler
             }
-          }, { capture: true, passive: false });
+          }, { capture: true, passive: true });
         }
       }
     } catch (err) {
@@ -1574,7 +1590,7 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
           currentTouchY = e.touches[0].clientY;
         }
       }
-    }, { capture: true, passive: false }); // Use options object with passive: false
+    }, { capture: true, passive: scrolledFlow() });
 
     var touchEndHandler = function (e) {
       // Fire onTouchUp callback with normalized coordinates
@@ -1666,32 +1682,8 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
       // Ignore errors when accessing parent window (cross-origin restrictions)
     }
 
-    if (useCustomSwipe) {
-      const el = contents.document.documentElement;
-
-      if (el) {
-        detectSwipe(el, function (el, direction) {
-          // Block swipes if there's an active selection
-          if (hasActiveSelection()) {
-            console.log('Blocked swipe - selection active, direction:', direction);
-            return;
-          }
-
-          if (direction == 'l') {
-            // Double-check before calling
-            if (!hasActiveSelection()) {
-              rendition.next();
-            }
-          }
-          if (direction == 'r') {
-            // Double-check before calling
-            if (!hasActiveSelection()) {
-              rendition.prev();
-            }
-          }
-        });
-      }
-    }
+    // Absorb patch: sideways swipes turn pages through attachTurnDrag, on
+    // every platform, so the package's own swipe turn is left out.
 
     // Block epub.js built-in click/tap navigation when there's a selection
     // epub.js typically handles clicks on the left/right sides of the page
@@ -2128,6 +2120,8 @@ function next() {
     return;
   }
   if (rendition) {
+    finishTurnSlide();
+    turnAnimate = true;
     rendition.next();
   }
 }
@@ -2140,8 +2134,222 @@ function previous() {
     return;
   }
   if (rendition) {
+    finishTurnSlide();
+    turnAnimate = true;
     rendition.prev();
   }
+}
+
+// Absorb patch: page turns. "slide" moves the page sideways and follows a
+// finger dragging it; "none" turns at once. "curl" is drawn by the app over
+// pictures of the page, so here the page turns at once and sideways drags are
+// left to the app.
+var turnStyle = "slide";
+var turnAnimate = false;    // the next turn was asked for by the reader, not auto scroll
+var turnSlide = null;       // the slide in flight
+var turnFromDrag = null;    // where a released drag left the page: {base, from}
+var turnDragActive = false; // a finger is holding the page between pages
+var TURN_MS = 280;
+
+function setTurnStyle(style) {
+  turnStyle = style === "none" || style === "curl" ? style : "slide";
+}
+
+function finishTurnSlide() {
+  if (turnSlide) turnSlide.finish();
+}
+
+function turnSlides(m) {
+  return turnStyle === "slide" && !!m && m.isPaginated && m.settings.axis === "horizontal" &&
+    !m.settings.fullsize && !scrolledFlow();
+}
+
+function setupTurns(r) {
+  var m = r && r.manager;
+  if (!m || m.__absorbTurns) return;
+  m.__absorbTurns = true;
+  var next = m.next;
+  var prev = m.prev;
+  m.next = function () { return slideTurn(m, next); };
+  m.prev = function () { return slideTurn(m, prev); };
+}
+
+// epub.js turns by jumping a page width. The jump is still made, so the page
+// lands exactly where it always did, and is then played as a slide from where
+// the page was, or from where a finger let go of it.
+function slideTurn(m, turn) {
+  var drag = turnFromDrag;
+  turnFromDrag = null;
+  var animate = turnAnimate || !!drag;
+  turnAnimate = false;
+  var c = m.container;
+  if (drag) {
+    m.ignore = true;
+    c.scrollLeft = drag.base;
+  }
+  if (!animate || !turnSlides(m)) return turn.call(m);
+  var from = drag ? drag.from : c.scrollLeft;
+  var result = turn.call(m);
+  var to = c.scrollLeft;
+  if (Math.abs(to - from) < 1) return result;
+  m.ignore = true;
+  c.scrollLeft = from;
+  var page = (m.layout && m.layout.delta) || c.clientWidth || 1;
+  return playSlide(m, from, to, TURN_MS * Math.max(0.4, Math.min(1, Math.abs(to - from) / page)));
+}
+
+function playSlide(m, from, to, ms) {
+  finishTurnSlide();
+  return new Promise(function (resolve) {
+    var c = m.container;
+    var start = null;
+    var shift = 0; // epub.js dropping a chapter on the left moves everything
+    var last = from;
+    var done = false;
+    var slide = {
+      finish: function () {
+        if (done) return;
+        done = true;
+        if (turnSlide === slide) turnSlide = null;
+        m.ignore = true;
+        c.scrollLeft = to + shift;
+        resolve();
+      }
+    };
+    turnSlide = slide;
+    function frame(ts) {
+      if (done) return;
+      if (start === null) start = ts;
+      var now = c.scrollLeft;
+      if (Math.abs(now - last) > 2) shift += now - last;
+      var t = Math.min(1, (ts - start) / ms);
+      if (t >= 1) {
+        slide.finish();
+        return;
+      }
+      last = from + shift + (to - from) * (1 - Math.pow(1 - t, 3));
+      m.ignore = true;
+      c.scrollLeft = last;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// A sideways drag turns the page: in "slide" the page follows the finger and
+// settles on whichever page it was pulled toward; in "none" it turns once the
+// finger lifts. Selecting text, auto scroll and scroll mode keep their touches.
+function attachTurnDrag(doc) {
+  if (!doc || doc.__absorbTurnDrag) return;
+  doc.__absorbTurnDrag = true;
+  var d = null;
+  doc.addEventListener("touchstart", function (e) {
+    d = null;
+    if (turnStyle === "curl" || scrolledFlow() || blindRendition || glideActive) return;
+    if (!e.touches || e.touches.length !== 1 || !rendition || !rendition.manager) return;
+    var t = e.touches[0];
+    d = { x0: t.screenX, y0: t.screenY, at: e.timeStamp, moving: false, track: [] };
+  }, { capture: true, passive: true });
+  doc.addEventListener("touchmove", function (e) {
+    if (!d) return;
+    if (!e.touches || e.touches.length !== 1) {
+      release(null, true);
+      return;
+    }
+    var t = e.touches[0];
+    if (!d.moving) {
+      var dx = t.screenX - d.x0;
+      var dy = t.screenY - d.y0;
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      // A finger that rested before moving was pressing to select text.
+      if (Math.abs(dx) <= Math.abs(dy) * 1.2 || isSelecting || hasActiveSelection() || e.timeStamp - d.at > 400) {
+        d = null;
+        return;
+      }
+      finishTurnSlide();
+      var m = rendition.manager;
+      d.moving = true;
+      d.m = m;
+      d.x = t.screenX; // the page moves from here, without a jump
+      d.base = m.container.scrollLeft;
+      d.page = (m.layout && m.layout.delta) || m.container.clientWidth || 1;
+      turnDragActive = turnStyle === "slide";
+    }
+    d.track.push({ x: t.screenX, at: e.timeStamp });
+    if (d.track.length > 5) d.track.shift();
+    if (turnStyle === "slide") {
+      var off = Math.max(-d.page, Math.min(d.page, t.screenX - d.x));
+      d.m.ignore = true;
+      d.m.container.scrollLeft = d.base - off;
+    }
+  }, { capture: true, passive: true });
+  function release(e, cancelled) {
+    var g = d;
+    d = null;
+    turnDragActive = false;
+    if (!g || !g.moving) return;
+    var m = g.m;
+    var c = m.container;
+    var t = e && e.changedTouches && e.changedTouches[0];
+    var dx = t ? t.screenX - g.x0 : 0;
+    var v = 0;
+    if (g.track.length > 1) {
+      var a = g.track[0];
+      var b = g.track[g.track.length - 1];
+      if (b.at > a.at) v = (b.x - a.x) / (b.at - a.at);
+    }
+    var forward = m.settings.direction === "rtl" ? dx > 0 : dx < 0;
+    var go = !cancelled && dx !== 0 &&
+      (Math.abs(dx) > g.page * 0.2 || (Math.abs(v) > 0.3 && (v < 0) === (dx < 0)));
+    if (!go) {
+      if (turnStyle === "slide") playSlide(m, c.scrollLeft, g.base, 180);
+      return;
+    }
+    var pending = null;
+    if (turnStyle === "slide") {
+      pending = { base: g.base, from: c.scrollLeft };
+      turnFromDrag = pending;
+    }
+    if (forward) rendition.next(); else rendition.prev();
+    // A turn that never picked the drag up (a selection blocked it) leaves
+    // the page between pages: put it back.
+    if (pending) {
+      setTimeout(function () {
+        if (turnFromDrag !== pending) return;
+        turnFromDrag = null;
+        playSlide(m, c.scrollLeft, pending.base, 180);
+      }, 600);
+    }
+  }
+  doc.addEventListener("touchend", function (e) { release(e, false); }, { capture: true, passive: true });
+  doc.addEventListener("touchcancel", function (e) { release(e, true); }, { capture: true, passive: true });
+}
+
+// Absorb patch: in scroll mode epub.js drops chapters far behind, and moves
+// the scroll to make up for the height it took away. Moving the scroll stops
+// a fling dead, so chapters are dropped only once the page has been still for
+// a moment.
+function setupSmoothScroll(r) {
+  var m = r && r.manager;
+  if (!m || m.__absorbSmooth || !scrolledFlow()) return;
+  m.__absorbSmooth = true;
+  var lastScrollAt = 0;
+  m.container.addEventListener("scroll", function () {
+    lastScrollAt = Date.now();
+  }, { passive: true });
+  var trim = m.trim;
+  var later = null;
+  m.trim = function () {
+    var wait = 700 - (Date.now() - lastScrollAt);
+    if (wait > 0) {
+      clearTimeout(later);
+      later = setTimeout(function () {
+        m.q.enqueue(m.trim.bind(m));
+      }, wait + 50);
+      return Promise.resolve();
+    }
+    return trim.call(m);
+  };
 }
 
 //move to given cfi location or xpath

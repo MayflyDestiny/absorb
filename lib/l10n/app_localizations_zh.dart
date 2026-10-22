@@ -10435,6 +10435,81 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerTopBarProgressBoth => '两者';
 
   @override
+  String get readerSectionText => '文字';
+
+  @override
+  String get readerSectionPage => '页面';
+
+  @override
+  String get readerSectionTopBar => '顶栏与页面';
+
+  @override
+  String get readerSectionControls => '控制项';
+
+  @override
+  String get readerSectionStats => '统计';
+
+  @override
+  String get readerParagraphSpacing => '段落间距';
+
+  @override
+  String get readerParagraphSpacingBook => '书籍自带';
+
+  @override
+  String get readerTapZones => '点按区域';
+
+  @override
+  String get readerTapZonesHint => '拖动方块边框调整大小；点按方块可改变其功能，或从一套预设布局开始。';
+
+  @override
+  String get readerTapPrev => '上一页';
+
+  @override
+  String get readerTapNext => '下一页';
+
+  @override
+  String get readerTapMenu => '显示控制项';
+
+  @override
+  String get readerTapNothing => '无';
+
+  @override
+  String get readerTapKeepMenu => '必须保留一个方块用于显示控制项';
+
+  @override
+  String get readerHideControls => '控制项自动隐藏';
+
+  @override
+  String get readerHideControlsNever => '从不';
+
+  @override
+  String get readerBarNotes => '笔记与划线';
+
+  @override
+  String readerHideControlsAfter(int seconds) {
+    return '$seconds秒';
+  }
+
+  @override
+  String get playerDownloadStreamingInstead =>
+      '此下载无法直接播放，正在从服务器流式传输。重新下载一次可能解决。';
+
+  @override
+  String get readerPageTurn => '翻页效果';
+
+  @override
+  String get readerPageTurnNone => '无';
+
+  @override
+  String get readerPageTurnSlide => '滑动';
+
+  @override
+  String get readerPageTurnCurl => '卷曲';
+
+  @override
+  String get readerPageTurnRipple => '波纹';
+
+  @override
   String get readerScrollMode => '滚动模式';
 
   @override

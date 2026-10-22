@@ -396,7 +396,7 @@ class SocketService {
         if (data is Map<String, dynamic>) {
           final patch = data['data'] as Map<String, dynamic>?;
           if (patch != null) {
-            onProgressUpdated?.call(patch);
+            onProgressUpdated?.call(_withSession(patch, data));
           }
         }
       });
@@ -530,6 +530,14 @@ class SocketService {
   }
 
   /// Disconnect and tear down the socket, clearing all callbacks.
+  /// The progress row with the server session that sent it, when there was
+  /// one, so this phone can tell its own syncs echoed back from another
+  /// device's.
+  static Map<String, dynamic> _withSession(Map<String, dynamic> patch, Map<String, dynamic> event) {
+    final session = event['sessionId'];
+    return session is String ? {...patch, 'fromSession': session} : patch;
+  }
+
   void disconnect() {
     _socket?.dispose();
     _socket = null;
@@ -603,7 +611,7 @@ class SocketService {
       _socket!.on('user_item_progress_updated', (data) {
         if (data is Map<String, dynamic>) {
           final patch = data['data'] as Map<String, dynamic>?;
-          if (patch != null) onProgressUpdated?.call(patch);
+          if (patch != null) onProgressUpdated?.call(_withSession(patch, data));
         }
       });
 

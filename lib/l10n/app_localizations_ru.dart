@@ -10770,6 +10770,82 @@ class AppLocalizationsRu extends AppLocalizations {
   String get readerTopBarProgressBoth => 'Both';
 
   @override
+  String get readerSectionText => 'Text';
+
+  @override
+  String get readerSectionPage => 'Page';
+
+  @override
+  String get readerSectionTopBar => 'Top bar and screen';
+
+  @override
+  String get readerSectionControls => 'Controls';
+
+  @override
+  String get readerSectionStats => 'Stats';
+
+  @override
+  String get readerParagraphSpacing => 'Paragraph spacing';
+
+  @override
+  String get readerParagraphSpacingBook => 'Book\'s own';
+
+  @override
+  String get readerTapZones => 'Tap zones';
+
+  @override
+  String get readerTapZonesHint =>
+      'Drag the lines to resize the squares. Tap a square to change what it does, or start from a layout.';
+
+  @override
+  String get readerTapPrev => 'Previous page';
+
+  @override
+  String get readerTapNext => 'Next page';
+
+  @override
+  String get readerTapMenu => 'Show controls';
+
+  @override
+  String get readerTapNothing => 'Nothing';
+
+  @override
+  String get readerTapKeepMenu => 'One square has to show the controls';
+
+  @override
+  String get readerHideControls => 'Hide controls after';
+
+  @override
+  String get readerHideControlsNever => 'Never';
+
+  @override
+  String get readerBarNotes => 'Notes and highlights';
+
+  @override
+  String readerHideControlsAfter(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String get playerDownloadStreamingInstead =>
+      'This download couldn\'t be played, so it\'s streaming from the server. Downloading it again may fix it.';
+
+  @override
+  String get readerPageTurn => 'Page turn';
+
+  @override
+  String get readerPageTurnNone => 'None';
+
+  @override
+  String get readerPageTurnSlide => 'Slide';
+
+  @override
+  String get readerPageTurnCurl => 'Curl';
+
+  @override
+  String get readerPageTurnRipple => 'Ripple';
+
+  @override
   String get readerScrollMode => 'Scroll mode';
 
   @override

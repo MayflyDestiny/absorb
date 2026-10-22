@@ -15,6 +15,7 @@ import '../services/ebook_cache.dart';
 import '../services/narrated_books.dart';
 import '../services/narration_service.dart';
 import '../widgets/ebook_router.dart';
+import '../widgets/cover_badges.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/narration_download_dialog.dart';
 import '../widgets/desktop_batch_actions.dart';
@@ -1166,6 +1167,13 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                   Positioned.fill(
                     child: _buildCoverImage(coverUrl, cs, lib.mediaHeaders),
                   ),
+                  if (DownloadService().isDownloaded(playbackDownloadKey(itemId, episodeId)))
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: CoverStateBadges(isDownloaded: true, isFinished: false),
+                    ),
                   if (isCurrentItem && player.isPlaying)
                     Positioned(
                       right: 6, bottom: 6,

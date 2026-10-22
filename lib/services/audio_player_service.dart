@@ -37,6 +37,7 @@ import '../utils/episode_key.dart';
 import '../utils/duration_format.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
+import '../widgets/overlay_toast.dart' show showNavigatorOverlayToast;
 export 'player_settings.dart';
 
 String playbackDownloadKey(String itemId, String? episodeId) =>
@@ -1541,6 +1542,14 @@ class AudioPlayerService extends ChangeNotifier {
   ApiService? _api;
   ApiService? get currentApi => _api;
   String? _playbackSessionId;
+
+  /// The server session this phone is playing on, so its own syncs echoed
+  /// back over the socket can be told apart from another device's.
+  String? get playbackSessionId => _playbackSessionId;
+
+  // A source swap started by pausing. A seek waits for it: the swap reloads
+  // at the spot it saw, so a seek that landed first was undone (GH #433).
+  Future<void>? _pauseSwap;
 
   /// Phase 1.7: latest streaming URLs (with auth token already in the
   /// query string) and custom HTTP headers needed by reverse proxies like
@@ -3432,6 +3441,12 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Seek response timeout: a seek that lands at the very end of a file never
+  /// answers on Android, and everything waiting on it hung with it (GH #428).
+  static const _seekCap = Duration(seconds: 6);
+  void _seekTimedOut() =>
+      debugPrint('[Player] Seek got no answer in ${_seekCap.inSeconds}s - carrying on');
+
   /// True when [absoluteSeconds] is still the LATEST seek intent — i.e. no
   /// newer seek overwrote [_lastSeekTargetSeconds] while this seek awaited the
   /// engine. A superseded seek must not re-push its stale (frequently the
@@ -3470,6 +3485,16 @@ class AudioPlayerService extends ChangeNotifier {
     int? pinChapterIndex,
   }) async {
     if (_player == null) return;
+    // Await a pending pause-time swap before seeking so the seek doesn't race
+    // the engine swap (same guard the upstream seek path applies).
+    final swap = _pauseSwap;
+    if (swap != null) {
+      _pauseSwap = null;
+      try {
+        await swap;
+      } catch (_) {}
+      if (_player == null) return;
+    }
     // Any real seek leaves the parked-at-boundary state (play() also restarts
     // from the last downloaded chapter via its own seek).
     _parkedAtBoundary = false;
@@ -3541,9 +3566,9 @@ class AudioPlayerService extends ChangeNotifier {
 
     if (_trackStartOffsets.length <= 1) {
       // Single file — seek directly
-      await _player!.seek(
-        Duration(milliseconds: (absoluteSeconds * 1000).round()),
-      );
+      await _player!
+          .seek(Duration(milliseconds: (absoluteSeconds * 1000).round()))
+          .timeout(_seekCap, onTimeout: _seekTimedOut);
       // Superseded-seek guard: a newer [skipToNextChapter] / prev press updates
       // [_lastSeekTargetSeconds] (set just before THIS await) to a DIFFERENT
       // target while we were awaiting the engine. When that awaits surfaces, a
@@ -3594,10 +3619,9 @@ class AudioPlayerService extends ChangeNotifier {
         _latchChapterJumpTarget(absoluteSeconds);
       }
     }
-    await _player!.seek(
-      Duration(milliseconds: (localOffset * 1000).round()),
-      index: target,
-    );
+    await _player!
+        .seek(Duration(milliseconds: (localOffset * 1000).round()), index: target)
+        .timeout(_seekCap, onTimeout: _seekTimedOut);
     // Bind the reported chapter to the INTENDED chapter (not the metadata
     // mapping of the landed position, which near a drifted boundary reads the
     // previous file's chapter) so the notification/UI shows "chapter N" the
@@ -3947,6 +3971,9 @@ class AudioPlayerService extends ChangeNotifier {
               // prompts rewind like a manual pause, gated by activationDelay.
               await service._player?.pause();
               service._lastPauseTime = DateTime.now();
+              // Keep the spot on this phone, though: without it a server copy
+              // up to a sync behind could be taken for newer (GH #440).
+              unawaited(service._saveProgressLocal(service.position));
               // Android reports a permanent focus loss (another app or the
               // car's own source took the audio for good) as `unknown`; calls
               // and nav prompts come as transient `pause`/`duck`. Only a
@@ -5578,7 +5605,17 @@ class AudioPlayerService extends ChangeNotifier {
           forceTranscode: true,
           generation: gen,
         );
-        if (fallbackResult == null) return null;
+        if (fallbackResult == null) {
+          // Streaming uses data the download was meant to save, so say so.
+          final l = _l10n();
+          showNavigatorOverlayToast(
+            rootNavigatorKey.currentState,
+            l?.playerDownloadStreamingInstead ??
+                "This download couldn't be played, so it's streaming from the server. Downloading it again may fix it.",
+            icon: Icons.cloud_download_outlined,
+          );
+          return null;
+        }
         debugPrint(
           '[Player] Transcoded fallback after local failure did not start: $fallbackResult',
         );
@@ -8049,7 +8086,16 @@ if (_chapterJumpLatchIndex >= 0) {
 
         // ─── Completion detection (fallback) ───────────────────
         // processingStateStream is the primary signal; this is a safety net.
-        if (_totalDuration > 0 && posSec >= _totalDuration - 1.0) {
+        // Files that run longer than the server indexed them (changed on
+        // disk after a scan) play on: ending the book at the indexed length
+        // tore the player down mid-audio and left it stuck (GH #428).
+        if (_totalDuration > 0 && posSec >= _totalDuration - 1.0 && !_engineAtEnd()) {
+          if (_overrunLoggedFor != _currentItemId) {
+            _overrunLoggedFor = _currentItemId;
+            debugPrint('[Player] Audio runs past the indexed length '
+                '(${_totalDuration.toStringAsFixed(0)}s) - playing on until the files end');
+          }
+        } else if (_totalDuration > 0 && posSec >= _totalDuration - 1.0) {
           if (_preloadedNextBook != null && _isBackgrounded && Platform.isIOS) {
             debugPrint(
               '[PreBuffer] Position-fallback near end with pre-buffer loaded — firing auto-queue advance',
@@ -8360,6 +8406,19 @@ if (_chapterJumpLatchIndex >= 0) {
 
   bool _isCompletingBook = false;
 
+  String? _overrunLoggedFor;
+
+  /// Whether the player itself is at the end of the last file, rather than
+  /// only past the length the server indexed.
+  bool _engineAtEnd() {
+    final p = _player;
+    if (p == null) return true;
+    if (_trackStartOffsets.length > 1 && _currentTrackIndex < _trackStartOffsets.length - 2) return false;
+    final d = p.duration;
+    if (d == null || d <= Duration.zero) return true;
+    return p.position >= d - const Duration(seconds: 2);
+  }
+
   Future<void> _onPlaybackComplete({bool userRequested = false}) async {
     // Alpha: captures completion path choice for GH #186 (book restart bug).
     // Re-entry attempts are logged too so we can see if completion fires
@@ -8533,7 +8592,9 @@ if (_chapterJumpLatchIndex >= 0) {
     // automaticallyWaitsToMinimizeStalling=false this gives gapless
     // background auto-advance. GH #244.
     if (Platform.isAndroid) {
-      await _player?.stop();
+      await _player?.stop().timeout(const Duration(seconds: 5), onTimeout: () {
+        debugPrint('[Complete] player stop took over 5s - carrying on');
+      });
     } else {
       await _player?.pause();
     }
@@ -8594,11 +8655,17 @@ if (_chapterJumpLatchIndex >= 0) {
     // any auto-advance begins a new session (awaited to avoid racing it).
     if (_localSessionMode) {
       _logEvent(PlaybackEventType.sessionEnd, detail: 'local book finished');
+      // Capped: a dozing phone on a slow tunnel left the book half finished
+      // with the controls gone (GH #428).
       bool pushed = false;
       if (_api != null) {
-        pushed = await LocalSessionService().pushActive(api: _api!);
+        pushed = await LocalSessionService()
+            .pushActive(api: _api!)
+            .timeout(const Duration(seconds: 8), onTimeout: () => false);
       }
-      await LocalSessionService().finalizeActive(pushed: pushed);
+      await LocalSessionService()
+          .finalizeActive(pushed: pushed)
+          .timeout(const Duration(seconds: 8), onTimeout: () {});
     }
 
     // Notify LibraryProvider before clearing state so it can update isFinished locally.
@@ -9723,9 +9790,11 @@ if (_chapterJumpLatchIndex >= 0) {
     // A finished download goes first - once on the files the session's URLs
     // no longer matter.
     if (_pendingLocalSwapKey != null) {
-      unawaited(_applyPendingLocalSwap(resumeAfter: false));
+      final swap = _pauseSwap = _applyPendingLocalSwap(resumeAfter: false);
+      unawaited(swap);
     } else if (_pendingSessionUpgrade != null) {
-      unawaited(_applyPendingSessionUpgrade(resumeAfter: false));
+      final swap = _pauseSwap = _applyPendingSessionUpgrade(resumeAfter: false);
+      unawaited(swap);
     }
 
     // After 10 min paused, close the server session so we don't inflate
@@ -9941,6 +10010,19 @@ if (_chapterJumpLatchIndex >= 0) {
       logAs: PlaybackEventType.autoRewind,
       logDetail: '$amount (sleep timer)',
     );
+    // Pausing for sleep already saved and sent the spot from before the
+    // rewind, so a restart or another device went back there (GH #433).
+    debugPrint('[SleepTimer] Saving the rewound spot: ${(target.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
+    await _saveProgressLocal(target);
+    final manualOffline =
+        (_prefs ?? await SharedPreferences.getInstance()).getBool('manual_offline_mode') ?? false;
+    if (manualOffline || _isOfflineMode) return;
+    if (_playbackSessionId != null) {
+      await _syncToServer(target, timeListenedOverride: 0);
+    } else if (_currentItemId != null && _api != null) {
+      final syncKey = _currentEpisodeId != null ? '$_currentItemId-$_currentEpisodeId' : _currentItemId!;
+      _progressSync.syncToServer(api: _api!, itemId: syncKey);
+    }
   }
 
   /// Offline on a network source: the current item isn't downloaded and there

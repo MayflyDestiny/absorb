@@ -2039,6 +2039,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> _storeNewerServerPosition(
       String key, Map<String, dynamic> mp) async {
     if (mp['isFinished'] == true) return;
+    // BookOrbit's list carries only a percent for some books, with a
+    // currentTime of 0 that is no place at all: storing it sent the next
+    // start back to the beginning.
+    if (mp['positionUnknown'] == true) return;
     final serverTime = (mp['currentTime'] as num?)?.toDouble();
     final serverUpd = (mp['lastUpdate'] as num?)?.toInt() ?? 0;
     if (serverTime == null || serverUpd <= 0) return;
@@ -2115,6 +2119,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           // the paused player back and then syncs that old spot up over the
           // real one. The position saved here carries its own timestamp.
           unawaited(() async {
+            // This phone's own sync coming back can only be behind where it
+            // is now (GH #440), whatever the clocks say.
+            final from = mp['fromSession'];
+            if (from != null && from == player.playbackSessionId) {
+              debugPrint('[Sync] Ignoring remote position for paused player: '
+                  "it is this phone's own sync ($from)");
+              return;
+            }
             final savedAt =
                 await ProgressSyncService().getSavedTimestamp(key);
             if (newUpd <= savedAt) {
@@ -2751,31 +2763,41 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> loadPlaylists({bool force = false}) async {
     if (_api == null || _selectedLibraryId == null || isOffline) return;
 
+    final libId = _selectedLibraryId!;
+    // A load already running for another library (a switch mid-load) would
+    // hand this one that library's playlists.
     final existing = _playlistsInFlight;
-    if (existing != null) {
+    if (existing != null && _playlistsInFlightFor == libId) {
       await existing;
       return;
     }
 
-    final inFlight = _doLoadPlaylists();
+    final inFlight = _doLoadPlaylists(libId);
     _playlistsInFlight = inFlight;
+    _playlistsInFlightFor = libId;
     try {
       await inFlight;
     } finally {
       if (identical(_playlistsInFlight, inFlight)) {
         _playlistsInFlight = null;
+        _playlistsInFlightFor = null;
       }
     }
   }
 
-  Future<void> _doLoadPlaylists() async {
+  Future<void> _doLoadPlaylists([String? forLibrary]) async {
+    final libId = forLibrary ?? _selectedLibraryId;
+    if (_api == null || libId == null) return;
     _isLoadingPlaylists = true;
     try {
       // Keep whatever we already had when the request fails, rather than
       // blanking the shelves over one bad response.
-      final loaded = await _api!.getLibraryPlaylists(_selectedLibraryId!);
-      if (loaded != null) _playlists = loaded;
-    } catch (_) {}
+      final loaded = await _api!.getLibraryPlaylists(libId);
+      if (loaded != null && _selectedLibraryId == libId) _playlists = loaded;
+      debugPrint('[Library] playlists for $libId: ${loaded?.length ?? 'failed'}');
+    } catch (e) {
+      debugPrint('[Library] playlists for $libId failed: $e');
+    }
     _isLoadingPlaylists = false;
     notifyListeners();
     unawaited(_catchUpQueueAutoDownloads());
@@ -2864,28 +2886,33 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> loadCollections({bool force = false}) async {
     if (_api == null || _selectedLibraryId == null || isOffline) return;
 
+    final libId = _selectedLibraryId!;
     final existing = _collectionsInFlight;
-    if (existing != null) {
+    if (existing != null && _collectionsInFlightFor == libId) {
       await existing;
       return;
     }
 
-    final inFlight = _doLoadCollections();
+    final inFlight = _doLoadCollections(libId);
     _collectionsInFlight = inFlight;
+    _collectionsInFlightFor = libId;
     try {
       await inFlight;
     } finally {
       if (identical(_collectionsInFlight, inFlight)) {
         _collectionsInFlight = null;
+        _collectionsInFlightFor = null;
       }
     }
   }
 
-  Future<void> _doLoadCollections() async {
+  Future<void> _doLoadCollections([String? forLibrary]) async {
+    final libId = forLibrary ?? _selectedLibraryId;
+    if (_api == null || libId == null) return;
     _isLoadingCollections = true;
     try {
-      final loaded = await _api!.getLibraryCollections(_selectedLibraryId!);
-      if (loaded != null) _collections = loaded;
+      final loaded = await _api!.getLibraryCollections(libId);
+      if (loaded != null && _selectedLibraryId == libId) _collections = loaded;
     } catch (_) {}
     _isLoadingCollections = false;
     notifyListeners();

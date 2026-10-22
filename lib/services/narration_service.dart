@@ -469,6 +469,10 @@ class NarrationService {
 
   /// The narration laid on the audio files' real lengths, saved, and kept as
   /// the book's download.
+  ///
+  /// [measure] and [markNarrated] are for Audiobookshelf. BookOrbit's places
+  /// go by its own timings, kept as they are, and it already knows which
+  /// books are narrated; [savedChapters] keeps the chapters saved with it.
   Future<void> _keep(
     ApiService? api,
     Map<String, dynamic> item,
@@ -477,18 +481,34 @@ class NarrationService {
     String dir,
     List<String> paths, {
     String? localCoverPath,
+    bool measure = true,
+    bool markNarrated = true,
+    bool savedChapters = false,
   }) async {
-    final measured = <double?>[];
-    for (final p in paths) {
-      measured.add(await audioFileDuration(p));
+    var timed = o;
+    if (measure) {
+      final measured = <double?>[];
+      for (final p in paths) {
+        measured.add(await audioFileDuration(p));
+      }
+      timed = o.withTrackDurations(measured);
+      debugPrint('[Narration] $itemId measured ${measured.where((m) => m != null).length} of '
+          '${paths.length} files: ${o.duration.toStringAsFixed(0)}s from the timings, '
+          '${timed.duration.toStringAsFixed(0)}s from the audio');
+      if (measured.every((m) => m != null)) await ScopedPrefs.setBool(_timedKey(itemId), true);
     }
-    final timed = o.withTrackDurations(measured);
-    debugPrint('[Narration] $itemId measured ${measured.where((m) => m != null).length} of '
-        '${paths.length} files: ${o.duration.toStringAsFixed(0)}s from the timings, '
-        '${timed.duration.toStringAsFixed(0)}s from the audio');
-    await _remember(itemId, timed);
-    await markAudiobook(itemId, timed);
-    if (measured.every((m) => m != null)) await ScopedPrefs.setBool(_timedKey(itemId), true);
+    if (measure) {
+      await _remember(itemId, timed);
+    } else {
+      await keepTimings(itemId, timed);
+    }
+    if (markNarrated) await markAudiobook(itemId, timed);
+    // Chapters saved with the book win over the narration's sections when
+    // they fit, the same as when it streams.
+    final saved = savedChapters
+        ? [for (final c in (item['media'] as Map?)?['chapters'] as List? ?? const []) Map<String, dynamic>.from(c as Map)]
+        : const <Map<String, dynamic>>[];
+    final useSaved = saved.isNotEmpty && ((saved.last['start'] as num?) ?? 0) < timed.duration;
     await DownloadService().registerNarration(
       api: api,
       localCoverPath: localCoverPath,
@@ -497,7 +517,7 @@ class NarrationService {
       dirPath: dir,
       paths: paths,
       duration: timed.duration,
-      chapters: timed.chapters(),
+      chapters: useSaved ? saved : timed.chapters(),
       audioTracks: timed.audioTracks((t) => t.href),
     );
   }
@@ -512,15 +532,30 @@ class NarrationService {
     String epubPath,
     String dir, {
     String? localCoverPath,
+    bool serverTimings = false,
   }) async {
     final started = DateTime.now();
-    final o = await compute(_parseEpub, epubPath);
-    if (o == null || o.isEmpty) {
+    final parsed = await compute(_parseEpub, epubPath);
+    if (parsed == null || parsed.isEmpty) {
       debugPrint('[Narration] the downloaded EPUB for $itemId holds no narration');
-      await _remember(itemId, null);
+      if (!serverTimings) await _remember(itemId, null);
       return false;
     }
-    final hrefs = o.tracks.map((t) => t.href).toList();
+    // BookOrbit's timings, saved when the download started, are what its
+    // streaming, read along and saved places go by; the file's own are the
+    // fallback.
+    final kept = serverTimings ? await localOverlay(itemId) : null;
+    if (serverTimings && kept == null) {
+      debugPrint('[Narration] BookOrbit timings for $itemId are gone - using the EPUB\'s own');
+    }
+    final o = kept ?? parsed;
+    // Each track's file inside the zip, found by the path the EPUB gives it.
+    final hrefs = [
+      for (final t in o.tracks)
+        parsed.tracks
+            .firstWhere((p) => MediaOverlay.sameDoc(p.href, t.href), orElse: () => t)
+            .href,
+    ];
     final names = _trackNames(o.audioTracks((t) => t.href));
     final paths = await compute(_extract, (epub: epubPath, dir: dir, hrefs: hrefs, names: names));
     debugPrint('[Narration] took ${paths.length} audio files out of the downloaded EPUB for $itemId '
@@ -546,8 +581,18 @@ class NarrationService {
     } catch (e) {
       debugPrint('[Narration] the downloaded EPUB for $itemId was not deleted: $e');
     }
-    await _keep(null, item, itemId, o, dir, paths, localCoverPath: localCoverPath);
+    await _keep(null, item, itemId, o, dir, paths,
+        localCoverPath: localCoverPath,
+        measure: kept == null,
+        markNarrated: !serverTimings,
+        savedChapters: serverTimings);
     return true;
+  }
+
+  /// Keeps [o] as [itemId]'s narration on this phone (memory and disk).
+  Future<void> keepTimings(String itemId, MediaOverlay o) async {
+    _overlays[itemId] = o;
+    await _save(itemId, o);
   }
 
   /// Plays the narration, from the sentence [from] when given (read along

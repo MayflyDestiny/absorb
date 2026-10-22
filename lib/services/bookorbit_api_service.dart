@@ -793,6 +793,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       case 'me':
         return _routeMe(method, s, q, body);
       case 'libraries':
+        if (method == 'POST' && n == 4 && at(3) == 'scan') return _json(await _scanLibrary(at(2)));
         if (method != 'GET') return null;
         if (n == 2) {
           final dock = await _dockLibrary();
@@ -898,6 +899,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
           await _boPatch('/books/${at(2)}/metadata', {
             'audioMetadata': {'chapters': chapters},
           });
+          debugPrint('[BookOrbit] chapters for ${at(2)} saved: ${chapters?.length ?? 0}');
           await _afterEdit(at(2), chaptersChanged: true);
           return _json({'success': true, 'updated': true});
         }
@@ -3505,6 +3507,17 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     return buildEbookUrl(itemId, ino);
   }
 
+  /// BookOrbit streams the EPUB itself from disk, while the audio files
+  /// inside it are read whole into the server's memory on every request,
+  /// which crawls on a book with one big audio file. Its download tickets
+  /// cover audio files only, so the EPUB goes with a freshly refreshed
+  /// sign-in.
+  @override
+  Future<({String url, Map<String, String> headers})> narratedEpubDownload(String itemId, String ino) async {
+    await _ensureFreshAccessToken();
+    return (url: '$_v1/books/files/$ino/download', headers: mediaHeaders);
+  }
+
   @override
   Map<String, String> downloadHeadersFor(String url) {
     if (url.startsWith('$_v1/watch-downloads/media-overlay/files/')) {
@@ -3724,7 +3737,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       final real = await _pool(listening.map((id) => () async {
             try {
               final manifest = await _manifest(id);
-              if (manifest == null) return null;
+              if (manifest == null) return await _narrationProgress(id, byId[id]);
               final state = await _playbackState(id);
               if (state == null) return null;
               final card = byId[id];
@@ -3745,6 +3758,43 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       debugPrint('[BookOrbit] Continue-listening positions failed: $e');
     }
     return byId.values.toList();
+  }
+
+  /// The progress of a book read aloud from its EPUB: its place is kept on
+  /// the EPUB file, not as an audiobook. Null for any other book.
+  Future<Map<String, dynamic>?> _narrationProgress(String id, Map<String, dynamic>? card) async {
+    final n = await _narration(id);
+    if (n == null) return null;
+    final spot = await _narrationPosition(id, n.fileId);
+    if (spot == null) return null;
+    final duration = n.overlay.duration;
+    final finished = card?['isFinished'] == true;
+    return {
+      ...?card,
+      'id': card?['id'] ?? 'bo-$id',
+      'libraryItemId': id,
+      'mediaItemId': id,
+      'mediaItemType': 'book',
+      'episodeId': null,
+      'currentTime': spot.seconds,
+      'duration': duration,
+      'progress': finished ? 1.0 : (duration > 0 ? (spot.seconds / duration).clamp(0.0, 1.0) : 0.0),
+      'isFinished': finished,
+      'lastUpdate': spot.updatedAt ?? card?['lastUpdate'] ?? 0,
+    }..remove('positionUnknown');
+  }
+
+  /// A library scan as Audiobookshelf asks for one: BookOrbit's scanner for a
+  /// library, or its watcher's rescan for the Book Dock.
+  Future<Map<String, dynamic>> _scanLibrary(String libId) async {
+    if (libId == ApiService.bookDockLibraryId) {
+      await _boPost('/book-dock/rescan');
+      debugPrint('[BookOrbit] Book Dock rescan started');
+    } else {
+      await _boPost('/scanner/libraries/$libId/scan');
+      debugPrint('[BookOrbit] library $libId scan started');
+    }
+    return {'success': true};
   }
 
   /// Save a book-absolute position. Returns the HTTP status that best
@@ -3998,6 +4048,9 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final media = BookOrbitMapper.item(detail: detail)['media'] as Map<String, dynamic>;
     final fileId = int.tryParse('${(media['narration'] as Map?)?['fileId']}');
     if (fileId == null) return null;
+    // The same narrated file as last time has the same timings: reading
+    // them again took seconds on a long book, and held up every start.
+    if (cached != null && cached.fileId == fileId) return cached;
     final playlist = await _boGet('/epub/$bookId/media-overlay', {'fileId': '$fileId'}) as Map<String, dynamic>;
     final parsed = MediaOverlay.fromBookOrbit(playlist);
     if (parsed == null || parsed.isEmpty) return null;
@@ -4143,7 +4196,11 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final item = BookOrbitMapper.item(detail: detail);
     final media = item['media'] as Map<String, dynamic>;
     final metadata = media['metadata'] as Map<String, dynamic>;
-    final chapters = overlay.chapters();
+    // Chapters saved with the chapter editor win over the narration's own
+    // sections, when they fit its length.
+    final edited = BookOrbitMapper.savedChapters(detail, overlay.duration);
+    final useEdited = edited.isNotEmpty && (edited.last['start'] as double) < overlay.duration;
+    final chapters = useEdited ? edited : overlay.chapters();
     final tracks = overlay.audioTracks((t) => _narrationTrackPath(bookId, n.fileId, t));
     media['chapters'] = chapters;
     media['tracks'] = tracks;
@@ -4156,7 +4213,8 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       ..fileId = n.fileId
       ..startPercent = overlay.duration > 0 ? (current / overlay.duration * 100).clamp(0.0, 100.0) : null;
     debugPrint('[BookOrbit] narration session for $bookId: ${tracks.length} tracks, '
-        '${overlay.clips.length} sentences, ${overlay.duration.toStringAsFixed(0)}s, from ${current.toStringAsFixed(0)}s');
+        '${overlay.clips.length} sentences, ${overlay.duration.toStringAsFixed(0)}s, from ${current.toStringAsFixed(0)}s, '
+        '${chapters.length} chapters ${useEdited ? 'saved with the book' : 'from the narration'}');
     return {
       'id': sessionId,
       'userId': '',

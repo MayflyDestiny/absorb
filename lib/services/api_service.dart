@@ -514,6 +514,13 @@ class ApiService {
   /// Headers for a download of [url] built by [buildDownloadFileUrl].
   Map<String, String> downloadHeadersFor(String url) => mediaHeaders;
 
+  /// Where a narrated EPUB downloads whole from, and the headers it needs,
+  /// for the download that takes its audio out on the phone.
+  Future<({String url, Map<String, String> headers})> narratedEpubDownload(String itemId, String ino) async {
+    final url = buildDownloadFileUrl(itemId, ino);
+    return (url: url, headers: downloadHeadersFor(url));
+  }
+
   /// Called once before a book's files are queued for download.
   Future<void> prepareDownload(String itemId) async {}
 
@@ -1379,7 +1386,9 @@ class ApiService {
           if (!kIsWeb) 'User-Agent': userAgent,
         },
         body: jsonEncode({'username': username, 'password': password}),
-      );
+      // A server that takes the connection and then never answers (a proxy
+      // up with the server behind it down) left the sign-in spinning forever.
+      ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         return (
@@ -1393,6 +1402,9 @@ class ApiService {
         statusCode: response.statusCode,
         failure: _classifyHttpLoginFailure(response),
       );
+    } on TimeoutException {
+      debugPrint('[API] login to $url got no answer in 20s');
+      return (data: null, statusCode: 0, failure: null);
     } catch (e) {
       return (data: null, statusCode: 0, failure: _classifyNetworkFailure(e));
     }
@@ -5137,6 +5149,8 @@ class ApiService {
       );
       if (r.statusCode != 200) {
         debugPrint('[API] updateChapters failed: ${r.statusCode}');
+      } else {
+        debugPrint('[API] updateChapters $itemId: ${chapters.length} chapters saved');
       }
       return r.statusCode == 200;
     } catch (e) {

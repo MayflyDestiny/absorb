@@ -183,9 +183,12 @@ class _PendingBook {
   /// (e.g. "Author/Title") on completion. Null for internal / iOS downloads.
   final String? safTreeUri;
   final String? safSubfolder;
-  /// An Audiobookshelf EPUB that reads itself aloud: the one task downloads
-  /// the whole EPUB, and its audio is taken out when it lands.
+  /// An EPUB that reads itself aloud: the one task downloads the whole EPUB,
+  /// and its audio is taken out when it lands.
   final bool narration;
+  /// The narration keeps the server's own timings (BookOrbit's), saved on
+  /// this phone when the download started, rather than the file's.
+  final bool serverTimings;
 
   /// Chapter indices the user picked when this download started, or null for
   /// the whole item. Kept so a resume that has to restart from scratch keeps
@@ -243,6 +246,7 @@ class _PendingBook {
     this.safSubfolder,
     this.selectedChapters,
     this.narration = false,
+    this.serverTimings = false,
   }) {
     // Start the no-progress watchdog clock at creation (fresh or restored).
     lastUpdate = DateTime.now();
@@ -274,6 +278,7 @@ class _PendingBook {
     if (safSubfolder != null) 'safSubfolder': safSubfolder,
     if (selectedChapters != null) 'selectedChapters': selectedChapters,
     if (narration) 'narration': true,
+    if (serverTimings) 'serverTimings': true,
     'paused': paused,
   };
 
@@ -300,6 +305,7 @@ class _PendingBook {
         ?.map((e) => (e as num).toInt())
         .toList(),
     narration: j['narration'] == true,
+    serverTimings: j['serverTimings'] == true,
   )..paused = j['paused'] as bool? ?? false;
 }
 
@@ -1727,7 +1733,7 @@ class DownloadService extends ChangeNotifier {
     media['duration'] = duration;
     media['chapters'] = chapters;
     media['tracks'] = audioTracks;
-    media['narration'] = {'duration': duration, 'local': true};
+    media['narration'] = {...?(media['narration'] as Map?), 'duration': duration, 'local': true};
     final stored = {...item, 'media': media};
     final cover = localCoverPath ??
         (api == null ? null : await _cacheCover(api, itemId, api.getCoverUrl(itemId, width: 800)));
@@ -1806,7 +1812,7 @@ class DownloadService extends ChangeNotifier {
         media['duration'] = duration;
         media['chapters'] = chapters;
         media['tracks'] = audioTracks;
-        media['narration'] = {'duration': duration, 'local': true};
+        media['narration'] = {...?(media['narration'] as Map?), 'duration': duration, 'local': true};
       }
       _downloads[itemId] = DownloadInfo(
         itemId: itemId,
@@ -3039,7 +3045,7 @@ class DownloadService extends ChangeNotifier {
     );
     notifyListeners();
 
-    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId)) {
+    if (episodeId == null && await _isNarratedEpubBook(api, itemId)) {
       await _executeNarrationDownload(
           api: api, itemId: itemId, title: title, author: author, coverUrl: coverUrl, libraryId: libraryId);
       return;
@@ -3347,9 +3353,22 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// An Audiobookshelf EPUB that reads itself aloud downloads whole, as one
-  /// background task with the usual notifications, so it carries on with the
-  /// app in the background or closed. Its audio is taken out once it lands
+  /// Whether [itemId] is a book whose audio is its EPUB's narration: known on
+  /// this phone for Audiobookshelf, said by the item itself on BookOrbit.
+  Future<bool> _isNarratedEpubBook(ApiService api, String itemId) async {
+    if (!api.isBookOrbit) return NarratedBooks.contains(itemId);
+    try {
+      final item = await api.getLibraryItem(itemId);
+      return (item?['media'] as Map?)?['narration'] != null;
+    } catch (e) {
+      debugPrint('[Download] could not tell whether $itemId is narrated: $e');
+      return false;
+    }
+  }
+
+  /// An EPUB that reads itself aloud downloads whole, as one background task
+  /// with the usual notifications, so it carries on with the app in the
+  /// background or closed. Its audio is taken out once it lands
   /// ([_finishNarration]).
   Future<void> _executeNarrationDownload({
     required ApiService api,
@@ -3412,8 +3431,21 @@ class DownloadService extends ChangeNotifier {
       final fileMeta = ebookFile['metadata'] as Map?;
       final filename = _sanitizePath(fileMeta?['filename'] as String? ?? 'book.epub');
       final size = (fileMeta?['size'] as num?)?.toInt();
-      final url = api.buildDownloadFileUrl(itemId, ino);
+      final target = await api.narratedEpubDownload(itemId, ino);
+      final url = target.url;
       final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
+      // BookOrbit streams and keeps places by its own timings, so the
+      // download keeps them too, saved now while the server is reachable.
+      var serverTimings = false;
+      if (api.isBookOrbit) {
+        final timings = await NarrationService.instance.audioNarration(api, itemId);
+        if (timings != null) {
+          await NarrationService.instance.keepTimings(itemId, timings);
+          serverTimings = true;
+        } else {
+          debugPrint('[Download] BookOrbit gave no timings for $itemId - the EPUB\'s own will be used');
+        }
+      }
 
       _pending[itemId] = _PendingBook(
         itemId: itemId,
@@ -3428,6 +3460,7 @@ class DownloadService extends ChangeNotifier {
         expectedPaths: ['${bookDir.path}/$filename'],
         slimSessionJson: jsonEncode({'libraryItem': slimItem}),
         narration: true,
+        serverTimings: serverTimings,
       );
       await _persistPending();
 
@@ -3446,7 +3479,7 @@ class DownloadService extends ChangeNotifier {
         task = DownloadTask(
           taskId: _taskId(itemId, 0),
           url: url,
-          headers: api.downloadHeadersFor(url),
+          headers: target.headers,
           filename: filename,
           baseDirectory: BaseDirectory.root,
           directory: bookDir.path,
@@ -3461,7 +3494,7 @@ class DownloadService extends ChangeNotifier {
         task = DownloadTask(
           taskId: _taskId(itemId, 0),
           url: url,
-          headers: api.downloadHeadersFor(url),
+          headers: target.headers,
           filename: filename,
           baseDirectory: BaseDirectory.applicationDocuments,
           directory: relDir!,
@@ -3482,7 +3515,8 @@ class DownloadService extends ChangeNotifier {
       );
       final ok = await FileDownloader().enqueue(task);
       debugPrint('[Download] narration EPUB for "$title" ($itemId) enqueued ok=$ok: $filename, '
-          '${size ?? '?'} bytes, dir=${bookDir.path}, '
+          '${size ?? '?'} bytes, from ${Uri.parse(url).path}, dir=${bookDir.path}, '
+          '${serverTimings ? "BookOrbit's timings kept, " : ''}'
           'audio goes to ${useSaf ? 'the custom folder' : 'app storage'} once it lands');
       if (!ok) throw Exception('Failed to enqueue the EPUB');
     } catch (e) {
@@ -3510,8 +3544,8 @@ class DownloadService extends ChangeNotifier {
     var ok = false;
     try {
       if (item != null) {
-        ok = await NarrationService.instance
-            .keepFromEpub(item, itemId, epubPath, p.bookDir, localCoverPath: p.localCoverPath);
+        ok = await NarrationService.instance.keepFromEpub(item, itemId, epubPath, p.bookDir,
+            localCoverPath: p.localCoverPath, serverTimings: p.serverTimings);
       } else {
         debugPrint('[Download] narration for $itemId has no saved item to keep it with');
       }
