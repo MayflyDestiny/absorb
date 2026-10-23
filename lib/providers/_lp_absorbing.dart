@@ -2276,6 +2276,13 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     return await _peekNextBookInSeries(currentItemId);
   }
 
+  /// Relaxed gate probe: true when the active queue mode would continue to
+  /// another eligible entry after the current one. Unlike
+  /// [peekNextQueueItemForPreBuffer] this does not require a directly playable
+  /// single-track source, so it suits the book-finish reminder gate.
+  Future<bool> willAutoAdvanceAfterFinish(String currentKey) async =>
+      (await upNextEntry(currentItemId: currentKey)) != null;
+
   Future<({String key, String title, String bookTitle})?> _peekNextBookInSeries(String currentBookId) async {
     final self = this as LibraryProvider;
     var data = _itemDataWithSeries(currentBookId);

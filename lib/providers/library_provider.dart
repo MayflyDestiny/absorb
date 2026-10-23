@@ -81,6 +81,7 @@ class LibraryProvider extends ChangeNotifier
       markFinishedLocally(oldItemId, skipAutoAdvance: true);
     });
     AudioPlayerService.setOnPeekNextItemCallback(peekNextQueueItemForPreBuffer);
+    AudioPlayerService.setOnWillAutoAdvanceCallback(willAutoAdvanceAfterFinish);
     AudioPlayerService.setOnPlayStartedCallback((key, duration) async {
       await _prepareAbsorbingForPlayback(key, duration);
       // Auto-download the book/episode you're listening to kicks off quickly so

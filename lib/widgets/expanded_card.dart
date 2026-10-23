@@ -834,7 +834,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
     // podcast: no top book bar, just the scrubber carrying the title.
     final showBookBar = _chapters.isNotEmpty;
     final double bookProgress;
-    if (_isCastingThis && cast.castingDuration > 0) {
+    if (widget.player.isParkedFinished) {
+      // Finished book held on the card: engine is stopped and its stale
+      // position must not show a mid-bar; freeze at 100%.
+      bookProgress = 1.0;
+    } else if (_isCastingThis && cast.castingDuration > 0) {
       final castPos = cast.castPosition.inMilliseconds / 1000.0;
       bookProgress = (castPos / cast.castingDuration).clamp(0.0, 1.0);
     } else if (_isActive && widget.player.totalDuration > 0) {

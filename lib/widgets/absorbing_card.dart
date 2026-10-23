@@ -728,7 +728,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
         ? cast.castingChapters.length
         : (_isActive ? widget.player.chapters.length : _chapters.length);
     final double bookProgress;
-    if (_isCastingThis && cast.castingDuration > 0) {
+    if (widget.player.isParkedFinished) {
+      // Finished book held on the card: engine stopped, freeze the bar at 100%.
+      bookProgress = 1.0;
+    } else if (_isCastingThis && cast.castingDuration > 0) {
       final castPos = cast.castPosition.inMilliseconds / 1000.0;
       bookProgress = (castPos / cast.castingDuration).clamp(0.0, 1.0);
     } else if (_isActive && widget.player.totalDuration > 0) {

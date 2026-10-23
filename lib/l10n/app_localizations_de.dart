@@ -5492,6 +5492,19 @@ class AppLocalizationsDe extends AppLocalizations {
       'Off - a jump while paused only repositions';
 
   @override
+  String get chapterJumpEntry => 'Chapter jumps';
+
+  @override
+  String get chapterJumpEntrySubtitle =>
+      'Previous-chapter behavior and jump confirmations';
+
+  @override
+  String get chapterJumpDirectLabel => 'Direct';
+
+  @override
+  String get chapterJumpRestartLabel => 'Restart';
+
+  @override
   String autoRewindOnSubtitleFormat(String min, String max) {
     return 'An - $min Sek. bis $max Sek. je nach Pausenlänge';
   }
@@ -12604,4 +12617,44 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get scannerSectionDesc =>
       'Choose which metadata sources are used. Drag them from highest to lowest priority.';
+
+  @override
+  String get bookFinishReminder => 'Book-finished reminder';
+
+  @override
+  String get bookFinishReminderSubtitle => 'Play a cue when a book finishes';
+
+  @override
+  String get bookFinishChime => 'Chime';
+
+  @override
+  String get bookFinishVoice => 'Voice';
+
+  @override
+  String get bookFinishVibrate => 'Vibration';
+
+  @override
+  String get bookFinishReminderOnAutoAdvance => 'Also remind on auto-advance';
+
+  @override
+  String get bookFinishReminderOnAutoAdvanceSubtitle =>
+      'Cue before switching to the next book';
+
+  @override
+  String get bookFinishModeLabel => 'Finish reminder';
+
+  @override
+  String get bookFinishModeOff => 'Silent';
+
+  @override
+  String get bookFinishActionLabel => 'On finish';
+
+  @override
+  String get bookFinishActionClear => 'Dismiss';
+
+  @override
+  String get bookFinishActionHold => 'Keep';
+
+  @override
+  String get bookFinishActionReplay => 'Replay';
 }

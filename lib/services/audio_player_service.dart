@@ -33,6 +33,7 @@ import 'session_cache.dart';
 import 'home_widget_service.dart';
 import 'bookmark_service.dart';
 import 'review_service.dart';
+import 'book_finish_reminder.dart';
 import '../utils/episode_key.dart';
 import '../utils/duration_format.dart';
 import '../l10n/app_localizations.dart';
@@ -1456,6 +1457,18 @@ class AudioPlayerService extends ChangeNotifier {
     _onPeekNextItemCallback = cb;
   }
 
+  // Relaxed "will the queue auto-continue to another item after this one?"
+  // probe. Unlike [_onPeekNextItemCallback] (which requires a directly playable,
+  // single-track source for pre-buffering), this only asks whether an eligible
+  // next entry exists, so the finish-cue gate can separate an auto continuation
+  // from a book that stops here.
+  static Future<bool> Function(String currentKey)? _onWillAutoAdvanceCallback;
+  static void setOnWillAutoAdvanceCallback(
+    Future<bool> Function(String)? cb,
+  ) {
+    _onWillAutoAdvanceCallback = cb;
+  }
+
   // Fired when the AVQueuePlayer natively auto-advances from the current item
   // to a pre-buffered next item. LibraryProvider uses this to mark the old
   // item finished WITHOUT triggering its normal auto-advance flow (which would
@@ -1539,6 +1552,19 @@ class AudioPlayerService extends ChangeNotifier {
   // match them (the iOS widget) read this instead.
   double _metaDuration = 0;
   List<dynamic> _chapters = [];
+  // ── Parked-on-finish state (finish action: hold / replay) ──
+  bool _finishedHeld = false;
+  String _heldFinishAction = 'clear';
+  String? _heldItemId;
+  String? _heldSeriesId;
+  String? _heldTitle;
+  String? _heldAuthor;
+  String? _heldCoverUrl;
+  String? _heldLibraryId;
+  String? _heldEpisodeId;
+  String? _heldEpisodeTitle;
+  double _heldTotalDuration = 0;
+  List<dynamic> _heldChapters = [];
   ApiService? _api;
   ApiService? get currentApi => _api;
   String? _playbackSessionId;
@@ -2582,6 +2608,9 @@ class AudioPlayerService extends ChangeNotifier {
     final next = _preloadedNextBook;
     if (next == null) return;
     if (_autoQueueAdvancing) return;
+    // Book finished and the queue is advancing to the next title. Fire the
+    // optional cue only when the user opted into reminding during auto-advance.
+    unawaited(BookFinishReminder.instance.fire(onAutoAdvance: true));
     _autoQueueAdvancing = true;
     _beginAdvanceBuffering();
     debugPrint('[PreBuffer] Auto-queue advanced to ${next['title']}');
@@ -4447,6 +4476,7 @@ class AudioPlayerService extends ChangeNotifier {
     bool loadOnly = false,
   }) async {
     _pauseRequested = false;
+    _finishedHeld = false;
     _playFromUi = fromUi;
     if (_handler == null) {
       debugPrint('[Player] Handler not yet initialized, waiting…');
@@ -7440,6 +7470,8 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _clearState() {
+    _finishedHeld = false;
+    _heldFinishAction = 'clear';
     _currentItemId = null;
     _currentEpisodeId = null;
     _currentLibraryId = null;
@@ -7497,6 +7529,76 @@ class AudioPlayerService extends ChangeNotifier {
     _resetStuckDetection();
     _noisyPause = false;
     notifyListeners();
+  }
+
+  /// Snapshot the display metadata before _clearState wipes it, so a parked
+  /// finish (hold / replay) can keep the "Now listening" card on screen.
+  void _snapshotHeldFinish(String action) {
+    _finishedHeld = true;
+    _heldFinishAction = action;
+    _heldItemId = _currentItemId;
+    _heldSeriesId = _currentSeriesId;
+    _heldTitle = _currentTitle;
+    _heldAuthor = _currentAuthor;
+    _heldCoverUrl = _currentCoverUrl;
+    _heldLibraryId = _currentLibraryId;
+    _heldEpisodeId = _currentEpisodeId;
+    _heldEpisodeTitle = _currentEpisodeTitle;
+    _heldTotalDuration = _totalDuration;
+    _heldChapters = List<dynamic>.from(_chapters);
+  }
+
+  /// Write the parked snapshot back onto the display fields after a full
+  /// _clearState, keeping only what the card needs (engine/session/tracks
+  /// were already torn down).
+  void _restoreHeldSnapshot() {
+    _currentItemId = _heldItemId;
+    _currentSeriesId = _heldSeriesId;
+    _currentTitle = _heldTitle;
+    _currentAuthor = _heldAuthor;
+    _currentCoverUrl = _heldCoverUrl;
+    _currentLibraryId = _heldLibraryId;
+    _currentEpisodeId = _heldEpisodeId;
+    _currentEpisodeTitle = _heldEpisodeTitle;
+    _totalDuration = _heldTotalDuration;
+    _chapters = List<dynamic>.from(_heldChapters);
+  }
+
+  /// Parked on a finished book: reload via playItem (the engine was stopped at
+  /// completion, so we build a fresh session rather than resume a dead source).
+  /// 'replay' restarts from the very beginning; 'hold' restarts at the start of
+  /// the last chapter / episode.
+  Future<void> _restartHeldParked() async {
+    final api = _api;
+    final itemId = _heldItemId;
+    if (api == null || itemId == null) {
+      _finishedHeld = false;
+      return;
+    }
+    _finishedHeld = false;
+    double startSec = 0;
+    if (_heldFinishAction == 'hold' && _heldChapters.isNotEmpty) {
+      startSec = ChapterLookup.metaStart(
+        _heldChapters,
+        _heldChapters.length - 1,
+      );
+    }
+    await playItem(
+      api: api,
+      itemId: itemId,
+      title: _heldTitle ?? '',
+      author: _heldAuthor ?? '',
+      coverUrl: _heldCoverUrl,
+      totalDuration: _heldTotalDuration,
+      chapters: _heldChapters,
+      episodeId: _heldEpisodeId,
+      episodeTitle: _heldEpisodeTitle,
+      libraryId: _heldLibraryId,
+      seriesId: _heldSeriesId,
+      fromUi: true,
+      startTime: startSec,
+      forceStartTime: true,
+    );
   }
 
   // How long a cached play waits for the real session before falling back to
@@ -8577,6 +8679,30 @@ if (_chapterJumpLatchIndex >= 0) {
 
     debugPrint('[Player] Book complete: $_currentTitle');
     _logEvent(PlaybackEventType.bookFinished);
+    // Optional finish cue (chime / voice / vibration); off by default.
+    // Queue modes continue to the next item through the provider rather than
+    // pre-buffering, so ask whether an eligible next entry exists; treat that
+    // as an auto-advance so the "remind during auto-advance" gate applies
+    // instead of cueing every queued book.
+    var cueAutoAdvance = false;
+    if (_currentItemId != null) {
+      final cueCurrentId = _currentEpisodeId != null
+          ? '$_currentItemId-$_currentEpisodeId'
+          : _currentItemId!;
+      final willCb = _onWillAutoAdvanceCallback;
+      if (willCb != null) {
+        cueAutoAdvance = await willCb(cueCurrentId);
+      } else {
+        // Fallback: the pre-buffer peek only sees a directly playable next item.
+        final peekCb = _onPeekNextItemCallback;
+        if (peekCb != null) {
+          cueAutoAdvance = await peekCb(cueCurrentId) != null;
+        }
+      }
+    }
+    unawaited(
+      BookFinishReminder.instance.fire(onAutoAdvance: cueAutoAdvance),
+    );
     if (_currentEpisodeId == null) {
       unawaited(ReviewService.onBookFinished(isForeground: !_isBackgrounded));
     }
@@ -8689,10 +8815,23 @@ if (_chapterJumpLatchIndex >= 0) {
       }
     }
 
-    // Clear state (player already stopped at top of method)
-    _clearState();
-    _chapters = [];
-    _handler?.updateChaptersQueue(const []);
+    // Finish action: 'clear' dismisses the card (default); 'hold' parks on
+    // the book with the card kept and play ignored; 'replay' keeps the card
+    // and restarts from the beginning when play is pressed.
+    final finishAction = await PlayerSettings.getBookFinishAction();
+    if (finishAction == 'clear') {
+      _clearState();
+      _chapters = [];
+      _handler?.updateChaptersQueue(const []);
+    } else {
+      _snapshotHeldFinish(finishAction);
+      _clearState();
+      _restoreHeldSnapshot();
+      // _clearState reset the parked flag; re-arm it for hold / replay.
+      _finishedHeld = true;
+      _heldFinishAction = finishAction;
+      _handler?.updateChaptersQueue(_chapters);
+    }
     _isCompletingBook = false;
     notifyListeners();
   }
@@ -9029,6 +9168,14 @@ if (_chapterJumpLatchIndex >= 0) {
   /// seconds into playback is worse than starting where you paused.
   Future<void> play({String? logDetail, bool fromUi = false}) async {
     _pauseRequested = false;
+    // Parked on a finished book: both hold and replay reload on play — hold
+    // restarts the last chapter/episode, replay restarts from the beginning.
+    // Never fall through to resuming a stopped, completed source.
+    if (_finishedHeld) {
+      await _restartHeldParked();
+      notifyListeners();
+      return;
+    }
     // A second Play while the first is still moving the source onto a live
     // session raced it: it pressed play on a half-loaded player and ExoPlayer
     // failed with "Unexpected runtime error" (GH #344). The first one plays
@@ -11361,7 +11508,18 @@ final nextStart = _useFileTimelineBounds
     notifyListeners();
   }
 
+  /// True when a finished book is kept parked on the card (the hold finish
+  /// action): the engine is stopped, so its stale position must not drive the
+  /// progress bar or chapter label. UI treats it as finished (full progress,
+  /// last chapter) until the user replays or picks a different book.
+  bool get isParkedFinished => _finishedHeld;
+
   Map<String, dynamic>? get currentChapter {
+    // Parked on a finished book: the engine (_player) was torn down, so the
+    // null guard below must not hide the frozen last chapter.
+    if (_finishedHeld && _chapters.isNotEmpty) {
+      return _chapters.last as Map<String, dynamic>;
+    }
     if (_chapters.isEmpty || _player == null) return null;
     final pos = chapterResolvePosSec; // absolute book position
     final idx = _resolveChapterIndex(pos);
@@ -11376,6 +11534,11 @@ final nextStart = _useFileTimelineBounds
   /// boundary drift), so a raw position containment would report the tail of
   /// the PREVIOUS chapter at ~100% until the stream crosses the boundary.
   int? get currentChapterIndex {
+    // Parked on a finished book: the engine (_player) was torn down; freeze on
+    // the last chapter before the null guard can hide it.
+    if (_finishedHeld && _chapters.isNotEmpty) {
+      return _chapters.length - 1;
+    }
     if (_chapters.isEmpty || _player == null) return null;
     final idx = _resolveChapterIndex(chapterResolvePosSec);
     if (idx == null || idx < 0 || idx >= _chapters.length) return null;

@@ -2786,6 +2786,10 @@
   "chapterJumpAutoPlay": "Auto-play after chapter jump",
   "chapterJumpAutoPlayOnSubtitle": "On - a jump while paused starts playing",
   "chapterJumpAutoPlayOffSubtitle": "Off - a jump while paused only repositions",
+  "chapterJumpEntry": "Chapter jumps",
+  "chapterJumpEntrySubtitle": "Previous-chapter behavior and jump confirmations",
+  "chapterJumpDirectLabel": "Direct",
+  "chapterJumpRestartLabel": "Restart",
   "autoRewindOnSubtitleFormat": "On -{min}s to {max}s based on pause length",
   "@autoRewindOnSubtitleFormat": {
     "placeholders": {
@@ -6761,5 +6765,18 @@
   "@removeMetadataBtn": {
     "placeholders": { "extension": { "type": "String" } }
   },
-  "scannerSectionDesc": "Choose which metadata sources are used. Drag them from highest to lowest priority."
+  "scannerSectionDesc": "Choose which metadata sources are used. Drag them from highest to lowest priority.",
+  "bookFinishReminder": "Book-finished reminder",
+  "bookFinishReminderSubtitle": "Play a cue when a book finishes",
+  "bookFinishChime": "Chime",
+  "bookFinishVoice": "Voice",
+  "bookFinishVibrate": "Vibration",
+  "bookFinishReminderOnAutoAdvance": "Also remind on auto-advance",
+  "bookFinishReminderOnAutoAdvanceSubtitle": "Cue before switching to the next book",
+  "bookFinishModeLabel": "Finish reminder",
+  "bookFinishModeOff": "Silent",
+  "bookFinishActionLabel": "On finish",
+  "bookFinishActionClear": "Dismiss",
+  "bookFinishActionHold": "Keep",
+  "bookFinishActionReplay": "Replay"
 }

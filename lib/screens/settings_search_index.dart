@@ -56,11 +56,12 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
 
     // ── Playback ──
     SettingSearchEntry('Playback', l.sectionPlayback, l.defaultSpeed, [l.defaultSpeedSubtitle]),
+    SettingSearchEntry('Playback', l.sectionPlayback, l.bookFinishReminder, [l.bookFinishReminderSubtitle, l.bookFinishChime, l.bookFinishVoice, l.bookFinishVibrate, l.bookFinishReminderOnAutoAdvance, l.bookFinishActionClear, l.bookFinishActionHold, l.bookFinishActionReplay]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.resetSpeedPresets, [l.resetSpeedPresetsSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.skipBack, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.skipForward, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.chapterBarrierOnRewind, [l.chapterBarrierOnRewindOnSubtitle, l.chapterBarrierOnRewindOffSubtitle]),
-    SettingSearchEntry('Playback', l.sectionPlayback, l.prevChapterJumpBehavior, [l.prevChapterJumpRestartSubtitle, l.prevChapterJumpDirectSubtitle]),
+    SettingSearchEntry('Playback', l.sectionPlayback, l.chapterJumpEntry, [l.chapterJumpEntrySubtitle, l.prevChapterJumpBehavior, l.chaptersConfirmJump, l.chapterJumpAutoPlay, l.prevChapterJumpRestartSubtitle, l.prevChapterJumpDirectSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipButtons, [l.longSkipButtonsOnSubtitle, l.longSkipButtonsOffSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipBack, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipForward, const []),

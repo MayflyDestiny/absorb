@@ -721,7 +721,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get absorbingStop => '停止';
 
   @override
-  String get absorbingManageQueue => '管理队列';
+  String get absorbingManageQueue => '收听列表';
 
   @override
   String get absorbingDone => '完成';
@@ -1572,7 +1572,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get queueModeInfoOffDesc => '当前书籍或单集播放完成后停止播放。';
 
   @override
-  String get queueModeInfoManual => '手动队列';
+  String get queueModeInfoManual => '队列';
 
   @override
   String get queueModeInfoManualDesc =>
@@ -1582,7 +1582,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get queueModeOff => '关闭';
 
   @override
-  String get queueModeManual => '手动';
+  String get queueModeManual => '队列';
 
   @override
   String get queueModeAuto => '自动';
@@ -5164,7 +5164,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cardBackgroundGradient => '渐变';
 
   @override
-  String get queueModeMergedSubtitle => '可选择停止播放、手动队列，或自动播放下一项';
+  String get queueModeMergedSubtitle => '可选择停止播放、按队列接续，或自动播放下一项';
 
   @override
   String get queueModeSeriesLabel => '系列';
@@ -5210,7 +5210,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chapterBarrierOnRewindOffSubtitle => '关闭 - 快退可跨越到上一章';
 
   @override
-  String get prevChapterJumpBehavior => '上一章跳章方式';
+  String get prevChapterJumpBehavior => '上一章按钮';
 
   @override
   String get prevChapterJumpRestartSubtitle => '关闭 - 仅回到当前章节开头';
@@ -5235,6 +5235,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chapterJumpAutoPlayOffSubtitle => '关闭 - 暂停时跳转只定位，保持暂停';
+
+  @override
+  String get chapterJumpEntry => '章节跳转';
+
+  @override
+  String get chapterJumpEntrySubtitle => '上一章跳转方式与跳转确认';
+
+  @override
+  String get chapterJumpDirectLabel => '直接跳';
+
+  @override
+  String get chapterJumpRestartLabel => '回章首';
 
   @override
   String autoRewindOnSubtitleFormat(String min, String max) {
@@ -8273,7 +8285,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get tipsSheetSwipeBetweenBooksDesc =>
-      '在收听界面左右滑动即可切换你正在收听的书籍。开启手动队列模式后，卡片也会作为你的队列使用，因此当前书籍播放结束时会自动播放下一本。';
+      '在收听界面左右滑动即可切换你正在收听的书籍。开启队列模式后，卡片也会作为你的队列使用，因此当前书籍播放结束时会自动播放下一本。';
 
   @override
   String get tipsSheetTapToSeekTitle => '点击跳转';
@@ -12075,4 +12087,43 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scannerSectionDesc => '选择使用哪些元数据来源，按优先级从高到低拖动排序。';
+
+  @override
+  String get bookFinishReminder => '播完设置';
+
+  @override
+  String get bookFinishReminderSubtitle => '播完后的提醒方式与收尾行为';
+
+  @override
+  String get bookFinishChime => '提示音';
+
+  @override
+  String get bookFinishVoice => '语音';
+
+  @override
+  String get bookFinishVibrate => '振动';
+
+  @override
+  String get bookFinishReminderOnAutoAdvance => '连播时也提醒';
+
+  @override
+  String get bookFinishReminderOnAutoAdvanceSubtitle => '自动切到下一本前同样提醒';
+
+  @override
+  String get bookFinishModeLabel => '播完提醒';
+
+  @override
+  String get bookFinishModeOff => '无声';
+
+  @override
+  String get bookFinishActionLabel => '播完动作';
+
+  @override
+  String get bookFinishActionClear => '收起';
+
+  @override
+  String get bookFinishActionHold => '停留';
+
+  @override
+  String get bookFinishActionReplay => '重播';
 }

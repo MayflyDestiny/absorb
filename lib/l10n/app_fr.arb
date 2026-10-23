@@ -1375,7 +1375,7 @@
   "tipsSubtitle": "Tirez le maximum de Absorb",
   "adminTitle": "Administrateur du serveur",
   "adminTasksTitle": "Activité du serveur",
-  "adminTasksRunning": "{count, plural, one {}=1{1 tâche en cours} other{{count} Tâches en cours}}",
+  "adminTasksRunning": "{count, plural, =1{1 tâche en cours} other{{count} Tâches en cours}}",
   "@adminTasksRunning": {
     "placeholders": {
       "count": {

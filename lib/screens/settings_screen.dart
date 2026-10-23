@@ -3138,6 +3138,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                 ),
                               ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            ListTile(
+                              leading: Icon(
+                                Icons.notifications_none_rounded,
+                                color: cs.primary,
+                              ),
+                              title: Text(l.bookFinishReminder),
+                              subtitle: Text(
+                                l.bookFinishReminderSubtitle,
+                                style: tt.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                              trailing: Icon(
+                                Icons.chevron_right_rounded,
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                              ),
+                              onTap: _openBookFinishSheet,
+                            ),
+                            ListTile(
+                              leading: Icon(
+                                Icons.skip_previous_rounded,
+                                color: cs.primary,
+                              ),
+                              title: Text(l.chapterJumpEntry),
+                              subtitle: Text(
+                                l.chapterJumpEntrySubtitle,
+                                style: tt.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                              trailing: Icon(
+                                Icons.chevron_right_rounded,
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                              ),
+                              onTap: _openChapterJumpSheet,
+                            ),
                             SwitchListTile(
                               title: Row(
                                 children: [
@@ -3185,61 +3222,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ? (v) {
                                       setState(() => _skipChapterBarrier = v);
                                       PlayerSettings.setSkipChapterBarrier(v);
-                                    }
-                                  : null,
-                            ),
-                            SwitchListTile(
-                              title: Text(l.prevChapterJumpBehavior),
-                              subtitle: Text(
-                                _prevChapterDirectJump
-                                    ? l.prevChapterJumpRestartSubtitle
-                                    : l.prevChapterJumpDirectSubtitle,
-                                style: tt.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                              value: _prevChapterDirectJump,
-                              onChanged: _loaded
-                                  ? (v) {
-                                      setState(() => _prevChapterDirectJump = v);
-                                      PlayerSettings.setPrevChapterDirectJump(v);
-                                    }
-                                  : null,
-                            ),
-                            SwitchListTile(
-                              title: Text(l.chaptersConfirmJump),
-                              subtitle: Text(
-                                _confirmEveryChapterJump
-                                    ? l.chaptersConfirmJumpOnSubtitle
-                                    : l.chaptersConfirmJumpOffSubtitle,
-                                style: tt.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                              value: _confirmEveryChapterJump,
-                              onChanged: _loaded
-                                  ? (v) {
-                                      setState(() =>
-                                          _confirmEveryChapterJump = v);
-                                      PlayerSettings.setConfirmEveryChapterJump(v);
-                                    }
-                                  : null,
-                            ),
-                            SwitchListTile(
-                              title: Text(l.chapterJumpAutoPlay),
-                              subtitle: Text(
-                                _chapterJumpAutoPlay
-                                    ? l.chapterJumpAutoPlayOnSubtitle
-                                    : l.chapterJumpAutoPlayOffSubtitle,
-                                style: tt.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                              value: _chapterJumpAutoPlay,
-                              onChanged: _loaded
-                                  ? (v) {
-                                      setState(() => _chapterJumpAutoPlay = v);
-                                      PlayerSettings.setChapterJumpAutoPlay(v);
                                     }
                                   : null,
                             ),
@@ -6106,6 +6088,324 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: tt.labelLarge?.copyWith(
                 color: cs.primary, fontWeight: FontWeight.w700)),
       ]),
+    );
+  }
+
+  Future<void> _openBookFinishSheet() async {
+    var mode = await PlayerSettings.getBookFinishMode();
+    var onAuto = await PlayerSettings.getBookFinishReminderOnAutoAdvance();
+    var finishAction = await PlayerSettings.getBookFinishAction();
+    final cs0 = Theme.of(context).colorScheme;
+
+    await showStackableSheet<void>(
+      context: context,
+      initialChildSize: 0.6,
+      maxChildSize: 0.95,
+      backgroundColor: cs0.surface,
+      useSafeArea: true,
+      showHandle: true,
+      builder: (ctx, scrollController) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final l = AppLocalizations.of(ctx)!;
+            final cs = Theme.of(ctx).colorScheme;
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _sheetSectionHeader(
+                  ctx,
+                  Icons.notifications_none_rounded,
+                  l.bookFinishReminder,
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                  child: Text(
+                    l.bookFinishActionLabel,
+                    style: Theme.of(ctx).textTheme.titleSmall,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      _bookFinishCapsule(
+                        ctx, cs, 'clear', Icons.close_rounded,
+                        l.bookFinishActionClear, finishAction, true,
+                        (v) {
+                          finishAction = v;
+                          PlayerSettings.setBookFinishAction(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _bookFinishCapsule(
+                        ctx, cs, 'hold', Icons.pause_circle_outline_rounded,
+                        l.bookFinishActionHold, finishAction, true,
+                        (v) {
+                          finishAction = v;
+                          PlayerSettings.setBookFinishAction(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _bookFinishCapsule(
+                        ctx, cs, 'replay', Icons.replay_rounded,
+                        l.bookFinishActionReplay, finishAction, true,
+                        (v) {
+                          finishAction = v;
+                          PlayerSettings.setBookFinishAction(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                  child: Text(
+                    l.bookFinishModeLabel,
+                    style: Theme.of(ctx).textTheme.titleSmall,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      _bookFinishCapsule(
+                        ctx, cs, 'off', Icons.notifications_off_outlined,
+                        l.bookFinishModeOff, mode, true,
+                        (v) {
+                          mode = v;
+                          PlayerSettings.setBookFinishMode(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _bookFinishCapsule(
+                        ctx, cs, 'chime', Icons.notifications_active_outlined,
+                        l.bookFinishChime, mode, true,
+                        (v) {
+                          mode = v;
+                          PlayerSettings.setBookFinishMode(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _bookFinishCapsule(
+                        ctx, cs, 'voice', Icons.record_voice_over_outlined,
+                        l.bookFinishVoice, mode, true,
+                        (v) {
+                          mode = v;
+                          PlayerSettings.setBookFinishMode(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _bookFinishCapsule(
+                        ctx, cs, 'vibrate', Icons.vibration_rounded,
+                        l.bookFinishVibrate, mode, true,
+                        (v) {
+                          mode = v;
+                          PlayerSettings.setBookFinishMode(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                SwitchListTile(
+                  title: Text(l.bookFinishReminderOnAutoAdvance),
+                  subtitle: Text(
+                    l.bookFinishReminderOnAutoAdvanceSubtitle,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  value: onAuto,
+                  onChanged: (v) {
+                    onAuto = v;
+                    PlayerSettings.setBookFinishReminderOnAutoAdvance(v);
+                    setSheetState(() {});
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openChapterJumpSheet() async {
+    var direct = _prevChapterDirectJump;
+    var confirm = _confirmEveryChapterJump;
+    var autoPlay = _chapterJumpAutoPlay;
+    final cs0 = Theme.of(context).colorScheme;
+
+    await showStackableSheet<void>(
+      context: context,
+      initialChildSize: 0.5,
+      maxChildSize: 0.95,
+      backgroundColor: cs0.surface,
+      useSafeArea: true,
+      showHandle: true,
+      builder: (ctx, scrollController) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final l = AppLocalizations.of(ctx)!;
+            final cs = Theme.of(ctx).colorScheme;
+            final prevSel = direct ? 'direct' : 'restart';
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _sheetSectionHeader(
+                  ctx,
+                  Icons.skip_previous_rounded,
+                  l.chapterJumpEntry,
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                  child: Text(
+                    l.prevChapterJumpBehavior,
+                    style: Theme.of(ctx).textTheme.titleSmall,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      _bookFinishCapsule(
+                        ctx, cs, 'direct', Icons.arrow_forward_rounded,
+                        l.chapterJumpDirectLabel, prevSel, true,
+                        (_) {
+                          direct = true;
+                          _prevChapterDirectJump = true;
+                          PlayerSettings.setPrevChapterDirectJump(true);
+                          setSheetState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _bookFinishCapsule(
+                        ctx, cs, 'restart', Icons.rotate_left_rounded,
+                        l.chapterJumpRestartLabel, prevSel, true,
+                        (_) {
+                          direct = false;
+                          _prevChapterDirectJump = false;
+                          PlayerSettings.setPrevChapterDirectJump(false);
+                          setSheetState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                SwitchListTile(
+                  title: Text(l.chaptersConfirmJump),
+                  subtitle: Text(
+                    confirm
+                        ? l.chaptersConfirmJumpOnSubtitle
+                        : l.chaptersConfirmJumpOffSubtitle,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  value: confirm,
+                  onChanged: (v) {
+                    confirm = v;
+                    _confirmEveryChapterJump = v;
+                    PlayerSettings.setConfirmEveryChapterJump(v);
+                    setSheetState(() {});
+                  },
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                SwitchListTile(
+                  title: Text(l.chapterJumpAutoPlay),
+                  subtitle: Text(
+                    autoPlay
+                        ? l.chapterJumpAutoPlayOnSubtitle
+                        : l.chapterJumpAutoPlayOffSubtitle,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  value: autoPlay,
+                  onChanged: (v) {
+                    autoPlay = v;
+                    _chapterJumpAutoPlay = v;
+                    PlayerSettings.setChapterJumpAutoPlay(v);
+                    setSheetState(() {});
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _bookFinishCapsule(
+    BuildContext ctx,
+    ColorScheme cs,
+    String value,
+    IconData icon,
+    String label,
+    String selectedMode,
+    bool enabled,
+    void Function(String) onPick,
+  ) {
+    final selected = selectedMode == value;
+    return Expanded(
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.4,
+        child: GestureDetector(
+          onTap: enabled ? () => onPick(value) : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: selected ? cs.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected
+                    ? cs.primary
+                    : cs.onSurfaceVariant.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

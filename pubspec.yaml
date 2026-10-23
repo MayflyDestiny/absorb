@@ -1,7 +1,7 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.22.7+440
+version: 1.22.8+441
 
 environment:
   sdk: '>=3.10.0 <4.0.0'
@@ -129,6 +129,7 @@ dependencies:
   # viewer; pinned direct so the bridge API is a declared dependency)
   flutter_inappwebview: ^6.0.0
   flutter_svg: ^2.3.0
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

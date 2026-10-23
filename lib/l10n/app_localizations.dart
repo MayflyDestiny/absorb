@@ -9562,6 +9562,30 @@ abstract class AppLocalizations {
   /// **'Off - a jump while paused only repositions'**
   String get chapterJumpAutoPlayOffSubtitle;
 
+  /// No description provided for @chapterJumpEntry.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter jumps'**
+  String get chapterJumpEntry;
+
+  /// No description provided for @chapterJumpEntrySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous-chapter behavior and jump confirmations'**
+  String get chapterJumpEntrySubtitle;
+
+  /// No description provided for @chapterJumpDirectLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct'**
+  String get chapterJumpDirectLabel;
+
+  /// No description provided for @chapterJumpRestartLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get chapterJumpRestartLabel;
+
   /// No description provided for @autoRewindOnSubtitleFormat.
   ///
   /// In en, this message translates to:
@@ -21398,6 +21422,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose which metadata sources are used. Drag them from highest to lowest priority.'**
   String get scannerSectionDesc;
+
+  /// No description provided for @bookFinishReminder.
+  ///
+  /// In en, this message translates to:
+  /// **'Book-finished reminder'**
+  String get bookFinishReminder;
+
+  /// No description provided for @bookFinishReminderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Play a cue when a book finishes'**
+  String get bookFinishReminderSubtitle;
+
+  /// No description provided for @bookFinishChime.
+  ///
+  /// In en, this message translates to:
+  /// **'Chime'**
+  String get bookFinishChime;
+
+  /// No description provided for @bookFinishVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice'**
+  String get bookFinishVoice;
+
+  /// No description provided for @bookFinishVibrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Vibration'**
+  String get bookFinishVibrate;
+
+  /// No description provided for @bookFinishReminderOnAutoAdvance.
+  ///
+  /// In en, this message translates to:
+  /// **'Also remind on auto-advance'**
+  String get bookFinishReminderOnAutoAdvance;
+
+  /// No description provided for @bookFinishReminderOnAutoAdvanceSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cue before switching to the next book'**
+  String get bookFinishReminderOnAutoAdvanceSubtitle;
+
+  /// No description provided for @bookFinishModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish reminder'**
+  String get bookFinishModeLabel;
+
+  /// No description provided for @bookFinishModeOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Silent'**
+  String get bookFinishModeOff;
+
+  /// No description provided for @bookFinishActionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'On finish'**
+  String get bookFinishActionLabel;
+
+  /// No description provided for @bookFinishActionClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get bookFinishActionClear;
+
+  /// No description provided for @bookFinishActionHold.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get bookFinishActionHold;
+
+  /// No description provided for @bookFinishActionReplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay'**
+  String get bookFinishActionReplay;
 }
 
 class _AppLocalizationsDelegate

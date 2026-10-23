@@ -274,8 +274,14 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
       listenable: _tickNotifier,
       builder: (context, _) {
         final staticPos = widget.staticProgress * widget.staticDuration;
-        final posS = active ? _smoothPos : staticPos;
         final totalDur = _isCastMode ? cast.castingDuration : (widget.isActive ? player.totalDuration : widget.staticDuration);
+        // Parked on a finished book (hold action): the engine is stopped, so
+        // the stale local track position would resolve to the first chapter
+        // and a mid bar. Freeze at the end: full progress, last chapter, 0
+        // remaining.
+        final parked = !_isCastMode && player.isParkedFinished;
+        final rawPos = active ? _smoothPos : staticPos;
+        final posS = parked ? totalDur : rawPos;
         final speed = active ? _currentSpeed : 1.0;
         final isPlaying = active && _isPlaying;
         final bookProgress = totalDur > 0 ? (posS / totalDur).clamp(0.0, 1.0) : 0.0;

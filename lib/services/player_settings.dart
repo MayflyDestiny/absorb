@@ -1025,6 +1025,29 @@ class PlayerSettings {
   static Future<double> getSleepChimeVolume() => _get('sleepChimeVolume', 2.0);
   static Future<void> setSleepChimeVolume(double value) => _set('sleepChimeVolume', value);
 
+  // ── Book-finished reminder ──
+  /// Reminder mode: 'off' (silent), 'chime', 'voice' (default), or 'vibrate'.
+  static Future<String> getBookFinishMode() =>
+      _get('bookFinishMode', 'voice');
+  static Future<void> setBookFinishMode(String mode) =>
+      _set('bookFinishMode', mode);
+
+  /// Also remind when auto-queue advances to the next book (off by default,
+  /// so continuous playback isn't interrupted on every book).
+  static Future<bool> getBookFinishReminderOnAutoAdvance() =>
+      _get('bookFinishReminderOnAutoAdvance', false);
+  static Future<void> setBookFinishReminderOnAutoAdvance(bool value) =>
+      _set('bookFinishReminderOnAutoAdvance', value);
+
+  /// What happens when a book reaches its end:
+  /// 'clear' (dismiss the card), 'hold' (default, keep the card parked at the
+  /// last chapter end), 'replay' (keep the card, pressing play restarts the
+  /// book from the beginning).
+  static Future<String> getBookFinishAction() =>
+      _get('bookFinishAction', 'hold');
+  static Future<void> setBookFinishAction(String action) =>
+      _set('bookFinishAction', action);
+
   static Future<int> getSleepRewindSeconds() => _get('sleepRewindSeconds', 0);
   static Future<void> setSleepRewindSeconds(int seconds) => _set('sleepRewindSeconds', seconds);
   static Future<int> getSleepTimerTab() => _get('sleepTimerTab', 0);
