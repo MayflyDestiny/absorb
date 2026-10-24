@@ -135,7 +135,18 @@ class _GridBookTileState extends State<GridBookTile> {
                               updatedAt: lib.itemUpdatedAt(itemId)))
                       : CoverPlaceholder(title: title, author: author),
 
-                  // Progress bar at bottom of cover
+                  // ── State chips (downloaded), bottom-center ──
+                  if (isDownloaded)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: CoverStateBadges(
+                        isDownloaded: isDownloaded,
+                        savedChapters: dlCounts?.saved ?? 0,
+                        totalChapters: dlCounts?.total ?? 0,
+                      ),
+                    ),
                   if (progress > 0 && !isFinished)
                     Positioned(
                       left: 0,
@@ -231,21 +242,6 @@ class _GridBookTileState extends State<GridBookTile> {
                         ),
                         child: Text(l.libraryGridTilesSequence(widget.sequenceBadge!),
                           style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-
-                  // ── State chips (downloaded), bottom-center ──
-                  if (isDownloaded)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 5,
-                      child: Center(
-                        child: CoverStatusChips(
-                          isDownloaded: isDownloaded,
-                          savedChapters: dlCounts?.saved ?? 0,
-                          totalChapters: dlCounts?.total ?? 0,
-                        ),
                       ),
                     ),
 
@@ -1175,16 +1171,6 @@ class _LibraryBookListTileState extends State<LibraryBookListTile> {
                         author)
                   else
                     CoverPlaceholder(title: title, author: author),
-                  if (progress > 0 && !isFinished)
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: LinearProgressIndicator(
-                        value: progress.clamp(0.0, 1.0),
-                        minHeight: 3,
-                        backgroundColor: Colors.black38,
-                        valueColor: AlwaysStoppedAnimation(cs.primary),
-                      ),
-                    ),
                   if (isFinished)
                     Positioned(
                       top: 3,
@@ -1195,11 +1181,21 @@ class _LibraryBookListTileState extends State<LibraryBookListTile> {
                     Positioned(
                       left: 0,
                       right: 0,
-                      bottom: 4,
-                      child: CoverStatusChips(
+                      bottom: 0,
+                      child: CoverStateBadges(
                         isDownloaded: isDownloaded,
                         savedChapters: dlCounts?.saved ?? 0,
                         totalChapters: dlCounts?.total ?? 0,
+                      ),
+                    ),
+                  if (progress > 0 && !isFinished)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0),
+                        minHeight: 3,
+                        backgroundColor: Colors.black38,
+                        valueColor: AlwaysStoppedAnimation(cs.primary),
                       ),
                     ),
                 ]),

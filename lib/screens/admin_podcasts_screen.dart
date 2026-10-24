@@ -318,6 +318,11 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
   bool _loadingChart = true;
   List<dynamic> _chartResults = [];
   final Set<String> _lookingUp = {};
+  // 热门榜懒加载：首屏 25 条，滚到底部再按 25 条递增，最多 100 条。
+  static const int _chartPageSize = 25;
+  static const int _chartMaxLimit = 100;
+  int _chartLimit = _chartPageSize;
+  bool _loadingMoreChart = false;
 
   @override
   void initState() {
@@ -335,10 +340,11 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
   void dispose() { _ctrl.dispose(); super.dispose(); }
 
   Future<void> _loadChart() async {
-    setState(() => _loadingChart = true);
+    _chartLimit = _chartPageSize;
+    setState(() { _loadingChart = true; _loadingMoreChart = false; });
     try {
       final genrePart = _selectedGenre > 0 ? 'genre=$_selectedGenre/' : '';
-      final url = 'https://itunes.apple.com/$_storeCountry/rss/toppodcasts/${genrePart}limit=25/json';
+      final url = 'https://itunes.apple.com/$_storeCountry/rss/toppodcasts/${genrePart}limit=$_chartLimit/json';
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200 && mounted) {
         final data = jsonDecode(response.body);
@@ -349,6 +355,34 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
       }
     } catch (_) {
       if (mounted) setState(() => _loadingChart = false);
+    }
+  }
+
+  /// 滚到底部时按页加载更多热门播客（iTunes 榜单不支持 offset 分页，
+  /// 这里用递增 limit 重拉同一榜单并整体替换）。
+  Future<void> _loadMoreChart() async {
+    if (_loadingChart || _loadingMoreChart) return;
+    if (_chartLimit >= _chartMaxLimit) return;
+    if (_chartResults.length < _chartLimit) return; // 榜单已不足一页
+    setState(() => _loadingMoreChart = true);
+    final nextLimit = _chartLimit + _chartPageSize;
+    try {
+      final genrePart = _selectedGenre > 0 ? 'genre=$_selectedGenre/' : '';
+      final url = 'https://itunes.apple.com/$_storeCountry/rss/toppodcasts/${genrePart}limit=$nextLimit/json';
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200 && mounted) {
+        final data = jsonDecode(response.body);
+        final entries = data['feed']?['entry'] as List? ?? [];
+        setState(() {
+          _chartLimit = nextLimit;
+          _chartResults = entries;
+          _loadingMoreChart = false;
+        });
+      } else if (mounted) {
+        setState(() => _loadingMoreChart = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingMoreChart = false);
     }
   }
 
@@ -532,11 +566,30 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
             ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
             : _chartResults.isEmpty
                 ? Center(child: Text(l.adminPodcastsNoPodcastsFound, style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.24))))
-                : ListView.builder(
+                : Builder(builder: (_) {
+                    final hasMore = _chartLimit < _chartMaxLimit &&
+                        _chartResults.length >= _chartLimit;
+                    return ListView.builder(
                     controller: sc,
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-                    itemCount: _chartResults.length,
+                    itemCount: _chartResults.length + (hasMore ? 1 : 0),
                     itemBuilder: (_, i) {
+                      if (i == _chartResults.length) {
+                        if (!_loadingMoreChart) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) _loadMoreChart();
+                          });
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                            ),
+                          ),
+                        );
+                      }
                       final entry = _chartResults[i] as Map<String, dynamic>? ?? {};
                       final name = entry['im:name']?['label'] as String? ?? '';
                       final artist = entry['im:artist']?['label'] as String? ?? '';
@@ -589,7 +642,8 @@ class _PodcastSearchSheetState extends State<_PodcastSearchSheet> {
                         ),
                       );
                     },
-                  ),
+                  );
+                  }),
       ),
     ]);
   }

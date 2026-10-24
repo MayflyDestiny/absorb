@@ -290,11 +290,19 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
     // Continue-listening items
     List<dynamic> clItems = [];
+    final currentLibId = lib.selectedLibraryId;
     for (final section in sections) {
       if (section['id'] == 'continue-listening') {
         clItems = _filterEbookOnly(
             (section['entities'] as List<dynamic>?) ?? [],
             sectionType: section['type'] as String?);
+        // Filter items to only the current library
+        if (currentLibId != null) {
+          clItems = clItems.where((item) {
+            final itemLibId = (item as Map<String, dynamic>)['libraryId'] as String?;
+            return itemLibId == null || itemLibId == currentLibId;
+          }).toList();
+        }
         break;
       }
     }
@@ -306,7 +314,19 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       }).toList();
     }
     _cachedClItems = clItems;
-    _cachedSections = lib.getOrderedHomeSections();
+    // Filter all sections' entities to only the current library
+    final allSections = lib.getOrderedHomeSections();
+    if (currentLibId != null) {
+      for (final section in allSections) {
+        final entities = (section['entities'] as List<dynamic>?) ?? [];
+        section['entities'] = entities.where((item) {
+          if (item is! Map<String, dynamic>) return true;
+          final itemLibId = item['libraryId'] as String?;
+          return itemLibId == null || itemLibId == currentLibId;
+        }).toList();
+      }
+    }
+    _cachedSections = allSections;
   }
 
   @override
@@ -1169,12 +1189,21 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                     child: _buildCoverImage(coverUrl, cs, lib.mediaHeaders),
                   ),
                   if (DownloadService().isDownloaded(playbackDownloadKey(itemId, episodeId)))
-                    const Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: CoverStateBadges(isDownloaded: true, isFinished: false),
-                    ),
+                    Builder(builder: (context) {
+                      final dlKey = playbackDownloadKey(itemId, episodeId);
+                      final dlCounts = DownloadService().chapterDownloadCounts(dlKey);
+                      return Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: CoverStateBadges(
+                          isDownloaded: true,
+                          isFinished: false,
+                          savedChapters: dlCounts?.saved ?? 0,
+                          totalChapters: dlCounts?.total ?? 0,
+                        ),
+                      );
+                    }),
                   if (isCurrentItem && player.isPlaying)
                     Positioned(
                       right: 6, bottom: 6,

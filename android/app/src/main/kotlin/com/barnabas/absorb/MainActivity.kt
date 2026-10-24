@@ -90,6 +90,17 @@ class MainActivity : AudioServiceActivity() {
             intent.data = null
         }
         super.onCreate(savedInstanceState)
+        // API 30+ exposes the IME insets independently of softInputMode, so
+        // the keyboard can overlay the app instead of resizing the window.
+        // This keeps full-height page backgrounds/gradients and the listening
+        // card stable while a keyboard is open (sheets still use
+        // MediaQuery.viewInsets for their own padding). Older releases keep
+        // manifest adjustResize because their IME insets rely on the resize.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+        }
     }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine? {

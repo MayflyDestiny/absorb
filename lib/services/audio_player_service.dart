@@ -1005,11 +1005,13 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
             // his headset or his widget for two hours because of this.
             Future<bool> meantForOtherAudio() async {
               if (_isOwnPackage(pkg)) return false;
-              if (sincePause != null && sincePause < const Duration(minutes: 3)) {
+              if (sincePause != null &&
+                  sincePause < const Duration(minutes: 3)) {
                 return false;
               }
               return _otherAudioActive();
             }
+
             if (kc == keycodeMediaPause) {
               if (_player.playing) {
                 debugPrint('[Handler] → single press (MEDIA_PAUSE) → PAUSE');
@@ -1436,6 +1438,7 @@ class AudioPlayerService extends ChangeNotifier {
   // LibraryProvider calls [drainPendingBookFinished] once its absorbing cache
   // is loaded so auto-advance has the state it needs.
   static String? _pendingBookFinishedKey;
+
   /// A book started or resumed from the app's own controls.
   static void Function(String itemId)? onAppPlay;
 
@@ -1463,9 +1466,7 @@ class AudioPlayerService extends ChangeNotifier {
   // next entry exists, so the finish-cue gate can separate an auto continuation
   // from a book that stops here.
   static Future<bool> Function(String currentKey)? _onWillAutoAdvanceCallback;
-  static void setOnWillAutoAdvanceCallback(
-    Future<bool> Function(String)? cb,
-  ) {
+  static void setOnWillAutoAdvanceCallback(Future<bool> Function(String)? cb) {
     _onWillAutoAdvanceCallback = cb;
   }
 
@@ -1893,11 +1894,11 @@ class AudioPlayerService extends ChangeNotifier {
     final dl = session['downloadedChapters'] as List<dynamic>?;
     if (dl == null || dl.isEmpty) return;
     _localTrackChapterIdx = [
-      for (final e in dl)
-        (e is num) ? e.toInt() : (int.tryParse('$e') ?? 0),
+      for (final e in dl) (e is num) ? e.toInt() : (int.tryParse('$e') ?? 0),
     ];
     debugPrint('[Player] 1:1 local->chapter map: $_localTrackChapterIdx');
   }
+
   // Ignore small encoder/container rounding when comparing decoded vs metadata.
   static const double _kLocalTruncationMarginSec = 60.0;
   // When seeking a multi-file book, chapter boundaries and file boundaries are
@@ -1957,7 +1958,8 @@ class AudioPlayerService extends ChangeNotifier {
       final layoutJson = v[1] as String;
       final speedAdjusted = v[2] as bool;
       final chapterModeChanged = chapterMode != _notifChapterMode;
-      final textChanged = layoutJson != _nowPlayingLayoutJson ||
+      final textChanged =
+          layoutJson != _nowPlayingLayoutJson ||
           (speedAdjusted != _speedAdjustedTime &&
               _nowPlayingLayout.uses(NowPlayingPiece.timeLeft));
       _notifChapterMode = chapterMode;
@@ -2231,8 +2233,9 @@ class AudioPlayerService extends ChangeNotifier {
       // branch is unreachable — but a `!` here would turn a future ordering
       // change into a red screen instead of a stale label.
       final engine = _player;
-      final local =
-          engine == null ? null : engine.position.inMilliseconds / 1000.0;
+      final local = engine == null
+          ? null
+          : engine.position.inMilliseconds / 1000.0;
       if (trackDur > 0 && local != null && local > trackDur + 5.0) {
         return _trackStartOffsets[_currentTrackIndex];
       }
@@ -2336,8 +2339,7 @@ class AudioPlayerService extends ChangeNotifier {
       // The latched index may no longer mean the same chapter. Re-anchor it to
       // whatever now contains the playback position, and drop it entirely if the
       // position falls outside every chapter.
-      _chapterJumpLatchIndex =
-          _resolveChapterIndex(chapterResolvePosSec) ?? -1;
+      _chapterJumpLatchIndex = _resolveChapterIndex(chapterResolvePosSec) ?? -1;
     }
     notifyListeners();
     return true;
@@ -2577,7 +2579,7 @@ class AudioPlayerService extends ChangeNotifier {
         author: (next['author'] as String?) ?? '',
         chapter: nextChapterIndex >= 0
             ? (nextChapters[nextChapterIndex] as Map<String, dynamic>)['title']
-                as String?
+                  as String?
             : null,
         chapterIndex: nextChapterIndex,
         chapterCount: nextChapters.length,
@@ -2900,6 +2902,19 @@ class AudioPlayerService extends ChangeNotifier {
       }
       if (_currentItemId != null) return;
       if (state != null && state.isLoaded && state.isPlaying) {
+        // Guard: only auto-adopt if the user was actually playing when the app
+        // was last alive. If they paused right before the OS killed us, the
+        // native engine / MediaSession may still report "playing" — resuming
+        // audio on their behalf would be a phantom resume.
+        final bootPrefs = await SharedPreferences.getInstance();
+        final userWasPlaying =
+            bootPrefs.getBool('last_user_was_playing') ?? true;
+        if (!userWasPlaying) {
+          debugPrint(
+            '[Player] boot: native engine reports playing but last_user_was_playing=false - not adopting (user had paused)',
+          );
+          return;
+        }
         debugPrint(
           '[Player] boot: native engine already playing at '
           '${state.globalPositionS.toStringAsFixed(1)}s with no book loaded - adopting'
@@ -3450,9 +3465,9 @@ class AudioPlayerService extends ChangeNotifier {
   /// landed, let the start carry on and the player keeps loading on its own.
   Future<void> _seekForStart(double seconds, int generation) async {
     for (var attempt = 0; ; attempt++) {
-      final landed = await _seekAbsolute(seconds)
-          .then((_) => true)
-          .timeout(_startSeekStall, onTimeout: () => false);
+      final landed = await _seekAbsolute(
+        seconds,
+      ).then((_) => true).timeout(_startSeekStall, onTimeout: () => false);
       if (landed || _player == null || _startSuperseded(generation)) return;
       final ahead = _player!.bufferedPosition - _player!.position;
       if (ahead > const Duration(seconds: 2) ||
@@ -3473,8 +3488,9 @@ class AudioPlayerService extends ChangeNotifier {
   /// Seek response timeout: a seek that lands at the very end of a file never
   /// answers on Android, and everything waiting on it hung with it (GH #428).
   static const _seekCap = Duration(seconds: 6);
-  void _seekTimedOut() =>
-      debugPrint('[Player] Seek got no answer in ${_seekCap.inSeconds}s - carrying on');
+  void _seekTimedOut() => debugPrint(
+    '[Player] Seek got no answer in ${_seekCap.inSeconds}s - carrying on',
+  );
 
   /// True when [absoluteSeconds] is still the LATEST seek intent — i.e. no
   /// newer seek overwrote [_lastSeekTargetSeconds] while this seek awaited the
@@ -3649,7 +3665,10 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
     await _player!
-        .seek(Duration(milliseconds: (localOffset * 1000).round()), index: target)
+        .seek(
+          Duration(milliseconds: (localOffset * 1000).round()),
+          index: target,
+        )
         .timeout(_seekCap, onTimeout: _seekTimedOut);
     // Bind the reported chapter to the INTENDED chapter (not the metadata
     // mapping of the landed position, which near a drifted boundary reads the
@@ -3831,9 +3850,11 @@ class AudioPlayerService extends ChangeNotifier {
           await PlayerSettings.getNotificationChapterProgress();
       _instance._nowPlayingLayoutJson =
           await PlayerSettings.getNowPlayingLayout();
-      _instance._nowPlayingLayout =
-          NowPlayingLayout.fromJson(_instance._nowPlayingLayoutJson);
-      _instance._speedAdjustedTime = await PlayerSettings.getSpeedAdjustedTime();
+      _instance._nowPlayingLayout = NowPlayingLayout.fromJson(
+        _instance._nowPlayingLayoutJson,
+      );
+      _instance._speedAdjustedTime =
+          await PlayerSettings.getSpeedAdjustedTime();
       PlayerSettings.settingsChanged.addListener(_instance._onSettingsChanged);
       // Configure audio session for audiobook playback
       await _configureAudioSession();
@@ -4008,7 +4029,8 @@ class AudioPlayerService extends ChangeNotifier {
               // and nav prompts come as transient `pause`/`duck`. Only a
               // transient one should come back by itself - resuming after a
               // permanent one talked over the radio the user switched to.
-              final permanentLoss = Platform.isAndroid &&
+              final permanentLoss =
+                  Platform.isAndroid &&
                   event.type == AudioInterruptionType.unknown;
               service._wasPlayingBeforeInterrupt = !permanentLoss;
               if (permanentLoss) {
@@ -4161,7 +4183,9 @@ class AudioPlayerService extends ChangeNotifier {
             if (!service.isPlaying) return;
             final current = await session.getDevices(includeInputs: false);
             if (!lost.any((d) => !current.contains(d))) {
-              debugPrint('[AudioSession] Output route came back - keeping playback');
+              debugPrint(
+                '[AudioSession] Output route came back - keeping playback',
+              );
               return;
             }
             // Android Auto carries the audio itself, over USB or WiFi. The
@@ -4682,10 +4706,14 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Check if downloaded — play locally
     String? result;
-    if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId) &&
+    if (episodeId == null &&
+        !api.isBookOrbit &&
+        NarratedBooks.contains(itemId) &&
         !_downloadService.isDownloaded(progressKey)) {
       // An Audiobookshelf EPUB that reads itself aloud plays once downloaded.
-      debugPrint('[Player] $itemId is narration that is not downloaded - not starting');
+      debugPrint(
+        '[Player] $itemId is narration that is not downloaded - not starting',
+      );
       _endAdvanceBuffering();
       _clearState();
       return 'Download this book to play its narration';
@@ -4850,6 +4878,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     if (result == null && playbackGeneration == _playbackGeneration) {
       _onPlaybackStateChangedCallback?.call(true);
+      unawaited(_persistLastUserPlaying(true));
       // Auto-navigate to Absorbing tab when an episode starts playing.
       if (episodeId != null) _onEpisodePlayStartedCallback?.call();
       if (fromUi && episodeId == null) onAppPlay?.call(itemId);
@@ -5007,9 +5036,9 @@ class AudioPlayerService extends ChangeNotifier {
       var covered = false;
       for (var i = 0; i < audioTracks.length; i++) {
         final start = absoluteStarts[i];
-        final dur = ((audioTracks[i] as Map<String, dynamic>)['duration']
-                as num?)
-            ?.toDouble() ??
+        final dur =
+            ((audioTracks[i] as Map<String, dynamic>)['duration'] as num?)
+                ?.toDouble() ??
             0;
         if (target >= start - 0.5 && target < start + dur - 0.5) {
           covered = true;
@@ -5043,7 +5072,9 @@ class AudioPlayerService extends ChangeNotifier {
           break;
         }
       }
-      final trackStart = idx < _trackStartOffsets.length ? _trackStartOffsets[idx] : 0.0;
+      final trackStart = idx < _trackStartOffsets.length
+          ? _trackStartOffsets[idx]
+          : 0.0;
       final localPos = Duration(
         milliseconds: ((target - trackStart) * 1000).round(),
       );
@@ -5460,10 +5491,7 @@ class AudioPlayerService extends ChangeNotifier {
         return _abandonStart(null, null, 'local, before loading the source');
       }
       _resetPreBufferState();
-      final decoded = await _player!.setAudioSource(
-        source,
-        itemId: rawItemId,
-      );
+      final decoded = await _player!.setAudioSource(source, itemId: rawItemId);
       if (_startSuperseded(gen)) {
         return _abandonStart(null, null, 'local, after loading the source');
       }
@@ -5763,10 +5791,12 @@ class AudioPlayerService extends ChangeNotifier {
     // The session request still in flight is handed to nobody on this route;
     // close it when it lands so the server is not left with a stray one.
     void dropPendingSession() {
-      pendingSession?.then((s) {
-        final id = s?['id'] as String?;
-        if (id != null) unawaited(api.closePlaybackSession(id));
-      }).catchError((_) {});
+      pendingSession
+          ?.then((s) {
+            final id = s?['id'] as String?;
+            if (id != null) unawaited(api.closePlaybackSession(id));
+          })
+          .catchError((_) {});
     }
 
     if (_startSuperseded(playbackGeneration)) {
@@ -5838,7 +5868,11 @@ class AudioPlayerService extends ChangeNotifier {
       }
       if (_startSuperseded(playbackGeneration)) {
         dropPendingSession();
-        return _abandonStart(null, null, 'cached start, before loading the source');
+        return _abandonStart(
+          null,
+          null,
+          'cached start, before loading the source',
+        );
       }
       // If the saved position is at (or past) the end, restart from the beginning
       if (totalDuration > 0 && startTime >= totalDuration - 1.0) startTime = 0;
@@ -6257,7 +6291,11 @@ class AudioPlayerService extends ChangeNotifier {
     final gen = generation ?? _playbackGeneration;
     // A session fetched ahead of time is this start's to close if it lost.
     if (_startSuperseded(gen)) {
-      return _abandonStart(api, preFetchedSession?['id'] as String?, 'before streaming');
+      return _abandonStart(
+        api,
+        preFetchedSession?['id'] as String?,
+        'before streaming',
+      );
     }
     debugPrint('[Player] Streaming from server: $title');
     _isOfflineMode = false;
@@ -6285,7 +6323,8 @@ class AudioPlayerService extends ChangeNotifier {
     if (offlineError != null) return offlineError;
 
     // Use episode endpoint if this is a podcast episode
-    final sessionData = preFetchedSession ??
+    final sessionData =
+        preFetchedSession ??
         (episodeId != null
             ? await api.startEpisodePlaybackSession(
                 itemId,
@@ -6387,13 +6426,17 @@ class AudioPlayerService extends ChangeNotifier {
             : await api.startPlaybackSession(itemId, forceTranscode: true);
         ownSessionId = retrySession?['id'] as String?;
         if (_startSuperseded(gen)) {
-          return _abandonStart(api, ownSessionId, 'after the Dolby transcode retry');
+          return _abandonStart(
+            api,
+            ownSessionId,
+            'after the Dolby transcode retry',
+          );
         }
         if (retrySession == null) {
           _clearState();
           return _l10n()?.playerErrorTranscodeStart ??
               'Could not start transcoded playback';
-}
+        }
         _playbackSessionId = ownSessionId;
         // The stream is real now; the DOWNLOAD-boundary bookkeeping was already
         // cleared at the top of _playFromServer, so this transcoded retry runs
@@ -7005,7 +7048,11 @@ class AudioPlayerService extends ChangeNotifier {
           : await api.startPlaybackSession(itemId, forceTranscode: true);
       final ownSessionId = retrySession?['id'] as String?;
       if (_startSuperseded(gen)) {
-        _abandonStart(api, ownSessionId, 'transcode retry, after the session request');
+        _abandonStart(
+          api,
+          ownSessionId,
+          'transcode retry, after the session request',
+        );
         return;
       }
       if (retrySession == null) return;
@@ -7054,7 +7101,11 @@ class AudioPlayerService extends ChangeNotifier {
       }
       await _player!.setAudioSource(retrySource, itemId: itemId);
       if (_startSuperseded(gen)) {
-        _abandonStart(api, ownSessionId, 'transcode retry, after loading the source');
+        _abandonStart(
+          api,
+          ownSessionId,
+          'transcode retry, after loading the source',
+        );
         return;
       }
       if (startTime > 0) await _seekForStart(startTime, gen);
@@ -7200,7 +7251,8 @@ class AudioPlayerService extends ChangeNotifier {
       // item-episode key. A downloaded episode keeps its cover under that
       // key, but the server only has covers under the item id, so a streamed
       // episode asked for that key got the placeholder note (GH #401).
-      final coverId = streamed &&
+      final coverId =
+          streamed &&
               _currentEpisodeId != null &&
               itemId == '$_currentItemId-$_currentEpisodeId'
           ? _currentItemId!
@@ -7234,7 +7286,8 @@ class AudioPlayerService extends ChangeNotifier {
       _currentAuthor ?? '',
       _currentCoverUrl,
       _totalDuration,
-      chapter: _lastNotifiedChapterIndex >= 0 &&
+      chapter:
+          _lastNotifiedChapterIndex >= 0 &&
               _lastNotifiedChapterIndex < _chapters.length
           ? (_chapters[_lastNotifiedChapterIndex]
                     as Map<String, dynamic>)['title']
@@ -7246,8 +7299,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   static int _bookPercent(double posSec, double totalDuration) =>
       totalDuration > 0
-          ? (posSec / totalDuration * 100).floor().clamp(0, 100)
-          : -1;
+      ? (posSec / totalDuration * 100).floor().clamp(0, 100)
+      : -1;
 
   double _secondsLeft(double posSec, double totalDuration) {
     final left = math.max(0.0, totalDuration - posSec);
@@ -7293,21 +7346,23 @@ class AudioPlayerService extends ChangeNotifier {
         ? formatHm(_secondsLeft(posSec, totalDuration))
         : null;
     final hasChapter = chapterIndex >= 0 && chapterCount > 0;
-    return (layout ?? _nowPlayingLayout).build(NowPlayingValues(
-      title: title,
-      author: author,
-      chapter: chapter,
-      narrator: narrator,
-      series: series,
-      percent: percent >= 0 ? '$percent%' : null,
-      chapterNumber: hasChapter
-          ? (l?.nowPlayingChapterNumber(chapterIndex + 1, chapterCount) ??
-              'Ch. ${chapterIndex + 1}/$chapterCount')
-          : null,
-      timeLeft: left == null
-          ? null
-          : (l?.nowPlayingTimeLeft(left) ?? '$left left'),
-    ));
+    return (layout ?? _nowPlayingLayout).build(
+      NowPlayingValues(
+        title: title,
+        author: author,
+        chapter: chapter,
+        narrator: narrator,
+        series: series,
+        percent: percent >= 0 ? '$percent%' : null,
+        chapterNumber: hasChapter
+            ? (l?.nowPlayingChapterNumber(chapterIndex + 1, chapterCount) ??
+                  'Ch. ${chapterIndex + 1}/$chapterCount')
+            : null,
+        timeLeft: left == null
+            ? null
+            : (l?.nowPlayingTimeLeft(left) ?? '$left left'),
+      ),
+    );
   }
 
   /// What the media controls would show for the playing item with [layout],
@@ -7316,7 +7371,8 @@ class AudioPlayerService extends ChangeNotifier {
     NowPlayingLayout layout,
   ) {
     if (_currentItemId == null) return null;
-    final chapterIndex = _lastNotifiedChapterIndex >= 0 &&
+    final chapterIndex =
+        _lastNotifiedChapterIndex >= 0 &&
             _lastNotifiedChapterIndex < _chapters.length
         ? _lastNotifiedChapterIndex
         : -1;
@@ -7324,7 +7380,8 @@ class AudioPlayerService extends ChangeNotifier {
       title: _currentTitle ?? '',
       author: _currentAuthor ?? '',
       chapter: chapterIndex >= 0
-          ? (_chapters[chapterIndex] as Map<String, dynamic>)['title'] as String?
+          ? (_chapters[chapterIndex] as Map<String, dynamic>)['title']
+                as String?
           : null,
       chapterIndex: chapterIndex,
       chapterCount: _chapters.length,
@@ -7348,11 +7405,17 @@ class AudioPlayerService extends ChangeNotifier {
           .where((n) => n.isNotEmpty);
       return parts.isEmpty ? null : parts.join(', ');
     }
-    final narrator = joined(meta['narrators']) ??
-        (meta['narratorName'] is String ? meta['narratorName'] as String : null);
+
+    final narrator =
+        joined(meta['narrators']) ??
+        (meta['narratorName'] is String
+            ? meta['narratorName'] as String
+            : null);
     String? series;
     final seriesList = meta['series'];
-    if (seriesList is List && seriesList.isNotEmpty && seriesList.first is Map) {
+    if (seriesList is List &&
+        seriesList.isNotEmpty &&
+        seriesList.first is Map) {
       final first = seriesList.first as Map;
       final name = first['name']?.toString().trim() ?? '';
       final sequence = first['sequence']?.toString().trim() ?? '';
@@ -7393,10 +7456,10 @@ class AudioPlayerService extends ChangeNotifier {
       if (_currentItemId != itemId && _mediaItemKey != itemId) return;
       final chapterTitle =
           _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
-              ? (_chapters[_lastNotifiedChapterIndex]
-                        as Map<String, dynamic>)['title']
-                    as String?
-              : null;
+          ? (_chapters[_lastNotifiedChapterIndex]
+                    as Map<String, dynamic>)['title']
+                as String?
+          : null;
       _pushMediaItem(
         itemId,
         _currentTitle ?? '',
@@ -7740,7 +7803,9 @@ class AudioPlayerService extends ChangeNotifier {
       // The old source is already gone, so there's nothing to keep. Leave the
       // player idle: the next play() sees that and starts the item over
       // instead of pressing play on a half-loaded source.
-      debugPrint('[StreamUpgrade] Swap failed after replacing the source - resetting the player: $e');
+      debugPrint(
+        '[StreamUpgrade] Swap failed after replacing the source - resetting the player: $e',
+      );
       try {
         await _player?.stop();
       } catch (_) {}
@@ -7806,7 +7871,9 @@ class AudioPlayerService extends ChangeNotifier {
     // The server turned the byte range down: the file changed size since its
     // bytes were cached, and the cache keeps asking up to the old length.
     if ('$error'.contains('Response code: 416')) {
-      debugPrint('[Player] Server refused the byte range (416) - clearing the streaming cache');
+      debugPrint(
+        '[Player] Server refused the byte range (416) - clearing the streaming cache',
+      );
       try {
         await AudioPlayer.clearStreamingCache();
       } catch (e) {
@@ -8059,23 +8126,23 @@ class AudioPlayerService extends ChangeNotifier {
           // already pushed and [_lastNotifiedChapterIndex] set, so the change
           // guard below stays silent. Release once the position truly passes
           // the latched chapter's end.
-if (_chapterJumpLatchIndex >= 0) {
-              final lEnd =
-                  (_chapters[_chapterJumpLatchIndex]['end'] as num?)
-                      ?.toDouble() ??
-                  _totalDuration;
-              if (resolveSec < lEnd) {
-                chapterIdx = _chapterJumpLatchIndex;
-                chapterTitle =
-                    (_chapters[_chapterJumpLatchIndex]['title'] as String?)
-                        ?.isEmpty ==
-                        true
-                    ? null
-                    : _chapters[_chapterJumpLatchIndex]['title'] as String?;
-              } else {
-                _chapterJumpLatchIndex = -1;
-              }
+          if (_chapterJumpLatchIndex >= 0) {
+            final lEnd =
+                (_chapters[_chapterJumpLatchIndex]['end'] as num?)
+                    ?.toDouble() ??
+                _totalDuration;
+            if (resolveSec < lEnd) {
+              chapterIdx = _chapterJumpLatchIndex;
+              chapterTitle =
+                  (_chapters[_chapterJumpLatchIndex]['title'] as String?)
+                          ?.isEmpty ==
+                      true
+                  ? null
+                  : _chapters[_chapterJumpLatchIndex]['title'] as String?;
+            } else {
+              _chapterJumpLatchIndex = -1;
             }
+          }
 
           // Fast path: check if still in the cached chapter
           if (_lastNotifiedChapterIndex >= 0 &&
@@ -8199,11 +8266,15 @@ if (_chapterJumpLatchIndex >= 0) {
         // Files that run longer than the server indexed them (changed on
         // disk after a scan) play on: ending the book at the indexed length
         // tore the player down mid-audio and left it stuck (GH #428).
-        if (_totalDuration > 0 && posSec >= _totalDuration - 1.0 && !_engineAtEnd()) {
+        if (_totalDuration > 0 &&
+            posSec >= _totalDuration - 1.0 &&
+            !_engineAtEnd()) {
           if (_overrunLoggedFor != _currentItemId) {
             _overrunLoggedFor = _currentItemId;
-            debugPrint('[Player] Audio runs past the indexed length '
-                '(${_totalDuration.toStringAsFixed(0)}s) - playing on until the files end');
+            debugPrint(
+              '[Player] Audio runs past the indexed length '
+              '(${_totalDuration.toStringAsFixed(0)}s) - playing on until the files end',
+            );
           }
         } else if (_totalDuration > 0 && posSec >= _totalDuration - 1.0) {
           if (_preloadedNextBook != null && _isBackgrounded && Platform.isIOS) {
@@ -8284,8 +8355,12 @@ if (_chapterJumpLatchIndex >= 0) {
                       _stashSessionUpgrade(sessionData);
                       if (_sourceSessionDead) {
                         final playing = _player?.playing ?? false;
-                        if (!await _applyPendingLocalSwap(resumeAfter: playing)) {
-                          await _applyPendingSessionUpgrade(resumeAfter: playing);
+                        if (!await _applyPendingLocalSwap(
+                          resumeAfter: playing,
+                        )) {
+                          await _applyPendingSessionUpgrade(
+                            resumeAfter: playing,
+                          );
                         }
                       }
                     }
@@ -8523,7 +8598,9 @@ if (_chapterJumpLatchIndex >= 0) {
   bool _engineAtEnd() {
     final p = _player;
     if (p == null) return true;
-    if (_trackStartOffsets.length > 1 && _currentTrackIndex < _trackStartOffsets.length - 2) return false;
+    if (_trackStartOffsets.length > 1 &&
+        _currentTrackIndex < _trackStartOffsets.length - 2)
+      return false;
     final d = p.duration;
     if (d == null || d <= Duration.zero) return true;
     return p.position >= d - const Duration(seconds: 2);
@@ -8590,14 +8667,14 @@ if (_chapterJumpLatchIndex >= 0) {
     // buffer errors, etc.). Save current position and stop - don't mark finished
     // or advance the queue.
     //
-// Partial downloads get their own case: playback ended AT the download
-      // boundary (the last downloaded file ran out, or the next/prev button sat
-      // on the boundary). The bytes are done but the BOOK isn't, so this must
-      // never reach the "finished" branch below — no isFinished, no
-      // ReviewService, no auto-advance. Online, the completion hands straight
-      // over to a streaming session (the boundary is the next chapter's start);
-      // offline it parks on the boundary and the next-button continues by
-      // streaming once the connection is back.
+    // Partial downloads get their own case: playback ended AT the download
+    // boundary (the last downloaded file ran out, or the next/prev button sat
+    // on the boundary). The bytes are done but the BOOK isn't, so this must
+    // never reach the "finished" branch below — no isFinished, no
+    // ReviewService, no auto-advance. Online, the completion hands straight
+    // over to a streaming session (the boundary is the next chapter's start);
+    // offline it parks on the boundary and the next-button continues by
+    // streaming once the connection is back.
     final coverageEnd = _localCoverageEndSec;
     // Decide on whichever position is AHEAD: the live getter (fresh at the
     // engine's ENDED state — it composes the last file's end for a boundary
@@ -8609,9 +8686,11 @@ if (_chapterJumpLatchIndex >= 0) {
     // value falls through to the book-finished branch that clears all state
     // (position drops to 0).
     final liveSec = position.inMilliseconds / 1000.0;
-    final posAtEnd =
-        _lastKnownPositionSec > liveSec ? _lastKnownPositionSec : liveSec;
-    final atLocalBoundary = _isPartialLocalPlay &&
+    final posAtEnd = _lastKnownPositionSec > liveSec
+        ? _lastKnownPositionSec
+        : liveSec;
+    final atLocalBoundary =
+        _isPartialLocalPlay &&
         coverageEnd != null &&
         posAtEnd >= coverageEnd - 2.0 &&
         posAtEnd <= coverageEnd + 60.0;
@@ -8626,7 +8705,9 @@ if (_chapterJumpLatchIndex >= 0) {
       );
       _logEvent(
         PlaybackEventType.pause,
-        detail: atLocalBoundary ? 'Download boundary reached' : 'Spurious completion blocked',
+        detail: atLocalBoundary
+            ? 'Download boundary reached'
+            : 'Spurious completion blocked',
       );
       _syncSub?.cancel();
       _syncSub = null;
@@ -8700,9 +8781,7 @@ if (_chapterJumpLatchIndex >= 0) {
         }
       }
     }
-    unawaited(
-      BookFinishReminder.instance.fire(onAutoAdvance: cueAutoAdvance),
-    );
+    unawaited(BookFinishReminder.instance.fire(onAutoAdvance: cueAutoAdvance));
     if (_currentEpisodeId == null) {
       unawaited(ReviewService.onBookFinished(isForeground: !_isBackgrounded));
     }
@@ -8726,9 +8805,12 @@ if (_chapterJumpLatchIndex >= 0) {
     // automaticallyWaitsToMinimizeStalling=false this gives gapless
     // background auto-advance. GH #244.
     if (Platform.isAndroid) {
-      await _player?.stop().timeout(const Duration(seconds: 5), onTimeout: () {
-        debugPrint('[Complete] player stop took over 5s - carrying on');
-      });
+      await _player?.stop().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          debugPrint('[Complete] player stop took over 5s - carrying on');
+        },
+      );
     } else {
       await _player?.pause();
     }
@@ -8834,6 +8916,18 @@ if (_chapterJumpLatchIndex >= 0) {
     }
     _isCompletingBook = false;
     notifyListeners();
+  }
+
+  /// Persist whether the user was actively playing when the app last left the
+  /// foreground. Read back on cold-start / post-kill restore so a paused user
+  /// isn't auto-resumed just because the OS rebuilt the process and MediaSession
+  /// happened to still carry "playing".
+  Future<void> _persistLastUserPlaying(bool playing) async {
+    try {
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs ??= prefs;
+      await prefs.setBool('last_user_was_playing', playing);
+    } catch (_) {}
   }
 
   Future<void> _saveProgressLocal(Duration pos) async {
@@ -9257,7 +9351,8 @@ if (_chapterJumpLatchIndex >= 0) {
       _parkedBoundaryChapterIdx = null;
       if (resumeIdx != null &&
           resumeIdx >= 0 &&
-          resumeIdx < _chapters.length && _player != null) {
+          resumeIdx < _chapters.length &&
+          _player != null) {
         var restartStart = ChapterLookup.metaStart(_chapters, resumeIdx);
         // Belt and braces: a restart target with no audio behind it (drift put
         // the parked chapter's start ON the boundary) would seek to the file's
@@ -9306,6 +9401,17 @@ if (_chapterJumpLatchIndex >= 0) {
       lastPlayedItemId: prefs.getString('widget_item_id'),
     );
     if (decision == ColdStartPlayDecision.restoreLastPlayed) {
+      // Phantom-resume guard: if the user was paused when the app was last
+      // alive, don't auto-restore just because the OS sent a stale play
+      // command after rebuilding the process (MediaSession still carried
+      // "playing" when they actually paused).
+      final userWasPlaying = prefs.getBool('last_user_was_playing') ?? true;
+      if (!userWasPlaying) {
+        debugPrint(
+          '[Service] play() cold-start but last_user_was_playing=false - ignoring phantom resume',
+        );
+        return;
+      }
       debugPrint(
         '[Service] play() on cold-started service - routing to cold-start restore',
       );
@@ -9365,7 +9471,7 @@ if (_chapterJumpLatchIndex >= 0) {
         _setupSync();
       }
     }
-// BookOrbit audio streams through the in-app proxy, which a long
+    // BookOrbit audio streams through the in-app proxy, which a long
     // suspension can take down; a lock screen play doesn't foreground the app.
     if (_api?.isBookOrbit == true) await _api!.ensureMediaReady();
 
@@ -9375,7 +9481,8 @@ if (_chapterJumpLatchIndex >= 0) {
     // without re-attaching here the NEXT boundary end is never handled — the
     // engine stays ENDED with playWhenReady=true and the card keeps reading
     // "playing" forever, with nothing saving or parking anything.
-    if (_currentItemId != null && (_syncSub == null || _completionSub == null)) {
+    if (_currentItemId != null &&
+        (_syncSub == null || _completionSub == null)) {
       debugPrint('[Service] play() — re-attaching sync/completion listeners');
       _setupSync();
     }
@@ -9386,7 +9493,9 @@ if (_chapterJumpLatchIndex >= 0) {
     if (_sourceSessionDead) {
       await _rebuildSourceOnDeadSession(resumeAfter: false);
       if (_pauseRequested) {
-        debugPrint('[Service] Paused while the source was being rebuilt - not starting');
+        debugPrint(
+          '[Service] Paused while the source was being rebuilt - not starting',
+        );
         return;
       }
     }
@@ -9406,8 +9515,8 @@ if (_chapterJumpLatchIndex >= 0) {
     String? rebuildWhy = _playerBroken
         ? 'Player failed while paused'
         : Platform.isAndroid && longPause
-            ? 'Long pause (${pausedFor.inSeconds}s)'
-            : null;
+        ? 'Long pause (${pausedFor.inSeconds}s)'
+        : null;
     var rebuild = rebuildWhy != null && canRebuild();
     // Where the resume lands: the live player follows it when it is kept,
     // the rebuild starts there otherwise.
@@ -9434,7 +9543,8 @@ if (_chapterJumpLatchIndex >= 0) {
       await moveTo(serverPos);
       _logEvent(
         PlaybackEventType.seek,
-        detail: 'adopted server position ${serverPos.toStringAsFixed(1)}s before resume',
+        detail:
+            'adopted server position ${serverPos.toStringAsFixed(1)}s before resume',
       );
     }
     // Coming back within a few minutes of the sleep timer firing means you were
@@ -9448,8 +9558,10 @@ if (_chapterJumpLatchIndex >= 0) {
         position,
       );
       if (undoTo != null && !adoptedServerPos) {
-        await moveTo(undoTo.inMilliseconds / 1000.0,
-            () => seekTo(undoTo, logDetail: 'sleep rewind undone'));
+        await moveTo(
+          undoTo.inMilliseconds / 1000.0,
+          () => seekTo(undoTo, logDetail: 'sleep rewind undone'),
+        );
         // seekTo flags a paused seek; this one is ours, not the user's, and
         // the server check has already run, so don't carry it to next resume.
         _seekedWhilePaused = false;
@@ -9516,8 +9628,10 @@ if (_chapterJumpLatchIndex >= 0) {
     // background is a lead when the book then plays without sound.
     try {
       final activated = await (await AudioSession.instance).setActive(true);
-      debugPrint('[Player] Resume setActive(true)=$activated '
-          '(paused ${pausedFor?.inSeconds ?? '?'}s)');
+      debugPrint(
+        '[Player] Resume setActive(true)=$activated '
+        '(paused ${pausedFor?.inSeconds ?? '?'}s)',
+      );
     } catch (e) {
       debugPrint('[Player] Resume setActive(true) failed: $e');
     }
@@ -9535,21 +9649,23 @@ if (_chapterJumpLatchIndex >= 0) {
         'instead of resuming it',
       );
       _logEvent(PlaybackEventType.play, detail: '$logDetail (rebuilt: $why)');
-      unawaited(playItem(
-        api: _api!,
-        itemId: _currentItemId!,
-        title: _currentTitle ?? '',
-        author: _currentAuthor ?? '',
-        coverUrl: _currentCoverUrl,
-        totalDuration: _totalDuration,
-        chapters: _chapters,
-        startTime: startS,
-        forceStartTime: startS > 0,
-        episodeId: _currentEpisodeId,
-        episodeTitle: _currentEpisodeTitle,
-        libraryId: _currentLibraryId,
-        fromUi: fromUi,
-      ));
+      unawaited(
+        playItem(
+          api: _api!,
+          itemId: _currentItemId!,
+          title: _currentTitle ?? '',
+          author: _currentAuthor ?? '',
+          coverUrl: _currentCoverUrl,
+          totalDuration: _totalDuration,
+          chapters: _chapters,
+          startTime: startS,
+          forceStartTime: startS > 0,
+          episodeId: _currentEpisodeId,
+          episodeTitle: _currentEpisodeTitle,
+          libraryId: _currentLibraryId,
+          fromUi: fromUi,
+        ),
+      );
       return;
     }
     // If the player is idle (source was disposed), we need to fully re-initialize
@@ -9619,8 +9735,10 @@ if (_chapterJumpLatchIndex >= 0) {
     _scheduleAudioDiagnostics('resume');
     _logEvent(PlaybackEventType.play, detail: logDetail);
     _onPlaybackStateChangedCallback?.call(true);
+    unawaited(_persistLastUserPlaying(true));
     final resumed = _currentItemId;
-    if (fromUi && resumed != null && _currentEpisodeId == null) onAppPlay?.call(resumed);
+    if (fromUi && resumed != null && _currentEpisodeId == null)
+      onAppPlay?.call(resumed);
     // Re-create server session and check progress in the background
     // so resume is instant instead of waiting for network round-trips
     _resumeServerSync();
@@ -9667,7 +9785,10 @@ if (_chapterJumpLatchIndex >= 0) {
   /// A pending source swap is left to finish, however long it takes.
   static const _resumeSeekCap = Duration(seconds: 3);
 
-  Future<bool> _resumeSeekFinished(Future<void> Function() seek, double target) async {
+  Future<bool> _resumeSeekFinished(
+    Future<void> Function() seek,
+    double target,
+  ) async {
     if (!Platform.isAndroid ||
         _pendingLocalSwapKey != null ||
         _pendingSessionUpgrade != null) {
@@ -9913,6 +10034,7 @@ if (_chapterJumpLatchIndex >= 0) {
     await _player?.pause();
     _logEvent(PlaybackEventType.pause);
     _onPlaybackStateChangedCallback?.call(false);
+    unawaited(_persistLastUserPlaying(false));
 
     notifyListeners();
     final pos = position;
@@ -10154,8 +10276,7 @@ if (_chapterJumpLatchIndex >= 0) {
     }
     _logEvent(
       PlaybackEventType.seek,
-      detail: introTarget != null &&
-              introTarget - start >= 0.5
+      detail: introTarget != null && introTarget - start >= 0.5
           ? 'chapter ${chapterIndex + 1} to ${introTarget.toStringAsFixed(1)}s (intro skip)'
           : 'chapter ${chapterIndex + 1}',
       overridePosition: from.inMilliseconds / 1000.0,
@@ -10179,15 +10300,22 @@ if (_chapterJumpLatchIndex >= 0) {
     );
     // Pausing for sleep already saved and sent the spot from before the
     // rewind, so a restart or another device went back there (GH #433).
-    debugPrint('[SleepTimer] Saving the rewound spot: ${(target.inMilliseconds / 1000.0).toStringAsFixed(1)}s');
+    debugPrint(
+      '[SleepTimer] Saving the rewound spot: ${(target.inMilliseconds / 1000.0).toStringAsFixed(1)}s',
+    );
     await _saveProgressLocal(target);
     final manualOffline =
-        (_prefs ?? await SharedPreferences.getInstance()).getBool('manual_offline_mode') ?? false;
+        (_prefs ?? await SharedPreferences.getInstance()).getBool(
+          'manual_offline_mode',
+        ) ??
+        false;
     if (manualOffline || _isOfflineMode) return;
     if (_playbackSessionId != null) {
       await _syncToServer(target, timeListenedOverride: 0);
     } else if (_currentItemId != null && _api != null) {
-      final syncKey = _currentEpisodeId != null ? '$_currentItemId-$_currentEpisodeId' : _currentItemId!;
+      final syncKey = _currentEpisodeId != null
+          ? '$_currentItemId-$_currentEpisodeId'
+          : _currentItemId!;
       _progressSync.syncToServer(api: _api!, itemId: syncKey);
     }
   }
@@ -10222,7 +10350,9 @@ if (_chapterJumpLatchIndex >= 0) {
     // title). Online the book continues as a stream at the target; offline,
     // park at the boundary instead.
     final coverageEnd = _localCoverageEndSec;
-    if (_isPartialLocalPlay && coverageEnd != null && newPosS > coverageEnd - 0.5) {
+    if (_isPartialLocalPlay &&
+        coverageEnd != null &&
+        newPosS > coverageEnd - 0.5) {
       if (await _streamContinueIfUncovered(newPosS)) return;
       await _parkAtPartialBoundary();
       return;
@@ -10561,7 +10691,7 @@ if (_chapterJumpLatchIndex >= 0) {
       final start = ChapterLookup.metaStart(_chapters, i);
       final nextStart = i + 1 < _chapters.length
           ? ((_chapters[i + 1] as Map)['start'] as num?)?.toDouble() ??
-              _totalDuration
+                _totalDuration
           : _totalDuration;
       if (targetSec >= start - 0.5 && targetSec < nextStart - 0.5) {
         covered = true;
@@ -10755,7 +10885,9 @@ if (_chapterJumpLatchIndex >= 0) {
       await _onPlaybackComplete(userRequested: true);
       return false;
     }
-    debugPrint('[Service] skipToNextChapter → ${target.seconds.toStringAsFixed(1)}s');
+    debugPrint(
+      '[Service] skipToNextChapter → ${target.seconds.toStringAsFixed(1)}s',
+    );
     // A PARTIAL download has a boundary: a target past it continues via
     // streaming (online) or stays put (offline); a target within the local
     // range lands in-session below. A FULL stream covers every position, so
@@ -10841,11 +10973,7 @@ if (_chapterJumpLatchIndex >= 0) {
             pinChapterIndex: prevIdx,
           );
         } else {
-          await _seekAbsolute(
-            start,
-            chapterJump: true,
-            pinChapterIndex: null,
-          );
+          await _seekAbsolute(start, chapterJump: true, pinChapterIndex: null);
         }
         _logEvent(
           PlaybackEventType.seek,
@@ -10875,9 +11003,11 @@ if (_chapterJumpLatchIndex >= 0) {
     // chapters; partial-download plays iterate the playable subset only
     // (target indices are still full-book indices into `_chapters`).
     final ordered = playable.isNotEmpty ? playable : null;
-    for (int k = ordered != null ? ordered.length - 1 : _chapters.length - 1;
-        k >= 0;
-        k--) {
+    for (
+      int k = ordered != null ? ordered.length - 1 : _chapters.length - 1;
+      k >= 0;
+      k--
+    ) {
       final i = ordered != null ? ordered[k] : k;
       final start = ChapterLookup.metaStart(_chapters, i);
       if (start < posS - 3.0) {
@@ -10909,11 +11039,7 @@ if (_chapterJumpLatchIndex >= 0) {
             pinChapterIndex: i,
           );
         } else {
-          await _seekAbsolute(
-            start,
-            chapterJump: true,
-            pinChapterIndex: null,
-          );
+          await _seekAbsolute(start, chapterJump: true, pinChapterIndex: null);
         }
         _logEvent(
           PlaybackEventType.seek,
@@ -11212,7 +11338,8 @@ if (_chapterJumpLatchIndex >= 0) {
       // tolerance that lands back on (or before) the track start means the seek
       // never took effect: bail out and trust the source's own start position
       // instead of compounding the stale reading into an overshoot.
-      final trackStart = (_trackStartOffsets.isNotEmpty &&
+      final trackStart =
+          (_trackStartOffsets.isNotEmpty &&
               _currentTrackIndex < _trackStartOffsets.length)
           ? _trackStartOffsets[_currentTrackIndex]
           : 0.0;
@@ -11252,16 +11379,15 @@ if (_chapterJumpLatchIndex >= 0) {
   /// it once the jump fires or the watch leaves the window.
   void _startOutroWatch() {
     if (_outroWatchTimer != null) return;
-    _outroWatchTimer = Timer.periodic(
-      const Duration(milliseconds: 120),
-      (_) async {
-        if (_player?.playing != true) {
-          _stopOutroWatch();
-          return;
-        }
-        await _maybeSkipChapterIntroOutro(position.inMilliseconds / 1000.0);
-      },
-    );
+    _outroWatchTimer = Timer.periodic(const Duration(milliseconds: 120), (
+      _,
+    ) async {
+      if (_player?.playing != true) {
+        _stopOutroWatch();
+        return;
+      }
+      await _maybeSkipChapterIntroOutro(position.inMilliseconds / 1000.0);
+    });
   }
 
   void _stopOutroWatch() {
@@ -11370,10 +11496,7 @@ if (_chapterJumpLatchIndex >= 0) {
         debugPrint(
           '[ChapterSkip] Skipping intro: pos=${posSec.toStringAsFixed(1)}s chapterStart=${chapterStart.toStringAsFixed(1)}s target=${target.toStringAsFixed(1)}s',
         );
-        await _seekAbsoluteAlignedRepair(
-          target,
-          clampMaxSec: chapterEnd - 1.0,
-        );
+        await _seekAbsoluteAlignedRepair(target, clampMaxSec: chapterEnd - 1.0);
         _logEvent(PlaybackEventType.seek, detail: 'skip chapter intro');
         return;
       } else {
@@ -11389,7 +11512,8 @@ if (_chapterJumpLatchIndex >= 0) {
     // would play ~1s too long whenever the phase was wrong. Once we get within
     // a fast-poll margin of the window, spin a 120ms watch that re-runs this
     // function until the crossing is caught, then it cancels itself.
-    final inOutroWatch = outroSkip > 0 &&
+    final inOutroWatch =
+        outroSkip > 0 &&
         !_outroSkippedThisEntry &&
         posSec < chapterEnd &&
         chapterEnd - posSec < outroSkip + 1.5;
@@ -11413,9 +11537,9 @@ if (_chapterJumpLatchIndex >= 0) {
         // exactly on the rollover. A single file keeps the next chapter's
         // metadata start instead: its `end` may sit inside a trailing gap, and
         // jumping into that gap would leave the position with no chapter.
-final nextStart = _useFileTimelineBounds
-          ? chapterEnd
-          : _chapterMetaStart(chapterIdx + 1);
+        final nextStart = _useFileTimelineBounds
+            ? chapterEnd
+            : _chapterMetaStart(chapterIdx + 1);
         // Partial download: the "next chapter" begins at/past the last
         // downloaded file's end; jumping there inside an auto-skip would cross
         // the boundary. Leave the tail to the boundary/handoff logic.
@@ -11647,6 +11771,7 @@ final nextStart = _useFileTimelineBounds
 
     await _player?.stop();
     _onPlaybackStateChangedCallback?.call(false);
+    unawaited(_persistLastUserPlaying(false));
 
     _clearState();
     _chapters = [];

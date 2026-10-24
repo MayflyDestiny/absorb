@@ -28,8 +28,11 @@ import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
 import 'services/settings_sync_service.dart';
 import 'services/scoped_prefs.dart';
+import 'services/log_service.dart';
 import 'services/ebook_preferences.dart';
 import 'services/cover_cache_manager.dart';
+import 'services/cover_palette_cache.dart';
+import 'services/cover_blur_cache.dart';
 import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
 import 'services/carplay_service.dart';
@@ -39,7 +42,6 @@ import 'services/home_widget_service.dart';
 import 'services/siri_service.dart';
 import 'services/narrated_books.dart';
 import 'services/read_listen_sync.dart';
-import 'services/log_service.dart';
 import 'services/quick_actions_service.dart';
 import 'services/setup_link_service.dart';
 import 'services/wording.dart';
@@ -209,6 +211,20 @@ Future<void> applyOrientationLock() async {
 void main() async {
   HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+
+  // Capture uncaught Flutter/framework errors and async errors to a dedicated
+  // crash file so post-mortem diagnosis is possible even when the user hasn't
+  // enabled verbose logging. Never blocks or throws.
+  FlutterError.onError = (FlutterErrorDetails details) {
+    LogService().logCrash(details.exception, details.stack ?? StackTrace.empty,
+        context: details.library ?? 'FlutterError');
+    FlutterError.presentError(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    LogService().logCrash(error, stack, context: 'PlatformDispatcher');
+    return true;
+  };
+
   // Give every cached network image real connect/read timeouts instead of the
   // package default (which has none, so stalled cover downloads keep their
   // sockets alive indefinitely on a slow link).
@@ -274,6 +290,18 @@ void main() async {
   // Trust user-installed / self-signed certificates if the user opted in
   try {
     trustAllCerts = await PlayerSettings.getTrustAllCerts();
+  } catch (_) {}
+
+  // 封面配色/亮度的落盘缓存：只是让卡片第一帧更快，读取失败/超时都不影响启动。
+  try {
+    await CoverPaletteCache.instance.load().timeout(const Duration(seconds: 1));
+  } catch (_) {}
+  // 把上一次的模糊封面预加载进内存：正在收听卡片首帧可以直接同步拿到它，
+  // 不再先画主题色/提取色再切到模糊图。失败/超时只影响首帧，不影响启动。
+  try {
+    await CoverBlurCache.instance
+        .preloadLatest()
+        .timeout(const Duration(seconds: 1));
   } catch (_) {}
 
   // Capture Flutter framework errors (widget build failures, etc.)
@@ -496,11 +524,13 @@ class AbsorbApp extends StatelessWidget {
                 ),
                 navigationBarTheme: NavigationBarThemeData(
                   backgroundColor: lightScheme.surface,
-                  // E-ink: a solid black pill with a white icon beats a 15%
-                  // tint that dithers away.
+                  // E-ink: a solid black pill with a white icon beats a tint
+                  // that dithers away. On light/dark schemes use a slightly
+                  // stronger tint so the pill appears fully formed instead of
+                  // looking like it's slowly bleeding outward from the icon.
                   indicatorColor: isEink
                       ? Colors.black
-                      : lightScheme.primary.withValues(alpha: 0.15),
+                      : lightScheme.primary.withValues(alpha: 0.25),
                   iconTheme: isEink
                       ? WidgetStateProperty.resolveWith(
                           (states) => IconThemeData(
@@ -549,6 +579,27 @@ class AbsorbApp extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+                scrollbarTheme: ScrollbarThemeData(
+                  thumbColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.pressed)) {
+                      return lightScheme.onSurface.withValues(alpha: 0.45);
+                    }
+                    if (states.contains(WidgetState.hovered)) {
+                      return lightScheme.onSurface.withValues(alpha: 0.36);
+                    }
+                    return lightScheme.onSurface.withValues(alpha: 0.28);
+                  }),
+                  trackColor: WidgetStatePropertyAll(
+                      lightScheme.onSurface.withValues(alpha: 0.06)),
+                  trackBorderColor:
+                      const WidgetStatePropertyAll(Colors.transparent),
+                  radius: const Radius.circular(8),
+                  thickness: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.pressed)) return 9.0;
+                    if (states.contains(WidgetState.hovered)) return 7.0;
+                    return 5.0;
+                  }),
+                ),
                 pageTransitionsTheme: pageTransition,
               ),
               darkTheme: ThemeData(
@@ -565,7 +616,7 @@ class AbsorbApp extends StatelessWidget {
                 ),
                 navigationBarTheme: NavigationBarThemeData(
                   backgroundColor: isFlat ? Colors.black : const Color(0xFF0E0E0E),
-                  indicatorColor: darkScheme.primary.withValues(alpha: 0.15),
+                  indicatorColor: darkScheme.primary.withValues(alpha: 0.25),
                   labelTextStyle: WidgetStatePropertyAll(
                     TextStyle(
                       fontSize: 11,
@@ -604,6 +655,27 @@ class AbsorbApp extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                ),
+                scrollbarTheme: ScrollbarThemeData(
+                  thumbColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.pressed)) {
+                      return darkScheme.onSurface.withValues(alpha: 0.5);
+                    }
+                    if (states.contains(WidgetState.hovered)) {
+                      return darkScheme.onSurface.withValues(alpha: 0.4);
+                    }
+                    return darkScheme.onSurface.withValues(alpha: 0.32);
+                  }),
+                  trackColor: WidgetStatePropertyAll(
+                      darkScheme.onSurface.withValues(alpha: 0.08)),
+                  trackBorderColor:
+                      const WidgetStatePropertyAll(Colors.transparent),
+                  radius: const Radius.circular(8),
+                  thickness: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.pressed)) return 9.0;
+                    if (states.contains(WidgetState.hovered)) return 7.0;
+                    return 5.0;
+                  }),
                 ),
                 pageTransitionsTheme: pageTransition,
               ),
@@ -701,6 +773,12 @@ class _AuthGateState extends State<AuthGate> {
     try {
       final loggingEnabled = await PlayerSettings.getLoggingEnabled();
       await LogService().init(loggingEnabled);
+      // Surface any crash from the previous run into the current log session
+      // so it shows up when the user exports logs.
+      final lastCrash = await LogService().consumeLastCrash();
+      if (lastCrash != null) {
+        LogService().log('Previous run crash dump:\n$lastCrash');
+      }
     } catch (_) {}
 
     final sw = Stopwatch()..start();

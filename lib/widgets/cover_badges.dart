@@ -13,6 +13,8 @@ class CoverStateBadges extends StatelessWidget {
   final bool isFinished;
   final bool isSkimmed;
   final double iconSize;
+  final int savedChapters;
+  final int totalChapters;
 
   /// Shows just the icons (no text labels), for covers too small to fit the
   /// full banner like the search result tiles.
@@ -28,6 +30,8 @@ class CoverStateBadges extends StatelessWidget {
     this.isFinished = false,
     this.isSkimmed = false,
     this.iconSize = 13,
+    this.savedChapters = 0,
+    this.totalChapters = 0,
     this.iconOnly = false,
     this.borderRadius,
   });
@@ -63,7 +67,28 @@ class CoverStateBadges extends StatelessWidget {
           if (isFinished)
             _row(doneIcon, skimmed ? l.readStatusSkimmed : l.finished, doneColor),
           if (isFinished && isDownloaded) const SizedBox(height: 2),
-          if (isDownloaded) _row(Icons.download_rounded, l.saved, Colors.white),
+          if (isDownloaded)
+            Builder(builder: (context) {
+              final partial = totalChapters > 0 && savedChapters < totalChapters;
+              final savedLabel = partial
+                  ? AppLocalizations.of(context)!.coverSavedCount(savedChapters, totalChapters)
+                  : AppLocalizations.of(context)!.saved;
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.62),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.download_rounded, size: 11, color: Colors.white),
+                    const SizedBox(width: 3),
+                    Text(savedLabel, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ],
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -115,73 +140,6 @@ class CoverStateBadges extends StatelessWidget {
 ///
 /// The "finished" check is no longer part of this chip — it lives in the
 /// top-right corner via [CoverFinishedBadge].
-class CoverStatusChips extends StatelessWidget {
-  final bool isDownloaded;
-
-  /// Downloaded chapters and the book's full chapter count. When [savedChapters]
-  /// is 0 or below [totalChapters] is 0/unknown, the plain label is shown.
-  final int savedChapters;
-  final int totalChapters;
-
-  /// Use muted surface-based tones instead of the dark/white overlay palette.
-  final bool surfaceTone;
-
-  const CoverStatusChips({
-    super.key,
-    required this.isDownloaded,
-    this.savedChapters = 0,
-    this.totalChapters = 0,
-    this.surfaceTone = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (!isDownloaded) return const SizedBox.shrink();
-    final l = AppLocalizations.of(context)!;
-    final cs = Theme.of(context).colorScheme;
-    final partial = totalChapters > 0 && savedChapters < totalChapters;
-    final savedLabel = partial
-        ? l.coverSavedCount(savedChapters, totalChapters)
-        : l.saved;
-    return _chip(
-      icon: Icons.download_rounded,
-      label: savedLabel,
-      background:
-          surfaceTone ? cs.surfaceContainerHighest : Colors.black.withValues(alpha: 0.62),
-      foreground: surfaceTone ? cs.onSurfaceVariant : Colors.white,
-    );
-  }
-
-  Widget _chip({
-    required IconData icon,
-    required String label,
-    required Color background,
-    required Color foreground,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: foreground),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              color: foreground,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// Green "Finished" badge for the top-right corner of a cover. The display
 /// style is controlled by the global `finishedBadgeMode` setting: with the

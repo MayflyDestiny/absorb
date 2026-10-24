@@ -2224,6 +2224,12 @@ abstract class AppLocalizations {
   /// **'Goal reached'**
   String get statsGoalReached;
 
+  /// No description provided for @statsGoalPaceTickHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill = progress, tick = time elapsed'**
+  String get statsGoalPaceTickHint;
+
   /// No description provided for @statsChartTitle.
   ///
   /// In en, this message translates to:
@@ -5959,13 +5965,13 @@ abstract class AppLocalizations {
   /// No description provided for @cacheSystemCacheLabel.
   ///
   /// In en, this message translates to:
-  /// **'System cache'**
+  /// **'Cache size'**
   String get cacheSystemCacheLabel;
 
   /// No description provided for @cacheSystemDataLabel.
   ///
   /// In en, this message translates to:
-  /// **'System data'**
+  /// **'User data'**
   String get cacheSystemDataLabel;
 
   /// No description provided for @cacheSystemStatsHint.
@@ -12543,6 +12549,12 @@ abstract class AppLocalizations {
     String ampm,
   );
 
+  /// No description provided for @statsShortDate.
+  ///
+  /// In en, this message translates to:
+  /// **'{month} {day}, {year}'**
+  String statsShortDate(String month, int day, int year);
+
   /// No description provided for @statsScreenMonthJan.
   ///
   /// In en, this message translates to:
@@ -14414,6 +14426,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'PM'**
   String get timePm;
+
+  /// No description provided for @timePeriodDawn.
+  ///
+  /// In en, this message translates to:
+  /// **'Late night'**
+  String get timePeriodDawn;
+
+  /// No description provided for @timePeriodMorningEarly.
+  ///
+  /// In en, this message translates to:
+  /// **'Early morning'**
+  String get timePeriodMorningEarly;
+
+  /// No description provided for @timePeriodMorning.
+  ///
+  /// In en, this message translates to:
+  /// **'Morning'**
+  String get timePeriodMorning;
+
+  /// No description provided for @timePeriodNoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Midday'**
+  String get timePeriodNoon;
+
+  /// No description provided for @timePeriodAfternoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Afternoon'**
+  String get timePeriodAfternoon;
+
+  /// No description provided for @timePeriodDusk.
+  ///
+  /// In en, this message translates to:
+  /// **'Evening'**
+  String get timePeriodDusk;
+
+  /// No description provided for @timePeriodNight.
+  ///
+  /// In en, this message translates to:
+  /// **'Night'**
+  String get timePeriodNight;
+
+  /// No description provided for @timePeriodLateNight.
+  ///
+  /// In en, this message translates to:
+  /// **'Late evening'**
+  String get timePeriodLateNight;
 
   /// No description provided for @collectionPickerCollectionFallback.
   ///

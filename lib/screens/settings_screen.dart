@@ -1683,7 +1683,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   enabled: _coverCacheBytes > 0,
                   clearedMessage: l.coverCacheCleared,
                   onClear: () async {
-                    await CoverCacheManager.instance.clear();
+                    await CoverCacheManager.instance.clear(
+                      clearMemory: false,
+                    );
                     await _deleteCoverDirs();
                     if (mounted) setState(() => _coverCacheBytes = 0);
                   },
@@ -1777,8 +1779,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: const Icon(Icons.delete_sweep_outlined),
                     label: Text(l.clearAllCaches),
                     onPressed: () async {
-                      Navigator.pop(ctx);
                       await _clearAllCaches();
+                      if (mounted) refresh();
                     },
                   ),
                 ),
@@ -1848,7 +1850,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (ok != true || !mounted) return;
     await JsonFileCache.clearAll();
-    await CoverCacheManager.instance.clear();
     await _deleteCoverDirs();
     await clearEbookCache();
     await clearPdfStreamCache();
@@ -1860,8 +1861,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await AudioPlayer.clearStreamingCache();
     } catch (_) {}
-    await _sweepOrphanTempFiles();
-    await _sweepExternalCacheOthers();
+    await _sweepOrphanTempFiles(staleAfter: Duration.zero);
+    await _sweepExternalCacheOthers(staleAfter: Duration.zero);
+    // 最后再清一次封面磁盘缓存：前面的清理期间可能有新的封面写入。保留
+    // 内存里的解码图，避免清完立刻重新下载又把磁盘缓存填回去。
+    await CoverCacheManager.instance.clear(clearMemory: false);
+    // “全部清除”要连最近 30 分钟内产生的残留一起清掉；保留仍在写入/可续传的
+    // 下载分片（sweep 内部会跳过它们）。清完再查一次系统值，避免界面继续
+    // 显示清除前的缓存数字。
+    final systemStats = await DownloadService.getStorageStats();
     if (!mounted) return;
     setState(() {
       _jsonCacheBytes = 0;
@@ -1873,6 +1881,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _exportCacheBytes = 0;
       _pdfStreamCacheBytes = 0;
       _ebookStreamCacheBytes = 0;
+      _systemCacheBytes = systemStats?['cacheBytes'];
+      _systemDataBytes = systemStats?['dataBytes'];
+      _systemCodeCacheBytes = systemStats?['codeCacheBytes'];
     });
     showOverlayToast(context, l.cacheAllCleared,
         icon: Icons.delete_outline_rounded);
@@ -2424,6 +2435,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     return Scaffold(
+      // API 30+ 上 IME 覆盖在 App 上（adjustNothing）；设置页保持整屏布局，
+      // 搜索键盘弹出时背景渐变不再被整体压扁/抬升。
+      resizeToAvoidBottomInset: false,
       body: Container(
         decoration: flatNotifier.value ? null : BoxDecoration(
                 gradient: LinearGradient(
@@ -2772,7 +2786,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
 
                       // ── Version Info ──
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                 Center(child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [

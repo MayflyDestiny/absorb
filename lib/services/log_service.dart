@@ -142,6 +142,43 @@ class LogService {
     }
   }
 
+  /// Write an uncaught exception to a dedicated crash file. Works even when
+  /// the regular log capture is disabled - crash dumps must always land so
+  /// post-mortem diagnosis is possible.
+  Future<void> logCrash(Object error, StackTrace stack, {String context = ''}) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/absorb_crash.log');
+      final ts = DateTime.now().toIso8601String();
+      final buf = StringBuffer()
+        ..writeln('========================================')
+        ..writeln('[$ts] CRASH${context.isNotEmpty ? " ($context)" : ""}')
+        ..writeln('App: ${versionWithBeta(ApiService.appVersionFull)}')
+        ..writeln('Error: $error')
+        ..writeln('--- Stack ---')
+        ..writeln(stack.toString())
+        ..writeln();
+      await f.writeAsString(buf.toString(), mode: FileMode.append);
+    } catch (_) {
+      // Last-resort logging must never throw.
+    }
+  }
+
+  /// Read the most recent crash dump (if any) and clear it. Returns null when
+  /// no crash was recorded since the last read.
+  Future<String?> consumeLastCrash() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/absorb_crash.log');
+      if (!await f.exists()) return null;
+      final content = await f.readAsString();
+      await f.delete();
+      return content.trim().isEmpty ? null : content;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Periodic runtime rotation - check file size every [_rotateCheckInterval]
   /// writes so the log never grows much past [_maxSize] even during long
   /// sessions. This keeps the most recent entries and trims the oldest.

@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
+import '../services/cover_blur_cache.dart';
 import '../services/download_service.dart';
 import '../services/queue_download_policy.dart';
 import '../services/scoped_prefs.dart';
@@ -18,6 +21,7 @@ import '../widgets/series_books_sheet.dart';
 import '../widgets/playlist_detail_sheet.dart';
 import '../widgets/collection_detail_sheet.dart';
 import '../widgets/episode_list_sheet.dart';
+import '../widgets/stable_cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 
@@ -64,6 +68,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   PageController _pageController = PageController(viewportFraction: 0.92);
   Orientation? _lastOrientation;
   final _cardKeys = <String, GlobalKey<AbsorbingCardState>>{};
+  // 首屏先等前两张卡片的模糊封面进内存，再构建卡片；卡片会同步取到 lease，
+  // 第一帧直接是模糊封面/背景，而不是主题色/透明底。
+  bool _blursWarming = false;
+  bool _blursReady = false;
 
   GlobalKey<AbsorbingCardState> _cardKey(String absorbingKey) {
     return _cardKeys.putIfAbsent(absorbingKey, () => GlobalKey<AbsorbingCardState>());
@@ -104,6 +112,44 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Future<void> _loadMergeLibraries() async {
     final v = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted && v != _mergeLibraries) setState(() => _mergeLibraries = v);
+  }
+
+  /// 预加载首屏两张卡片自己的模糊封面；卡片 initState 会同步 lease 到同一张，
+  /// 所以第一帧就是模糊图，不会先闪主题色。
+  Future<void> _warmFirstCardBlurs(
+    LibraryProvider lib,
+    List<Map<String, dynamic>> books,
+  ) async {
+    try {
+      for (final book in books.take(2)) {
+        final id = book['id'] as String?;
+        if (id == null || id.isEmpty) continue;
+        final itemTs = (book['updatedAt'] as num?)?.toInt();
+        final mapTs = lib.itemUpdatedAt(id);
+        final ts = itemTs != null && (mapTs == null || itemTs >= mapTs)
+            ? itemTs
+            : mapTs;
+        final url = lib.getCoverUrl(id, width: 1200, updatedAt: ts);
+        if (url == null || url.isEmpty) continue;
+        final identity = coverCacheIdentity(url);
+        final ImageProvider provider = url.startsWith('/')
+            ? FileImage(File(url))
+            : CachedNetworkImageProvider(
+                url,
+                headers: lib.mediaHeaders,
+                cacheKey: stableCoverCacheKey(url),
+              );
+        await CoverBlurCache.instance.warm(provider, identity);
+      }
+    } catch (_) {
+      // Best effort: if it fails the card falls back to its own async load.
+    }
+    if (mounted) {
+      setState(() {
+        _blursWarming = false;
+        _blursReady = true;
+      });
+    }
   }
 
   String _activePlaylistChipLabel(LibraryProvider lib, AppLocalizations l) {
@@ -636,11 +682,17 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       }).toList();
     }
 
-    final showBlockingLoader = lib.isLoading &&
-        books.isEmpty &&
-        !_player.hasBook &&
-        !_cast.isCasting &&
-        lib.personalizedSections.isEmpty;
+    if (books.isNotEmpty && !_blursWarming && !_blursReady) {
+      _blursWarming = true;
+      unawaited(_warmFirstCardBlurs(lib, books));
+    }
+    final showBlockingLoader =
+        (lib.isLoading &&
+            books.isEmpty &&
+            !_player.hasBook &&
+            !_cast.isCasting &&
+            lib.personalizedSections.isEmpty) ||
+        (books.isNotEmpty && !_blursReady);
 
     final muted = cs.onSurfaceVariant;
     final subtleBg = cs.onSurface.withValues(alpha: 0.06);
@@ -648,6 +700,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
     return Scaffold(
       backgroundColor: scaffoldBg,
+      resizeToAvoidBottomInset: false,
       body: Container(
         decoration: flatNotifier.value ? null : BoxDecoration(
           gradient: LinearGradient(

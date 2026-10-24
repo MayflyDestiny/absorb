@@ -1167,6 +1167,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get statsGoalReached => '已达成目标';
 
   @override
+  String get statsGoalPaceTickHint => '色块＝完成进度，竖线＝周期时间已过';
+
+  @override
   String get statsChartTitle => '收听图表';
 
   @override
@@ -3257,10 +3260,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get coverCacheCleared => '封面缓存已清除';
 
   @override
-  String get cacheSystemCacheLabel => '系统缓存';
+  String get cacheSystemCacheLabel => '缓存大小';
 
   @override
-  String get cacheSystemDataLabel => '系统数据';
+  String get cacheSystemDataLabel => '用户数据';
 
   @override
   String get cacheSystemStatsHint => '安卓系统针对本应用报告的数值。';
@@ -6994,6 +6997,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String statsShortDate(String month, int day, int year) {
+    return '$year年$month月$day日';
+  }
+
+  @override
   String get statsScreenMonthJan => '1月';
 
   @override
@@ -8162,6 +8170,30 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get timePm => '下午';
+
+  @override
+  String get timePeriodDawn => '凌晨';
+
+  @override
+  String get timePeriodMorningEarly => '早上';
+
+  @override
+  String get timePeriodMorning => '上午';
+
+  @override
+  String get timePeriodNoon => '中午';
+
+  @override
+  String get timePeriodAfternoon => '下午';
+
+  @override
+  String get timePeriodDusk => '傍晚';
+
+  @override
+  String get timePeriodNight => '晚上';
+
+  @override
+  String get timePeriodLateNight => '深夜';
 
   @override
   String get collectionPickerCollectionFallback => '收藏集';

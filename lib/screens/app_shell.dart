@@ -18,7 +18,8 @@ import 'package:palette_generator/palette_generator.dart';
 import '../utils/cover_accent.dart';
 import '../services/cover_blur_cache.dart';
 import '../services/download_service.dart';
-import '../widgets/stable_cached_network_image.dart' show stableCoverCacheKey;
+import '../widgets/stable_cached_network_image.dart'
+    show stableCoverCacheKey, coverCacheIdentity;
 import '../main.dart'
     show
         snappyTransitionsNotifier,
@@ -200,6 +201,9 @@ class _AppShellState extends State<AppShell>
   DateTime? _lastBackPress;
   // Tracks which item's cover we derived the scheme from.
   String? _lastCoverItemId;
+  // 也记住生成主题色时的封面 identity：同一本书换封面时 itemId 不变，
+  // 只靠 itemId 会漏掉这次更新。
+  String? _lastCoverIdentity;
 
   // ── Scroll-to-hide bottom nav (driven by Library screen) ──
   late final AnimationController _navBarAnimController = AnimationController(
@@ -400,11 +404,25 @@ class _AppShellState extends State<AppShell>
     _player.addListener(_onPlayerChanged);
     _wasCasting = _cast.isCasting;
     _cast.addListener(_onCastChanged);
+    // 本地封面被原地替换时（重新下载/清晰度升级）也要重算主题色；
+    // _deriveCoverScheme 会先比身份，没有变化的下载进度事件直接早退。
+    DownloadService().addListener(_onDownloadsChanged);
     // Try immediately; _onLibraryChanged picks it up once data loads.
     // Deferred to post-frame so Theme.of(context) inside _deriveCoverScheme
     // doesn't establish an inherited-widget dependency during initState.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _deriveCoverScheme();
+      // Pre-build the other tabs in the background so the first switch to
+      // Home / Library doesn't stall on widget construction + build.
+      // IndexedStack already builds all children offstage; creating the
+      // widget objects now means the first paint of those tabs is instant.
+      if (mounted) {
+        for (var i = 0; i < _pages.length; i++) {
+          if (i != _currentIndex && _pages[i] == null) {
+            _ensurePageBuilt(i);
+          }
+        }
+      }
     });
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
     _loadPodcastTabPrefs();
@@ -527,6 +545,7 @@ class _AppShellState extends State<AppShell>
     _navBarAnimController.dispose();
     _player.removeListener(_onPlayerChanged);
     _cast.removeListener(_onCastChanged);
+    DownloadService().removeListener(_onDownloadsChanged);
     PlayerSettings.settingsChanged.removeListener(_loadPodcastTabPrefs);
     try {
       context.read<LibraryProvider>().removeListener(_onLibraryChanged);
@@ -542,12 +561,18 @@ class _AppShellState extends State<AppShell>
     // theme always reflects the current [0] book.
     _deriveCoverScheme();
     _restoreBookLibraryForCurrentTab();
-
     // One-time cover preload for absorbing + library first screen
     if (!_coversPreloaded) {
       _coversPreloaded = true;
       _preloadCovers();
     }
+  }
+
+  /// 下载完成后本地封面可能被替换；普通进度事件会被 _deriveCoverScheme 的
+  /// identity 比较早退，只有封面真的换了才重新抽取主题色。
+  void _onDownloadsChanged() {
+    if (!mounted) return;
+    _deriveCoverScheme();
   }
 
   /// Preload covers for Absorbing list and personalized sections to eliminate
@@ -612,8 +637,20 @@ class _AppShellState extends State<AppShell>
 
     if (ids.isEmpty) return;
 
-    // Fire-and-forget precache (limit to 20 to avoid overload)
+    // 剩余封面不要在首帧/当前封面加载时一起抢解码线程：等界面空闲一会儿
+    // 再分批预热，优先保证首屏和第一次切换的手感。
+    unawaited(_preloadShelfCovers(lib, ctx, ids));
+  }
+
+  Future<void> _preloadShelfCovers(
+    LibraryProvider lib,
+    BuildContext ctx,
+    Set<String> ids,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted || !ctx.mounted) return;
     for (final itemId in ids.take(20)) {
+      if (!mounted) return;
       final url = lib.getCoverUrl(itemId, width: 400);
       if (url != null && !url.startsWith('/')) {
         unawaited(
@@ -624,6 +661,8 @@ class _AppShellState extends State<AppShell>
           ),
         );
       }
+      // 每张之间让出一段时间，避免一次性把图片管线塞满。
+      await Future<void>.delayed(const Duration(milliseconds: 40));
     }
   }
 
@@ -640,21 +679,47 @@ class _AppShellState extends State<AppShell>
   ) async {
     try {
       final dl = DownloadService().getInfo(currentId);
-      if (dl.status == DownloadStatus.downloaded) {
-        final local = dl.localCoverPath;
-        if (local != null && local.isNotEmpty && File(local).existsSync()) {
-          await CoverBlurCache.instance.warm(FileImage(File(local)), local);
-          return;
-        }
+      final local = dl.localCoverPath;
+      final currentKey = _player.currentEpisodeId != null
+          ? '$currentId-${_player.currentEpisodeId}'
+          : currentId;
+      // Match the absorbing card: online it uses the prewarmed shelf URL so a
+      // late DownloadService restore doesn't switch the cover (and reset its
+      // blur/palette); offline it uses the local copy.
+      final useLocal =
+          dl.status == DownloadStatus.downloaded &&
+          (lib.isOffline || shelfUrl == null || shelfUrl.isEmpty) &&
+          local != null &&
+          local.isNotEmpty &&
+          File(local).existsSync();
+      if (useLocal && local != null) {
+        final identity = coverCacheIdentity(local);
+        await CoverBlurCache.instance.warm(FileImage(File(local)), identity);
+        unawaited(
+          CoverBlurCache.instance.rememberLatest(
+            currentKey,
+            identity,
+            playing: true,
+          ),
+        );
+        return;
       }
       if (shelfUrl == null || shelfUrl.isEmpty) return;
+      final identity = coverCacheIdentity(shelfUrl);
       await CoverBlurCache.instance.warm(
         CachedNetworkImageProvider(
           shelfUrl,
           headers: lib.mediaHeaders,
           cacheKey: stableCoverCacheKey(shelfUrl),
         ),
-        stableCoverCacheKey(shelfUrl),
+        identity,
+      );
+      unawaited(
+        CoverBlurCache.instance.rememberLatest(
+          currentKey,
+          identity,
+          playing: true,
+        ),
       );
     } catch (_) {
       // Preload is best effort; the card generates the blur itself if needed.
@@ -678,14 +743,20 @@ class _AppShellState extends State<AppShell>
     if (itemId == null) {
       return false;
     }
-    if (itemId == _lastCoverItemId) return true;
 
     final lib = context.read<LibraryProvider>();
     final coverUrl = lib.getCoverUrl(itemId, width: 400);
     if (coverUrl == null) {
       return false;
     }
+    // 网络封面 identity 带 ts，本地封面带 mtime/size；任何换封面都会走到
+    // 重新抽取，而不是被 itemId 的早退挡住。
+    final identity = coverCacheIdentity(coverUrl);
+    if (itemId == _lastCoverItemId && identity == _lastCoverIdentity) {
+      return true;
+    }
     _lastCoverItemId = itemId;
+    _lastCoverIdentity = identity;
 
     final ImageProvider provider;
     if (coverUrl.startsWith('/')) {
@@ -703,6 +774,7 @@ class _AppShellState extends State<AppShell>
           final seedColor = accentFromCoverPalette(palette);
           if (seedColor == null) {
             _lastCoverItemId = null;
+            _lastCoverIdentity = null;
             return;
           }
           final scheme = ColorScheme.fromSeed(
@@ -714,6 +786,7 @@ class _AppShellState extends State<AppShell>
         })
         .catchError((_) {
           _lastCoverItemId = null;
+          _lastCoverIdentity = null;
         });
     return true; // cover URL found, image load in progress
   }
@@ -919,6 +992,20 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    // 页面坐标的底部是底栏上边缘；键盘与页面区域的实际重叠是
+    // viewInsets - 底栏高度。若把完整 viewInsets 交给页面，内层 Scaffold
+    // 会多缩一个底栏高度，浮动栏和键盘之间就留出一条黑色空带。
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+    final navHeight =
+        (isTablet || mq.orientation == Orientation.portrait ? 80.0 : 56.0) +
+        mq.viewPadding.bottom;
+    final pageViewInsets = EdgeInsets.only(
+      top: mq.viewInsets.top,
+      left: mq.viewInsets.left,
+      right: mq.viewInsets.right,
+      bottom: math.max(0.0, mq.viewInsets.bottom - navHeight),
+    );
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -952,16 +1039,22 @@ class _AppShellState extends State<AppShell>
         _switchToAbsorbing();
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         body: FadeTransition(
           opacity: _fadeController,
-          child: IndexedStack(
-            index: _currentIndex,
-            children: List<Widget>.generate(
-              _pages.length,
-              (i) => _pages[i] ?? const SizedBox.shrink(),
+          child: MediaQuery(
+            data: mq.copyWith(viewInsets: pageViewInsets),
+            child: IndexedStack(
+              index: _currentIndex,
+              children: List<Widget>.generate(
+                _pages.length,
+                (i) => _pages[i] ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
+        // API 30+ 上 IME 是覆盖在 App 上的（adjustNothing），底栏留在原位自然
+        // 被键盘遮住，不需要隐藏/重挂，避免收起键盘时弹一下。
         bottomNavigationBar: _buildBottomNav(context),
       ),
     );
@@ -1021,6 +1114,19 @@ class _AppShellState extends State<AppShell>
     final lib = context.watch<LibraryProvider>();
     final podcastsShown = _podcastsShown(lib);
     final destinations = _buildDestinations(context, podcastsShown);
+    final selectedDest = _selectedDest(lib, podcastsShown);
+    final tabCount = destinations.length;
+    final tabWidth = mq.size.width / tabCount;
+    final cs = Theme.of(context).colorScheme;
+    final isEink = PlayerSettings.einkMode;
+    // 只包图标的紧凑胶囊：宽度上限 64，槽位窄时按槽宽收缩，水平居中。
+    final pillWidth = math.min(64.0, tabWidth - 8);
+    final pillLeft = tabWidth * selectedDest + (tabWidth - pillWidth) / 2;
+    final pillTop = isPhoneLandscape ? 12.0 : 15.0;
+    // 复用主题里的 indicatorColor：普通模式是 primary@25%，e-ink 是纯黑。
+    final pillColor = NavigationBarTheme.of(context).indicatorColor ??
+        cs.primary.withValues(alpha: 0.22);
+
     return SizeTransition(
       sizeFactor: _navBarAnimController,
       axisAlignment: 1.0,
@@ -1028,31 +1134,121 @@ class _AppShellState extends State<AppShell>
       // to a destination slot. Plain taps pass through untouched.
       child: GestureDetector(
         onLongPressStart: (details) =>
-            _onNavLongPress(details.localPosition.dx, destinations.length),
-        child: NavigationBar(
-          selectedIndex: _selectedDest(lib, podcastsShown),
-          height: isPhoneLandscape ? 56 : null,
-          labelBehavior: isPhoneLandscape
-              ? NavigationDestinationLabelBehavior.alwaysHide
-              : NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected: (dest) {
-            final page = _pageForDest(dest, podcastsShown);
-            // Re-tapping the active library-ish destination clears search
-            if (page == 1 &&
-                _currentIndex == 1 &&
-                dest == _selectedDest(lib, podcastsShown) &&
-                _libraryKey.currentState?.isSearchActive == true) {
-              _libraryKey.currentState?.clearSearch();
-              return;
-            }
-            _syncTabLibrary(dest, podcastsShown);
-            _navigateTo(page);
-            // Refresh data on switching to Library, Home, Absorbing, or Stats
-            if (page == 0 || page == 1 || page == 2 || page == 3) {
-              _refreshDataForTab(page);
-            }
-          },
-          destinations: destinations,
+            _onNavLongPress(details.localPosition.dx, tabCount),
+        child: Container(
+          color: cs.surface,
+          // 底栏也要让开系统手势条/Home 指示条：高度 = 内容 + 底部 inset，
+          // 和原来的 NavigationBar 保持一致。
+          child: SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            // 键盘弹出时 padding.bottom 会变成 0；保持 viewPadding 让底栏
+            // 高度不变，否则页面高度会在键盘开关时跳一下。
+            maintainBottomViewPadding: true,
+            child: SizedBox(
+              height: isPhoneLandscape ? 56 : 80,
+              child: Stack(
+                children: [
+                  // 共享滑动胶囊：只包住图标，文字留在胶囊下方。
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    left: pillLeft,
+                    width: pillWidth,
+                    top: pillTop,
+                    height: 32,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: pillColor,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                  // Tab row
+                  Row(
+                    children: destinations.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final dest = entry.value;
+                      final isSelected = i == selectedDest;
+                      // e-ink 下胶囊是纯黑，选中图标必须换白色，否则黑对黑。
+                      final iconColor = isSelected
+                          ? (isEink ? Colors.white : cs.primary)
+                          : (isEink ? Colors.black : cs.onSurfaceVariant);
+                      final labelColor = isSelected
+                          ? cs.primary
+                          : cs.onSurfaceVariant;
+                      return Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            final page = _pageForDest(i, podcastsShown);
+                            // Re-tapping the active library-ish destination clears search
+                            if (page == 1 &&
+                                _currentIndex == 1 &&
+                                i == selectedDest &&
+                                _libraryKey.currentState?.isSearchActive == true) {
+                              _libraryKey.currentState?.clearSearch();
+                              return;
+                            }
+                            _syncTabLibrary(i, podcastsShown);
+                            _navigateTo(page);
+                            if (page == 0 || page == 1 || page == 2 || page == 3) {
+                              _refreshDataForTab(page);
+                            }
+                          },
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: Padding(
+                              // 图标槽和胶囊共用同一个 top，文字再往下排。
+                              padding: EdgeInsets.only(top: pillTop),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    height: 32,
+                                    child: Center(
+                                      child: IconTheme(
+                                        data: IconThemeData(
+                                          color: iconColor,
+                                          size: 22,
+                                        ),
+                                        child: isSelected
+                                            ? (dest.selectedIcon ?? dest.icon)
+                                            : dest.icon,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!isPhoneLandscape) ...[
+                                    const SizedBox(height: 4),
+                                    MediaQuery.withClampedTextScaling(
+                                      maxScaleFactor: 1.3,
+                                      child: Text(
+                                        dest.label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w600
+                                              : FontWeight.w500,
+                                          color: labelColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

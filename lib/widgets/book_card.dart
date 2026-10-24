@@ -261,13 +261,11 @@ class BookCard extends StatelessWidget {
                     ),
                   if (DownloadService().isDownloaded(item['id'] as String? ?? ''))
                     Positioned(
-                      left: 0, right: 0, bottom: 5,
-                      child: Center(
-                        child: CoverStatusChips(
-                          isDownloaded: true,
-                          savedChapters: savedChapters,
-                          totalChapters: totalChapters,
-                        ),
+                      left: 0, right: 0, bottom: 0,
+                      child: CoverStateBadges(
+                        isDownloaded: true,
+                        savedChapters: savedChapters,
+                        totalChapters: totalChapters,
                       ),
                     ),
                 ],
@@ -381,6 +379,15 @@ class BookCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   _CoverImage(coverUrl: coverUrl, cs: cs, httpHeaders: headers, coverAspectRatio: coverAspectRatio, title: title, author: authorName),
+                  if (isDownloaded)
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      child: CoverStateBadges(
+                        isDownloaded: isDownloaded,
+                        savedChapters: savedChapters,
+                        totalChapters: totalChapters,
+                      ),
+                    ),
                   if (progress > 0 && !isFinished)
                     Positioned(
                       left: 0,
@@ -440,17 +447,6 @@ class BookCard extends StatelessWidget {
                     ),
                   if (hasEbook && !selectionMode)
                     const Positioned(top: 4, left: 4, child: EbookCoverBadge()),
-                  if (isDownloaded)
-                    Positioned(
-                      left: 0, right: 0, bottom: 5,
-                      child: Center(
-                        child: CoverStatusChips(
-                          isDownloaded: isDownloaded,
-                          savedChapters: savedChapters,
-                          totalChapters: totalChapters,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),

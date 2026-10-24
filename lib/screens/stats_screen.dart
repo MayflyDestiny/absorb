@@ -207,7 +207,7 @@ class _StatsScreenState extends State<StatsScreen>
     final date = DateTime(
         int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
     final l = AppLocalizations.of(context)!;
-    final dateLabel = '${_dayLabel(date, l)} · ${fmtDateMDY(l, date)}';
+    final dateLabel = '${_dayLabel(date, l)} · ${l.statsShortDate(monthShortName(l, date.month), date.day, date.year)}';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1045,8 +1045,134 @@ class _StatsScreenState extends State<StatsScreen>
           style:
               tt.bodySmall?.copyWith(color: reached ? doneColor : cs.onSurfaceVariant),
         ),
+        // 周/月目标的"节奏刻度条"：缺口左边为时间已过区间，色块为完成度。
+        // 色块没到缺口=落后，超过缺口=超前。
+        if (period != 'daily' && targetSeconds > 0) ...[
+          const SizedBox(height: 6),
+          LayoutBuilder(builder: (context, c) {
+            final tf = _periodTimeFraction(period);
+            final barW = c.maxWidth;
+            final gapW = 3.0;
+            final gapLeft = (barW * tf - gapW / 2).clamp(0.0, barW - gapW);
+            final doneColor = cs.primary;
+            final pastBg = cs.onSurface.withValues(alpha: 0.15); // 时间已过区间底色
+            final futureBg = cs.onSurface.withValues(alpha: 0.06); // 时间未过区间底色
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  height: 3,
+                  child: Stack(
+                    children: [
+                      // 整个背景条（浅灰）
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: Container(height: 3, color: futureBg),
+                      ),
+                      // 时间已过区间的底色（深灰，从左到缺口左边）
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: Container(
+                          height: 3,
+                          width: gapLeft,
+                          color: pastBg,
+                        ),
+                      ),
+                      // 完成度色块：缺口左边用主题色
+                      if (progress > 0)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: Container(
+                            height: 3,
+                            width: (barW * progress).clamp(0, gapLeft),
+                            color: cs.primary,
+                          ),
+                        ),
+                      // 超前部分（缺口右边的色块用容器色）
+                      if (progress > tf)
+                        Positioned(
+                          left: gapLeft + gapW,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.horizontal(
+                              left: Radius.circular(3),
+                              right: Radius.circular(3),
+                            ),
+                            child: Container(
+                              height: 3,
+                              width: barW * (progress - tf),
+                              color: cs.primaryContainer,
+                            ),
+                          ),
+                        ),
+                      // 时间节点空槽（盖住形成缺口）
+                      Positioned(
+                        left: gapLeft,
+                        child: Container(
+                          width: gapW,
+                          height: 3,
+                          color: cs.surface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // 图例
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: doneColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('已完成',
+                        style: TextStyle(
+                            color: cs.onSurface.withValues(alpha: 0.45),
+                            fontSize: 10)),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: pastBg,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('时间已过',
+                        style: TextStyle(
+                            color: cs.onSurface.withValues(alpha: 0.45),
+                            fontSize: 10)),
+                  ],
+                ),
+              ],
+            );
+          }),
+        ],
       ])),
     ]);
+  }
+
+  /// 本周期时间已过比例（用于周/月目标的节奏刻度）。
+  double _periodTimeFraction(String period) {
+    final now = DateTime.now();
+    switch (period) {
+      case 'weekly':
+        // _weekStart: 1=周一 … 7=周日；Dart weekday: 1=周一 … 7=周日
+        final daysElapsed = _weekStart == 7
+            ? (now.weekday + 6) % 7
+            : now.weekday - 1;
+        return (daysElapsed / 7).clamp(0.0, 1.0);
+      case 'monthly':
+        final dim = DateTime(now.year, now.month + 1, 0).day;
+        return (now.day / dim).clamp(0.0, 1.0);
+      default:
+        return 1.0;
+    }
   }
 
   Widget _goalCard(ColorScheme cs, TextTheme tt, AppLocalizations l,

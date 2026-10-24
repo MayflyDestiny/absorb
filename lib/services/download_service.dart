@@ -14,6 +14,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import '../widgets/overlay_toast.dart';
+import '../widgets/stable_cached_network_image.dart' show coverCacheIdentity;
 import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'cover_blur_cache.dart';
@@ -2636,6 +2637,9 @@ class DownloadService extends ChangeNotifier {
               final coverFile = File(localCoverPath);
               await coverFile.writeAsBytes(resp.bodyBytes);
               PaintingBinding.instance.imageCache.evict(FileImage(coverFile));
+              // 本地封面被原地替换：通知卡片重建，让它重新读取 mtime/size
+              // identity，模糊背景和配色缓存才会跟着换新。
+              notifyListeners();
               debugPrint(
                 '[Download] Upgraded ${width}px cover for ${info.itemId} '
                 '(${resp.bodyBytes.length} bytes)',
@@ -3194,7 +3198,7 @@ class DownloadService extends ChangeNotifier {
         unawaited(
           CoverBlurCache.instance.warm(
             FileImage(File(localCoverPath)),
-            localCoverPath,
+            coverCacheIdentity(localCoverPath),
           ),
         );
       }

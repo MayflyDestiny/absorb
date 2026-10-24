@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -19,6 +20,25 @@ String stableCoverCacheKey(String imageUrl, {int? updatedAt}) {
   return uri.replace(queryParameters: query.isEmpty ? null : query).toString();
 }
 
+/// 封面在各类缓存（模糊背景、配色、provider identity）里的身份。
+///
+/// 网络封面走 [stableCoverCacheKey]，服务器换封面时 URL 里的 `ts` 会变，身份
+/// 自然失效。本地/已下载封面是原地覆盖同一个路径的，路径本身不会变，所以这里
+/// 把文件的 mtime + size 也带上：封面文件一换，identity 就换，旧的模糊背景和
+/// 配色不会被继续使用。
+String coverCacheIdentity(String coverUrlOrPath) {
+  if (!coverUrlOrPath.startsWith('/')) {
+    return stableCoverCacheKey(coverUrlOrPath);
+  }
+  try {
+    final stat = File(coverUrlOrPath).statSync();
+    return '$coverUrlOrPath|${stat.modified.millisecondsSinceEpoch}|'
+        '${stat.size}';
+  } catch (_) {
+    return coverUrlOrPath;
+  }
+}
+
 class StableCachedNetworkImage extends StatefulWidget {
   const StableCachedNetworkImage({
     super.key,
@@ -26,6 +46,7 @@ class StableCachedNetworkImage extends StatefulWidget {
     required this.cacheKey,
     this.fit,
     this.httpHeaders,
+    this.fadeInDuration,
     this.imageBuilder,
     this.placeholder,
     this.errorWidget,
@@ -35,6 +56,10 @@ class StableCachedNetworkImage extends StatefulWidget {
   final String cacheKey;
   final BoxFit? fit;
   final Map<String, String>? httpHeaders;
+
+  /// 默认沿用 CachedNetworkImage 的 500ms；正在收听页传更短的值，避免
+  /// 冷启动时磁盘缓存已命中却仍看起来像重新加载。
+  final Duration? fadeInDuration;
   final Widget Function(BuildContext, ImageProvider)? imageBuilder;
   final Widget Function(BuildContext, String)? placeholder;
   final Widget Function(BuildContext, String, Object)? errorWidget;
@@ -169,6 +194,7 @@ class _StableCachedNetworkImageState extends State<StableCachedNetworkImage> {
       cacheKey: _currentProvider.cacheKey,
       useOldImageOnUrlChange: true,
       fit: widget.fit,
+      fadeInDuration: widget.fadeInDuration ?? const Duration(milliseconds: 500),
       imageBuilder: widget.imageBuilder,
       placeholder: widget.placeholder,
       errorWidget: _onError,

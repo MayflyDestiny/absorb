@@ -438,7 +438,7 @@ mixin _StateMixin on ChangeNotifier {
     return ctx != null ? AppLocalizations.of(ctx) : null;
   }
 
-  String? getCoverUrl(String? itemId, {int width = 400}) {
+  String? getCoverUrl(String? itemId, {int width = 400, int? updatedAt}) {
     if (itemId == null) return null;
 
     final isCompositeKey = itemId.length > 36;
@@ -450,7 +450,7 @@ mixin _StateMixin on ChangeNotifier {
     if (_api != null && !isOffline) {
       final overrideCover = MetadataOverrideService().coverUrlFor(itemId);
       if (overrideCover != null && overrideCover.isNotEmpty) return overrideCover;
-      final ts = _itemUpdatedAt[apiItemId];
+      final ts = updatedAt ?? _itemUpdatedAt[apiItemId];
       return _api!.getCoverUrl(apiItemId, width: width, updatedAt: ts);
     }
 

@@ -1204,6 +1204,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get statsGoalReached => 'Ziel erreicht';
 
   @override
+  String get statsGoalPaceTickHint => 'Fill = progress, tick = time elapsed';
+
+  @override
   String get statsChartTitle => 'Hörstatistik';
 
   @override
@@ -3393,10 +3396,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get coverCacheCleared => 'Cover cache cleared';
 
   @override
-  String get cacheSystemCacheLabel => 'System cache';
+  String get cacheSystemCacheLabel => 'Cache size';
 
   @override
-  String get cacheSystemDataLabel => 'System data';
+  String get cacheSystemDataLabel => 'User data';
 
   @override
   String get cacheSystemStatsHint => 'As reported by Android for this app.';
@@ -7305,6 +7308,11 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String statsShortDate(String month, int day, int year) {
+    return '$month $day, $year';
+  }
+
+  @override
   String get statsScreenMonthJan => 'Jan.';
 
   @override
@@ -8500,6 +8508,30 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get timePm => 'PM';
+
+  @override
+  String get timePeriodDawn => 'Late night';
+
+  @override
+  String get timePeriodMorningEarly => 'Early morning';
+
+  @override
+  String get timePeriodMorning => 'Morning';
+
+  @override
+  String get timePeriodNoon => 'Midday';
+
+  @override
+  String get timePeriodAfternoon => 'Afternoon';
+
+  @override
+  String get timePeriodDusk => 'Evening';
+
+  @override
+  String get timePeriodNight => 'Night';
+
+  @override
+  String get timePeriodLateNight => 'Late evening';
 
   @override
   String get collectionPickerCollectionFallback => 'Sammlung';

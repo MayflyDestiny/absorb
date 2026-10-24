@@ -32,6 +32,36 @@ Color? accentFromCoverPalette(PaletteGenerator palette) {
       (palette.colors.isEmpty ? null : palette.colors.first);
 }
 
+/// Mean RGB of a (small, blurred) cover image, sampled every fourth pixel.
+///
+/// `ColorScheme.fromImageProvider` deliberately returns a tonal Material scheme,
+/// not a literal dominant colour: a pale-yellow cover can map to a brown
+/// `primaryContainer`. The card's first-frame background wants the colour the
+/// artwork actually reads as, so it uses this average instead.
+Future<Color?> averageCoverColor(ui.Image image) async {
+  try {
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return null;
+    final bytes = data.buffer.asUint8List();
+    var r = 0;
+    var g = 0;
+    var b = 0;
+    var count = 0;
+    for (var i = 0; i + 3 < bytes.length; i += 16) {
+      final alpha = bytes[i + 3];
+      if (alpha < 8) continue;
+      r += bytes[i];
+      g += bytes[i + 1];
+      b += bytes[i + 2];
+      count++;
+    }
+    if (count == 0) return null;
+    return Color.fromARGB(255, r ~/ count, g ~/ count, b ~/ count);
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Mean brightness of the top strip of a blurred cover - the strip the
 /// player's progress row sits on. Read from the small blurred image the cards
 /// already keep, and only every fourth pixel, so this is a few thousand

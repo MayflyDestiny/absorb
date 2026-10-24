@@ -67,12 +67,17 @@ class CoverCacheManager extends CacheManager with ImageCacheManager {
     }
   }
 
-  /// Drop the on-disk cover cache and the decoded images still held in memory.
-  Future<void> clear() async {
+  /// Drop the on-disk cover cache. By default the decoded images still held in
+  /// memory are dropped too; the settings cache sheet passes [clearMemory] false
+  /// so clearing the disk cache doesn't make every visible cover re-download
+  /// immediately and refill the cache while the user is still in the app.
+  Future<void> clear({bool clearMemory = true}) async {
     await emptyCache();
-    PaintingBinding.instance.imageCache
-      ..clear()
-      ..clearLiveImages();
+    if (clearMemory) {
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    }
   }
 }
 

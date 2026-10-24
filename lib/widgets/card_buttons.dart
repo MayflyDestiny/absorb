@@ -724,7 +724,13 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
       listenable: Listenable.merge([cast, widget.player]),
       builder: (context, _) {
         final castNow = widget.itemId != null && cast.isCasting && cast.castingItemId == widget.itemId;
-        final speedNow = castNow ? cast.castSpeed : (widget.isActive ? widget.player.speed : _savedSpeed);
+        // 冷启动点播放时该书还没加载完（player.speed 仍是临时 1.0），
+        // 此时优先显示该书已存的 _savedSpeed，避免先闪 1.0 再跳到 1.25x。
+        final speedNow = castNow
+            ? cast.castSpeed
+            : (widget.isActive && widget.player.hasBook
+                ? widget.player.speed
+                : _savedSpeed);
         final isDefaultSpeed = (speedNow - 1.0).abs() < 0.01;
         final Widget content;
         if (widget.compact) {
@@ -777,6 +783,7 @@ class CardSpeedSheet extends StatefulWidget {
 
 class _CardSpeedSheetState extends State<CardSpeedSheet> {
   late double _speed;
+  late final bool _isThisActive;
   List<double> _presets = List<double>.from(PlayerSettings.defaultSpeedPresets);
 
   bool get _isCasting {
@@ -786,9 +793,18 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
 
   @override void initState() {
     super.initState();
-    final initialSpeed = _isCasting ? ChromecastService().castSpeed : widget.player.speed;
-    _speed = (initialSpeed * 20).round() / 20.0;
-    if (!widget.player.hasBook && !_isCasting) _loadSavedSpeed();
+    // 只有操作的正是"当前正在播放的这本"时，初始速度才取自播放器、
+    // 调整才作用于播放器；否则（正在收听页的其它卡片）只读/存自己的倍率，
+    // 避免调卡片2/3时改到当前在播卡片的速度。
+    _isThisActive = widget.itemId != null && widget.itemId == widget.player.currentItemId;
+    if (_isCasting) {
+      _speed = (ChromecastService().castSpeed * 20).round() / 20.0;
+    } else if (_isThisActive) {
+      _speed = (widget.player.speed * 20).round() / 20.0;
+    } else {
+      _speed = 1.0; // 占位，_loadSavedSpeed 异步完成后会覆盖为该书已存倍率
+      _loadSavedSpeed();
+    }
     _loadPresets();
     PlayerSettings.settingsChanged.addListener(_loadPresets);
   }
@@ -826,7 +842,7 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
     setState(() => _speed = s.clamp(0.5, 5.0));
     if (_isCasting) {
       ChromecastService().setSpeed(_speed);
-    } else if (widget.player.hasBook) {
+    } else if (_isThisActive && widget.player.hasBook) {
       widget.player.setSpeed(_speed);
     }
     // Always save per-book speed so inactive cards pick it up
@@ -949,7 +965,8 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
   double get _displaySpeed {
     if (!_speedAdjustedTime) return 1.0;
     if (_isCasting) return ChromecastService().castSpeed;
-    return widget.player.currentItemId == widget.itemId
+    return (widget.player.currentItemId == widget.itemId &&
+            widget.player.hasBook)
         ? widget.player.speed
         : _savedSpeed;
   }
@@ -1237,29 +1254,75 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
 
     final titleC = TextEditingController(text: defaultTitle);
     final noteC = TextEditingController();
-    final result = await showDialog<Map<String, String>>(context: context, builder: (ctx) => AlertDialog(
-      scrollable: true,
-      title: Text(l.addBookmark),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: titleC, autofocus: true, decoration: InputDecoration(labelText: l.titleLabel, border: const OutlineInputBorder())),
-          const SizedBox(height: 12),
-          TextField(
-            controller: noteC,
-            minLines: 3,
-            maxLines: 8,
-            keyboardType: TextInputType.multiline,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(labelText: l.noteOptionalLabel, border: const OutlineInputBorder(), alignLabelWithHint: true),
-          ),
-        ]),
+    final cs = Theme.of(context).colorScheme;
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: cs.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              Icon(Icons.bookmark_add_outlined,
+                  color: cs.primary, size: 22),
+              const SizedBox(width: 10),
+              Text(l.addBookmark,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 16),
+            TextField(
+              controller: titleC,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: l.titleLabel,
+                filled: true,
+                fillColor: cs.surfaceContainerLow,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteC,
+              minLines: 3,
+              maxLines: 8,
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                labelText: l.noteOptionalLabel,
+                filled: true,
+                fillColor: cs.surfaceContainerLow,
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
+              const SizedBox(width: 8),
+              FilledButton(
+                  style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))),
+                  onPressed: () => Navigator.pop(ctx,
+                      {'title': titleC.text, 'note': noteC.text}),
+                  child: Text(l.save)),
+            ]),
+          ]),
+        ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.cancel)),
-        FilledButton(onPressed: () => Navigator.pop(ctx, {'title': titleC.text, 'note': noteC.text}), child: Text(l.save)),
-      ],
-    ));
+    );
     if (result != null && result['title']!.isNotEmpty) {
       final note = result['note']?.isNotEmpty == true ? result['note'] : null;
       await BookmarkService().addBookmark(itemId: widget._key, positionSeconds: pos, title: result['title']!, note: note, api: AudioPlayerService().currentApi);
@@ -2771,7 +2834,9 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
 
   double get _displaySpeed {
     if (!_speedAdjustedTime) return 1.0;
-    return widget.isActive ? widget.player.speed : _savedSpeed;
+    return (widget.isActive && widget.player.hasBook)
+        ? widget.player.speed
+        : _savedSpeed;
   }
 
   @override

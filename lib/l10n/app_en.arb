@@ -639,6 +639,7 @@
     "placeholders": { "done": { "type": "int" }, "target": { "type": "int" } }
   },
   "statsGoalReached": "Goal reached",
+  "statsGoalPaceTickHint": "Fill = progress, tick = time elapsed",
   "statsChartTitle": "Listening chart",
   "statsChartBar": "Bar",
   "statsChartLine": "Line",
@@ -1764,8 +1765,8 @@
   "clearAllCachesConfirm": "Delete every cache? They rebuild automatically as you use the app.",
   "cacheAllCleared": "All caches cleared",
   "coverCacheCleared": "Cover cache cleared",
-  "cacheSystemCacheLabel": "System cache",
-  "cacheSystemDataLabel": "System data",
+  "cacheSystemCacheLabel": "Cache size",
+  "cacheSystemDataLabel": "User data",
   "cacheSystemStatsHint": "As reported by Android for this app.",
   "cacheCodeCacheLabel": "Code cache",
   "cacheTilesSumLabel": "Listed categories total",
@@ -4033,6 +4034,14 @@
       }
     }
   },
+  "statsShortDate": "{month} {day}, {year}",
+  "@statsShortDate": {
+    "placeholders": {
+      "month": {"type": "String"},
+      "day": {"type": "int"},
+      "year": {"type": "int"}
+    }
+  },
   "statsScreenMonthJan": "Jan",
   "statsScreenMonthFeb": "Feb",
   "statsScreenMonthMar": "Mar",
@@ -4842,6 +4851,14 @@
   "sleepTimerSheetSpecificStartButtonPassed": "Already passed",
   "timeAm": "AM",
   "timePm": "PM",
+  "timePeriodDawn": "Late night",
+  "timePeriodMorningEarly": "Early morning",
+  "timePeriodMorning": "Morning",
+  "timePeriodNoon": "Midday",
+  "timePeriodAfternoon": "Afternoon",
+  "timePeriodDusk": "Evening",
+  "timePeriodNight": "Night",
+  "timePeriodLateNight": "Late evening",
   "collectionPickerCollectionFallback": "Collection",
   "collectionPickerNameWithCount": "{name} ({count})",
   "@collectionPickerNameWithCount": {

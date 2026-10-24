@@ -410,14 +410,37 @@ class LibraryScreenState extends State<LibraryScreen>
   // ── Tab state ──
   TabController? _tabController;
   int _currentTab = 0;
-  // Fades the tab content out/in around a switch, mirroring the app shell's
-  // page fade-through. Settled at 1.0 so the first frame is fully opaque.
+  final GlobalKey _pillBarKey = GlobalKey();
+  final List<GlobalKey> _tabKeys = List.generate(5, (_) => GlobalKey());
+  double _pillLeft = 0;
+  double _pillWidth = 0;
+  // Fades the tab content out/in around a switch. Settled at 1.0 so the first
+  // frame is fully opaque.
   late final AnimationController _tabTransition;
+  // 水平位移单独一个控制器：出场滑向切换方向的反侧，入场从目标方向滑回中心。
+  // 打断在途切换时从当前偏移继续，避免快速连点导致位置跳变。
+  late final AnimationController _tabSlide;
+  late final Listenable _tabAnimations;
+  double _tabSlideFrom = 0;
+  double _tabSlideTo = 0;
+  // 内容水平位移的方向：1 = 切到更大的索引（胶囊向右），-1 = 反向。
+  int _tabDirection = 1;
+  // 出场稍快、入场稍慢，配合 24dp 的小位移形成“推动”感。
+  static const Duration _tabOutDuration = Duration(milliseconds: 160);
+  static const Duration _tabInDuration = Duration(milliseconds: 220);
+  static const double _tabSlideDistance = 24;
   // Tab being switched to while the fade-out runs; a newer tap updates it so
   // rapid taps land on the last selection instead of being dropped.
   int? _pendingTab;
   // Podcast libraries: 0 = Shows grid, 1 = Episodes feed.
   int _podcastView = 0;
+  // 播客库“节目/单集”的共享胶囊，单独测量；和主 tab 栏一样用滑动胶囊，
+  // 而不是每个按钮自己 fade 背景。
+  final GlobalKey _podcastPillBarKey = GlobalKey();
+  final List<GlobalKey> _podcastTabKeys = List.generate(2, (_) => GlobalKey());
+  double _podcastPillLeft = 0;
+  double _podcastPillWidth = 0;
+  int? _pendingPodcastView;
 
   // ── Browse state (Library tab) ──
   bool _collapseSeries = false;
@@ -572,11 +595,14 @@ class LibraryScreenState extends State<LibraryScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measurePill());
     _tabTransition = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: _tabInDuration,
       value: 1.0,
     );
+    _tabSlide = AnimationController(vsync: this, duration: _tabOutDuration);
+    _tabAnimations = Listenable.merge([_tabTransition, _tabSlide]);
     _wasOffline = context.read<LibraryProvider>().isOffline;
     // Reveal driver is fed by NotificationListener at the screen level —
     // works across multiple per-tab scroll controllers in the IndexedStack
@@ -682,6 +708,10 @@ class LibraryScreenState extends State<LibraryScreen>
       // an unreachable 5th slot is harmless.
       _tabController = TabController(length: 5, vsync: this);
       _tabController!.addListener(_onTabChanged);
+      // 首帧构建时 TabController 还没创建，浮动 tab 栏因此没有挂载，initState
+      // 里的那次胶囊测量会落空。这里补一次重建让 tab 栏出现，之后它会在布局
+      // 结束后自动补测胶囊位置。
+      if (mounted) setState(() {});
     }
   }
 
@@ -694,19 +724,30 @@ class LibraryScreenState extends State<LibraryScreen>
       // Leaving the controller at 0 (or half-faded) would blank the library
       // content; forward() also cancels the pending reverse, so its completion
       // handler never commits a stale tab.
+      _tabTransition.duration = _tabInDuration;
+      // 透明度只会走完剩余的淡入距离，位移用同样的时长才同步。
+      _slideTabTo(0, _tabInDuration * (1 - _tabTransition.value));
       _tabTransition.forward();
       return;
     }
     // A newer selection supersedes any in-flight one, so rapid taps resolve to
     // the last tab instead of being ignored.
     _pendingTab = newTab;
+    // 出场阶段：旧内容朝切换方向的反侧滑出（切到右边则向左滑）。
+    _tabDirection = newTab > _currentTab ? 1 : -1;
     if (PlayerSettings.einkMode || snappyTransitionsNotifier.value) {
       _commitPendingTab();
       return;
     }
     // Already fading out: the running completion handler commits the (possibly
-    // updated) _pendingTab, so don't start a second fade.
-    if (_tabTransition.status == AnimationStatus.reverse) return;
+    // updated) _pendingTab, so don't start a second fade. 位移从当前位置改道
+    // 到新方向，不重新开始。
+    if (_tabTransition.status == AnimationStatus.reverse) {
+      _slideTabTo(-_tabDirection * _tabSlideDistance, _tabOutDuration);
+      return;
+    }
+    _tabTransition.duration = _tabOutDuration;
+    _slideTabTo(-_tabDirection * _tabSlideDistance, _tabOutDuration);
     _tabTransition.reverse().then(
       (_) {
         // Only commit when the fade-out actually finished; a newer forward()
@@ -720,11 +761,72 @@ class LibraryScreenState extends State<LibraryScreen>
     );
   }
 
+  /// 在当前帧布局完成后补测一次胶囊。tab 栏可能在本帧才挂载（首帧、从搜索
+  /// 返回、切换库类型），直接测量会拿不到上下文，所以统一放到 postFrame。
+  void _scheduleMeasurePill() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measurePill());
+  }
+
+  void _measurePill() {
+    final barCtx = _pillBarKey.currentContext;
+    final tabCtx = _tabKeys[_currentTab].currentContext;
+    if (barCtx == null || tabCtx == null) return;
+    final barBox = barCtx.findRenderObject() as RenderBox;
+    final tabBox = tabCtx.findRenderObject() as RenderBox;
+    final pos = tabBox.localToGlobal(Offset.zero, ancestor: barBox);
+    final size = tabBox.size;
+    if ((_pillLeft - pos.dx).abs() > 0.5 || (_pillWidth - size.width).abs() > 0.5) {
+      if (mounted) {
+        setState(() {
+          _pillLeft = pos.dx;
+          _pillWidth = size.width;
+        });
+      }
+    }
+  }
+
+  /// 当前内容相对中心点的水平位移（像素）。
+  double get _tabDx {
+    final t = Curves.easeInOutCubic.transform(_tabSlide.value);
+    return _tabSlideFrom + (_tabSlideTo - _tabSlideFrom) * t;
+  }
+
+  /// 从当前位移平滑滑到 [target]。起点取实时值，所以打断在途动画也不会跳。
+  void _slideTabTo(double target, Duration duration) {
+    final current = _tabDx;
+    if ((current - target).abs() < 0.5) {
+      _snapTabSlide(target);
+      return;
+    }
+    _tabSlideFrom = current;
+    _tabSlideTo = target;
+    _tabSlide
+      ..duration = duration
+      ..forward(from: 0);
+  }
+
+  /// 不做动画，直接把位移设到 [dx]。只在内容不可见或不需要动画时调用。
+  void _snapTabSlide(double dx) {
+    _tabSlide.stop();
+    _tabSlideFrom = dx;
+    _tabSlideTo = dx;
+    _tabSlide.value = 1;
+  }
+
   void _commitPendingTab() {
     final target = _pendingTab;
     if (!mounted || target == null) return;
     _pendingTab = null;
+    // e-ink / 快速模式不做动画，其余模式入场从目标方向那一侧滑回中心。
+    final animate = !(PlayerSettings.einkMode || snappyTransitionsNotifier.value);
+    // 最终目标可能和最初点的不同（快速连点），入场方向以最终目标为准。
+    _tabDirection = target > _currentTab ? 1 : -1;
+    if (animate) {
+      // 换页发生在透明度为 0 的时刻，先把新内容摆到目标侧，下一帧再滑进来。
+      _snapTabSlide(_tabDirection * _tabSlideDistance);
+    }
     setState(() => _currentTab = target);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measurePill());
     // Reset reveal so the SliverAppBar is fully visible after a tab switch.
     _revealDriver.resetToShown();
     PlayerSettings.setLibraryTab(target);
@@ -738,10 +840,104 @@ class LibraryScreenState extends State<LibraryScreen>
     } else if (target == 4) {
       _loadLists();
     }
-    if (PlayerSettings.einkMode || snappyTransitionsNotifier.value) {
+    if (!animate) {
+      _snapTabSlide(0);
       _tabTransition.value = 1.0;
     } else {
-      _tabTransition.forward();
+      _tabTransition.duration = _tabInDuration;
+      // 新 tab 的首帧构建/布局最重：先让它在 opacity 0 完成一帧，再开始淡入，
+      // 避免动画第一帧卡顿（与 AppShell 底栏切换的处理一致）。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _currentTab != target || _pendingTab != null) return;
+        if (_tabTransition.isDismissed) {
+          _slideTabTo(0, _tabInDuration);
+          _tabTransition.forward();
+        }
+      });
+    }
+  }
+
+  /// 播客库“节目/单集”切换复用主 tab 的淡出/位移控制器：两种库不会同时
+  /// 出现，因此不会和书籍 tab 的切换互相打断。
+  void _switchPodcastView(int newView) {
+    if (newView == _podcastView) return;
+    _pendingPodcastView = newView;
+    _tabDirection = newView > _podcastView ? 1 : -1;
+    if (PlayerSettings.einkMode || snappyTransitionsNotifier.value) {
+      _commitPendingPodcastView();
+      return;
+    }
+    if (_tabTransition.status == AnimationStatus.reverse) {
+      _slideTabTo(-_tabDirection * _tabSlideDistance, _tabOutDuration);
+      return;
+    }
+    _tabTransition.duration = _tabOutDuration;
+    _slideTabTo(-_tabDirection * _tabSlideDistance, _tabOutDuration);
+    _tabTransition.reverse().then(
+      (_) {
+        if (mounted && _tabTransition.isDismissed) {
+          _commitPendingPodcastView();
+        }
+      },
+      onError: (Object _) {
+        // Preempted by a newer switch; nothing to commit.
+      },
+    );
+  }
+
+  void _commitPendingPodcastView() {
+    final target = _pendingPodcastView;
+    if (!mounted || target == null) return;
+    _pendingPodcastView = null;
+    final animate = !(PlayerSettings.einkMode || snappyTransitionsNotifier.value);
+    _tabDirection = target > _podcastView ? 1 : -1;
+    if (animate) {
+      // 新内容先摆到目标方向那一侧，下一帧再滑回中心并淡入。
+      _snapTabSlide(_tabDirection * _tabSlideDistance);
+    }
+    setState(() => _podcastView = target);
+    PlayerSettings.setPodcastView(target);
+    _scheduleMeasurePodcastPill();
+    _revealDriver.resetToShown();
+    if (!animate) {
+      _snapTabSlide(0);
+      _tabTransition.value = 1.0;
+    } else {
+      _tabTransition.duration = _tabInDuration;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _podcastView != target ||
+            _pendingPodcastView != null) {
+          return;
+        }
+        if (_tabTransition.isDismissed) {
+          _slideTabTo(0, _tabInDuration);
+          _tabTransition.forward();
+        }
+      });
+    }
+  }
+
+  void _scheduleMeasurePodcastPill() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measurePodcastPill());
+  }
+
+  void _measurePodcastPill() {
+    final barCtx = _podcastPillBarKey.currentContext;
+    final tabCtx = _podcastTabKeys[_podcastView].currentContext;
+    if (barCtx == null || tabCtx == null) return;
+    final barBox = barCtx.findRenderObject() as RenderBox;
+    final tabBox = tabCtx.findRenderObject() as RenderBox;
+    final pos = tabBox.localToGlobal(Offset.zero, ancestor: barBox);
+    final size = tabBox.size;
+    if ((_podcastPillLeft - pos.dx).abs() > 0.5 ||
+        (_podcastPillWidth - size.width).abs() > 0.5) {
+      if (mounted) {
+        setState(() {
+          _podcastPillLeft = pos.dx;
+          _podcastPillWidth = size.width;
+        });
+      }
     }
   }
 
@@ -1555,6 +1751,7 @@ class LibraryScreenState extends State<LibraryScreen>
     _tabController?.removeListener(_onTabChanged);
     _tabController?.dispose();
     _tabTransition.dispose();
+    _tabSlide.dispose();
     PlayerSettings.settingsChanged.removeListener(_onSettingsChanged);
     try {
       final lib = context.read<LibraryProvider>();
@@ -3420,6 +3617,8 @@ lib.registerHasCoverFromItem(id, r);
     final selectableCount = selectableItems.length;
 
     return Scaffold(
+      // 让内层 Scaffold 按键盘 inset 收缩：媒体库的浮动 tab 栏会跟着输入法
+      // 上移（外层 AppShell 底栏仍在键盘后面，不会出现黑色底栏）。
       backgroundColor: scaffoldBg,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: !_selectionMode
@@ -3549,19 +3748,36 @@ lib.registerHasCoverFromItem(id, r);
                             )
                           : hasTabs
                           ? _buildTabbedContent(cs, tt)
-                          : _podcastView == 1
-                          ? PodcastEpisodeFeed(
-                              key: ValueKey(
-                                'epfeed-${libWatch.selectedLibraryId}',
-                              ),
-                              libraryId: libWatch.selectedLibraryId ?? '',
-                              headerSliver: _buildHeaderSliver(
-                                context,
-                                useSharedFocus: true,
-                              ),
-                            )
-                          : _buildGrid(
-                              _buildHeaderSliver(context, useSharedFocus: true),
+                          : AnimatedBuilder(
+                              animation: _tabAnimations,
+                              // 内容作为 child 传入，动画帧只重建位移/透明度这一层。
+                              child: _podcastView == 1
+                                  ? PodcastEpisodeFeed(
+                                      key: ValueKey(
+                                        'epfeed-${libWatch.selectedLibraryId}',
+                                      ),
+                                      libraryId:
+                                          libWatch.selectedLibraryId ?? '',
+                                      headerSliver: _buildHeaderSliver(
+                                        context,
+                                        useSharedFocus: true,
+                                      ),
+                                    )
+                                  : _buildGrid(
+                                      _buildHeaderSliver(
+                                        context,
+                                        useSharedFocus: true,
+                                      ),
+                                    ),
+                              builder: (context, child) {
+                                return Transform.translate(
+                                  offset: Offset(_tabDx, 0),
+                                  child: Opacity(
+                                    opacity: _tabTransition.value,
+                                    child: child,
+                                  ),
+                                );
+                              },
                             );
                     },
                   ),
@@ -3880,8 +4096,10 @@ lib.registerHasCoverFromItem(id, r);
   }
 
   // Shows | Episodes switcher for podcast libraries, styled like the book
-  // libraries' floating tab pills.
+  // libraries' floating tab pills: one shared capsule slides between the two
+  // labels instead of each button fading its own background.
   Widget _buildPodcastViewPill(ColorScheme cs) {
+    _scheduleMeasurePodcastPill();
     final l = AppLocalizations.of(context)!;
     final labels = [l.appShellShowsTab, l.libraryTabEpisodes];
     return ClipRRect(
@@ -3895,62 +4113,97 @@ lib.registerHasCoverFromItem(id, r);
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(labels.length, (i) {
-              final active = _podcastView == i;
-              return GestureDetector(
-                onTap: () {
-                  if (!active) {
-                    setState(() => _podcastView = i);
-                    PlayerSettings.setPodcastView(i);
-                  } else if (i == 0) {
-                    // Re-tap on the active Shows pill opens the sort sheet,
-                    // same as the book libraries' pills.
-                    _showSortFilterSheet(
-                      context,
-                      cs,
-                      Theme.of(context).textTheme,
-                    );
-                  }
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: active ? 14 : 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: active
-                        ? cs.primary.withValues(alpha: 0.15)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        labels[i],
-                        maxLines: 1,
-                        softWrap: false,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: active
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          color: active ? cs.primary : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      if (active && i == 0) ...[
-                        const SizedBox(width: 4),
-                        Icon(Icons.sort_rounded, size: 14, color: cs.primary),
-                      ],
-                    ],
+          child: Stack(
+            key: _podcastPillBarKey,
+            children: [
+              if (_podcastPillWidth > 0)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  left: _podcastPillLeft,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: _podcastPillWidth,
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                 ),
-              );
-            }),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(labels.length, (i) {
+                  final active = _podcastView == i;
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (!active) {
+                        _switchPodcastView(i);
+                      } else if (i == 0) {
+                        // Re-tap on the active Shows pill opens the sort sheet,
+                        // same as the book libraries' pills.
+                        _showSortFilterSheet(
+                          context,
+                          cs,
+                          Theme.of(context).textTheme,
+                        );
+                      }
+                    },
+                    child: Container(
+                      key: _podcastTabKeys[i],
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            labels[i],
+                            maxLines: 1,
+                            softWrap: false,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: active
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: active
+                                  ? cs.primary
+                                  : cs.onSurfaceVariant,
+                            ),
+                          ),
+                          if (active && i == 0) ...[
+                            const SizedBox(width: 4),
+                            TweenAnimationBuilder<double>(
+                              tween: Tween<double>(begin: 0, end: 1),
+                              duration:
+                                  PlayerSettings.einkMode ||
+                                      snappyTransitionsNotifier.value
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 160),
+                              curve: Curves.easeOutCubic,
+                              builder: (context, t, child) => Opacity(
+                                opacity: t,
+                                child: Transform.scale(
+                                  scale: 0.85 + 0.15 * t,
+                                  child: child,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.sort_rounded,
+                                size: 14,
+                                color: cs.primary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
           ),
         ),
       ),
@@ -3958,6 +4211,10 @@ lib.registerHasCoverFromItem(id, r);
   }
 
   Widget _buildFloatingTabBar(ColorScheme cs) {
+    // tab 栏每次构建后都补测一次胶囊：首次挂载、恢复上次的 tab、从播客库
+    // 切回书籍库等场景下，_pillLeft/_pillWidth 还是旧值或 0。_measurePill
+    // 只在位置/宽度真正变化时才 setState，量准之后不会反复触发重建。
+    _scheduleMeasurePill();
     final l = AppLocalizations.of(context)!;
     final labels = [
       l.libraryTabLibrary,
@@ -3985,68 +4242,100 @@ lib.registerHasCoverFromItem(id, r);
               ),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(labels.length, (i) {
-                    final active = _currentTab == i;
-                    return GestureDetector(
-                      onTap: () {
-                        if (active) {
-                          _showSortFilterSheet(
-                            context,
-                            cs,
-                            Theme.of(context).textTheme,
-                          );
-                        } else {
-                          // Set the index directly (no animateTo) so the fade
-                          // starts on the same frame as the tap instead of
-                          // waiting out the tab controller's 300ms animation.
-                          _tabController?.index = i;
-                        }
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: active ? 14 : 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: active
-                              ? cs.primary.withValues(alpha: 0.15)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              labels[i],
-                              maxLines: 1,
-                              softWrap: false,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: active
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: active
-                                    ? cs.primary
-                                    : cs.onSurfaceVariant,
-                              ),
-                            ),
-                            if (active) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.sort_rounded,
-                                size: 14,
-                                color: cs.primary,
-                              ),
-                            ],
-                          ],
+                child: Stack(
+                  key: _pillBarKey,
+                  children: [
+                    if (_pillWidth > 0)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        left: _pillLeft,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: _pillWidth,
+                          decoration: BoxDecoration(
+                            color: cs.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                         ),
                       ),
-                    );
-                  }),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(labels.length, (i) {
+                        final active = _currentTab == i;
+                        return GestureDetector(
+                          // 整个 tab 的可视区域都要能点中。子 Container 只有 padding、
+                          // 没有背景，默认的 deferToChild 会让左右 padding 成为死区，
+                          // 点在文字旁边就没有反应。
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (active) {
+                              _showSortFilterSheet(
+                                context,
+                                cs,
+                                Theme.of(context).textTheme,
+                              );
+                            } else {
+                              _tabController?.index = i;
+                            }
+                          },
+                          child: Container(
+                            key: _tabKeys[i],
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  labels[i],
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: active
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: active
+                                        ? cs.primary
+                                        : cs.onSurfaceVariant,
+                                  ),
+                                ),
+                                if (active) ...[
+                                  const SizedBox(width: 4),
+                                  // 只淡入/缩放图标，不动布局宽度：胶囊是换页后
+                                  // 按最终布局测量的，宽度动画会让它先量到中间值。
+                                  TweenAnimationBuilder<double>(
+                                    tween: Tween<double>(begin: 0, end: 1),
+                                    duration:
+                                        PlayerSettings.einkMode ||
+                                            snappyTransitionsNotifier.value
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 160),
+                                    curve: Curves.easeOutCubic,
+                                    builder: (context, t, child) => Opacity(
+                                      opacity: t,
+                                      child: Transform.scale(
+                                        scale: 0.85 + 0.15 * t,
+                                        child: child,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.sort_rounded,
+                                      size: 14,
+                                      color: cs.primary,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -4266,27 +4555,32 @@ lib.registerHasCoverFromItem(id, r);
     final effectiveTab = _currentTab;
     Widget headerFor(int i) =>
         _buildHeaderSliver(context, useSharedFocus: i == effectiveTab);
-    // Same fade-through the app shell uses for its main tabs: the active child
-    // fades out over the backdrop, the stack swaps at zero opacity, then the
-    // new child fades back in (driven by _tabTransition in _onTabChanged). No
-    // cross-slide — that shifted content that isn't laid out to match and read
-    // as a jump/flicker. The floating tab bar sits outside this transition, so
-    // it never blinks while the content swaps underneath it.
-    return FadeTransition(
-      opacity: _tabTransition,
-      // Beside a navigation rail the grid gets less than the screen's width.
+    // 方向性切换：旧内容向切换方向的反侧轻移并淡出，新内容从目标方向那一侧
+    // 轻移回中心并淡入（透明度由 _tabTransition、位移由 _tabSlide 驱动）。
+    // 位移只有 24dp，不整页横移，避免露边或掉帧；IndexedStack 的布局和滚动
+    // 位置不受影响。浮动 tab 栏在切换层之外，换页时不会跟着闪。
+    return AnimatedBuilder(
+      animation: _tabAnimations,
+      // 内容作为 child 传入，动画帧只重建位移/透明度这一层。
       child: CoverGridScope(
-      child: IndexedStack(
-        index: effectiveTab,
-        children: [
-          _buildGrid(headerFor(0)),
-          _buildSeriesGrid(headerFor(1)),
-          _buildAuthorsGrid(headerFor(2)),
-          _buildNarratorsGrid(headerFor(3)),
-          _buildListsGrid(headerFor(4)),
-        ],
+        // Beside a navigation rail the grid gets less than the screen's width.
+        child: IndexedStack(
+          index: effectiveTab,
+          children: [
+            _buildGrid(headerFor(0)),
+            _buildSeriesGrid(headerFor(1)),
+            _buildAuthorsGrid(headerFor(2)),
+            _buildNarratorsGrid(headerFor(3)),
+            _buildListsGrid(headerFor(4)),
+          ],
+        ),
       ),
-      ),
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(_tabDx, 0),
+          child: Opacity(opacity: _tabTransition.value, child: child),
+        );
+      },
     );
   }
 

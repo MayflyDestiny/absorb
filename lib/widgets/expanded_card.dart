@@ -302,8 +302,8 @@ class _ExpandedCardState extends State<ExpandedCard> {
   /// (which carries `?token=`, and changes whenever the token rotates).
   String? _coverIdentity(String? coverUrl) {
     if (coverUrl == null) return null;
-    if (coverUrl.startsWith('/')) return coverUrl;
-    return stableCoverCacheKey(coverUrl);
+    // 与 AbsorbingCard 保持一致：本地封面文件被覆盖后 identity 也会变。
+    return coverCacheIdentity(coverUrl);
   }
 
   @override
@@ -862,6 +862,10 @@ class _ExpandedCardState extends State<ExpandedCard> {
       },
       child: Scaffold(
         backgroundColor: cs.surface,
+        // Keyboard-bearing sheets (bookmarks, chapter search) are pushed as their
+        // own routes and handle insets themselves; keep this scaffold from
+        // resizing so the Expanded cover doesn't shrink while the keyboard is up.
+        resizeToAvoidBottomInset: false,
         body: Stack(
           fit: StackFit.expand,
           children: [
@@ -1171,6 +1175,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                                                     .cover,
                                                                 httpHeaders:
                                                                     mediaHeaders,
+                                                                fadeInDuration:
+                                                                    const Duration(
+                                                                      milliseconds:
+                                                                          120,
+                                                                    ),
                                                                 errorWidget:
                                                                     (
                                                                       _,
@@ -1196,6 +1205,11 @@ class _ExpandedCardState extends State<ExpandedCard> {
                                                                           .contain,
                                                                 httpHeaders:
                                                                     mediaHeaders,
+                                                                fadeInDuration:
+                                                                    const Duration(
+                                                                      milliseconds:
+                                                                          120,
+                                                                    ),
                                                                 placeholder:
                                                                     (
                                                                       _,

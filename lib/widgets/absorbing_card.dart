@@ -12,6 +12,7 @@ import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
 import '../services/chapter_lookup.dart';
 import '../services/cover_blur_cache.dart';
+import '../services/cover_palette_cache.dart';
 import '../services/download_service.dart';
 import 'absorbing_shared.dart';
 import 'ebook_router.dart';
@@ -31,7 +32,8 @@ import '../main.dart'
         colorSourceNotifier,
         useColorEverywhereNotifier,
         manualSeedNotifier,
-        manualColorScheme;
+        manualColorScheme,
+        snappyTransitionsNotifier;
 import 'stable_cached_network_image.dart';
 
 class AbsorbingCard extends StatefulWidget {
@@ -69,6 +71,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
   // file added to this book) re-runs the full-item fetch. The card is kept
   // alive with a stable key, so without this it never picks up a server change.
   int? _lastSeenUpdatedAt;
+  // The shelf item's updatedAt is usually present before the library registers
+  // it. If both are absent at mount, the first later registration is a baseline,
+  // not a server change; treating it as one used to reset the cover colours on
+  // cold start.
+  bool _updatedAtBaselineKnown = false;
   bool _refetchingItem = false;
   // Set when a server change lands mid-fetch, so the in-flight pass is followed
   // by one more instead of swallowing the update.
@@ -76,12 +83,18 @@ class AbsorbingCardState extends State<AbsorbingCard>
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
   CoverBlurLease? _blurLease; // Cached blurred background (owned by the cache)
+  // 上一次落盘的模糊封面：当前 identity 还没稳定/模糊图还没好时先当首帧底图，
+  // 让首帧直接是模糊封面，而不是主题色或提取色。
+  CoverBlurLease? _placeholderBlurLease;
   String? _blurredCoverIdentity;
   String? _pendingBlurIdentity;
   // Mean brightness of the blurred cover's top strip, which is what the
   // progress row is drawn on. Null until the blur is ready, or when the card
   // isn't using the blurred background at all.
   double? _coverTopLuminance;
+  // 封面平均色（落盘的 palette 缓存）；用于第一帧背景/占位，而不是 Material
+  // scheme 里偏色/偏暗的 primaryContainer。
+  Color? _coverAverageColor;
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
   int _buttonVisibleCount = PlayerSettings.defaultButtonVisibleCount;
   bool _iconsOnly = false;
@@ -89,6 +102,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
   String _cardBackground = 'blurred';
+  // 背景模式是异步读取的；读出之前先按默认的 blurred 预热模糊图，保证冷启动
+  // 第一帧的封面占位/背景尽快拿到落盘的模糊图。
+  bool _cardBackgroundReady = false;
   bool _speedAdjustedTime = false;
   double _progressTextScale =
       1.0; // elapsed/remaining/percent text size (GH #230)
@@ -204,18 +220,36 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
     // A downloaded book's cover.jpg is rendered by the homescreen widget /
     // lockscreen, so it is guaranteed present and bytes if the record is marked
-    // downloaded. Prefer it - the card then never races a single-shot server
-    // fetch on a cold start (which used to leave the hero card blank until the
-    // registered-updatedAt re-resolve landed). Fall back to the same shelf URL
-    // (same width and cache key as the expanded card) otherwise.
+    // downloaded. However, DownloadService restores its records after the first
+    // frame; preferring the local file made the card start on the shelf URL and
+    // then switch to the local path, resetting the blur/palette and visibly
+    // reloading the cover. While online, keep the shelf URL (it is prewarmed and
+    // cached); use the local copy only when offline.
     final dl = DownloadService().getInfo(_itemId);
+    final itemUpdatedAt = (widget.item['updatedAt'] as num?)?.toInt();
+    final mapUpdatedAt = lib.itemUpdatedAt(_itemId);
+    // Use the shelf item's ts from the first frame when possible: the library's
+    // map can register it a frame later, and that URL/ts flip was resetting the
+    // cover blur/palette on every cold start.
+    final coverUpdatedAt =
+        itemUpdatedAt != null &&
+            (mapUpdatedAt == null || itemUpdatedAt >= mapUpdatedAt)
+        ? itemUpdatedAt
+        : mapUpdatedAt;
+    final shelfUrl = lib.getCoverUrl(
+      _itemId,
+      width: 1200,
+      updatedAt: coverUpdatedAt,
+    );
+    if (!lib.isOffline && shelfUrl != null && shelfUrl.isNotEmpty) {
+      return shelfUrl;
+    }
     if (dl.status == DownloadStatus.downloaded) {
       final local =
           _usableLocalCover(dl.localCoverPath) ??
           DownloadService().syncLocalCoverProbe(_itemId);
       if (local != null) return local;
     }
-    final shelfUrl = lib.getCoverUrl(_itemId, width: 1200);
     if (shelfUrl != null && shelfUrl.isNotEmpty) return shelfUrl;
 
     final bookLocal = _usableLocalCover(
@@ -239,8 +273,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
   String? _coverIdentity(String? coverUrl, LibraryProvider lib) {
     if (coverUrl == null) return null;
-    if (coverUrl.startsWith('/')) return coverUrl;
-    return stableCoverCacheKey(coverUrl);
+    // 本地封面原地覆盖时路径不变，identity 里带上 mtime/size 才能让模糊背景
+    // 和配色缓存跟着封面一起更新。
+    return coverCacheIdentity(coverUrl);
   }
 
   String? _currentCoverIdentity() {
@@ -249,18 +284,131 @@ class AbsorbingCardState extends State<AbsorbingCard>
     return _coverIdentity(coverUrl, lib);
   }
 
+  /// 背景/封面占位共用的淡入时长：冷启动读盘时用 220ms 的交叉淡入，
+  /// 避免纯色占位瞬间跳成图片。电子墨水/快速模式不做动画。
+  Duration get _bgFadeDuration =>
+      (PlayerSettings.einkMode || snappyTransitionsNotifier.value)
+      ? Duration.zero
+      : const Duration(milliseconds: 220);
+
+  /// 封面从模糊/渐变占位淡入的时长；电子墨水/快速模式直接切换，避免残影。
+  Duration get _coverFadeDuration =>
+      (PlayerSettings.einkMode || snappyTransitionsNotifier.value)
+      ? Duration.zero
+      : const Duration(milliseconds: 180);
+
+  /// Keep the outgoing blurred bitmap as the crossfade base when the cover
+  /// identity changes, instead of releasing it before the new blur is ready.
+  void _parkCurrentBlurForCrossfade() {
+    final old = _blurLease;
+    if (old == null) return;
+    _placeholderBlurLease?.release();
+    _placeholderBlurLease = old;
+    _blurLease = null;
+    _blurredCoverIdentity = null;
+  }
+
+  /// 封面加载/缺图时的占位：中性底色 + 已缓存的模糊封面（上一次落盘的或当前
+  /// 的）。不再用提取的平均色/主题色做过场；模糊图出现时淡入，加载中不画图标，
+  /// 只有真正缺图/错误时才显示图标。
+  Widget _coverLoadingPlaceholder(
+    ColorScheme cs, {
+    bool showIcon = false,
+  }) {
+    final current = _blurLease;
+    final placeholder = _placeholderBlurLease;
+    final neutral = ColoredBox(
+      color: cs.surfaceContainerHighest,
+      child: showIcon
+          ? Center(
+              child: Icon(
+                Icons.auto_stories_rounded,
+                size: 36,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.35),
+              ),
+            )
+          : const SizedBox.expand(),
+    );
+    if (current == null && placeholder == null) return neutral;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        neutral,
+        if (placeholder != null)
+          RawImage(
+            image: placeholder.image,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          ),
+        if (current != null)
+          TweenAnimationBuilder<double>(
+            key: ValueKey(
+              'blur-ph-${_blurredCoverIdentity ?? current.hashCode}',
+            ),
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: _bgFadeDuration,
+            curve: Curves.easeOutCubic,
+            builder: (context, t, child) => Opacity(opacity: t, child: child),
+            child: RawImage(
+              image: current.image,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     // Baseline the server-change tick so only a CHANGE after mount re-fetches
-    // (the initial fill is handled by _fetchChaptersIfNeeded below).
-    _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(_itemId);
+    // (the initial fill is handled by _fetchChaptersIfNeeded below). Prefer the
+    // shelf item's own updatedAt: the library may register it only a frame
+    // later, and that first write must not look like a server cover change.
+    final lib = context.read<LibraryProvider>();
+    _lastSeenUpdatedAt = lib.itemUpdatedAt(_itemId) ??
+        (widget.item['updatedAt'] as num?)?.toInt();
+    _updatedAtBaselineKnown = _lastSeenUpdatedAt != null;
     _fetchChaptersIfNeeded();
     _startChapterTracking();
     ChromecastService().addListener(_onCastChanged);
     DownloadService().addListener(_onDownloadChanged);
     PlayerSettings.settingsChanged.addListener(_reloadButtonOrder);
     _reloadButtonOrder();
+    // AbsorbingScreen prewarms the first two cards' blurs before building them;
+    // take a synchronous lease here so the very first frame is that blurred
+    // cover instead of waiting for an async acquire.
+    final coverUrl = _resolveCoverUrl();
+    final identity = _coverIdentity(coverUrl, lib);
+    if (identity != null) {
+      final cached = CoverBlurCache.instance.lease(identity);
+      if (cached != null) {
+        _blurLease = cached;
+        _blurredCoverIdentity = identity;
+      }
+    }
+    // 首帧底图：main() 已把上一次的模糊封面预加载到内存，这里同步取 lease，
+    // 卡片第一帧就是模糊封面/背景；只有冷启动首次安装等没有缓存时才走异步。
+    final cachedLatest = CoverBlurCache.instance.cachedLatestLeaseFor(
+      _lyricsKey,
+    );
+    if (cachedLatest != null) {
+      _placeholderBlurLease = cachedLatest;
+    } else {
+      unawaited(_loadPlaceholderBlur());
+    }
+  }
+
+  Future<void> _loadPlaceholderBlur() async {
+    final lease = await CoverBlurCache.instance.latestLeaseFor(_lyricsKey);
+    if (!mounted || _blurLease != null) {
+      lease?.release();
+      return;
+    }
+    setState(() => _placeholderBlurLease = lease);
   }
 
   void _onSpeedMaybeChanged() => _loadSavedSpeed();
@@ -342,13 +490,40 @@ class AbsorbingCardState extends State<AbsorbingCard>
         setState(() => _progressTextScale = v);
     });
     PlayerSettings.getCardBackground().then((v) {
-      if (mounted && v != _cardBackground) setState(() => _cardBackground = v);
+      if (!mounted) return;
+      if (v != _cardBackground) setState(() => _cardBackground = v);
+      _cardBackgroundReady = true;
+      if (v == 'blurred') _primeBlurFromCache();
     });
     _loadSavedSpeed();
   }
 
   void _onDownloadChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // 已下载封面的文件可能被原地替换（重新下载/清晰度升级）：路径不变，
+    // 只有带 mtime/size 的 identity 会变。身份一变就丢掉旧的 blur/scheme，
+    // 让 build 里的 fallback 重新走 _onCoverLoaded，按新身份重建背景。
+    final lib = context.read<LibraryProvider>();
+    final identity = _coverIdentity(_resolveCoverUrl(), lib);
+    final previous = _blurredCoverIdentity ?? _coverProviderIdentity;
+    if (identity != null && previous != null && identity != previous) {
+      final brightness = Theme.of(context).brightness;
+      final cachedScheme = CoverPaletteCache.instance.schemeFor(
+        identity,
+        brightness,
+      );
+      _parkCurrentBlurForCrossfade();
+      _pendingBlurIdentity = null;
+      _rawCoverScheme = cachedScheme;
+      _coverBrightness = cachedScheme != null ? brightness : null;
+      _coverTopLuminance = CoverPaletteCache.instance.luminanceFor(identity);
+      _coverAverageColor = CoverPaletteCache.instance.averageColorFor(identity);
+      _coverProvider = null;
+      _coverProviderIdentity = null;
+      // 新封面的模糊图可能已经在磁盘缓存里，立即起加载，不用等封面解码。
+      _primeBlurFromCache();
+    }
+    setState(() {});
   }
 
   void _onCastChanged() {
@@ -431,6 +606,14 @@ class AbsorbingCardState extends State<AbsorbingCard>
   /// duplicate requests.
   void _maybeRefetchOnServerChange(LibraryProvider lib) {
     final ts = lib.itemUpdatedAt(_itemId);
+    // The first ts registration after a cold start is the baseline, not an
+    // item_updated event; resetting here made the cover colours flip on every
+    // start before the ts was known.
+    if (!_updatedAtBaselineKnown) {
+      _lastSeenUpdatedAt = ts;
+      _updatedAtBaselineKnown = ts != null;
+      return;
+    }
     if (ts == _lastSeenUpdatedAt) return;
     _lastSeenUpdatedAt = ts;
     // The cover may have changed server-side. Drop the cached provider and
@@ -438,6 +621,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
     // blurred background already re-derives itself on URL change in build).
     _coverProvider = null;
     _rawCoverScheme = null;
+    _coverAverageColor = null;
     if (_refetchingItem) {
       // A request is already in flight. It was issued for an older item state,
       // so arrange one more pass rather than letting this update be dropped -
@@ -533,6 +717,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // 冷启动先用落盘的封面配色，避免第一帧主题色再跳成封面色调。
+    _adoptCachedCoverPalette();
+    // 封面 URL 一确定就先起模糊图加载；磁盘缓存通常已有，不必等 1200px
+    // 封面解码完成，冷启动时背景/占位能更早从模糊图开始。
+    _primeBlurFromCache();
     // Re-derive cover color scheme when theme brightness changes
     _rederiveCoverScheme();
   }
@@ -552,12 +741,14 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _blurredCoverIdentity = null;
       _pendingBlurIdentity = null;
       _coverTopLuminance = null;
+      _coverAverageColor = null;
       _fetchedChapters = null;
       _fetchedEbookFile = null;
       _lastChapterIdx = -1;
-      _lastSeenUpdatedAt = context.read<LibraryProvider>().itemUpdatedAt(
-        _itemId,
-      );
+      _lastSeenUpdatedAt =
+          context.read<LibraryProvider>().itemUpdatedAt(_itemId) ??
+          (widget.item['updatedAt'] as num?)?.toInt();
+      _updatedAtBaselineKnown = _lastSeenUpdatedAt != null;
       _fetchChaptersIfNeeded();
       // The per-show speed is item state too - without this, a card recycled
       // for a different item shows times computed at the old item's speed.
@@ -577,6 +768,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
     widget.player.removeListener(_onSpeedMaybeChanged);
     _chapterTrackSub?.cancel();
     _blurLease?.release();
+    _placeholderBlurLease?.release();
     _edgeBarExpanded.dispose();
     super.dispose();
   }
@@ -584,8 +776,25 @@ class AbsorbingCardState extends State<AbsorbingCard>
   void _onCoverLoaded(ImageProvider provider, String coverIdentity) {
     if (_currentCoverIdentity() != coverIdentity) return;
     if (_coverProviderIdentity != coverIdentity) {
-      _rawCoverScheme = null;
-      _coverBrightness = null;
+      final brightness = Theme.of(context).brightness;
+      final cachedScheme = CoverPaletteCache.instance.schemeFor(
+        coverIdentity,
+        brightness,
+      );
+      // Only a real replacement (we had a previous provider) needs the
+      // outgoing blur parked for the crossfade; the first cover assignment is
+      // not a change.
+      if (_coverProviderIdentity != null) {
+        _parkCurrentBlurForCrossfade();
+      }
+      _rawCoverScheme = cachedScheme;
+      _coverBrightness = cachedScheme != null ? brightness : null;
+      _coverAverageColor = CoverPaletteCache.instance.averageColorFor(
+        coverIdentity,
+      );
+      _coverTopLuminance ??= CoverPaletteCache.instance.luminanceFor(
+        coverIdentity,
+      );
     }
     _coverProvider = provider;
     _coverProviderIdentity = coverIdentity;
@@ -625,6 +834,52 @@ class AbsorbingCardState extends State<AbsorbingCard>
     _onCoverLoaded(provider, coverIdentity);
   }
 
+  /// 冷启动时先把上次落盘的配色和顶部亮度铺上，卡片第一帧就是正确色调。
+  void _adoptCachedCoverPalette() {
+    final lib = context.read<LibraryProvider>();
+    final coverUrl = _resolveCoverUrl();
+    final identity = _coverIdentity(coverUrl, lib);
+    if (identity == null) return;
+    final brightness = Theme.of(context).brightness;
+    if (_rawCoverScheme == null) {
+      final scheme = CoverPaletteCache.instance.schemeFor(identity, brightness);
+      if (scheme != null) {
+        _rawCoverScheme = scheme;
+        _coverBrightness = brightness;
+      }
+    }
+    _coverTopLuminance ??= CoverPaletteCache.instance.luminanceFor(identity);
+    _coverAverageColor ??= CoverPaletteCache.instance.averageColorFor(identity);
+  }
+
+  /// 封面 URL 一确定就先起模糊图加载（磁盘缓存通常已有），不必等 1200px
+  /// 封面解码完成；冷启动时背景和封面占位能更早用上模糊图。
+  void _primeBlurFromCache() {
+    // 背景设置是异步读的；设置还没回来时先按默认的 blurred 起加载，别让
+    // 模糊图排在异步设置后面。如果最终是 gradient/off，模糊图仍会作为封面
+    // 占位使用；设置确认后不再继续生成新的。
+    if (_cardBackgroundReady && _cardBackground != 'blurred') return;
+    final lib = context.read<LibraryProvider>();
+    final coverUrl = _resolveCoverUrl();
+    final identity = _coverIdentity(coverUrl, lib);
+    if (coverUrl == null || identity == null) return;
+    if (_blurredCoverIdentity == identity ||
+        _pendingBlurIdentity == identity) {
+      return;
+    }
+    _pendingBlurIdentity = identity;
+    // 显式标注 ImageProvider：条件表达式的两个分支是不同实现类，直接让
+    // 编译器推断会退化成 Object，导致参数类型不匹配。
+    final ImageProvider provider = coverUrl.startsWith('/')
+        ? FileImage(File(coverUrl))
+        : CachedNetworkImageProvider(
+            coverUrl,
+            headers: lib.mediaHeaders,
+            cacheKey: identity,
+          );
+    _precacheBlur(provider, identity);
+  }
+
   void _rederiveCoverScheme() {
     final provider = _coverProvider;
     final coverIdentity = _coverProviderIdentity;
@@ -632,8 +887,26 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final brightness = Theme.of(context).brightness;
     if (_rawCoverScheme != null && _coverBrightness == brightness) return;
     _coverBrightness = brightness;
+    final cached = CoverPaletteCache.instance.schemeFor(
+      coverIdentity,
+      brightness,
+    );
+    if (cached != null) {
+      // 缓存命中：跳过 ColorScheme.fromImageProvider 的解码 + 量化。
+      _rawCoverScheme = cached;
+      _coverTopLuminance ??= CoverPaletteCache.instance.luminanceFor(
+        coverIdentity,
+      );
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _coverProviderIdentity == coverIdentity) setState(() {});
+        });
+      }
+      return;
+    }
     ColorScheme.fromImageProvider(provider: provider, brightness: brightness)
         .then((s) {
+          CoverPaletteCache.instance.storeScheme(coverIdentity, brightness, s);
           if (mounted &&
               _coverProviderIdentity == coverIdentity &&
               _coverBrightness == brightness) {
@@ -670,19 +943,41 @@ class AbsorbingCardState extends State<AbsorbingCard>
       // top-strip brightness only tunes the scrim gradient, and reading it back
       // is another image round-trip - it used to sit in front of the swap,
       // which is what read as a beat of lag before the blur appeared.
-      final known = CoverBlurCache.instance.luminanceOf(coverIdentity);
+      final known = CoverBlurCache.instance.luminanceOf(coverIdentity) ??
+          CoverPaletteCache.instance.luminanceFor(coverIdentity);
+      final cachedAverage = CoverPaletteCache.instance.averageColorFor(
+        coverIdentity,
+      );
       final previous = _blurLease;
       setState(() {
         _blurLease = lease;
         _blurredCoverIdentity = coverIdentity;
         _coverTopLuminance = known;
+        if (cachedAverage != null) _coverAverageColor = cachedAverage;
       });
+      // Remember which item this blur belongs to, so the next cold start only
+      // uses it as the first-frame base for the same card.
+      unawaited(
+        CoverBlurCache.instance.rememberLatest(_lyricsKey, coverIdentity),
+      );
       previous?.release();
+      // The first frame of the next cold start uses this average as the
+      // background; derive it from the small blurred bitmap once.
+      if (cachedAverage == null) {
+        final average = await averageCoverColor(lease.image);
+        if (average != null) {
+          CoverPaletteCache.instance.storeAverageColor(coverIdentity, average);
+          if (mounted && _currentCoverIdentity() == coverIdentity) {
+            setState(() => _coverAverageColor = average);
+          }
+        }
+      }
       if (known != null) return;
 
       final luminance = await topStripLuminance(lease.image);
       if (luminance == null) return;
       CoverBlurCache.instance.rememberLuminance(coverIdentity, luminance);
+      CoverPaletteCache.instance.storeLuminance(coverIdentity, luminance);
       if (mounted && _currentCoverIdentity() == coverIdentity) {
         setState(() => _coverTopLuminance = luminance);
       }
@@ -707,14 +1002,31 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final cs =
         (PlayerSettings.einkMode ? null : _coverScheme) ??
         Theme.of(context).colorScheme;
-    final accent = cs.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 背景/占位用封面的平均色，而不是 Material tonal scheme 的
+    // primaryContainer（淡黄封面常被映射成偏棕的容器色）。终点只混入少量
+    // 主题 surface，避免渐变下半段又回到棕色。
+    final coverBg = _coverAverageColor ?? cs.primaryContainer;
+    final coverBgEnd = _coverAverageColor != null
+        ? Color.lerp(
+            _coverAverageColor!,
+            isDark ? Colors.black : Colors.white,
+            0.12,
+          )!
+        : cs.surface;
+    final accent = cs.primary;
     final l = AppLocalizations.of(context)!;
 
     final lib = context.watch<LibraryProvider>();
     final coverUrl = _resolveCoverUrl();
     final coverIdentity = _coverIdentity(coverUrl, lib);
     final isLocalCover = coverUrl?.startsWith('/') ?? false;
+    // 首帧还没有任何模糊图/封面时不要把主题色画进卡片；等模糊图/封面到了再显示
+    // 边框、强调光和图片，避免“先闪一下主题色”。
+    final hasCardVisual = _cardBackground != 'blurred' ||
+        _blurLease != null ||
+        _placeholderBlurLease != null ||
+        _coverProvider != null;
     _maybeRefetchOnServerChange(lib);
     // For podcast episodes, look up progress by compound key (itemId-episodeId)
     final progress = (_episodeId != null)
@@ -766,14 +1078,20 @@ class AbsorbingCardState extends State<AbsorbingCard>
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: accent.withValues(alpha: 0.15), width: 1),
+          border: Border.all(
+            color: hasCardVisual
+                ? accent.withValues(alpha: 0.15)
+                : Colors.transparent,
+            width: 1,
+          ),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(23),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Layer 1: Card background — blurred cover, color gradient, or plain surface
+              // 模糊背景读盘/生成期间让页面透出来，不铺主题色块；模糊图到了
+              // 再淡入。这样首帧不会出现“主题色卡片”。
               if (_cardBackground == 'off')
                 ColoredBox(color: Theme.of(context).colorScheme.surface)
               else if (_cardBackground == 'gradient')
@@ -782,63 +1100,46 @@ class AbsorbingCardState extends State<AbsorbingCard>
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [cs.primaryContainer, cs.surface],
+                      colors: [coverBg, coverBgEnd],
                     ),
                   ),
                 )
-              // Pre-blurred cover background (cached bitmap — no per-frame blur)
-              else if (_blurLease != null)
-                RepaintBoundary(
-                  child: RawImage(
-                    image: _blurLease!.image,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
+              else if (_cardBackground == 'blurred') ...[
+                // 上一次落盘的模糊封面先顶上；当前封面的模糊图就绪后淡入
+                // 覆盖它。首帧因此是模糊封面/背景，而不是纯色或提取色。
+                if (_placeholderBlurLease != null)
+                  RepaintBoundary(
+                    child: RawImage(
+                      image: _placeholderBlurLease!.image,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
                   ),
-                )
-              else if (coverUrl != null && coverIdentity != null)
-                // Fallback while blur is being computed: show unblurred cover dimmed
-                RepaintBoundary(
-                  child: isLocalCover
-                      ? Builder(
-                          builder: (_) {
-                            final provider = FileImage(File(coverUrl));
-                            _onCoverLoaded(provider, coverIdentity);
-                            return Opacity(
-                              opacity: 0.3,
-                              child: Image.file(
-                                File(coverUrl),
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                                errorBuilder: (_, __, ___) => Container(
-                                  color: isDark ? Colors.black : Colors.white,
-                                ),
-                              ),
-                            );
-                          },
-                        )
-                      : StableCachedNetworkImage(
-                          imageUrl: coverUrl,
-                          cacheKey: coverIdentity,
-                          fit: BoxFit.cover,
-                          httpHeaders: mediaHeaders,
-                          imageBuilder: (_, provider) {
-                            _onCoverLoaded(provider, coverIdentity);
-                            return Opacity(
-                              opacity: 0.3,
-                              child: Image(image: provider, fit: BoxFit.cover),
-                            );
-                          },
-                          placeholder: (_, __) => Container(
-                            color: isDark ? Colors.black : Colors.white,
-                          ),
-                          errorWidget: (_, __, ___) => Container(
-                            color: isDark ? Colors.black : Colors.white,
-                          ),
-                        ),
-                ),
-              // Layer 2: Scrim
-              Positioned.fill(
+                if (_blurLease != null)
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey(
+                      'blur-bg-${_blurredCoverIdentity ?? _blurLease!.hashCode}',
+                    ),
+                    tween: Tween<double>(begin: 0, end: 1),
+                    duration: _bgFadeDuration,
+                    curve: Curves.easeOutCubic,
+                    builder: (context, t, child) =>
+                        Opacity(opacity: t, child: child),
+                    child: RepaintBoundary(
+                      child: RawImage(
+                        image: _blurLease!.image,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                      ),
+                    ),
+                  ),
+              ],
+              // Layer 2: Scrim. 首帧图片/模糊图还没到时不铺 scrim，否则会在
+              // 透明卡片上留下一条主题色/黑白的整卡渐变。
+              if (hasCardVisual)
+                Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -1114,15 +1415,19 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: isDark ? 0.5 : 0.15,
-                                        ),
+                                        color: hasCardVisual
+                                            ? Colors.black.withValues(
+                                                alpha: isDark ? 0.5 : 0.15,
+                                              )
+                                            : Colors.transparent,
                                         blurRadius: 20,
                                         spreadRadius: -2,
                                         offset: const Offset(0, 6),
                                       ),
                                       BoxShadow(
-                                        color: accent.withValues(alpha: 0.15),
+                                        color: hasCardVisual
+                                            ? accent.withValues(alpha: 0.15)
+                                            : Colors.transparent,
                                         blurRadius: 30,
                                         spreadRadius: -5,
                                       ),
@@ -1144,11 +1449,29 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                 ? Offstage(child: child)
                                                 : child!,
                                             child: EinkCoverTone(
-                                              child:
-                                                  coverUrl != null &&
+                                              // 本地封面文件被原地替换时路径没变，只有
+                                              // identity（含 mtime/size）会变；用 key 逼
+                                              // Image.file 重新解析，否则会继续显示旧图。
+                                              // 网络封面由 StableCachedNetworkImage 自己
+                                              // 处理 URL 变化，所以不重挂。
+                                              key:
+                                                  isLocalCover &&
                                                       coverIdentity != null
-                                                  ? isLocalCover
-                                                        ? BlurPaddedCover(
+                                                  ? ValueKey(
+                                                      'local-cover-$coverIdentity',
+                                                    )
+                                                  : null,
+                                              child: Stack(
+                                                fit: StackFit.expand,
+                                                children: [
+                                                  // 常驻底图：CachedNetworkImage 从
+                                                  // placeholder 切到解码图时，模糊图
+                                                  // 不会先消失一瞬再重新出现。
+                                                  _coverLoadingPlaceholder(cs),
+                                                  (coverUrl != null &&
+                                                          coverIdentity != null)
+                                                      ? isLocalCover
+                                                          ? BlurPaddedCover(
                                                             blurChild: Image.file(
                                                               File(coverUrl),
                                                               fit: BoxFit.cover,
@@ -1178,12 +1501,12 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                     _,
                                                                     __,
                                                                     ___,
-                                                                  ) => CoverPlaceholder(
-                                                                    title:
-                                                                        _title,
-                                                                    author:
-                                                                        _author,
-                                                                  ),
+                                                                  ) =>
+                                                                      _coverLoadingPlaceholder(
+                                                                        cs,
+                                                                        showIcon:
+                                                                            true,
+                                                                      ),
                                                             ),
                                                           )
                                                         : BlurPaddedCover(
@@ -1195,6 +1518,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                               fit: BoxFit.cover,
                                                               httpHeaders:
                                                                   mediaHeaders,
+                                                              fadeInDuration:
+                                                                  _coverFadeDuration,
                                                               errorWidget:
                                                                   (
                                                                     _,
@@ -1217,6 +1542,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                         .contain,
                                                               httpHeaders:
                                                                   mediaHeaders,
+                                                              fadeInDuration:
+                                                                  _coverFadeDuration,
                                                               imageBuilder: (_, provider) {
                                                                 _onCoverLoaded(
                                                                   provider,
@@ -1234,29 +1561,26 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                 );
                                                               },
                                                               placeholder: (_, __) =>
-                                                                  CoverPlaceholder(
-                                                                    title:
-                                                                        _title,
-                                                                    author:
-                                                                        _author,
-                                                                  ),
+                                                                  const SizedBox.shrink(),
                                                               errorWidget:
                                                                   (
                                                                     _,
                                                                     __,
                                                                     ___,
-                                                                  ) => CoverPlaceholder(
-                                                                    title:
-                                                                        _title,
-                                                                    author:
-                                                                        _author,
-                                                                  ),
+                                                                  ) =>
+                                                                      _coverLoadingPlaceholder(
+                                                                        cs,
+                                                                        showIcon:
+                                                                            true,
+                                                                      ),
                                                             ),
                                                           )
-                                                  : CoverPlaceholder(
-                                                      title: _title,
-                                                      author: _author,
-                                                    ),
+                                                      : _coverLoadingPlaceholder(
+                                                          cs,
+                                                          showIcon: true,
+                                                        ),
+                                                    ],
+                                                  ),
                                             ),
                                           ),
                                           // Casting overlay

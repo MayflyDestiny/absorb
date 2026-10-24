@@ -33,30 +33,39 @@ void showChaptersSheet({
     if (currentPosition >= start && currentPosition < end) { currentIdx = i; break; }
   }
 
+  final sheetController = DraggableScrollableController();
   showModalBottomSheet(
     context: context, isScrollControlled: true, useSafeArea: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => DraggableScrollableSheet(
-      expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9,
-      builder: (_, sc) => _ChaptersSheetBody(
-        sc: sc,
-        accent: accent,
-        tt: tt,
-        chapters: chapters,
-        totalDuration: totalDuration,
-        isPlaybackActive: isPlaybackActive,
-        isCastingThis: isCastingThis,
-        displaySpeed: displaySpeed,
-        player: player,
-        itemId: itemId,
-        initialIndex: currentIdx,
+    // 章节搜索框 autofocus 后键盘会盖住列表；把整个 sheet 抬到键盘上方。
+    // 搜索打开时再展开到 80%，比单纯抬升留出更多结果区域，又不至于压满整屏。
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+      child: DraggableScrollableSheet(
+        controller: sheetController,
+        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.8,
+        builder: (_, sc) => _ChaptersSheetBody(
+          sc: sc,
+          sheetController: sheetController,
+          accent: accent,
+          tt: tt,
+          chapters: chapters,
+          totalDuration: totalDuration,
+          isPlaybackActive: isPlaybackActive,
+          isCastingThis: isCastingThis,
+          displaySpeed: displaySpeed,
+          player: player,
+          itemId: itemId,
+          initialIndex: currentIdx,
+        ),
       ),
     ),
-  );
+  ).whenComplete(() => sheetController.dispose());
 }
 
 class _ChaptersSheetBody extends StatefulWidget {
   final ScrollController sc;
+  final DraggableScrollableController sheetController;
   final Color accent;
   final TextTheme tt;
   final List<dynamic> chapters;
@@ -70,6 +79,7 @@ class _ChaptersSheetBody extends StatefulWidget {
 
   const _ChaptersSheetBody({
     required this.sc,
+    required this.sheetController,
     required this.accent,
     required this.tt,
     required this.chapters,
@@ -90,6 +100,8 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   final TextEditingController _searchCtrl = TextEditingController();
   bool _searchOpen = false;
   String _query = '';
+  // 搜索前用户手动拖到的高度；关闭搜索时恢复，而不是固定回 0.6。
+  double? _sheetSizeBeforeSearch;
 
   /// Stable per-chapter keys so a chapter's row can be located by its number
   /// (and scrolled to the top with [Scrollable.ensureVisible]) without relying
@@ -207,14 +219,35 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
           _recomputeVisibleIndices();
         });
 
-  void _closeSearch() {
+  /// 打开搜索时把 sheet 展开到 80%（不是满高），上方仍留出一点上下文；
+  /// 配合键盘上方的 Padding，搜索框和结果有足够空间，又不会整屏压满。
+  void _setSearchOpen(bool open) {
+    if (open == _searchOpen) return;
+    if (open) {
+      _sheetSizeBeforeSearch = widget.sheetController.isAttached
+          ? widget.sheetController.size
+          : null;
+    }
     setState(() {
-      _query = '';
-      _searchCtrl.clear();
-      _searchOpen = false;
-      _recomputeVisibleIndices();
+      _searchOpen = open;
+      if (!open) {
+        _query = '';
+        _searchCtrl.clear();
+        _recomputeVisibleIndices();
+      }
     });
+    if (!widget.sheetController.isAttached) return;
+    final target = open ? 0.8 : (_sheetSizeBeforeSearch ?? 0.6);
+    widget.sheetController.animateTo(
+      target.clamp(0.05, 0.8).toDouble(),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
+
+  void _toggleSearch() => _setSearchOpen(!_searchOpen);
+
+  void _closeSearch() => _setSearchOpen(false);
 
   void _jumpTo(int index) {
     if (_searchOpen) _closeSearch();
@@ -600,7 +633,7 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
                   label: l.search,
                   accent: widget.accent,
                   active: _searchOpen,
-                  onTap: () => setState(() => _searchOpen = !_searchOpen),
+                  onTap: _toggleSearch,
                 ),
                 // The range-jump index only makes sense over the FULL chapter
                 // list; offline (downloaded subset only) it would page through
