@@ -95,6 +95,30 @@ class CoverPaletteCache {
       brightness: old?.brightness,
       luminance: old?.luminance,
       average: color.toARGB32(),
+      accent: old?.accent,
+    );
+    _trim();
+    _markDirty();
+  }
+
+  /// 首页/AppShell 用的鲜艳强调色；和 scheme 分开缓存，避免首页每次冷启动都
+  /// 再跑一遍 `PaletteGenerator`。
+  Color? accentFor(String identity) {
+    final raw = _entries[identity]?.accent;
+    return raw == null ? null : Color(raw);
+  }
+
+  void storeAccent(String identity, Color color) {
+    final old = _entries.remove(identity);
+    _entries[identity] = CoverPaletteEntry(
+      primary: old?.primary,
+      primaryContainer: old?.primaryContainer,
+      surface: old?.surface,
+      onSurface: old?.onSurface,
+      brightness: old?.brightness,
+      luminance: old?.luminance,
+      average: old?.average,
+      accent: color.toARGB32(),
     );
     _trim();
     _markDirty();
@@ -110,6 +134,7 @@ class CoverPaletteCache {
       brightness: brightness,
       luminance: old?.luminance,
       average: old?.average,
+      accent: old?.accent,
     );
     _trim();
     _markDirty();
@@ -125,6 +150,7 @@ class CoverPaletteCache {
       brightness: old?.brightness,
       luminance: luminance,
       average: old?.average,
+      accent: old?.accent,
     );
     _trim();
     _markDirty();
@@ -169,6 +195,7 @@ class CoverPaletteEntry {
     this.brightness,
     this.luminance,
     this.average,
+    this.accent,
   });
 
   final int? primary;
@@ -179,6 +206,8 @@ class CoverPaletteEntry {
   final double? luminance;
   /// Mean cover colour; see [CoverPaletteCache.averageColorFor].
   final int? average;
+  /// 首页/AppShell 的鲜艳强调色；见 [CoverPaletteCache.accentFor]。
+  final int? accent;
 
   ColorScheme? _scheme;
 
@@ -207,7 +236,8 @@ class CoverPaletteEntry {
       primary == null &&
       luminance == null &&
       brightness == null &&
-      average == null;
+      average == null &&
+      accent == null;
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{};
@@ -218,6 +248,7 @@ class CoverPaletteEntry {
     if (brightness != null) map['b'] = brightness!.name;
     if (luminance != null) map['l'] = luminance;
     if (average != null) map['a'] = average;
+    if (accent != null) map['ac'] = accent;
     return map;
   }
 
@@ -240,6 +271,7 @@ class CoverPaletteEntry {
       brightness: brightness,
       luminance: (json['l'] as num?)?.toDouble(),
       average: (json['a'] as num?)?.toInt(),
+      accent: (json['ac'] as num?)?.toInt(),
     );
     return entry.isEmpty ? null : entry;
   }

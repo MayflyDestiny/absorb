@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
+import '../services/cover_blur_cache.dart';
+import '../services/cover_palette_cache.dart';
 import '../services/download_service.dart';
 import '../services/queue_download_policy.dart';
 import '../services/scoped_prefs.dart';
+import '../utils/cover_accent.dart';
 import '../widgets/absorb_page_header.dart';
 import '../main.dart' show flatNotifier, gradientIntensityNotifier, rootNavigatorKey;
 import '../widgets/absorbing_card.dart';
@@ -18,6 +23,8 @@ import '../widgets/series_books_sheet.dart';
 import '../widgets/playlist_detail_sheet.dart';
 import '../widgets/collection_detail_sheet.dart';
 import '../widgets/episode_list_sheet.dart';
+import '../widgets/stable_cached_network_image.dart'
+    show coverCacheIdentity;
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 
@@ -64,6 +71,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   PageController _pageController = PageController(viewportFraction: 0.92);
   Orientation? _lastOrientation;
   final _cardKeys = <String, GlobalKey<AbsorbingCardState>>{};
+  // 当前窗口的邻居封面预热：滑到第 5/6 张前就把模糊图、清晰图和配色做好。
+  final _prewarmedCoverIdentities = <String>{};
+  bool _prewarmScheduled = false;
 
   GlobalKey<AbsorbingCardState> _cardKey(String absorbingKey) {
     return _cardKeys.putIfAbsent(absorbingKey, () => GlobalKey<AbsorbingCardState>());
@@ -104,6 +114,99 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
   Future<void> _loadMergeLibraries() async {
     final v = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted && v != _mergeLibraries) setState(() => _mergeLibraries = v);
+  }
+
+  /// 首帧/切 tab 动画结束后，只预热当前页 ±1/2 的邻居；滑动到第 5/6 张时
+  /// 它们已经在前一步的窗口里被预热过，而不是一次性预取前 6 张。
+  void _scheduleNeighborPrewarm(
+    LibraryProvider lib,
+    List<Map<String, dynamic>> books,
+  ) {
+    if (_prewarmScheduled || books.isEmpty) return;
+    _prewarmScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 1000), () {
+        if (!mounted) return;
+        final currentLib = context.read<LibraryProvider>();
+        _prewarmAroundPage(_currentPrewarmPage(), books, currentLib);
+      });
+    });
+  }
+
+  int _currentPrewarmPage() {
+    if (!_pageController.hasClients) return _pageController.initialPage;
+    return (_pageController.page ?? _pageController.initialPage.toDouble())
+        .round();
+  }
+
+  void _prewarmAroundPage(
+    int page,
+    List<Map<String, dynamic>> books,
+    LibraryProvider lib,
+  ) {
+    final brightness = Theme.of(context).brightness;
+    // 当前页 ±1/2；当前页本身由 main/card 自己负责，不重复。
+    for (final offset in [-2, -1, 1, 2]) {
+      final i = page + offset;
+      if (i < 0 || i >= books.length) continue;
+      unawaited(_prewarmCoverForIndex(i, books, lib, brightness));
+    }
+  }
+
+  /// 预热一张卡片的封面链路：清晰图进 image cache、模糊图进 CoverBlurCache、
+  /// 平均色/顶部亮度/配色写进 palette 缓存，卡片 init 时同步命中。
+  Future<void> _prewarmCoverForIndex(
+    int index,
+    List<Map<String, dynamic>> books,
+    LibraryProvider lib,
+    Brightness brightness,
+  ) async {
+    final book = books[index];
+    final id = book['id'] as String?;
+    if (id == null || id.isEmpty) return;
+    final itemTs = (book['updatedAt'] as num?)?.toInt();
+    final mapTs = lib.itemUpdatedAt(id);
+    final ts = itemTs != null && (mapTs == null || itemTs >= mapTs)
+        ? itemTs
+        : mapTs;
+    final url = lib.getCoverUrl(id, width: 1200, updatedAt: ts);
+    if (url == null || url.isEmpty) return;
+    final identity = coverCacheIdentity(url);
+    if (!_prewarmedCoverIdentities.add(identity)) return;
+    final ImageProvider provider = url.startsWith('/')
+        ? FileImage(File(url))
+        : CachedNetworkImageProvider(
+            url,
+            headers: lib.mediaHeaders,
+            cacheKey: identity,
+          );
+    if (!mounted) return;
+    unawaited(precacheImage(provider, context, onError: (_, __) {}));
+    final lease = await CoverBlurCache.instance.acquire(provider, identity);
+    if (lease == null) return;
+    try {
+      final average = await averageCoverColor(lease.image);
+      if (average != null) {
+        CoverPaletteCache.instance.storeAverageColor(identity, average);
+      }
+      final luminance = await topStripLuminance(lease.image);
+      if (luminance != null) {
+        CoverBlurCache.instance.rememberLuminance(identity, luminance);
+        CoverPaletteCache.instance.storeLuminance(identity, luminance);
+      }
+    } finally {
+      lease.release();
+    }
+    final cached = CoverPaletteCache.instance.schemeFor(identity, brightness);
+    if (cached == null) {
+      try {
+        final scheme = await ColorScheme.fromImageProvider(
+          provider: provider,
+          brightness: brightness,
+        );
+        CoverPaletteCache.instance.storeScheme(identity, brightness, scheme);
+      } catch (_) {}
+    }
   }
 
   String _activePlaylistChipLabel(LibraryProvider lib, AppLocalizations l) {
@@ -642,6 +745,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
         !_cast.isCasting &&
         lib.personalizedSections.isEmpty;
 
+    // 首帧后给前 6 张卡片预热模糊图/配色；第 5/6 张滑到时不再现场生成。
+    if (books.isNotEmpty) _scheduleNeighborPrewarm(lib, books);
+
     final muted = cs.onSurfaceVariant;
     final subtleBg = cs.onSurface.withValues(alpha: 0.06);
     final subtleBorder = cs.onSurface.withValues(alpha: 0.08);
@@ -862,6 +968,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                           controller: _pageController,
                           scrollDirection: Axis.horizontal,
                           clipBehavior: Clip.none,
+                          // 提前构建邻页，滑动到下一张时卡片已经初始化过。
+                          allowImplicitScrolling: true,
+                          onPageChanged: (i) => _prewarmAroundPage(i, books, lib),
                           physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
                           itemCount: books.length,
                           itemBuilder: (_, i) => LayoutBuilder(

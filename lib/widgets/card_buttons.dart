@@ -726,10 +726,13 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
         final castNow = widget.itemId != null && cast.isCasting && cast.castingItemId == widget.itemId;
         // 冷启动点播放时该书还没加载完（player.speed 仍是临时 1.0），
         // 此时优先显示该书已存的 _savedSpeed，避免先闪 1.0 再跳到 1.25x。
+        final playerSpeed = widget.player.speed;
         final speedNow = castNow
             ? cast.castSpeed
             : (widget.isActive && widget.player.hasBook
-                ? widget.player.speed
+                ? ((playerSpeed - 1.0).abs() < 0.01 && (_savedSpeed - 1.0).abs() > 0.01
+                    ? _savedSpeed
+                    : playerSpeed)
                 : _savedSpeed);
         final isDefaultSpeed = (speedNow - 1.0).abs() < 0.01;
         final Widget content;

@@ -32,8 +32,9 @@ class CoverBlurCache {
 
   static final CoverBlurCache instance = CoverBlurCache._();
 
-  /// How many blurred covers to keep. The listening screen shows one card at a
-  /// time, so a couple of spares cover a swipe in either direction.
+  /// How many blurred covers to keep. Six matches the sliding window: current
+  /// ±1/2 cards, so a swipe to a neighbour still hits an in-memory blur without
+  /// keeping a large library of 200px PNGs alive.
   static const _capacity = 6;
 
   static const _targetWidth = 200;
@@ -68,14 +69,11 @@ class CoverBlurCache {
     _latestIdentity = meta.lastIdentity;
     _playingItemKey = meta.playing;
     _playingIdentity = meta.playingIdentity;
-    final all = _itemIdentities.values.toList();
-    final recent = all.length > 4 ? all.sublist(all.length - 4) : all;
-    // 内存 LRU 容量是 6：playing + last + 最近 4 张刚好填满，不会把
-    // playing/last 自己挤出去。
+    // main 只带 now-playing + 最后浏览这两张；其余交给首屏的滑动窗口预热，
+    // 避免启动阶段把 6 个槽位都占满。
     final identities = <String>{
       if (_playingIdentity != null) _playingIdentity!,
       if (_latestIdentity != null) _latestIdentity!,
-      ...recent,
     };
     for (final identity in identities) {
       if (_entries.containsKey(identity)) continue;

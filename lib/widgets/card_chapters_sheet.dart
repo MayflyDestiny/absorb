@@ -37,13 +37,11 @@ void showChaptersSheet({
   showModalBottomSheet(
     context: context, isScrollControlled: true, useSafeArea: true,
     backgroundColor: Colors.transparent,
-    // 章节搜索框 autofocus 后键盘会盖住列表；把整个 sheet 抬到键盘上方。
-    // 搜索打开时再展开到 80%，比单纯抬升留出更多结果区域，又不至于压满整屏。
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
       child: DraggableScrollableSheet(
         controller: sheetController,
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.8,
+        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: false, maxChildSize: 0.8,
         builder: (_, sc) => _ChaptersSheetBody(
           sc: sc,
           sheetController: sheetController,
@@ -100,8 +98,6 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   final TextEditingController _searchCtrl = TextEditingController();
   bool _searchOpen = false;
   String _query = '';
-  // 搜索前用户手动拖到的高度；关闭搜索时恢复，而不是固定回 0.6。
-  double? _sheetSizeBeforeSearch;
 
   /// Stable per-chapter keys so a chapter's row can be located by its number
   /// (and scrolled to the top with [Scrollable.ensureVisible]) without relying
@@ -223,11 +219,6 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
   /// 配合键盘上方的 Padding，搜索框和结果有足够空间，又不会整屏压满。
   void _setSearchOpen(bool open) {
     if (open == _searchOpen) return;
-    if (open) {
-      _sheetSizeBeforeSearch = widget.sheetController.isAttached
-          ? widget.sheetController.size
-          : null;
-    }
     setState(() {
       _searchOpen = open;
       if (!open) {
@@ -236,13 +227,6 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         _recomputeVisibleIndices();
       }
     });
-    if (!widget.sheetController.isAttached) return;
-    final target = open ? 0.8 : (_sheetSizeBeforeSearch ?? 0.6);
-    widget.sheetController.animateTo(
-      target.clamp(0.05, 0.8).toDouble(),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   void _toggleSearch() => _setSearchOpen(!_searchOpen);

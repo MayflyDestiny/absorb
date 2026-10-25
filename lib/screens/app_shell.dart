@@ -17,6 +17,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../utils/cover_accent.dart';
 import '../services/cover_blur_cache.dart';
+import '../services/cover_palette_cache.dart';
 import '../services/download_service.dart';
 import '../widgets/stable_cached_network_image.dart'
     show stableCoverCacheKey, coverCacheIdentity;
@@ -758,6 +759,30 @@ class _AppShellState extends State<AppShell>
     _lastCoverItemId = itemId;
     _lastCoverIdentity = identity;
 
+    // 优先用落盘的 scheme/强调色：命中时完全跳过 PaletteGenerator 的解码和
+    // 量化，冷启动切 tab 时就不会和过渡动画抢线程。
+    final brightness = Theme.of(context).brightness;
+    final cachedScheme = CoverPaletteCache.instance.schemeFor(
+      identity,
+      brightness,
+    );
+    if (cachedScheme != null) {
+      coverSchemeNotifier.value = cachedScheme;
+      unawaited(
+        PlayerSettings.setCoverSeedColor(cachedScheme.primary.toARGB32()),
+      );
+      return true;
+    }
+    final cachedAccent = CoverPaletteCache.instance.accentFor(identity);
+    if (cachedAccent != null) {
+      coverSchemeNotifier.value = ColorScheme.fromSeed(
+        seedColor: cachedAccent,
+        brightness: brightness,
+      );
+      unawaited(PlayerSettings.setCoverSeedColor(cachedAccent.toARGB32()));
+      return true;
+    }
+
     final ImageProvider provider;
     if (coverUrl.startsWith('/')) {
       provider = FileImage(File(coverUrl));
@@ -768,7 +793,6 @@ class _AppShellState extends State<AppShell>
       );
     }
 
-    final brightness = Theme.of(context).brightness;
     PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
         .then((palette) {
           final seedColor = accentFromCoverPalette(palette);
@@ -777,6 +801,7 @@ class _AppShellState extends State<AppShell>
             _lastCoverIdentity = null;
             return;
           }
+          CoverPaletteCache.instance.storeAccent(identity, seedColor);
           final scheme = ColorScheme.fromSeed(
             seedColor: seedColor,
             brightness: brightness,

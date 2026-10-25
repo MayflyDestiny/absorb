@@ -12,6 +12,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
+import '../services/cover_palette_cache.dart';
 import '../services/narrated_books.dart';
 import '../services/narration_service.dart';
 import '../widgets/ebook_router.dart';
@@ -28,6 +29,8 @@ import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
 import '../main.dart' show flatNotifier, gradientIntensityNotifier;
 import '../widgets/home_customize_sheet.dart';
+import '../widgets/stable_cached_network_image.dart'
+    show coverCacheIdentity;
 import '../widgets/playlist_detail_sheet.dart';
 import '../widgets/collection_detail_sheet.dart';
 import '../widgets/section_detail_sheet.dart';
@@ -986,6 +989,14 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       _accent = cached;
       return;
     }
+    // 跨进程缓存：命中时直接跳过 PaletteGenerator，首页首次切换不再现场提取。
+    final identity = coverCacheIdentity(coverUrl);
+    final persisted = CoverPaletteCache.instance.accentFor(identity);
+    if (persisted != null) {
+      _accentCache[coverUrl] = persisted;
+      _accent = persisted;
+      return;
+    }
     final ImageProvider provider;
     if (coverUrl.startsWith('/')) {
       provider = FileImage(File(coverUrl));
@@ -997,6 +1008,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           final picked = accentFromCoverPalette(palette);
           if (picked == null) return;
           _accentCache[coverUrl] = picked;
+          CoverPaletteCache.instance.storeAccent(identity, picked);
           if (!mounted) return;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) setState(() => _accent = picked);
