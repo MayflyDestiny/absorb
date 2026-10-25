@@ -52,19 +52,30 @@ class CoverBlurCache {
   String? _latestIdentity;
   String? _playingItemKey;
   String? _playingIdentity;
+  Map<String, String> _itemIdentities = const {};
+  // 串行化 last.json 的读改写：app shell 写 playing、卡片写 last 并发时，
+  // 避免后一个写入把前一个刚记下的 item/playing 覆盖掉。
+  Future<void> _metaWriteChain = Future<void>.value();
 
   /// 启动时在 runApp 前把“上一次正在收听的那张模糊封面”读进内存。优先预加载
-  /// now-playing 卡片的 item，其次才是最后浏览的卡片；绝不拿别的卡片的图来顶。
+  /// now-playing / 最后浏览的 item，同时也把最近记录的几张一起带上，首屏相邻
+  /// 卡片也能直接命中，不再退回平均色。
   Future<void> preloadLatest() async {
     final meta = await _readLatestMeta();
     if (meta == null) return;
+    _itemIdentities = Map<String, String>.of(meta.items);
     _latestItemKey = meta.last;
     _latestIdentity = meta.lastIdentity;
     _playingItemKey = meta.playing;
     _playingIdentity = meta.playingIdentity;
+    final all = _itemIdentities.values.toList();
+    final recent = all.length > 4 ? all.sublist(all.length - 4) : all;
+    // 内存 LRU 容量是 6：playing + last + 最近 4 张刚好填满，不会把
+    // playing/last 自己挤出去。
     final identities = <String>{
       if (_playingIdentity != null) _playingIdentity!,
       if (_latestIdentity != null) _latestIdentity!,
+      ...recent,
     };
     for (final identity in identities) {
       if (_entries.containsKey(identity)) continue;
@@ -80,6 +91,8 @@ class CoverBlurCache {
       identity = _playingIdentity;
     } else if (_latestItemKey == itemKey) {
       identity = _latestIdentity;
+    } else {
+      identity = _itemIdentities[itemKey];
     }
     if (identity == null) return null;
     return lease(identity);
@@ -107,6 +120,19 @@ class CoverBlurCache {
     String itemKey,
     String identity, {
     bool playing = false,
+  }) {
+    // app shell 与卡片可能同时调用；串行执行，保证 items/playing 不互相覆盖。
+    final op = _metaWriteChain.then(
+      (_) => _rememberLatestNow(itemKey, identity, playing: playing),
+    );
+    _metaWriteChain = op.catchError((_) {});
+    return op;
+  }
+
+  Future<void> _rememberLatestNow(
+    String itemKey,
+    String identity, {
+    required bool playing,
   }) async {
     _latestItemKey = itemKey;
     _latestIdentity = identity;
@@ -123,7 +149,10 @@ class CoverBlurCache {
     if (file == null) return;
     try {
       await file.parent.create(recursive: true);
-      await file.writeAsString(
+      // 先写临时文件再原子替换，避免进程被杀时留下半截 JSON，导致下次冷启动
+      // 读不到模糊图元数据、回退成平均色。
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(
         jsonEncode({
           'last': itemKey,
           'lastIdentity': identity,
@@ -133,8 +162,9 @@ class CoverBlurCache {
               : (meta?.playingIdentity ?? _playingIdentity),
           'items': items,
         }),
-        flush: false,
+        flush: true,
       );
+      await tmp.rename(file.path);
     } catch (_) {}
   }
 
@@ -329,7 +359,11 @@ class CoverBlurCache {
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
       await file.parent.create(recursive: true);
-      await file.writeAsBytes(data.buffer.asUint8List(), flush: false);
+      // 同样先写临时文件再原子替换，避免杀掉进程时留下半截 PNG；
+      // 下次冷启动解码失败就只能回退到平均色。
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      await tmp.rename(file.path);
       unawaited(_pruneDisk());
     } catch (_) {
       // 缓存写失败不影响本次显示。

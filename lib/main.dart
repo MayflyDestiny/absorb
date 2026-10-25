@@ -296,12 +296,13 @@ void main() async {
   try {
     await CoverPaletteCache.instance.load().timeout(const Duration(seconds: 1));
   } catch (_) {}
-  // 把上一次的模糊封面预加载进内存：正在收听卡片首帧可以直接同步拿到它，
-  // 不再先画主题色/提取色再切到模糊图。失败/超时只影响首帧，不影响启动。
+  // 模糊封面是冷启动首帧的关键背景。这里在 runApp 前短暂等它从磁盘进内存，
+  // 保证卡片第一帧就能同步拿到模糊图；超时/失败只影响首帧，不阻塞应用。
+  // 封面不会频繁变化，正常情况下只是读一个小 PNG，耗时很短。
   try {
     await CoverBlurCache.instance
         .preloadLatest()
-        .timeout(const Duration(seconds: 1));
+        .timeout(const Duration(milliseconds: 800));
   } catch (_) {}
 
   // Capture Flutter framework errors (widget build failures, etc.)

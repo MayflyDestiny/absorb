@@ -92,9 +92,12 @@ class AbsorbingCardState extends State<AbsorbingCard>
   // progress row is drawn on. Null until the blur is ready, or when the card
   // isn't using the blurred background at all.
   double? _coverTopLuminance;
-  // 封面平均色（落盘的 palette 缓存）；用于第一帧背景/占位，而不是 Material
-  // scheme 里偏色/偏暗的 primaryContainer。
+  // 封面平均色（落盘的 palette 缓存）。现在主要用于 gradient 背景模式；
+  // 首帧占位色只在捕获时参考它，之后不再跟着它更新。
   Color? _coverAverageColor;
+  /// 加载占位的固定底色。首帧捕获后不再随封面平均色/scheme 更新，
+  /// 避免“淡黄占位 → 平均色变深/变棕 → 封面”这种中途换色。
+  Color? _placeholderColor;
   List<String> _buttonOrder = PlayerSettings.defaultButtonOrder;
   int _buttonVisibleCount = PlayerSettings.defaultButtonVisibleCount;
   bool _iconsOnly = false;
@@ -308,32 +311,33 @@ class AbsorbingCardState extends State<AbsorbingCard>
     _blurredCoverIdentity = null;
   }
 
-  /// 封面加载/缺图时的占位：中性底色 + 已缓存的模糊封面（上一次落盘的或当前
-  /// 的）。不再用提取的平均色/主题色做过场；模糊图出现时淡入，加载中不画图标，
-  /// 只有真正缺图/错误时才显示图标。
-  Widget _coverLoadingPlaceholder(
-    ColorScheme cs, {
-    bool showIcon = false,
-  }) {
+  /// 缺图/错误时的占位：固定占位色 + 缺图图标；如果这张封面还留着模糊图，
+  /// 则把模糊图一起铺上（错误时也不至于变成空块）。
+  Widget _coverMissingPlaceholder(ColorScheme cs) {
     final current = _blurLease;
     final placeholder = _placeholderBlurLease;
-    final neutral = ColoredBox(
-      color: cs.surfaceContainerHighest,
-      child: showIcon
-          ? Center(
-              child: Icon(
-                Icons.auto_stories_rounded,
-                size: 36,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.35),
-              ),
-            )
-          : const SizedBox.expand(),
+    // 固定占位色：不随平均色/scheme 变化，避免加载中间换色。
+    final soft = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_placeholderStart, _placeholderEnd],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.auto_stories_rounded,
+          size: 36,
+          color: cs.onSurfaceVariant.withValues(alpha: 0.35),
+        ),
+      ),
     );
-    if (current == null && placeholder == null) return neutral;
+    if (current == null && placeholder == null) return soft;
     return Stack(
       fit: StackFit.expand,
       children: [
-        neutral,
+        soft,
         if (placeholder != null)
           RawImage(
             image: placeholder.image,
@@ -358,6 +362,57 @@ class AbsorbingCardState extends State<AbsorbingCard>
             ),
           ),
       ],
+    );
+  }
+
+  Color get _placeholderStart =>
+      _placeholderColor ?? Theme.of(context).colorScheme.surfaceContainerHigh;
+
+  Color get _placeholderEnd {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Color.lerp(
+      _placeholderStart,
+      dark ? Colors.black : Colors.white,
+      0.06,
+    )!;
+  }
+
+  /// 封面区域的模糊底图：直接复用背景那张模糊封面，再慢慢淡入清晰封面。
+  /// 没有模糊图时保持透明，让卡片背景占位透出来。
+  Widget _buildCoverBlurBase() {
+    final blur = _blurLease ?? _placeholderBlurLease;
+    if (blur == null) return const SizedBox.expand();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        RawImage(
+          image: blur.image,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+        // 和背景模糊图一样压暗一点，清晰封面浮上来时不会显得突兀。
+        ColoredBox(
+          color: Colors.black.withValues(alpha: dark ? 0.16 : 0.06),
+        ),
+      ],
+    );
+  }
+
+  /// 封面图片自身淡入：缓存命中/本地文件也能渐显，避免在某些情况下直接
+  /// 弹出来（网络缓存命中时 CachedNetworkImage 的 fadeInDuration 不一定会生效，
+  /// 本地 Image.file 则完全没有淡入）。
+  Widget _fadeInCover(Widget child, String identity) {
+    final duration = _coverFadeDuration;
+    if (duration == Duration.zero) return child;
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('cover-fade-$identity'),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(opacity: t, child: child),
+      child: child,
     );
   }
 
@@ -719,6 +774,12 @@ class AbsorbingCardState extends State<AbsorbingCard>
     super.didChangeDependencies();
     // 冷启动先用落盘的封面配色，避免第一帧主题色再跳成封面色调。
     _adoptCachedCoverPalette();
+    // 占位优先用 palette 里已缓存的封面平均色；没有（首次使用、封面
+    // 缺失、缓存失效）才退到中性 surface。这里固定一次，后续模糊图重算平均色
+    // 不会再改占位色，避免“淡黄占位 → 棕色平均色 → 封面”的二次闪动。
+    _placeholderColor ??=
+        _coverAverageColor ??
+        Theme.of(context).colorScheme.surfaceContainerHigh;
     // 封面 URL 一确定就先起模糊图加载；磁盘缓存通常已有，不必等 1200px
     // 封面解码完成，冷启动时背景/占位能更早从模糊图开始。
     _primeBlurFromCache();
@@ -742,6 +803,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _pendingBlurIdentity = null;
       _coverTopLuminance = null;
       _coverAverageColor = null;
+      _placeholderColor = null;
       _fetchedChapters = null;
       _fetchedEbookFile = null;
       _lastChapterIdx = -1;
@@ -961,14 +1023,18 @@ class AbsorbingCardState extends State<AbsorbingCard>
         CoverBlurCache.instance.rememberLatest(_lyricsKey, coverIdentity),
       );
       previous?.release();
-      // The first frame of the next cold start uses this average as the
-      // background; derive it from the small blurred bitmap once.
+      // 平均色主要给 gradient 背景用，同时落盘作为下次首帧的占位参考；
+      // blurred 模式的占位色已经固定，不需要为了它重建整张卡。
       if (cachedAverage == null) {
         final average = await averageCoverColor(lease.image);
         if (average != null) {
           CoverPaletteCache.instance.storeAverageColor(coverIdentity, average);
           if (mounted && _currentCoverIdentity() == coverIdentity) {
-            setState(() => _coverAverageColor = average);
+            if (_cardBackground == 'gradient') {
+              setState(() => _coverAverageColor = average);
+            } else {
+              _coverAverageColor = average;
+            }
           }
         }
       }
@@ -1021,10 +1087,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final coverUrl = _resolveCoverUrl();
     final coverIdentity = _coverIdentity(coverUrl, lib);
     final isLocalCover = coverUrl?.startsWith('/') ?? false;
-    // 首帧还没有任何模糊图/封面时不要把主题色画进卡片；等模糊图/封面到了再显示
-    // 边框、强调光和图片，避免“先闪一下主题色”。
-    final hasCardVisual = _cardBackground != 'blurred' ||
-        _blurLease != null ||
+    // 有模糊图/封面时，完整 scrim、边线和封面阴影才出现；加载占位阶段
+    // 只保留一层基础压暗。
+    final hasCoverVisual = _blurLease != null ||
         _placeholderBlurLease != null ||
         _coverProvider != null;
     _maybeRefetchOnServerChange(lib);
@@ -1070,16 +1135,22 @@ class AbsorbingCardState extends State<AbsorbingCard>
     // A chapterless book gets the same single-bar look as a chapterless
     // podcast: no top book bar, just the scrubber bar carrying the title.
     final showBookBar = _chapters.isNotEmpty;
+    // 按钮/进度/文字是已知内容，直接显示；只让封面/背景做加载过渡，
+    // 不把整张卡片淡入，避免控件跟着“重新出现”。
     return GestureDetector(
       onVerticalDragEnd: (details) {
         final vy = details.primaryVelocity ?? 0;
         if (vy < -300) expandCard(context); // swipe up to expand
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: _coverFadeDuration,
+        curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
+          // 恢复原版：没有模糊图/封面时不画边线，避免占位阶段边线显得过亮；
+          // 有了图片再淡入这条强调色边线。
           border: Border.all(
-            color: hasCardVisual
+            color: hasCoverVisual
                 ? accent.withValues(alpha: 0.15)
                 : Colors.transparent,
             width: 1,
@@ -1090,12 +1161,25 @@ class AbsorbingCardState extends State<AbsorbingCard>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // 模糊背景读盘/生成期间让页面透出来，不铺主题色块；模糊图到了
-              // 再淡入。这样首帧不会出现“主题色卡片”。
+              // 模糊背景读盘/生成期间先铺一层固定柔和底色；模糊图或清晰封面
+              // 到了再淡入，不会先淡黄再变棕，也不会出现纯透明/空白卡片。
+              if (_cardBackground == 'blurred')
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [_placeholderStart, _placeholderEnd],
+                    ),
+                  ),
+                ),
+              // Layer 1: Card background — blurred cover, color gradient, or plain surface
               if (_cardBackground == 'off')
                 ColoredBox(color: Theme.of(context).colorScheme.surface)
               else if (_cardBackground == 'gradient')
-                DecoratedBox(
+                AnimatedContainer(
+                  duration: _bgFadeDuration,
+                  curve: Curves.easeOutCubic,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
@@ -1136,15 +1220,18 @@ class AbsorbingCardState extends State<AbsorbingCard>
                     ),
                   ),
               ],
-              // Layer 2: Scrim. 首帧图片/模糊图还没到时不铺 scrim，否则会在
-              // 透明卡片上留下一条主题色/黑白的整卡渐变。
-              if (hasCardVisual)
-                Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
+              // Layer 2: Scrim。加载占位先用同一层蒙版压暗（深色主题约 55%），
+              // 模糊图/封面出现后再升到 100%，避免平均色在深色主题里偏亮。
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: hasCoverVisual ? 1 : (isDark ? 0.55 : 0.35),
+                  duration: _bgFadeDuration,
+                  curve: Curves.easeOutCubic,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       // Lighter scrim over the gradient/off backgrounds so the cover
                       // tint reads through; the blurred photo still needs the heavier one.
                       colors: _cardBackground == 'blurred'
@@ -1173,6 +1260,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                     ),
                   ),
                 ),
+              ),
               ),
               // Layer 3: Content
               LayoutBuilder(
@@ -1408,14 +1496,16 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                         }
                                       }
                                     : null,
-                                child: Container(
+                                child: AnimatedContainer(
                                   width: coverW,
                                   height: coverH,
+                                  duration: _coverFadeDuration,
+                                  curve: Curves.easeOutCubic,
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: hasCardVisual
+                                        color: hasCoverVisual
                                             ? Colors.black.withValues(
                                                 alpha: isDark ? 0.5 : 0.15,
                                               )
@@ -1425,7 +1515,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                         offset: const Offset(0, 6),
                                       ),
                                       BoxShadow(
-                                        color: hasCardVisual
+                                        color: hasCoverVisual
                                             ? accent.withValues(alpha: 0.15)
                                             : Colors.transparent,
                                         blurRadius: 30,
@@ -1464,10 +1554,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                               child: Stack(
                                                 fit: StackFit.expand,
                                                 children: [
-                                                  // 常驻底图：CachedNetworkImage 从
-                                                  // placeholder 切到解码图时，模糊图
-                                                  // 不会先消失一瞬再重新出现。
-                                                  _coverLoadingPlaceholder(cs),
+                                                  // 封面先用同一张模糊背景图做底，清晰封面
+                                                  // 在原位淡入；没有模糊图才透出卡片背景。
+                                                  _buildCoverBlurBase(),
                                                   (coverUrl != null &&
                                                           coverIdentity != null)
                                                       ? isLocalCover
@@ -1496,16 +1585,32 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                         .contain,
                                                               gaplessPlayback:
                                                                   true,
+                                                              frameBuilder:
+                                                                  (
+                                                                    _,
+                                                                    child,
+                                                                    frame,
+                                                                    __,
+                                                                  ) {
+                                                                    if (frame ==
+                                                                        null) {
+                                                                      return const SizedBox.shrink();
+                                                                    }
+                                                                    // 本地封面没有 CachedNetworkImage 的
+                                                                    // fadeInDuration，这里手动在首帧解码后淡入。
+                                                                    return _fadeInCover(
+                                                                      child,
+                                                                      coverIdentity!,
+                                                                    );
+                                                                  },
                                                               errorBuilder:
                                                                   (
                                                                     _,
                                                                     __,
                                                                     ___,
                                                                   ) =>
-                                                                      _coverLoadingPlaceholder(
+                                                                      _coverMissingPlaceholder(
                                                                         cs,
-                                                                        showIcon:
-                                                                            true,
                                                                       ),
                                                             ),
                                                           )
@@ -1542,22 +1647,27 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                         .contain,
                                                               httpHeaders:
                                                                   mediaHeaders,
+                                                              // 淡入交给下面的 _fadeInCover，
+                                                              // 这样网络缓存命中时也能渐显。
                                                               fadeInDuration:
-                                                                  _coverFadeDuration,
+                                                                  Duration.zero,
                                                               imageBuilder: (_, provider) {
                                                                 _onCoverLoaded(
                                                                   provider,
                                                                   coverIdentity,
                                                                 );
-                                                                return Image(
-                                                                  image:
-                                                                      provider,
-                                                                  fit:
-                                                                      _rectangleCovers
-                                                                      ? BoxFit
-                                                                            .cover
-                                                                      : BoxFit
-                                                                            .contain,
+                                                                return _fadeInCover(
+                                                                  Image(
+                                                                    image:
+                                                                        provider,
+                                                                    fit:
+                                                                        _rectangleCovers
+                                                                        ? BoxFit
+                                                                              .cover
+                                                                        : BoxFit
+                                                                              .contain,
+                                                                  ),
+                                                                  coverIdentity!,
                                                                 );
                                                               },
                                                               placeholder: (_, __) =>
@@ -1568,16 +1678,15 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                     __,
                                                                     ___,
                                                                   ) =>
-                                                                      _coverLoadingPlaceholder(
+                                                                      _coverMissingPlaceholder(
                                                                         cs,
-                                                                        showIcon:
-                                                                            true,
                                                                       ),
                                                             ),
                                                           )
-                                                      : _coverLoadingPlaceholder(
+                                                      // 无封面：没有可提取的平均色，固定中性占位 + 缺图图标；
+                                                      // 有封面但首次使用/缓存失效时，同样先走中性占位，封面解码后再算模糊/平均。
+                                                      : _coverMissingPlaceholder(
                                                           cs,
-                                                          showIcon: true,
                                                         ),
                                                     ],
                                                   ),
