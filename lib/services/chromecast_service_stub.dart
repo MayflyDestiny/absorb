@@ -31,6 +31,8 @@ class ChromecastService extends ChangeNotifier {
   bool get isConnected => false;
   bool get isCasting => false;
   bool get isPlaying => false;
+  bool get isReconnecting => false;
+  bool get isCastEngaged => false;
 
   String? get castingItemId => null;
   String? get castingEpisodeId => null;
@@ -73,6 +75,7 @@ class ChromecastService extends ChangeNotifier {
 
   Future<void> play() async {}
   Future<void> pause() async {}
+  Future<void> pauseNowOrOnReconnect() async {}
   Future<void> togglePlayPause() async {}
 
   Future<void> seekTo(Duration position) async {}

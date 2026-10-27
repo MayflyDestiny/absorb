@@ -177,6 +177,12 @@ dependencies {
         add("playstoreImplementation", it)
         add("devImplementation", it)
     }
+
+    // audio_service's AudioService extends MediaBrowserServiceCompat, which the
+    // GMS flavors get transitively from the cast SDK. Without GMS that class
+    // vanishes from the classpath, so the fdroid flavor declares androidx.media
+    // itself; MainActivity references AudioService as a type.
+    add("fdroidImplementation", "androidx.media:media:1.7.0")
 }
 
 // F-Droid build must ship no Google Play Core (proprietary; the Flutter engine

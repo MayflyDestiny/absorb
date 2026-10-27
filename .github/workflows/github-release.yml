@@ -1,9 +1,11 @@
 name: GitHub APK Only
 
 # Mirrors the `github-release` workflow in codemagic.yaml. Triggered manually via
-# `gh workflow run github-release.yml` or the Actions UI. Builds just the
-# github-flavor APK, renames it with the pubspec version, and uploads it to the
-# GitHub draft release for that version.
+# `gh workflow run github-release.yml` or the Actions UI. Builds the
+# github-flavor APKs plus four GMS-free companions from the fdroid flavor
+# (universal and per-ABI splits, with Chromecast and store review swapped for
+# their no-op stubs), renames them with the pubspec version, and uploads them to
+# the GitHub draft release for that version.
 #
 # Signing: the upload keystore is stored as a base64 secret
 # (ANDROID_KEYSTORE_BASE64) and decoded into a temp file at build time.
@@ -104,6 +106,47 @@ jobs:
             done
           fi
 
+      - name: Build GMS-free APKs (fdroid flavor)
+        run: |
+          # The F-Droid prebuild substitutions (fdroid/com.barnabas.absorb.yml),
+          # extended with review_service: cast and review become their no-op stubs
+          # and the two Google Play Services plugins leave pubspec, so nothing
+          # proprietary is linked (the fdroid source set carries no GMS Kotlin and
+          # its manifest overlay drops the cast / Auto / Wear components).
+          cp lib/services/chromecast_service_stub.dart lib/services/chromecast_service.dart
+          cp lib/widgets/chromecast_button_stub.dart lib/widgets/chromecast_button.dart
+          cp lib/services/review_service_stub.dart lib/services/review_service.dart
+          sed -i '/^  flutter_chrome_cast:/{N;d}' pubspec.yaml
+          sed -i '/^  in_app_review:/d' pubspec.yaml
+          if grep -qE 'flutter_chrome_cast|in_app_review' pubspec.yaml; then
+            echo 'a Google Play Services plugin is still declared in pubspec'
+            exit 1
+          fi
+          flutter pub get
+          # Universal first, then the per-ABI splits; Flutter emits only one
+          # shape per invocation.
+          flutter build apk --release --flavor fdroid
+          flutter build apk --release --flavor fdroid --split-per-abi
+
+      - name: Stage fdroid APKs
+        env:
+          FNAME: ${{ steps.version.outputs.fname }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/fdroid"
+          # ELF architecture names instead of the Android ones on purpose: the
+          # in-app updater picks a release asset by `universal` / `arm64-v8a` /
+          # `armeabi-v7a` / `x86_64` filename tokens, and it must never offer
+          # this build to someone on the Google-services flavor.
+          mv build/app/outputs/flutter-apk/app-fdroid-release.apk \
+            "$RUNNER_TEMP/fdroid/${FNAME}-fdroid-all.apk"
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk \
+            "$RUNNER_TEMP/fdroid/${FNAME}-fdroid-aarch64.apk"
+          mv build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk \
+            "$RUNNER_TEMP/fdroid/${FNAME}-fdroid-armv7.apk"
+          mv build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk \
+            "$RUNNER_TEMP/fdroid/${FNAME}-fdroid-amd64.apk"
+          ls -l "$RUNNER_TEMP/fdroid"
+
       - name: Upload APK to GitHub draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -125,6 +168,9 @@ jobs:
             [ "$apk" = "${UNIVERSAL[0]}" ] && continue
             gh release upload "$VERSION_TAG" "$apk" --clobber
           done
+          # Last, so a release reader that takes the first .apk it finds still
+          # lands on a Google-services build.
+          gh release upload "$VERSION_TAG" "$RUNNER_TEMP"/fdroid/*.apk --clobber
 
       - name: Notify Discord (build finished)
         if: always() && env.DISCORD_WEBHOOK_URL != ''
