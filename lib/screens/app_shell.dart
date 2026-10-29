@@ -39,6 +39,9 @@ import 'admin_users_screen.dart';
 import 'bookmarks_screen.dart';
 import 'downloads_screen.dart';
 import 'upcoming_releases_screen.dart';
+import 'server_notifications_screen.dart';
+import '../services/bookorbit_notification_socket.dart';
+import '../services/server_notifications.dart';
 import '../services/ebook_cache.dart';
 import '../widgets/action_pill.dart';
 import '../widgets/book_detail_sheet.dart' show showBookDetailSheet;
@@ -363,6 +366,8 @@ class _AppShellState extends State<AppShell>
   void initState() {
     super.initState();
     _instance = this;
+    _incomingNotifications =
+        BookOrbitNotificationSocket.instance.incoming.listen(showIncomingNotificationToast);
     EreaderVolumeNav.ensureHandler();
     PlayerScreenWake.start();
     if (!widget.startOnAbsorbing) _loadStartScreen();
@@ -475,8 +480,11 @@ class _AppShellState extends State<AppShell>
     await UpdateDialog.show(context, info);
   }
 
+  StreamSubscription<ServerNotification>? _incomingNotifications;
+
   @override
   void dispose() {
+    _incomingNotifications?.cancel();
     _fadeController.dispose();
     _detachNavBarListener();
     _navBarAnimController.dispose();

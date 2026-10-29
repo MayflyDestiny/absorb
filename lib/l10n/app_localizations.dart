@@ -286,6 +286,30 @@ abstract class AppLocalizations {
   /// **'See what\'s new'**
   String get whatsNewButton;
 
+  /// No description provided for @whatsNewKeepShowing.
+  ///
+  /// In en, this message translates to:
+  /// **'Show this after every update'**
+  String get whatsNewKeepShowing;
+
+  /// No description provided for @whatsNewKeepShowingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'You can turn it back on in Settings'**
+  String get whatsNewKeepShowingHint;
+
+  /// No description provided for @settingsWhatsNew.
+  ///
+  /// In en, this message translates to:
+  /// **'Show what\'s new after updates'**
+  String get settingsWhatsNew;
+
+  /// No description provided for @settingsWhatsNewSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'After Absorb updates, a popup links to the release notes'**
+  String get settingsWhatsNewSubtitle;
+
   /// No description provided for @gotIt.
   ///
   /// In en, this message translates to:
@@ -7294,6 +7318,42 @@ abstract class AppLocalizations {
   /// **'Removed from Continue Listening'**
   String get removedFromContinueListening;
 
+  /// No description provided for @removeFromContinueReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Continue Reading'**
+  String get removeFromContinueReading;
+
+  /// No description provided for @removedFromContinueReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from Continue Reading'**
+  String get removedFromContinueReading;
+
+  /// No description provided for @sessionAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add session'**
+  String get sessionAdd;
+
+  /// No description provided for @sessionStartLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Started at'**
+  String get sessionStartLabel;
+
+  /// No description provided for @sessionAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Session added'**
+  String get sessionAdded;
+
+  /// No description provided for @sessionAddFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not add the session'**
+  String get sessionAddFailed;
+
   /// No description provided for @removeSeriesFromContinueSeries.
   ///
   /// In en, this message translates to:
@@ -8602,6 +8662,12 @@ abstract class AppLocalizations {
   /// **'This will be removed from your device.'**
   String get removeDownloadContent;
 
+  /// No description provided for @removeWhichDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'The audiobook and the ebook are both on this device. Choose what to remove.'**
+  String get removeWhichDownload;
+
   /// No description provided for @downloadRemoved.
   ///
   /// In en, this message translates to:
@@ -9529,6 +9595,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{value} kbps'**
   String kbpsValue(int value);
+
+  /// No description provided for @fileInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'File info'**
+  String get fileInfoTitle;
+
+  /// No description provided for @fileInfoFileCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String fileInfoFileCount(int count);
+
+  /// No description provided for @fileInfoNone.
+  ///
+  /// In en, this message translates to:
+  /// **'This book has no file details.'**
+  String get fileInfoNone;
+
+  /// No description provided for @fileInfoAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio'**
+  String get fileInfoAudio;
+
+  /// No description provided for @fileInfoEbook.
+  ///
+  /// In en, this message translates to:
+  /// **'Ebook'**
+  String get fileInfoEbook;
+
+  /// No description provided for @fileInfoOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other files'**
+  String get fileInfoOther;
+
+  /// No description provided for @fileInfoBookOrbitNote.
+  ///
+  /// In en, this message translates to:
+  /// **'BookOrbit doesn\'t report codec or bitrate.'**
+  String get fileInfoBookOrbitNote;
+
+  /// No description provided for @fileInfoChannels.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} channels'**
+  String fileInfoChannels(int count);
+
+  /// No description provided for @fileInfoCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover'**
+  String get fileInfoCover;
+
+  /// No description provided for @fileInfoMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata'**
+  String get fileInfoMetadata;
+
+  /// No description provided for @fileInfoSupplement.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra'**
+  String get fileInfoSupplement;
+
+  /// No description provided for @fileInfoPathCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Path copied'**
+  String get fileInfoPathCopied;
 
   /// No description provided for @resetMayNotHaveSynced.
   ///
@@ -17493,6 +17631,36 @@ abstract class AppLocalizations {
   /// **'Even while audio is playing'**
   String get readerVolumeNavWhilePlaying;
 
+  /// No description provided for @readerTranslateWith.
+  ///
+  /// In en, this message translates to:
+  /// **'Translate with'**
+  String get readerTranslateWith;
+
+  /// No description provided for @readerTranslateApp.
+  ///
+  /// In en, this message translates to:
+  /// **'App on this device'**
+  String get readerTranslateApp;
+
+  /// No description provided for @readerTranslateApple.
+  ///
+  /// In en, this message translates to:
+  /// **'Built into iOS'**
+  String get readerTranslateApple;
+
+  /// No description provided for @readerTranslateWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Opens in your browser'**
+  String get readerTranslateWeb;
+
+  /// No description provided for @readerTranslateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected text is sent to the translator you pick.'**
+  String get readerTranslateHint;
+
   /// No description provided for @readerMoreFonts.
   ///
   /// In en, this message translates to:
@@ -18069,6 +18237,480 @@ abstract class AppLocalizations {
   /// **'Checked {when}'**
   String bookStatsLastChecked(String when);
 
+  /// No description provided for @activityYourReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Your reading'**
+  String get activityYourReading;
+
+  /// No description provided for @activityYourListening.
+  ///
+  /// In en, this message translates to:
+  /// **'Your listening'**
+  String get activityYourListening;
+
+  /// No description provided for @activityLastRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Last read {when}'**
+  String activityLastRead(String when);
+
+  /// No description provided for @activityLastListened.
+  ///
+  /// In en, this message translates to:
+  /// **'Last listened {when}'**
+  String activityLastListened(String when);
+
+  /// No description provided for @activityNotStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Not started'**
+  String get activityNotStarted;
+
+  /// No description provided for @activityNoReading.
+  ///
+  /// In en, this message translates to:
+  /// **'No reading sessions yet'**
+  String get activityNoReading;
+
+  /// No description provided for @activityTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Time'**
+  String get activityTime;
+
+  /// No description provided for @activityAverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Avg'**
+  String get activityAverage;
+
+  /// No description provided for @activityProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Progress'**
+  String get activityProgress;
+
+  /// No description provided for @activityReached.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent} reached'**
+  String activityReached(String percent);
+
+  /// No description provided for @readingLogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading log'**
+  String get readingLogTitle;
+
+  /// No description provided for @readingLogTotalTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Total time'**
+  String get readingLogTotalTime;
+
+  /// No description provided for @readingLogAverageSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Average session'**
+  String get readingLogAverageSession;
+
+  /// No description provided for @readingLogActiveDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Active days'**
+  String get readingLogActiveDays;
+
+  /// No description provided for @readingLogActiveDaysOf.
+  ///
+  /// In en, this message translates to:
+  /// **'{active} of {total}'**
+  String readingLogActiveDaysOf(int active, int total);
+
+  /// No description provided for @readingLogPace.
+  ///
+  /// In en, this message translates to:
+  /// **'Pace'**
+  String get readingLogPace;
+
+  /// No description provided for @readingLogPacePerHour.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}%/h'**
+  String readingLogPacePerHour(String percent);
+
+  /// No description provided for @readingLogLastRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Last read'**
+  String get readingLogLastRead;
+
+  /// No description provided for @readingLogStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Started'**
+  String get readingLogStarted;
+
+  /// No description provided for @readingLogFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished'**
+  String get readingLogFinished;
+
+  /// No description provided for @readingLogNotSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Not set'**
+  String get readingLogNotSet;
+
+  /// No description provided for @readingLogLeftMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'About {m}m to finish'**
+  String readingLogLeftMinutes(int m);
+
+  /// No description provided for @readingLogLeftHours.
+  ///
+  /// In en, this message translates to:
+  /// **'About {h}h to finish'**
+  String readingLogLeftHours(int h);
+
+  /// No description provided for @readingLogLeftHoursMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'About {h}h {m}m to finish'**
+  String readingLogLeftHoursMinutes(int h, int m);
+
+  /// No description provided for @readingLogLeftMax.
+  ///
+  /// In en, this message translates to:
+  /// **'Over 99h to finish'**
+  String get readingLogLeftMax;
+
+  /// No description provided for @readingLogUpOnLastWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'Up {percent}% on the week before'**
+  String readingLogUpOnLastWeek(int percent);
+
+  /// No description provided for @readingLogDownOnLastWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'Down {percent}% on the week before'**
+  String readingLogDownOnLastWeek(int percent);
+
+  /// No description provided for @readingLogNewThisWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'New this week'**
+  String get readingLogNewThisWeek;
+
+  /// No description provided for @readingLogSameAsLastWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'Same as the week before'**
+  String get readingLogSameAsLastWeek;
+
+  /// No description provided for @readingLogQuietTwoWeeks.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing in the last two weeks'**
+  String get readingLogQuietTwoWeeks;
+
+  /// No description provided for @readingLogWhereYouRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Where you read it'**
+  String get readingLogWhereYouRead;
+
+  /// No description provided for @readingLogSourceIos.
+  ///
+  /// In en, this message translates to:
+  /// **'iOS app'**
+  String get readingLogSourceIos;
+
+  /// No description provided for @readingLogSourceAndroid.
+  ///
+  /// In en, this message translates to:
+  /// **'Android app'**
+  String get readingLogSourceAndroid;
+
+  /// No description provided for @readingLogChartTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Progress over time'**
+  String get readingLogChartTitle;
+
+  /// No description provided for @readingLogChartPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Position reached'**
+  String get readingLogChartPosition;
+
+  /// No description provided for @readingLogChartMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Minutes'**
+  String get readingLogChartMinutes;
+
+  /// No description provided for @readingLogRecords.
+  ///
+  /// In en, this message translates to:
+  /// **'Records'**
+  String get readingLogRecords;
+
+  /// No description provided for @readingLogLongestSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Longest session'**
+  String get readingLogLongestSession;
+
+  /// No description provided for @readingLogBestDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Best day'**
+  String get readingLogBestDay;
+
+  /// No description provided for @readingLogLongestStreak.
+  ///
+  /// In en, this message translates to:
+  /// **'Longest streak'**
+  String get readingLogLongestStreak;
+
+  /// No description provided for @readingLogStreakDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day} other{{count} days}}'**
+  String readingLogStreakDays(int count);
+
+  /// No description provided for @readingLogJumpedBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Jumped back'**
+  String get readingLogJumpedBack;
+
+  /// No description provided for @readingLogJumpedBackTimes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 time} other{{count} times}}'**
+  String readingLogJumpedBackTimes(int count);
+
+  /// No description provided for @readingLogFirstOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'First opened'**
+  String get readingLogFirstOpened;
+
+  /// No description provided for @readingLogAttempts.
+  ///
+  /// In en, this message translates to:
+  /// **'Attempts'**
+  String get readingLogAttempts;
+
+  /// No description provided for @readingLogAttempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Attempt {index}'**
+  String readingLogAttempt(int index);
+
+  /// No description provided for @readingLogAttemptBegan.
+  ///
+  /// In en, this message translates to:
+  /// **'Attempt {index} began'**
+  String readingLogAttemptBegan(int index);
+
+  /// No description provided for @readingLogOutcomeCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get readingLogOutcomeCompleted;
+
+  /// No description provided for @readingLogOutcomeSkimmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Skimmed'**
+  String get readingLogOutcomeSkimmed;
+
+  /// No description provided for @readingLogOutcomeAbandoned.
+  ///
+  /// In en, this message translates to:
+  /// **'Abandoned'**
+  String get readingLogOutcomeAbandoned;
+
+  /// No description provided for @readingLogOutcomeInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get readingLogOutcomeInProgress;
+
+  /// No description provided for @readingLogSpanRange.
+  ///
+  /// In en, this message translates to:
+  /// **'{from} to {to}'**
+  String readingLogSpanRange(String from, String to);
+
+  /// No description provided for @readingLogSpanSince.
+  ///
+  /// In en, this message translates to:
+  /// **'Since {from}'**
+  String readingLogSpanSince(String from);
+
+  /// No description provided for @readingLogSpanEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Ended {to}'**
+  String readingLogSpanEnded(String to);
+
+  /// No description provided for @readingLogSpanUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'No dates recorded'**
+  String get readingLogSpanUnknown;
+
+  /// No description provided for @readingLogSessionCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 session} other{{count} sessions}}'**
+  String readingLogSessionCount(int count);
+
+  /// No description provided for @readingLogShowing.
+  ///
+  /// In en, this message translates to:
+  /// **'{shown} of {total}'**
+  String readingLogShowing(int shown, int total);
+
+  /// No description provided for @readingLogGapDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day without reading} other{{count} days without reading}}'**
+  String readingLogGapDays(int count);
+
+  /// No description provided for @readingLogEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No sessions recorded yet'**
+  String get readingLogEmpty;
+
+  /// No description provided for @readingLogEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions show up here as you read or listen, from any app or device that syncs with BookOrbit.'**
+  String get readingLogEmptyHint;
+
+  /// No description provided for @readingLogNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No sessions in this range'**
+  String get readingLogNoMatches;
+
+  /// No description provided for @readingLogAllTime.
+  ///
+  /// In en, this message translates to:
+  /// **'All time'**
+  String get readingLogAllTime;
+
+  /// No description provided for @readingLogLast30.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 30 days'**
+  String get readingLogLast30;
+
+  /// No description provided for @readingLogLast90.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 90 days'**
+  String get readingLogLast90;
+
+  /// No description provided for @readingLogThisYear.
+  ///
+  /// In en, this message translates to:
+  /// **'This year'**
+  String get readingLogThisYear;
+
+  /// No description provided for @readingLogAllFormats.
+  ///
+  /// In en, this message translates to:
+  /// **'All formats'**
+  String get readingLogAllFormats;
+
+  /// No description provided for @readingLogSortBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get readingLogSortBy;
+
+  /// No description provided for @readingLogSortDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Day'**
+  String get readingLogSortDay;
+
+  /// No description provided for @readingLogSortLength.
+  ///
+  /// In en, this message translates to:
+  /// **'Length'**
+  String get readingLogSortLength;
+
+  /// No description provided for @readingLogSortChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get readingLogSortChange;
+
+  /// No description provided for @readingLogSortReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Reached'**
+  String get readingLogSortReached;
+
+  /// No description provided for @readingLogNewestFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest first'**
+  String get readingLogNewestFirst;
+
+  /// No description provided for @readingLogOldestFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest first'**
+  String get readingLogOldestFirst;
+
+  /// No description provided for @readingLogMostFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Most first'**
+  String get readingLogMostFirst;
+
+  /// No description provided for @readingLogLeastFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Least first'**
+  String get readingLogLeastFirst;
+
+  /// No description provided for @readingLogDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this session?'**
+  String get readingLogDeleteTitle;
+
+  /// No description provided for @readingLogDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It comes off the book\'s reading log and your stats on BookOrbit.'**
+  String get readingLogDeleteBody;
+
+  /// No description provided for @readingLogDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the session'**
+  String get readingLogDeleteFailed;
+
+  /// No description provided for @readingLogLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the reading log'**
+  String get readingLogLoadFailed;
+
   /// No description provided for @navHoldServerScan.
   ///
   /// In en, this message translates to:
@@ -18224,6 +18866,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Define'**
   String get readerTooltipDefine;
+
+  /// No description provided for @readerTooltipTranslate.
+  ///
+  /// In en, this message translates to:
+  /// **'Translate'**
+  String get readerTooltipTranslate;
 
   /// No description provided for @readerSearchHint.
   ///
@@ -18960,7 +19608,7 @@ abstract class AppLocalizations {
   /// No description provided for @loginMagicLinkDescription.
   ///
   /// In en, this message translates to:
-  /// **'Sign in with a BookOrbit magic link instead of a password.'**
+  /// **'Sign in with a BookOrbit magic link, or paste a password link to set your password.'**
   String get loginMagicLinkDescription;
 
   /// No description provided for @collectionPublicTitle.
@@ -19190,6 +19838,1728 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No pages found in this comic.'**
   String get comicNoPages;
+
+  /// No description provided for @boAdminTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Server admin'**
+  String get boAdminTitle;
+
+  /// No description provided for @boAdminSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Users and libraries on this BookOrbit server'**
+  String get boAdminSubtitle;
+
+  /// No description provided for @boAdminUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Users'**
+  String get boAdminUsers;
+
+  /// No description provided for @boAdminLibraries.
+  ///
+  /// In en, this message translates to:
+  /// **'Libraries'**
+  String get boAdminLibraries;
+
+  /// No description provided for @boAdminUserCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 person} other{{count} people}}'**
+  String boAdminUserCount(int count);
+
+  /// No description provided for @boAdminLibraryCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 library} other{{count} libraries}}'**
+  String boAdminLibraryCount(int count);
+
+  /// No description provided for @boAdminSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved'**
+  String get boAdminSaved;
+
+  /// No description provided for @boAdminFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'That didn\'t work. Try again.'**
+  String get boAdminFailed;
+
+  /// No description provided for @boAdminOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach the server.'**
+  String get boAdminOffline;
+
+  /// No description provided for @boUsersSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search users'**
+  String get boUsersSearch;
+
+  /// No description provided for @boUsersNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No users here'**
+  String get boUsersNone;
+
+  /// No description provided for @boUsersFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get boUsersFilterAll;
+
+  /// No description provided for @boUsersFilterAdmins.
+  ///
+  /// In en, this message translates to:
+  /// **'Admins'**
+  String get boUsersFilterAdmins;
+
+  /// No description provided for @boUsersFilterActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get boUsersFilterActive;
+
+  /// No description provided for @boUsersFilterInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Inactive'**
+  String get boUsersFilterInactive;
+
+  /// No description provided for @boUsersFilterAttention.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get boUsersFilterAttention;
+
+  /// No description provided for @boUserBadgeAdmin.
+  ///
+  /// In en, this message translates to:
+  /// **'Admin'**
+  String get boUserBadgeAdmin;
+
+  /// No description provided for @boUserBadgeInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Inactive'**
+  String get boUserBadgeInactive;
+
+  /// No description provided for @boUserBadgeLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Locked'**
+  String get boUserBadgeLocked;
+
+  /// No description provided for @boUserBadgeNoPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'No password yet'**
+  String get boUserBadgeNoPassword;
+
+  /// No description provided for @boUserLastActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Last active {date}'**
+  String boUserLastActive(String date);
+
+  /// No description provided for @boUserNeverSignedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Never signed in'**
+  String get boUserNeverSignedIn;
+
+  /// No description provided for @boUserNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New user'**
+  String get boUserNew;
+
+  /// No description provided for @boUserCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get boUserCreate;
+
+  /// No description provided for @boUserUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get boUserUsername;
+
+  /// No description provided for @boUserUsernameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'At least 3 characters. It cannot be changed later.'**
+  String get boUserUsernameHint;
+
+  /// No description provided for @boUserName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get boUserName;
+
+  /// No description provided for @boUserEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get boUserEmail;
+
+  /// No description provided for @boUserEmailInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address'**
+  String get boUserEmailInvalid;
+
+  /// No description provided for @boUserActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get boUserActive;
+
+  /// No description provided for @boUserActiveSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Inactive users can\'t sign in'**
+  String get boUserActiveSubtitle;
+
+  /// No description provided for @boUserAdmin.
+  ///
+  /// In en, this message translates to:
+  /// **'Administrator'**
+  String get boUserAdmin;
+
+  /// No description provided for @boUserAdminSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Full access to everything on the server'**
+  String get boUserAdminSubtitle;
+
+  /// No description provided for @boUserAdminHasAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Administrators have every permission and see every library.'**
+  String get boUserAdminHasAll;
+
+  /// No description provided for @boUserPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Permissions'**
+  String get boUserPermissions;
+
+  /// No description provided for @boUserPresetNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get boUserPresetNone;
+
+  /// No description provided for @boUserPresetStandard.
+  ///
+  /// In en, this message translates to:
+  /// **'Standard'**
+  String get boUserPresetStandard;
+
+  /// No description provided for @boUserPresetEverything.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything'**
+  String get boUserPresetEverything;
+
+  /// No description provided for @boUserLibraries.
+  ///
+  /// In en, this message translates to:
+  /// **'Libraries'**
+  String get boUserLibraries;
+
+  /// No description provided for @boUserLibrariesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The libraries this person can see.'**
+  String get boUserLibrariesHint;
+
+  /// No description provided for @boUserPasswordLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Send password link'**
+  String get boUserPasswordLink;
+
+  /// No description provided for @boUserPasswordLinkSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A link to set a new password, valid for 15 minutes'**
+  String get boUserPasswordLinkSubtitle;
+
+  /// No description provided for @boUserExternal.
+  ///
+  /// In en, this message translates to:
+  /// **'Signs in through single sign-on, so the password is managed there.'**
+  String get boUserExternal;
+
+  /// No description provided for @boUserUnlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock account'**
+  String get boUserUnlock;
+
+  /// No description provided for @boUserUnlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Account unlocked'**
+  String get boUserUnlocked;
+
+  /// No description provided for @boUserDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete user'**
+  String get boUserDelete;
+
+  /// No description provided for @boUserDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}?'**
+  String boUserDeleteTitle(String name);
+
+  /// No description provided for @boUserDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Their account and everything they have on this server are removed. This cannot be undone.'**
+  String get boUserDeleteBody;
+
+  /// No description provided for @boUserDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'User deleted'**
+  String get boUserDeleted;
+
+  /// No description provided for @boUserLinkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Password link'**
+  String get boUserLinkTitle;
+
+  /// No description provided for @boUserLinkBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Share this link with {name}. It lets them set a password and works for 15 minutes.'**
+  String boUserLinkBody(String name);
+
+  /// No description provided for @boPasswordRules.
+  ///
+  /// In en, this message translates to:
+  /// **'At least 8 characters, with an uppercase letter, a lowercase letter and a number.'**
+  String get boPasswordRules;
+
+  /// No description provided for @boSetPasswordTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set your password'**
+  String get boSetPasswordTitle;
+
+  /// No description provided for @boSetPasswordSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Set password and sign in'**
+  String get boSetPasswordSubmit;
+
+  /// No description provided for @boSetPasswordLinkBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a password for {username} on {server}.'**
+  String boSetPasswordLinkBody(String username, String server);
+
+  /// No description provided for @boSetPasswordLinkBodyNoName.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a password for your account on {server}.'**
+  String boSetPasswordLinkBodyNoName(String server);
+
+  /// No description provided for @boSetPasswordStartingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This account still has the password it was created with. Choose a new one to finish signing in.'**
+  String get boSetPasswordStartingBody;
+
+  /// No description provided for @boSetPasswordTrust.
+  ///
+  /// In en, this message translates to:
+  /// **'Only continue if you trust who sent this link.'**
+  String get boSetPasswordTrust;
+
+  /// No description provided for @boPasswordLinkExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This link has expired or was already used. Ask your server admin for a new one.'**
+  String get boPasswordLinkExpired;
+
+  /// No description provided for @boPasswordSetSignInFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your password is set, but signing in failed: {error}'**
+  String boPasswordSetSignInFailed(String error);
+
+  /// No description provided for @boChangePasswordSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Update your BookOrbit password'**
+  String get boChangePasswordSubtitle;
+
+  /// No description provided for @boPasswordChangeEffect.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing your password signs out your other BookOrbit sessions. This device stays signed in.'**
+  String get boPasswordChangeEffect;
+
+  /// No description provided for @boPasswordChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Password changed. Other signed-in devices were signed out.'**
+  String get boPasswordChanged;
+
+  /// No description provided for @boPasswordShareDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Send this link or have {username} scan the QR code to choose a password and sign in to Absorb. It works for 15 minutes.'**
+  String boPasswordShareDescription(String username);
+
+  /// No description provided for @boPasswordShareWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone with this link can choose the password for {username} until it is used or expires.'**
+  String boPasswordShareWarning(String username);
+
+  /// No description provided for @setupLinkCopyWebLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy web link'**
+  String get setupLinkCopyWebLink;
+
+  /// No description provided for @boUserLinkCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get boUserLinkCopy;
+
+  /// No description provided for @boUserLinkCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Link copied'**
+  String get boUserLinkCopied;
+
+  /// No description provided for @boUserLinkShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Share'**
+  String get boUserLinkShare;
+
+  /// No description provided for @boUserNoLink.
+  ///
+  /// In en, this message translates to:
+  /// **'The user was added, but the server sent no password link. Send one from their page.'**
+  String get boUserNoLink;
+
+  /// No description provided for @boPermGroupLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Library and books'**
+  String get boPermGroupLibrary;
+
+  /// No description provided for @boPermGroupRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Book requests'**
+  String get boPermGroupRequests;
+
+  /// No description provided for @boPermGroupDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Devices'**
+  String get boPermGroupDevices;
+
+  /// No description provided for @boPermGroupIntegrations.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading integrations'**
+  String get boPermGroupIntegrations;
+
+  /// No description provided for @boPermGroupDock.
+  ///
+  /// In en, this message translates to:
+  /// **'Book Dock'**
+  String get boPermGroupDock;
+
+  /// No description provided for @boPermGroupEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email and notifications'**
+  String get boPermGroupEmail;
+
+  /// No description provided for @boPermGroupAdmin.
+  ///
+  /// In en, this message translates to:
+  /// **'Administration'**
+  String get boPermGroupAdmin;
+
+  /// No description provided for @boPermLibraryDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download books'**
+  String get boPermLibraryDownload;
+
+  /// No description provided for @boPermLibraryUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload books'**
+  String get boPermLibraryUpload;
+
+  /// No description provided for @boPermLibraryEditMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit metadata'**
+  String get boPermLibraryEditMetadata;
+
+  /// No description provided for @boPermLibraryDeleteBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete books'**
+  String get boPermLibraryDeleteBooks;
+
+  /// No description provided for @boPermBookRequestAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Request books'**
+  String get boPermBookRequestAccess;
+
+  /// No description provided for @boPermBookRequestAutoApprove.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests approved automatically'**
+  String get boPermBookRequestAutoApprove;
+
+  /// No description provided for @boPermBookRequestSelfFulfill.
+  ///
+  /// In en, this message translates to:
+  /// **'Download requested books directly'**
+  String get boPermBookRequestSelfFulfill;
+
+  /// No description provided for @boPermManageBookRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage book requests'**
+  String get boPermManageBookRequests;
+
+  /// No description provided for @boPermKoboSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Kobo sync'**
+  String get boPermKoboSync;
+
+  /// No description provided for @boPermKoreaderSync.
+  ///
+  /// In en, this message translates to:
+  /// **'KOReader sync'**
+  String get boPermKoreaderSync;
+
+  /// No description provided for @boPermOpdsAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'OPDS access'**
+  String get boPermOpdsAccess;
+
+  /// No description provided for @boPermHardcoverSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardcover sync'**
+  String get boPermHardcoverSync;
+
+  /// No description provided for @boPermReadwiseSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Readwise sync'**
+  String get boPermReadwiseSync;
+
+  /// No description provided for @boPermStorygraphSync.
+  ///
+  /// In en, this message translates to:
+  /// **'StoryGraph sync'**
+  String get boPermStorygraphSync;
+
+  /// No description provided for @boPermBookDockAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the Book Dock'**
+  String get boPermBookDockAccess;
+
+  /// No description provided for @boPermManageBookDock.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage the Book Dock'**
+  String get boPermManageBookDock;
+
+  /// No description provided for @boPermEmailSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send books by email'**
+  String get boPermEmailSend;
+
+  /// No description provided for @boPermNotificationAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get boPermNotificationAccess;
+
+  /// No description provided for @boPermManageEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage email'**
+  String get boPermManageEmail;
+
+  /// No description provided for @boPermManageLibraries.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage libraries'**
+  String get boPermManageLibraries;
+
+  /// No description provided for @boPermManageMetadataConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata settings'**
+  String get boPermManageMetadataConfig;
+
+  /// No description provided for @boPermManageIcons.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage icons'**
+  String get boPermManageIcons;
+
+  /// No description provided for @boPermManageUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage users'**
+  String get boPermManageUsers;
+
+  /// No description provided for @boPermViewUserActivity.
+  ///
+  /// In en, this message translates to:
+  /// **'View user activity'**
+  String get boPermViewUserActivity;
+
+  /// No description provided for @boPermViewAuditLog.
+  ///
+  /// In en, this message translates to:
+  /// **'View the audit log'**
+  String get boPermViewAuditLog;
+
+  /// No description provided for @boPermManageAppSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'App settings'**
+  String get boPermManageAppSettings;
+
+  /// No description provided for @boLibsNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No libraries yet'**
+  String get boLibsNone;
+
+  /// No description provided for @boLibBookCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book} other{{count} books}}'**
+  String boLibBookCount(int count);
+
+  /// No description provided for @boLibScanNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan now'**
+  String get boLibScanNow;
+
+  /// No description provided for @boLibScanStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan started'**
+  String get boLibScanStarted;
+
+  /// No description provided for @boLibScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning'**
+  String get boLibScanning;
+
+  /// No description provided for @boLibLastScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanned {date}: {added} added, {updated} updated, {missing} missing'**
+  String boLibLastScan(String date, int added, int updated, int missing);
+
+  /// No description provided for @boLibScanFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The last scan failed'**
+  String get boLibScanFailed;
+
+  /// No description provided for @boLibNeverScanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Not scanned yet'**
+  String get boLibNeverScanned;
+
+  /// No description provided for @boLibNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New library'**
+  String get boLibNew;
+
+  /// No description provided for @boLibName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get boLibName;
+
+  /// No description provided for @boLibNeedName.
+  ///
+  /// In en, this message translates to:
+  /// **'Give the library a name'**
+  String get boLibNeedName;
+
+  /// No description provided for @boLibIcon.
+  ///
+  /// In en, this message translates to:
+  /// **'Icon'**
+  String get boLibIcon;
+
+  /// No description provided for @boLibFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Folders'**
+  String get boLibFolders;
+
+  /// No description provided for @boLibFoldersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Folders on the server where this library\'s books live.'**
+  String get boLibFoldersHint;
+
+  /// No description provided for @boLibNeedFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Add at least one folder'**
+  String get boLibNeedFolder;
+
+  /// No description provided for @boLibAddFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Add folder'**
+  String get boLibAddFolder;
+
+  /// No description provided for @boLibFolderFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 file} other{{count} files}}'**
+  String boLibFolderFiles(int count);
+
+  /// No description provided for @boLibFolderInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in {library}'**
+  String boLibFolderInUse(String library);
+
+  /// No description provided for @boLibFolderUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'The server can\'t read this folder'**
+  String get boLibFolderUnreadable;
+
+  /// No description provided for @boLibFolderRescan.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing the folders rescans the library.'**
+  String get boLibFolderRescan;
+
+  /// No description provided for @boLibOrganization.
+  ///
+  /// In en, this message translates to:
+  /// **'Books are stored as'**
+  String get boLibOrganization;
+
+  /// No description provided for @boLibPerFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'One book per folder'**
+  String get boLibPerFolder;
+
+  /// No description provided for @boLibPerFile.
+  ///
+  /// In en, this message translates to:
+  /// **'One book per file'**
+  String get boLibPerFile;
+
+  /// No description provided for @boLibOrganizationFixed.
+  ///
+  /// In en, this message translates to:
+  /// **'This cannot be changed after the library is created.'**
+  String get boLibOrganizationFixed;
+
+  /// No description provided for @boLibWatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Watch for changes'**
+  String get boLibWatch;
+
+  /// No description provided for @boLibWatchSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick up new and changed files as they appear'**
+  String get boLibWatchSubtitle;
+
+  /// No description provided for @boLibSchedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled scan'**
+  String get boLibSchedule;
+
+  /// No description provided for @boLibScheduleOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get boLibScheduleOff;
+
+  /// No description provided for @boLibScheduleDaily.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily'**
+  String get boLibScheduleDaily;
+
+  /// No description provided for @boLibScheduleWeekly.
+  ///
+  /// In en, this message translates to:
+  /// **'Weekly'**
+  String get boLibScheduleWeekly;
+
+  /// No description provided for @boLibScheduleCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom ({cron})'**
+  String boLibScheduleCustom(String cron);
+
+  /// No description provided for @boLibScheduleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Runs at 3 AM server time.'**
+  String get boLibScheduleHint;
+
+  /// No description provided for @boLibCovers.
+  ///
+  /// In en, this message translates to:
+  /// **'Cover shape'**
+  String get boLibCovers;
+
+  /// No description provided for @boLibCoverBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Book (2:3)'**
+  String get boLibCoverBook;
+
+  /// No description provided for @boLibCoverSquare.
+  ///
+  /// In en, this message translates to:
+  /// **'Square (1:1)'**
+  String get boLibCoverSquare;
+
+  /// No description provided for @boLibAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Who can see it'**
+  String get boLibAccess;
+
+  /// No description provided for @boLibAccessHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Administrators see every library. Others need access here.'**
+  String get boLibAccessHint;
+
+  /// No description provided for @boLibAccessNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Only administrators so far'**
+  String get boLibAccessNone;
+
+  /// No description provided for @boLibAccessAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add person'**
+  String get boLibAccessAdd;
+
+  /// No description provided for @boLibAccessEveryoneHas.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone already has access'**
+  String get boLibAccessEveryoneHas;
+
+  /// No description provided for @boLibLevelViewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewer'**
+  String get boLibLevelViewer;
+
+  /// No description provided for @boLibLevelEditor.
+  ///
+  /// In en, this message translates to:
+  /// **'Editor'**
+  String get boLibLevelEditor;
+
+  /// No description provided for @boLibLevelOwner.
+  ///
+  /// In en, this message translates to:
+  /// **'Owner'**
+  String get boLibLevelOwner;
+
+  /// No description provided for @boLibAccessRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove access'**
+  String get boLibAccessRemove;
+
+  /// No description provided for @boLibDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete library'**
+  String get boLibDelete;
+
+  /// No description provided for @boLibDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}?'**
+  String boLibDeleteTitle(String name);
+
+  /// No description provided for @boLibDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The library is removed from BookOrbit, with its books\' progress and highlights. The files on the server stay where they are.'**
+  String get boLibDeleteBody;
+
+  /// No description provided for @boLibDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Library deleted'**
+  String get boLibDeleted;
+
+  /// No description provided for @boFolderPickTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a folder'**
+  String get boFolderPickTitle;
+
+  /// No description provided for @boFolderUseThis.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this folder'**
+  String get boFolderUseThis;
+
+  /// No description provided for @boFolderEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No folders inside'**
+  String get boFolderEmpty;
+
+  /// No description provided for @statsTotalTime.
+  ///
+  /// In en, this message translates to:
+  /// **'TOTAL TIME'**
+  String get statsTotalTime;
+
+  /// No description provided for @statsTotalReadingTime.
+  ///
+  /// In en, this message translates to:
+  /// **'TOTAL READING TIME'**
+  String get statsTotalReadingTime;
+
+  /// No description provided for @statsDaysOfTime.
+  ///
+  /// In en, this message translates to:
+  /// **'That\'s {days} days'**
+  String statsDaysOfTime(String days);
+
+  /// No description provided for @statsHoursOfTime.
+  ///
+  /// In en, this message translates to:
+  /// **'That\'s {hours} hours'**
+  String statsHoursOfTime(String hours);
+
+  /// No description provided for @statsMediaAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get statsMediaAll;
+
+  /// No description provided for @statsMediaListening.
+  ///
+  /// In en, this message translates to:
+  /// **'Listening'**
+  String get statsMediaListening;
+
+  /// No description provided for @statsMediaReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading'**
+  String get statsMediaReading;
+
+  /// No description provided for @statsZoneMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'BookOrbit counts your days in {server}, but this phone is set to {phone}. Time late in the day can land on the wrong day.'**
+  String statsZoneMismatch(String server, String phone);
+
+  /// No description provided for @statsZoneUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Use {zone}'**
+  String statsZoneUse(String zone);
+
+  /// No description provided for @statsZoneSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'BookOrbit now uses {zone}. Older days can take a few minutes to catch up.'**
+  String statsZoneSaved(String zone);
+
+  /// No description provided for @statsZoneFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t change the time zone on BookOrbit'**
+  String get statsZoneFailed;
+
+  /// No description provided for @statsTimeOfDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Time of day'**
+  String get statsTimeOfDay;
+
+  /// No description provided for @statsBusiestAround.
+  ///
+  /// In en, this message translates to:
+  /// **'Busiest around {time}'**
+  String statsBusiestAround(String time);
+
+  /// No description provided for @statsFinishedByMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'Books finished by month'**
+  String get statsFinishedByMonth;
+
+  /// No description provided for @statsFinishedLast12.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} in the last 12 months'**
+  String statsFinishedLast12(int count);
+
+  /// No description provided for @statsWhereTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Where you listen and read'**
+  String get statsWhereTitle;
+
+  /// No description provided for @statsLast12Months.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 12 months'**
+  String get statsLast12Months;
+
+  /// No description provided for @statsHabits.
+  ///
+  /// In en, this message translates to:
+  /// **'Habits'**
+  String get statsHabits;
+
+  /// No description provided for @statsTypicalSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Typical session'**
+  String get statsTypicalSession;
+
+  /// No description provided for @statsProgressPerSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Progress per session'**
+  String get statsProgressPerSession;
+
+  /// No description provided for @statsTimeToFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Time to finish'**
+  String get statsTimeToFinish;
+
+  /// No description provided for @statsDayCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day} other{{count} days}}'**
+  String statsDayCount(int count);
+
+  /// No description provided for @statsBooksStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Books started'**
+  String get statsBooksStarted;
+
+  /// No description provided for @statsBooksInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get statsBooksInProgress;
+
+  /// No description provided for @statsAverageProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Average progress'**
+  String get statsAverageProgress;
+
+  /// No description provided for @statsTopBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Top books'**
+  String get statsTopBooks;
+
+  /// No description provided for @statsYearRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Read'**
+  String get statsYearRead;
+
+  /// No description provided for @boNotificationsUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Nothing new} =1{1 unread} other{{count} unread}}'**
+  String boNotificationsUnread(int count);
+
+  /// No description provided for @boNotificationsMarkAllRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark all read'**
+  String get boNotificationsMarkAllRead;
+
+  /// No description provided for @boNotificationsClearAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get boNotificationsClearAll;
+
+  /// No description provided for @boNotificationsClearTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all notifications?'**
+  String get boNotificationsClearTitle;
+
+  /// No description provided for @boNotificationsClearBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This removes every notification from your BookOrbit account.'**
+  String get boNotificationsClearBody;
+
+  /// No description provided for @boNotificationsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No notifications yet'**
+  String get boNotificationsEmpty;
+
+  /// No description provided for @boNotificationsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load notifications'**
+  String get boNotificationsLoadFailed;
+
+  /// No description provided for @boNotificationsUpdateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update notifications on BookOrbit'**
+  String get boNotificationsUpdateFailed;
+
+  /// No description provided for @boNotificationsOccurrences.
+  ///
+  /// In en, this message translates to:
+  /// **'Happened {count} times'**
+  String boNotificationsOccurrences(int count);
+
+  /// No description provided for @boNotificationsSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings'**
+  String get boNotificationsSettings;
+
+  /// No description provided for @boNotificationsSettingsIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose which notifications BookOrbit keeps for you.'**
+  String get boNotificationsSettingsIntro;
+
+  /// No description provided for @boNotificationsProblemsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Problems only notifies you when something fails or needs attention.'**
+  String get boNotificationsProblemsHint;
+
+  /// No description provided for @boNotificationLevelOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get boNotificationLevelOff;
+
+  /// No description provided for @boNotificationLevelProblems.
+  ///
+  /// In en, this message translates to:
+  /// **'Problems'**
+  String get boNotificationLevelProblems;
+
+  /// No description provided for @boNotificationLevelAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get boNotificationLevelAll;
+
+  /// No description provided for @boNotificationsSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings saved'**
+  String get boNotificationsSaved;
+
+  /// No description provided for @boNotificationsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save notification settings'**
+  String get boNotificationsSaveFailed;
+
+  /// No description provided for @boNotificationGroupLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Library'**
+  String get boNotificationGroupLibrary;
+
+  /// No description provided for @boNotificationGroupFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get boNotificationGroupFiles;
+
+  /// No description provided for @boNotificationGroupIntegrations.
+  ///
+  /// In en, this message translates to:
+  /// **'Integrations'**
+  String get boNotificationGroupIntegrations;
+
+  /// No description provided for @boNotificationGroupPersonal.
+  ///
+  /// In en, this message translates to:
+  /// **'Personal'**
+  String get boNotificationGroupPersonal;
+
+  /// No description provided for @boNotifyScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Library scanning'**
+  String get boNotifyScanning;
+
+  /// No description provided for @boNotifyScanningDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When a library scan finishes, fails, or finds missing books.'**
+  String get boNotifyScanningDesc;
+
+  /// No description provided for @boNotifyMetadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Metadata fetching'**
+  String get boNotifyMetadata;
+
+  /// No description provided for @boNotifyMetadataDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When metadata lookups for your books finish or fail.'**
+  String get boNotifyMetadataDesc;
+
+  /// No description provided for @boNotifyAuthorEnrichment.
+  ///
+  /// In en, this message translates to:
+  /// **'Author details'**
+  String get boNotifyAuthorEnrichment;
+
+  /// No description provided for @boNotifyAuthorEnrichmentDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When author biographies and photos finish downloading.'**
+  String get boNotifyAuthorEnrichmentDesc;
+
+  /// No description provided for @boNotifyFileWriteBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving to files'**
+  String get boNotifyFileWriteBack;
+
+  /// No description provided for @boNotifyFileWriteBackDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When edited details are saved into the book files on disk.'**
+  String get boNotifyFileWriteBackDesc;
+
+  /// No description provided for @boNotifyFileRename.
+  ///
+  /// In en, this message translates to:
+  /// **'File renaming'**
+  String get boNotifyFileRename;
+
+  /// No description provided for @boNotifyFileRenameDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When a book file is renamed to match your naming pattern.'**
+  String get boNotifyFileRenameDesc;
+
+  /// No description provided for @boNotifyBulkRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Bulk renaming'**
+  String get boNotifyBulkRename;
+
+  /// No description provided for @boNotifyBulkRenameDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When renaming many books, or moving books between libraries, finishes or fails.'**
+  String get boNotifyBulkRenameDesc;
+
+  /// No description provided for @boNotifyMigration.
+  ///
+  /// In en, this message translates to:
+  /// **'Imports'**
+  String get boNotifyMigration;
+
+  /// No description provided for @boNotifyMigrationDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When an import from another library app finishes or fails.'**
+  String get boNotifyMigrationDesc;
+
+  /// No description provided for @boNotifyBookDock.
+  ///
+  /// In en, this message translates to:
+  /// **'Book Dock'**
+  String get boNotifyBookDock;
+
+  /// No description provided for @boNotifyBookDockDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When Book Dock finishes adding books or runs into problems.'**
+  String get boNotifyBookDockDesc;
+
+  /// No description provided for @boNotifyBookRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Book requests'**
+  String get boNotifyBookRequests;
+
+  /// No description provided for @boNotifyBookRequestsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When a book request is submitted or decided, or the book becomes available.'**
+  String get boNotifyBookRequestsDesc;
+
+  /// No description provided for @boNotifyEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email delivery'**
+  String get boNotifyEmail;
+
+  /// No description provided for @boNotifyEmailDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When sending a book by email works or fails.'**
+  String get boNotifyEmailDesc;
+
+  /// No description provided for @boNotifyAchievements.
+  ///
+  /// In en, this message translates to:
+  /// **'Achievements'**
+  String get boNotifyAchievements;
+
+  /// No description provided for @boNotifyAchievementsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'When you unlock a new achievement.'**
+  String get boNotifyAchievementsDesc;
+
+  /// No description provided for @achievementsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Achievements'**
+  String get achievementsTitle;
+
+  /// No description provided for @achievementsEarnedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{earned} of {total} earned'**
+  String achievementsEarnedSummary(int earned, int total);
+
+  /// No description provided for @achievementsFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get achievementsFilterAll;
+
+  /// No description provided for @achievementsFilterEarned.
+  ///
+  /// In en, this message translates to:
+  /// **'Earned'**
+  String get achievementsFilterEarned;
+
+  /// No description provided for @achievementsFilterInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get achievementsFilterInProgress;
+
+  /// No description provided for @achievementsFilterLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Locked'**
+  String get achievementsFilterLocked;
+
+  /// No description provided for @achievementsCategoryReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading'**
+  String get achievementsCategoryReading;
+
+  /// No description provided for @achievementsCategoryLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Library'**
+  String get achievementsCategoryLibrary;
+
+  /// No description provided for @achievementsCategoryExploration.
+  ///
+  /// In en, this message translates to:
+  /// **'Exploration'**
+  String get achievementsCategoryExploration;
+
+  /// No description provided for @achievementsCategoryDedication.
+  ///
+  /// In en, this message translates to:
+  /// **'Dedication'**
+  String get achievementsCategoryDedication;
+
+  /// No description provided for @achievementsCategoryDevices.
+  ///
+  /// In en, this message translates to:
+  /// **'Devices'**
+  String get achievementsCategoryDevices;
+
+  /// No description provided for @achievementsRarityCommon.
+  ///
+  /// In en, this message translates to:
+  /// **'Common'**
+  String get achievementsRarityCommon;
+
+  /// No description provided for @achievementsRarityRare.
+  ///
+  /// In en, this message translates to:
+  /// **'Rare'**
+  String get achievementsRarityRare;
+
+  /// No description provided for @achievementsRarityEpic.
+  ///
+  /// In en, this message translates to:
+  /// **'Epic'**
+  String get achievementsRarityEpic;
+
+  /// No description provided for @achievementsRarityLegendary.
+  ///
+  /// In en, this message translates to:
+  /// **'Legendary'**
+  String get achievementsRarityLegendary;
+
+  /// No description provided for @achievementsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load achievements'**
+  String get achievementsLoadFailed;
+
+  /// No description provided for @achievementsNoneMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No achievements match this filter'**
+  String get achievementsNoneMatch;
+
+  /// No description provided for @achievementsSecretName.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret achievement'**
+  String get achievementsSecretName;
+
+  /// No description provided for @achievementsSecretHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep reading to reveal this one.'**
+  String get achievementsSecretHint;
+
+  /// No description provided for @achievementsEarnedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Earned {date}'**
+  String achievementsEarnedOn(String date);
+
+  /// No description provided for @achievementsWhileReading.
+  ///
+  /// In en, this message translates to:
+  /// **'While reading {title}'**
+  String achievementsWhileReading(String title);
+
+  /// No description provided for @achievementsTierOf.
+  ///
+  /// In en, this message translates to:
+  /// **'Tier {earned} of {total}'**
+  String achievementsTierOf(int earned, int total);
+
+  /// No description provided for @achievementsTiers.
+  ///
+  /// In en, this message translates to:
+  /// **'Tiers'**
+  String get achievementsTiers;
+
+  /// No description provided for @achievementsAllTiers.
+  ///
+  /// In en, this message translates to:
+  /// **'Every tier earned'**
+  String get achievementsAllTiers;
+
+  /// No description provided for @achievementsProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold}'**
+  String achievementsProgress(String current, String threshold);
+
+  /// No description provided for @achievementsProgressBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} books'**
+  String achievementsProgressBooks(String current, String threshold);
+
+  /// No description provided for @achievementsProgressPages.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} pages'**
+  String achievementsProgressPages(String current, String threshold);
+
+  /// No description provided for @achievementsProgressHours.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} hours'**
+  String achievementsProgressHours(String current, String threshold);
+
+  /// No description provided for @achievementsProgressAnnotations.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} highlights and notes'**
+  String achievementsProgressAnnotations(String current, String threshold);
+
+  /// No description provided for @achievementsProgressRatings.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} ratings'**
+  String achievementsProgressRatings(String current, String threshold);
+
+  /// No description provided for @achievementsProgressGenres.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} genres'**
+  String achievementsProgressGenres(String current, String threshold);
+
+  /// No description provided for @achievementsProgressLanguages.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} languages'**
+  String achievementsProgressLanguages(String current, String threshold);
+
+  /// No description provided for @achievementsProgressDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {threshold} days'**
+  String achievementsProgressDays(String current, String threshold);
+
+  /// No description provided for @achievementsHowToGetIt.
+  ///
+  /// In en, this message translates to:
+  /// **'How to get it'**
+  String get achievementsHowToGetIt;
+
+  /// No description provided for @achievementsHintReadingPace.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{You read 1 hour in the last {days} days.} other{You read {count} hours in the last {days} days.}}'**
+  String achievementsHintReadingPace(int count, int days);
+
+  /// No description provided for @achievementsHintEtaDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{About 1 day at this pace.} other{About {count} days at this pace.}}'**
+  String achievementsHintEtaDays(int count);
+
+  /// No description provided for @achievementsHintEtaWeeks.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{About 1 week at this pace.} other{About {count} weeks at this pace.}}'**
+  String achievementsHintEtaWeeks(int count);
+
+  /// No description provided for @achievementsHintEtaMonths.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{About 1 month at this pace.} other{About {count} months at this pace.}}'**
+  String achievementsHintEtaMonths(int count);
+
+  /// No description provided for @achievementsHintDecadeUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book from the {decade}s is waiting on your shelves.} other{{count} books from the {decade}s are waiting on your shelves.}}'**
+  String achievementsHintDecadeUnread(int count, String decade);
+
+  /// No description provided for @achievementsHintCenturyUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book from the {century}s is waiting on your shelves.} other{{count} books from the {century}s are waiting on your shelves.}}'**
+  String achievementsHintCenturyUnread(int count, String century);
+
+  /// No description provided for @achievementsHintStalled.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} is {percent} read and was started on {date}.'**
+  String achievementsHintStalled(String title, String percent, String date);
+
+  /// No description provided for @achievementsHintStalledNoProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} was started on {date}.'**
+  String achievementsHintStalledNoProgress(String title, String date);
+
+  /// No description provided for @achievementsHintUntitledBook.
+  ///
+  /// In en, this message translates to:
+  /// **'A book in progress'**
+  String get achievementsHintUntitledBook;
+
+  /// No description provided for @achievementsHintNearlyFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book in progress is past {percent}.} other{{count} books in progress are past {percent}.}}'**
+  String achievementsHintNearlyFinished(int count, String percent);
+
+  /// No description provided for @achievementsHintUnrated.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book you finished has no rating yet.} other{{count} books you finished have no rating yet.}}'**
+  String achievementsHintUnrated(int count);
+
+  /// No description provided for @achievementsHintShortBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book under {pages} pages is waiting on your shelves.} other{{count} books under {pages} pages are waiting on your shelves.}}'**
+  String achievementsHintShortBooks(int count, String pages);
+
+  /// No description provided for @achievementsHintAlreadyStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 is already in progress.} other{{count} are already in progress.}}'**
+  String achievementsHintAlreadyStarted(int count);
+
+  /// No description provided for @achievementsHintLongBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book of {pages} pages or more is waiting on your shelves.} other{{count} books of {pages} pages or more are waiting on your shelves.}}'**
+  String achievementsHintLongBooks(int count, String pages);
+
+  /// No description provided for @achievementsHintOldBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book published before {year} is waiting on your shelves.} other{{count} books published before {year} are waiting on your shelves.}}'**
+  String achievementsHintOldBooks(int count, String year);
+
+  /// No description provided for @achievementsHintAuthorUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'{author}: {finished} finished, {count} more on your shelves.'**
+  String achievementsHintAuthorUnread(String author, int finished, int count);
+
+  /// No description provided for @achievementsHintLanguageUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 book in {language} is waiting on your shelves.} other{{count} books in {language} are waiting on your shelves.}}'**
+  String achievementsHintLanguageUnread(int count, String language);
+
+  /// No description provided for @achievementsHintMonthsRead.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{You have read in 1 month of {year} so far.} other{You have read in {count} months of {year} so far.}}'**
+  String achievementsHintMonthsRead(int count, String year);
+
+  /// No description provided for @achievementsHintMonthsLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{months} is left.} other{{months} are left.}}'**
+  String achievementsHintMonthsLeft(int count, String months);
+
+  /// No description provided for @achievementsHintNoLongBook.
+  ///
+  /// In en, this message translates to:
+  /// **'No book on your shelves has {pages} pages or more yet.'**
+  String achievementsHintNoLongBook(String pages);
+
+  /// No description provided for @achievementsHintNothingBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing on your shelves was published before {year}.'**
+  String achievementsHintNothingBefore(String year);
+
+  /// No description provided for @achievementsHintTooFewDecades.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Your shelves span only 1 decade so far.} other{Your shelves span only {count} decades so far.}}'**
+  String achievementsHintTooFewDecades(int count);
+
+  /// No description provided for @achievementsHintTooFewCenturies.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Your shelves span only 1 century so far.} other{Your shelves span only {count} centuries so far.}}'**
+  String achievementsHintTooFewCenturies(int count);
+
+  /// No description provided for @achievementsHintMissedMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'You did not read in {month}, so {year} is out of reach. The count starts again in January.'**
+  String achievementsHintMissedMonth(String month, String year);
+
+  /// No description provided for @achievementsSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Achievements'**
+  String get achievementsSwitch;
+
+  /// No description provided for @achievementsSwitchSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Track achievements on BookOrbit. Turning this off hides them here and on the web.'**
+  String get achievementsSwitchSubtitle;
+
+  /// No description provided for @achievementsTurnedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Achievements turned on'**
+  String get achievementsTurnedOn;
+
+  /// No description provided for @achievementsTurnedOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Achievements turned off'**
+  String get achievementsTurnedOff;
+
+  /// No description provided for @achievementsSwitchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t change achievements on BookOrbit'**
+  String get achievementsSwitchFailed;
 }
 
 class _AppLocalizationsDelegate

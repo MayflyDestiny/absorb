@@ -5,22 +5,29 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'achievements.dart';
 import 'auth_tokens.dart';
 import 'book_dock.dart';
 import 'book_requests.dart';
+import 'bookorbit_admin.dart';
 import 'bookorbit_match.dart';
 import 'bookorbit_mapper.dart';
 import 'media_overlay.dart';
 import 'narrated_books.dart';
+import 'narration_stream.dart';
 import 'bookorbit_media_proxy_stub.dart'
     if (dart.library.io) 'bookorbit_media_proxy.dart';
 import 'player_settings.dart';
+import 'scoped_prefs.dart';
+import 'server_notifications.dart';
 import 'server_backend.dart';
 import 'socket_service.dart';
 import '../models/auth_session.dart';
 import '../utils/server_url.dart';
+import '../utils/percent_escapes.dart';
 
 part 'bookorbit_api_service.dart';
+part 'bookorbit_admin_api.dart';
 
 /// Outcome of a local-session upsert. [serverTooOld] flags a 404/501 (the
 /// server predates /api/session/local) so the caller can fall back to the
@@ -396,6 +403,29 @@ class ApiService {
   /// Removes a server ebook bookmark. True when it's gone (or never existed).
   Future<bool> deleteEbookBookmark(String itemId, String bookmarkId) async => false;
 
+  /// Whether the server keeps ebook highlights too, so they sync both ways.
+  bool get keepsEbookHighlights => false;
+
+  /// The server's highlights in a book, as {id, cfi, fileId, text, color,
+  /// note, chapter, at}, or null when it keeps none or can't be reached.
+  /// With [fileId], a server that can also places highlights made in other
+  /// copies of the book (a Kobo's or KOReader's) on that file.
+  Future<List<Map<String, dynamic>>?> ebookHighlights(String itemId, {String? fileId}) async => null;
+
+  /// Saves a highlight in the book file [fileId] on the server. Returns its
+  /// server id, or null when the server keeps none or the save failed.
+  Future<String?> addEbookHighlight(String itemId, String fileId,
+          {required String cfi, required String text, required String color, String? note, String? chapter}) async =>
+      null;
+
+  /// Sets a server highlight's color and note. True when saved, or when the
+  /// highlight is already gone there.
+  Future<bool> updateEbookHighlight(String itemId, String highlightId, {required String color, String? note}) async =>
+      false;
+
+  /// Removes a server highlight. True when it's gone (or never existed).
+  Future<bool> deleteEbookHighlight(String itemId, String highlightId) async => false;
+
   /// The cover slots a book uses on BookOrbit ('audio', 'ebook'). Empty on
   /// Audiobookshelf, which has one cover per item.
   Future<List<String>> coverSlots(String itemId) async => const [];
@@ -423,6 +453,20 @@ class ApiService {
 
   /// Headers for a download of [url] built by [buildDownloadFileUrl].
   Map<String, String> downloadHeadersFor(String url) => mediaHeaders;
+
+  /// Sign-in headers for a download the server turned away because the ones
+  /// it started with ran out.
+  Future<Map<String, String>> renewedMediaHeaders() async {
+    await _ensureFreshAccessToken();
+    return mediaHeaders;
+  }
+
+  /// The access token, renewed first when it is about to run out, for a
+  /// connection that signs in with the token itself.
+  Future<String> freshAccessToken() async {
+    await _ensureFreshAccessToken();
+    return _accessToken;
+  }
 
   /// Where a narrated EPUB downloads whole from, and the headers it needs,
   /// for the download that takes its audio out on the phone.
@@ -482,6 +526,33 @@ class ApiService {
   /// What the account may do with BookOrbit book requests. Nothing on
   /// Audiobookshelf.
   Future<BookRequestAccess> bookRequestAccess() async => BookRequestAccess.none;
+
+  /// Whether the account has a notification list on the server. Only
+  /// BookOrbit keeps one.
+  Future<bool> hasServerNotifications() async => false;
+
+  /// A page of the account's notifications, newest first.
+  Future<({List<ServerNotification> items, int total})?> serverNotifications({int limit = 20, int offset = 0}) async =>
+      null;
+
+  Future<int?> unreadNotificationCount() async => null;
+  Future<bool> markNotificationRead(int id) async => false;
+  Future<bool> markAllNotificationsRead() async => false;
+  Future<bool> dismissNotification(int id) async => false;
+  Future<bool> clearNotifications() async => false;
+
+  /// The level each notification category is set to, by category.
+  Future<Map<String, String>?> notificationLevels() async => null;
+  Future<bool> setNotificationLevels(Map<String, String> levels) async => false;
+
+  /// Whether the account keeps achievements, null where there are none.
+  /// BookOrbit's own account switch, so it reads the same everywhere.
+  Future<bool?> achievementsEnabled() async => null;
+  Future<bool> setAchievementsEnabled(bool enabled) async => false;
+
+  /// The account's achievements. Only BookOrbit has them.
+  Future<AchievementCatalogue?> achievements({bool fresh = false}) async => null;
+  Future<List<AchievementHint>> achievementHints() async => const [];
 
   /// One page of the account's own requests, or everyone's with [all].
   Future<({List<BookRequest> items, int total})?> bookRequests({
@@ -1616,6 +1687,14 @@ class ApiService {
     return null;
   }
 
+  /// One day's sessions, for a server that lists them by day. Null means
+  /// page through [getListeningSessions] instead.
+  Future<List<Map<String, dynamic>>?> getListeningSessionsForDay(DateTime day) async => null;
+
+  /// Sets the time zone the server splits this account's days in, for a
+  /// server that keeps one. False when it couldn't.
+  Future<bool> setAccountTimeZone(String zone) async => false;
+
   Future<List<Map<String, dynamic>>?> getItemListeningSessions(
     String libraryItemId, {
     String? episodeId,
@@ -2325,7 +2404,7 @@ class ApiService {
         ...session,
         'deviceInfo': reading ? _readingDeviceInfo : _deviceInfo,
         'mediaPlayer': reading ? readingMediaPlayer : 'exo-player',
-        'playMethod': 3, // LOCAL
+        'playMethod': session['playMethod'] ?? 3, // LOCAL unless streamed
       };
       final resp = await _authPost(
         Uri.parse('$_cleanBaseUrl/api/session/local'),
@@ -2359,7 +2438,7 @@ class ApiService {
     try {
       final body = {
         'sessions': sessions
-            .map((s) => {...s, 'mediaPlayer': 'exo-player', 'playMethod': 3})
+            .map((s) => {...s, 'mediaPlayer': 'exo-player', 'playMethod': s['playMethod'] ?? 3})
             .toList(),
         'deviceInfo': _deviceInfo,
       };
@@ -2490,9 +2569,45 @@ class ApiService {
     }
   }
 
+  /// Logs a listen that happened away from the app, to catch up a book's
+  /// listening time. It ends at the book's saved spot so the book keeps its
+  /// place.
+  Future<bool> addListeningSession({
+    required String itemId,
+    required DateTime startedAt,
+    required int seconds,
+  }) async {
+    final item = await getLibraryItem(itemId);
+    final media = item?['media'] as Map<String, dynamic>?;
+    final meta = media?['metadata'] as Map<String, dynamic>?;
+    final progress = item?['userMediaProgress'] as Map<String, dynamic>?;
+    final at = (progress?['currentTime'] as num?)?.toDouble() ?? 0;
+    final ended = startedAt.add(Duration(seconds: seconds));
+    String two(int v) => v.toString().padLeft(2, '0');
+    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final result = await syncLocalSession({
+      'id': BookOrbitApiService._uuid(),
+      'libraryItemId': itemId,
+      'episodeId': null,
+      'mediaType': 'book',
+      'displayTitle': meta?['title'],
+      'displayAuthor': meta?['authorName'],
+      'duration': (media?['duration'] as num?)?.toDouble() ?? 0,
+      'startTime': math.max(0.0, at - seconds),
+      'currentTime': at,
+      'timeListening': seconds,
+      'startedAt': startedAt.millisecondsSinceEpoch,
+      'updatedAt': ended.millisecondsSinceEpoch,
+      'date': '${startedAt.year}-${two(startedAt.month)}-${two(startedAt.day)}',
+      'dayOfWeek': weekdays[startedAt.weekday - 1],
+    });
+    return result.ok;
+  }
+
   /// Delete a listening session. Needs the user's delete permission on the
-  /// server (403 otherwise). Returns true on success.
-  Future<bool> deleteListeningSession(String sessionId) async {
+  /// server (403 otherwise). Returns true on success. [itemId] is the book
+  /// the session belongs to, which BookOrbit needs.
+  Future<bool> deleteListeningSession(String sessionId, {String? itemId}) async {
     try {
       final resp = await _authDelete(
         Uri.parse('$_cleanBaseUrl/api/sessions/$sessionId'),
@@ -2516,10 +2631,28 @@ class ApiService {
         Uri.parse('$_cleanBaseUrl/api/me/progress/$progressPath'),
         timeout: const Duration(seconds: 10));
       if (resp.statusCode == 200) {
-        return jsonDecode(resp.body) as Map<String, dynamic>;
+        return await _withPageReadElsewhere(itemId, jsonDecode(resp.body) as Map<String, dynamic>);
       }
     } catch (_) {}
     return null;
+  }
+
+  /// The narration time of the page a narrated book was read to on another
+  /// device, when that page is the newer place. Set by the app at start.
+  static Future<double?> Function(String itemId, Map<String, dynamic> progress)? pageReadElsewhere;
+
+  /// Audiobookshelf sees only the ebook in a narrated EPUB, so reading it in
+  /// its web reader moves the page and leaves the audio behind. A newer page
+  /// ahead of the audio is where listening picks up.
+  Future<Map<String, dynamic>> _withPageReadElsewhere(String itemId, Map<String, dynamic> progress) async {
+    final place = pageReadElsewhere;
+    if (place == null || isBookOrbit || !NarratedBooks.contains(itemId)) return progress;
+    try {
+      final at = await place(itemId, progress);
+      return at == null ? progress : {...progress, 'currentTime': at};
+    } catch (_) {
+      return progress;
+    }
   }
 
   /// The server's place in an item's ebook, for opening the reader there:

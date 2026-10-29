@@ -119,6 +119,7 @@ class BookOrbitMapper {
         'name': u['name'],
         'isSuperuser': superuser,
         'permissions': perms,
+        'provisioningMethod': u['provisioningMethod'],
         'timezone': (u['settings'] as Map?)?['timezone'],
       },
     };
@@ -336,6 +337,8 @@ class BookOrbitMapper {
           : {
               'ino': _str(ebook['id']),
               'ebookFormat': ebookFormat,
+              if ((ebook['fileHash'] ?? ebook['contentVersion']) != null)
+                'version': '${ebook['fileHash'] ?? ebook['contentVersion']}',
               'metadata': {
                 'filename': ebook['filename'] ?? 'book.$ebookFormat',
                 'ext': '.$ebookFormat',
@@ -369,12 +372,14 @@ class BookOrbitMapper {
       'bookOrbit': {
         'coverVersion': src['coverVersion'],
         'audioCover': _hasAudio(files),
+        if (_hasReadAlong(files)) 'readAlong': true,
         'readStatus': src['readStatus'],
         'readingProgress': src['readingProgress'],
         if (detail != null) ...{
           'personalNote': detail['personalNote'],
           'communityRatings': detail['communityRatings'] ?? const [],
           'providerIds': detail['providerIds'] ?? const {},
+          'files': [for (final f in files) _fileInfo(f)],
         },
       },
     };
@@ -637,6 +642,26 @@ class BookOrbitMapper {
 
   static bool _hasAudio(List<Map<String, dynamic>> files) =>
       files.where(_isContent).any((f) => isAudioFormat(_format(f)));
+
+  /// An EPUB that reads itself aloud, which BookOrbit's covers mark with
+  /// headphones. Its length can still be unknown.
+  static bool _hasReadAlong(List<Map<String, dynamic>> files) => files.where(_isContent).any(
+      (f) => _format(f) == 'epub' && (f['mediaOverlay'] as Map?)?['available'] == true);
+
+  /// One of a book's files as the file info sheet shows it.
+  static Map<String, dynamic> _fileInfo(Map<String, dynamic> f) {
+    final path = f['absolutePath'] as String?;
+    return {
+      'id': _str(f['id']),
+      'filename': f['filename'] ?? path?.split(RegExp(r'[\\/]')).last,
+      'format': _format(f),
+      'role': f['role'],
+      'size': f['sizeBytes'],
+      'duration': f['durationSeconds'],
+      'path': path,
+      'readAlong': _format(f) == 'epub' && (f['mediaOverlay'] as Map?)?['available'] == true,
+    };
+  }
 
   /// An EPUB carrying its own narration (EPUB 3 media overlays) of a known
   /// length, or null.

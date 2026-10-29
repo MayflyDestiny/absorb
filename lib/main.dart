@@ -21,6 +21,7 @@ import 'providers/auth_provider.dart';
 import 'providers/library_provider.dart';
 import 'services/audio_player_service.dart';
 import 'services/api_service.dart';
+import 'services/narration_service.dart';
 import 'services/download_service.dart';
 import 'services/progress_sync_service.dart';
 import 'services/local_session_service.dart';
@@ -208,6 +209,9 @@ void main() async {
   HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   ReadListenSync.instance.start();
+  BookOrbitApiService.placeReadingSpot = NarrationService.readingSpotSeconds;
+  BookOrbitApiService.keptNarration = NarrationService.instance.localOverlay;
+  ApiService.pageReadElsewhere = NarrationService.pageReadElsewhere;
   try {
     await NarratedBooks.load().timeout(const Duration(seconds: 2));
   } catch (_) {}

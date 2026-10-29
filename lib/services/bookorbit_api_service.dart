@@ -146,6 +146,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   /// Forget everything cached for the signed-in account.
   static void clearCaches() {
+    _ebookReadCards.clear();
     _manifests.clear();
     _manifestAt.clear();
     _details.clear();
@@ -162,7 +163,15 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     _recent.clear();
     _serverVersions.clear();
     _serverFeatures.clear();
+    _narrations.clear();
+    _narrationLoads.clear();
+    _placedSpots.clear();
   }
+
+  /// Names Absorb on the highlights and sessions it saves, on servers that
+  /// show it. Older ones refuse a field they don't know.
+  Future<Map<String, String>> _clientName() async =>
+      (await _features()).contains('client-name') ? const {'clientName': 'Absorb'} : const {};
 
   Future<Set<String>> _features() async {
     final origin = ApiService._originOf(_cleanBaseUrl) ?? _cleanBaseUrl;
@@ -489,6 +498,148 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     }
   }
 
+  /// The server and token in a BookOrbit password link
+  /// (`https://host[/base]/reset-password?token=...`), or null when [input]
+  /// isn't one.
+  static ({Uri server, String token})? passwordLink(String input) {
+    final uri = Uri.tryParse(input.trim());
+    final token = uri?.queryParameters['token'] ?? '';
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty || token.isEmpty) {
+      return null;
+    }
+    var path = uri.path;
+    if (path.endsWith('/')) path = path.substring(0, path.length - 1);
+    if (!path.endsWith('/reset-password')) return null;
+    return (
+      server: Uri(
+        scheme: uri.scheme,
+        host: uri.host,
+        port: uri.hasPort ? uri.port : null,
+        path: path.substring(0, path.length - '/reset-password'.length),
+      ),
+      token: token,
+    );
+  }
+
+  /// BookOrbit's password rules: at least 8 characters, with a lowercase
+  /// letter, an uppercase letter and a digit.
+  static bool passwordAcceptable(String password) =>
+      password.length >= 8 &&
+      RegExp('[a-z]').hasMatch(password) &&
+      RegExp('[A-Z]').hasMatch(password) &&
+      RegExp(r'\d').hasMatch(password);
+
+  /// Sets a password from a password link. [message] is BookOrbit's reason
+  /// when it refused.
+  static Future<({bool ok, int status, String? message})> setPasswordFromLink({
+    required String serverUrl,
+    required String token,
+    required String newPassword,
+    Map<String, String> customHeaders = const {},
+  }) async {
+    try {
+      final r = await http
+          .post(
+            Uri.parse('${_v1Of(serverUrl)}/auth/reset-password'),
+            headers: {
+              ...customHeaders,
+              'Content-Type': 'application/json',
+              if (!kIsWeb) 'User-Agent': ApiService.userAgent,
+            },
+            body: jsonEncode({'token': token, 'newPassword': newPassword}),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode >= 200 && r.statusCode < 300) return (ok: true, status: r.statusCode, message: null);
+      return (ok: false, status: r.statusCode, message: _BoHttpError(r.statusCode, r.body).serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] setting a password from a link failed: $e');
+      return (ok: false, status: 0, message: null);
+    }
+  }
+
+  /// Replaces an account's starting password: BookOrbit lets such an account
+  /// sign in only to change it. [message] is BookOrbit's reason when it
+  /// refused.
+  static Future<({bool ok, int status, String? message})> replaceStartingPassword({
+    required String serverUrl,
+    required String username,
+    required String currentPassword,
+    required String newPassword,
+    Map<String, String> customHeaders = const {},
+  }) async {
+    final headers = {
+      ...customHeaders,
+      'Content-Type': 'application/json',
+      if (!kIsWeb) 'User-Agent': ApiService.userAgent,
+    };
+    try {
+      final login = await http
+          .post(
+            Uri.parse('${_v1Of(serverUrl)}/auth/login'),
+            headers: headers,
+            body: jsonEncode({
+              'username': username,
+              'password': currentPassword,
+              'clientKind': 'native',
+              'deviceLabel': _deviceLabel(),
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (login.statusCode != 200 && login.statusCode != 201) {
+        return (ok: false, status: login.statusCode, message: _BoHttpError(login.statusCode, login.body).serverMessage);
+      }
+      final access = (jsonDecode(login.body) as Map<String, dynamic>)['accessToken'] as String?;
+      if (access == null) return (ok: false, status: 0, message: null);
+      final r = await http
+          .post(
+            Uri.parse('${_v1Of(serverUrl)}/auth/change-password'),
+            headers: {...headers, 'Authorization': 'Bearer $access'},
+            body: jsonEncode({'currentPassword': currentPassword, 'newPassword': newPassword}),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode >= 200 && r.statusCode < 300) return (ok: true, status: r.statusCode, message: null);
+      return (ok: false, status: r.statusCode, message: _BoHttpError(r.statusCode, r.body).serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] replacing a starting password failed: $e');
+      return (ok: false, status: 0, message: null);
+    }
+  }
+
+  @override
+  Future<PasswordChangeResult> changeMyPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    String username;
+    try {
+      username = '${(await _boGet('/auth/me') as Map<String, dynamic>)['username'] ?? ''}';
+      await _boPost('/auth/change-password', {'currentPassword': currentPassword, 'newPassword': newPassword});
+    } on _BoHttpError catch (e) {
+      if (e.status == 401) return const PasswordChangeResult(PasswordChangeStatus.invalidPassword);
+      return PasswordChangeResult(PasswordChangeStatus.failed, message: e.serverMessage);
+    } catch (e) {
+      debugPrint('[BookOrbit] changeMyPassword error: $e');
+      return const PasswordChangeResult(PasswordChangeStatus.failed);
+    }
+    // BookOrbit signs every session out when a password changes, this one
+    // too, so sign straight back in with the new one.
+    final (result, status) = await signIn(
+      serverUrl: _cleanBaseUrl,
+      username: username,
+      password: newPassword,
+      customHeaders: customHeaders,
+    );
+    final user = result?['user'];
+    if (status == 200 && user is Map && user['accessToken'] is String) {
+      _accessToken = user['accessToken'] as String;
+      _refreshToken = user['refreshToken'] as String?;
+      await onTokensRefreshed?.call(_accessToken, _refreshToken);
+    } else {
+      debugPrint('[BookOrbit] password changed, but signing back in failed: $status');
+    }
+    return const PasswordChangeResult(PasswordChangeStatus.success);
+  }
+
   /// The token from a BookOrbit magic link (`https://host/magic?token=...`),
   /// or the token itself when that is what was pasted.
   static String? magicLinkToken(String input) {
@@ -603,15 +754,6 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       return false;
     }
   }
-
-  @override
-  Future<PasswordChangeResult> changeMyPassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async =>
-      // BookOrbit signs every device out on a password change, so leave it
-      // to the web app rather than strand this session.
-      const PasswordChangeResult(PasswordChangeStatus.unsupported);
 
   @override
   Future<AuthSessionsResult> getAuthSessions({int page = 0, int itemsPerPage = 20}) async =>
@@ -913,10 +1055,23 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
           final sessions = (body['sessions'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
               .toList();
+          // One session BookOrbit turns away used to fail the whole batch, so
+          // the app kept every session behind it and none ever arrived. A
+          // refusal drops just that session; an unreachable server still
+          // fails the batch so the queue waits for the next try.
+          final results = <Map<String, dynamic>>[];
           for (final session in sessions) {
-            await _localSession(session);
+            var success = true;
+            try {
+              await _localSession(session);
+            } on _BoHttpError catch (e) {
+              if (e.status != 400 && e.status != 404) rethrow;
+              debugPrint('[BookOrbit] Dropped a session for ${session['libraryItemId']}: ${e.status} ${e.serverMessage ?? ''}');
+              success = false;
+            }
+            results.add({'id': session['id'], 'success': success});
           }
-          return _json({'results': sessions.map((e) => {'id': e['id'], 'success': true}).toList()});
+          return _json({'results': results});
         }
         if (n == 4 && at(3) == 'sync') return _syncSession(at(2), body);
         if (n == 4 && at(3) == 'close') {
@@ -962,6 +1117,17 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
           await _deleteProgress(at(3));
           return _json(const <String, dynamic>{});
         }
+        if (n == 5 && at(4) == 'remove-from-continue-listening' && method == 'GET') {
+          final id = at(3);
+          await _hideFromContinue(_hiddenBooksKey, id.startsWith('bo-') ? id.substring(3) : id);
+          return _json(const <String, dynamic>{});
+        }
+        return null;
+      case 'series':
+        if (n == 5 && at(4) == 'remove-from-continue-listening' && method == 'GET') {
+          await _hideFromContinue(_hiddenSeriesKey, at(3));
+          return _json(const <String, dynamic>{});
+        }
         return null;
       case 'bookmarks':
         if (method != 'GET') return null;
@@ -995,13 +1161,14 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         return null;
       case 'listening-sessions':
         if (method == 'GET') {
-          return _json({
-            'sessions': const [],
-            'total': 0,
-            'numPages': 0,
-            'page': int.tryParse(q['page'] ?? '') ?? 0,
-            'itemsPerPage': int.tryParse(q['itemsPerPage'] ?? '') ?? 20,
-          });
+          final perPage = (int.tryParse(q['itemsPerPage'] ?? '') ?? 20).clamp(1, 100);
+          return _json(await _recentSessions(int.tryParse(q['page'] ?? '') ?? 0, perPage));
+        }
+        return null;
+      case 'stats':
+        final year = int.tryParse(at(4));
+        if (method == 'GET' && n == 5 && at(3) == 'year' && year != null) {
+          return _json(await _cached('year-stats-$year', const Duration(minutes: 5), () => _yearStats(year)));
         }
         return null;
       case 'items-in-progress':
@@ -1202,7 +1369,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final group = dot < 0 ? filter : filter.substring(0, dot);
     var value = '';
     if (dot >= 0) {
-      final raw = Uri.decodeComponent(filter.substring(dot + 1));
+      final raw = undoPercentEscapes(filter.substring(dot + 1));
       try {
         value = utf8.decode(base64Decode(base64.normalize(raw)));
       } catch (_) {
@@ -1496,9 +1663,16 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final limit = (int.tryParse(q['limit'] ?? '') ?? 15).clamp(1, 50);
     final wanted = (q['shelves'] ?? '').split(',').where((s) => s.isNotEmpty).toSet();
     bool want(String id) => wanted.isEmpty || wanted.contains(id);
+    final hiddenBooks = (await ScopedPrefs.getStringList(_hiddenBooksKey)).toSet();
+    final hiddenSeries = (await ScopedPrefs.getStringList(_hiddenSeriesKey)).toSet();
+    bool hidden(String shelfId, Map<String, dynamic> c) => switch (shelfId) {
+          'continue-listening' || 'continue-reading' => hiddenBooks.contains('${c['id']}'),
+          'continue-series' => hiddenSeries.contains('${c['seriesId'] ?? 'name:${c['seriesName']}'}'),
+          _ => false,
+        };
 
     Map<String, dynamic> shelf(String id, String label, List<Map<String, dynamic>> cards, {bool seriesEntity = false}) {
-      final entities = cards.map((c) {
+      final entities = cards.where((c) => !hidden(id, c)).map((c) {
         final item = _cardItem(c, libraryId: libId);
         if (seriesEntity && c['seriesName'] != null) {
           ((item['media'] as Map<String, dynamic>)['metadata'] as Map<String, dynamic>)['series'] = {
@@ -1531,11 +1705,14 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     }
 
     // BookOrbit's dashboard keeps listening and reading apart, and so do the
-    // shelves here, the way Audiobookshelf has them. A narrated EPUB is
-    // listened to, so it goes with the audiobooks; a book only the
+    // shelves here, the way Audiobookshelf has them. A narrated EPUB goes
+    // with the audiobooks once its narration has been played, and stays
+    // with the reading while it has only been read; a book only the
     // library's own in-progress query found goes by whether it has audio.
     List<Map<String, dynamic>>? inProgress;
     var listenIds = <String>{}, readIds = <String>{};
+    final narrationPlayed = <String>{};
+    Map media(Map<String, dynamic> c) => _cardItem(c, libraryId: libId)['media'] as Map? ?? const {};
     Future<List<Map<String, dynamic>>> progressCards() async {
       final had = inProgress;
       if (had != null) return had;
@@ -1543,30 +1720,83 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       final reading = await _shelfCards('continue-reading', 50);
       listenIds = {for (final c in listening) '${c['id']}'};
       readIds = {for (final c in reading) '${c['id']}'};
+      // Audiobooks being read as ebooks, which BookOrbit's reading list
+      // leaves out, go with the reading unless they're being listened to.
+      try {
+        await _cached('progress', const Duration(seconds: 30), _allProgress);
+      } catch (e) {
+        debugPrint('[BookOrbit] Reading progress for Continue Reading failed: $e');
+      }
+      final ebookRead = _ebookReadCards.entries
+          .where((e) => !listenIds.contains(e.key) && !readIds.contains(e.key))
+          .map((e) => e.value)
+          .toList();
+      readIds.addAll(ebookRead.map((c) => '${c['id']}'));
       final seen = <String>{};
-      final merged = [...listening, ...reading].where((c) => seen.add('${c['id']}')).toList();
-      return inProgress = await _inProgressHere(merged, libId);
+      final merged = [...listening, ...reading, ...ebookRead].where((c) => seen.add('${c['id']}')).toList();
+      final cards = await _inProgressHere(merged, libId);
+      // BookOrbit 3.5.0 lists a narrated EPUB under listening once it has
+      // been played; an older server never does, and there a listening spot
+      // on the book's progress tells.
+      final narrated = cards
+          .map((c) => '${c['id']}')
+          .where((id) => !listenIds.contains(id))
+          .where((id) => media(cards.firstWhere((c) => '${c['id']}' == id))['narration'] != null)
+          .toList();
+      final played = await _pool(narrated.map((id) => () => _narrationPlayed(id)).toList());
+      narrationPlayed
+        ..addAll(listenIds)
+        ..addAll([for (var i = 0; i < narrated.length; i++) if (played[i]) narrated[i]]);
+      return inProgress = cards;
     }
 
-    Map media(Map<String, dynamic> c) => _cardItem(c, libraryId: libId)['media'] as Map? ?? const {};
     bool hasAudio(Map m) => m['narration'] != null || ((m['duration'] as num?) ?? 0) > 0;
     bool listened(Map<String, dynamic> c) {
       final id = '${c['id']}';
       final m = media(c);
-      if (listenIds.contains(id) || m['narration'] != null) return true;
+      if (m['narration'] != null) return narrationPlayed.contains(id);
+      if (listenIds.contains(id)) return true;
       return !readIds.contains(id) && hasAudio(m);
     }
 
     bool read(Map<String, dynamic> c) {
       final id = '${c['id']}';
       final m = media(c);
-      if (m['narration'] != null) return false;
+      if (m['narration'] != null) return !narrationPlayed.contains(id);
       if (readIds.contains(id)) return true;
       return !listenIds.contains(id) && !hasAudio(m);
     }
 
+    // Continue Listening draws from both of BookOrbit's shelves (narrated
+    // EPUBs come from the reading one), each newest first on its own. Put
+    // the two in one order by when each book was last touched, or every
+    // audiobook would sit ahead of a narrated book just listened to.
+    Future<List<Map<String, dynamic>>> newestFirst(List<Map<String, dynamic>> cards) async {
+      final audio = cards.where((c) => listenIds.contains('${c['id']}')).toList();
+      final rest = cards.where((c) => !listenIds.contains('${c['id']}')).toList();
+      if (audio.isEmpty || rest.isEmpty) return cards;
+      final heads = [...audio.take(limit), ...rest.take(limit)];
+      final times = await _pool(heads
+          .map((c) => () => _lastTouched('${c['id']}', narrated: media(c)['narration'] != null))
+          .toList());
+      final at = {for (var i = 0; i < heads.length; i++) '${heads[i]['id']}': times[i] ?? 0};
+      int when(Map<String, dynamic> c) => at['${c['id']}'] ?? 0;
+      final out = <Map<String, dynamic>>[];
+      var a = 0, r = 0;
+      while (a < audio.length && r < rest.length) {
+        out.add(when(audio[a]) >= when(rest[r]) ? audio[a++] : rest[r++]);
+      }
+      return [...out, ...audio.skip(a), ...rest.skip(r)];
+    }
+
     await add('continue-listening', () async {
-      final cards = (await progressCards()).where(listened).take(limit).toList();
+      final cards = (await newestFirst((await progressCards()).where(listened).toList())).take(limit).toList();
+      // A play checks the server's spot for a moment only, and placing a
+      // narrated book's spot needs its timings: read them now, not then.
+      for (final c in cards) {
+        if (media(c)['narration'] == null) continue;
+        unawaited(_narration('${c['id']}').then((_) {}, onError: (Object _) {}));
+      }
       return shelf('continue-listening', 'Continue Listening', cards);
     });
     await add('continue-reading', () async {
@@ -1609,6 +1839,36 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       return shelf('discover', 'Discover', cards);
     });
     return shelves;
+  }
+
+  /// When a book was last listened to or read, on any device. A narrated
+  /// EPUB keeps its place on its files' progress; an audiobook on its
+  /// playback state. Null when it can't be told.
+  /// Whether a narrated EPUB's narration has been played: a listening spot
+  /// on its progress. Taken as played when that can't be read, where it
+  /// always went before.
+  Future<bool> _narrationPlayed(String bookId) async {
+    try {
+      final rows = await _boGet('/books/$bookId/progress') as List<dynamic>;
+      return rows.whereType<Map<String, dynamic>>().any((r) => r['positionSeconds'] != null);
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<int?> _lastTouched(String bookId, {required bool narrated}) async {
+    try {
+      if (!narrated) return BookOrbitMapper.ms((await _playbackState(bookId))?['capturedAt']);
+      final rows = await _boGet('/books/$bookId/progress') as List<dynamic>;
+      int? newest;
+      for (final r in rows.whereType<Map<String, dynamic>>()) {
+        final at = BookOrbitMapper.ms(r['updatedAt']);
+        if (at != null && (newest == null || at > newest)) newest = at;
+      }
+      return newest;
+    } catch (_) {
+      return null;
+    }
   }
 
   Map<String, dynamic> _stubItem(String bookId, {String? title, String? seriesId, String? seriesName, Object? sequence}) => {
@@ -2246,6 +2506,82 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     } catch (e) {
       debugPrint('[BookOrbit] add ebook bookmark for $itemId: $e');
       return null;
+    }
+  }
+
+  @override
+  bool get keepsEbookHighlights => true;
+
+  @override
+  Future<List<Map<String, dynamic>>?> ebookHighlights(String itemId, {String? fileId}) async {
+    try {
+      // Older servers refuse a query they don't know.
+      final reader = fileId != null && int.tryParse(fileId) != null && (await _features()).contains('reader-file-positions');
+      final list = await _boGet('/books/$itemId/annotations', reader ? {'readerFileId': fileId} : null) as List<dynamic>;
+      return [
+        for (final a in list.whereType<Map<String, dynamic>>())
+          {
+            'id': '${a['id']}',
+            'cfi': a['cfi'],
+            'fileId': a['jumpFileId'] == null ? null : '${a['jumpFileId']}',
+            'text': a['text'],
+            'color': a['color'],
+            'note': a['note'],
+            'chapter': a['chapterTitle'],
+            'at': a['highlightedAt'] ?? a['createdAt'],
+          },
+      ];
+    } catch (e) {
+      debugPrint('[BookOrbit] highlights for $itemId: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> addEbookHighlight(String itemId, String fileId,
+      {required String cfi, required String text, required String color, String? note, String? chapter}) async {
+    try {
+      final created = await _boPost('/books/$itemId/annotations', {
+        'cfi': cfi,
+        if (int.tryParse(fileId) != null) 'bookFileId': int.parse(fileId),
+        'text': text,
+        'color': color,
+        'style': 'highlight',
+        if (note != null && note.isNotEmpty) 'note': note,
+        if (chapter != null && chapter.isNotEmpty)
+          'chapterTitle': chapter.length > 500 ? chapter.substring(0, 500) : chapter,
+        ...await _clientName(),
+      }) as Map<String, dynamic>;
+      return created['id'] == null ? null : '${created['id']}';
+    } catch (e) {
+      debugPrint('[BookOrbit] add highlight for $itemId: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> updateEbookHighlight(String itemId, String highlightId, {required String color, String? note}) async {
+    try {
+      await _boPatch('/books/$itemId/annotations/$highlightId', {'color': color, 'note': note});
+      return true;
+    } on _BoHttpError catch (e) {
+      return e.status == 404;
+    } catch (e) {
+      debugPrint('[BookOrbit] update highlight $highlightId: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> deleteEbookHighlight(String itemId, String highlightId) async {
+    try {
+      await _boDelete('/books/$itemId/annotations/$highlightId');
+      return true;
+    } on _BoHttpError catch (e) {
+      return e.status == 404;
+    } catch (e) {
+      debugPrint('[BookOrbit] delete highlight $highlightId: $e');
+      return false;
     }
   }
 
@@ -3446,7 +3782,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   @override
   String buildTrackUrl(String contentUrl, {String? sessionId, int? trackIndex, int? playMethod}) {
     final uri = Uri.parse(contentUrl);
-    if (BookOrbitMediaProxy.instance.owns(contentUrl)) return contentUrl;
+    if (BookOrbitMediaProxy.instance.owns(contentUrl) || NarrationStream.instance.owns(contentUrl)) return contentUrl;
     final seg = uri.pathSegments;
     final i = seg.indexOf('items');
     if (i >= 0 && i + 3 < seg.length && seg[i + 2] == 'file') {
@@ -3674,9 +4010,14 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     if (narration != null) {
       final fileId = int.tryParse('${narration['fileId']}');
       for (final r in fp.whereType<Map<String, dynamic>>()) {
-        if ((r['fileId'] as num?)?.toInt() == fileId) {
-          narrationAt = (r['positionSeconds'] as num?)?.toDouble();
-        }
+        if ((r['fileId'] as num?)?.toInt() != fileId) continue;
+        // BookOrbit's own reader can leave a sentence or only a page, with no
+        // seconds: those are placed on the narration too.
+        narrationAt = (r['positionSeconds'] as num?)?.toDouble() ??
+            await _placeNarrationSpot(bookId,
+                fragment: r['mediaOverlayFragment'] as String?,
+                section: (r['mediaOverlaySectionIndex'] as num?)?.toInt(),
+                cfi: r['cfi'] as String?);
       }
     }
     final readStatus = detail['readStatus'] as Map<String, dynamic>?;
@@ -3696,15 +4037,21 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       p['currentTime'] = narrationAt;
       if (p['isFinished'] != true) p['progress'] = (narrationAt / narrationTotal).clamp(0.0, 1.0);
     } else if (narration != null) {
-      // No listening spot on the EPUB (a page save from an older Absorb
-      // cleared it): nothing to move a paused player to, least of all 0.
+      // No listening spot on the EPUB that can be placed (no copy of the book
+      // here): nothing to move a paused player to, least of all 0.
       p.remove('currentTime');
     }
     return p;
   }
 
+  // Books with an audiobook being read as ebooks, by id, for Continue
+  // Reading: BookOrbit's own list goes by a book's primary file, which is
+  // the audiobook, so it never has them.
+  static final Map<String, Map<String, dynamic>> _ebookReadCards = {};
+
   Future<List<Map<String, dynamic>>> _allProgress() async {
     final byId = <String, Map<String, dynamic>>{};
+    final reading = <String, Map<String, dynamic>>{};
     Future<void> collect(List<String> statuses, String sortField, int maxPages) async {
       for (var page = 0; page < maxPages; page++) {
         final res = await _boPost('/books/query', {
@@ -3720,6 +4067,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         for (final c in items) {
           _cardItem(c);
           byId['${c['id']}'] = BookOrbitMapper.cardProgress(c);
+          if (statuses.contains('reading')) reading['${c['id']}'] = c;
         }
         final total = (res['total'] as num?)?.toInt() ?? 0;
         if (items.length < 200 || (page + 1) * 200 >= total) break;
@@ -3755,7 +4103,53 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     } catch (e) {
       debugPrint('[BookOrbit] Continue-listening positions failed: $e');
     }
+    await _addEbookPercents(byId, reading);
     return byId.values.toList();
+  }
+
+  /// A book with an audiobook and an ebook is listed by its audiobook, so
+  /// its reading is read off the ebook's own file. Without it the Read
+  /// button lost its percent after a restart, and Continue Reading never
+  /// had the book. A narrated EPUB is listed by its narration, so its page
+  /// is read the same way; BookOrbit already has it on Continue Reading.
+  Future<void> _addEbookPercents(Map<String, Map<String, dynamic>> byId, Map<String, Map<String, dynamic>> reading) async {
+    final narrated = <String>{};
+    final both = <MapEntry<String, Map<String, dynamic>>>[];
+    for (final e in reading.entries) {
+      final item = BookOrbitMapper.item(card: e.value);
+      final media = item['media'] as Map;
+      if (media['ebookFile'] == null) continue;
+      if (media['narration'] != null) {
+        narrated.add(e.key);
+        both.add(e);
+      } else if ((item['bookOrbit'] as Map?)?['audioCover'] == true) {
+        both.add(e);
+      }
+    }
+    final found = await _pool(both
+        .map((e) => () async {
+              try {
+                return _ebookFrom(e.value, await _boGet('/books/${e.key}/progress') as List<dynamic>);
+              } catch (_) {
+                return null;
+              }
+            })
+        .toList());
+    final cards = <String, Map<String, dynamic>>{};
+    for (var i = 0; i < both.length; i++) {
+      final ebook = found[i];
+      final p = byId[both[i].key];
+      if (ebook == null || p == null || (ebook.percent == null && ebook.cfi == null)) continue;
+      final pct = ((ebook.percent ?? 0) / 100).clamp(0.0, 1.0);
+      p['ebookProgress'] = pct;
+      if (ebook.cfi != null) p['ebookLocation'] = ebook.cfi;
+      if (pct > 0 && pct < 1 && p['isFinished'] != true && !narrated.contains(both[i].key)) {
+        cards[both[i].key] = both[i].value;
+      }
+    }
+    _ebookReadCards
+      ..clear()
+      ..addAll(cards);
   }
 
   /// The progress of a book read aloud from its EPUB: its place is kept on
@@ -3797,7 +4191,27 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   /// Save a book-absolute position. Returns the HTTP status that best
   /// describes the outcome for Audiobookshelf callers.
+  // Books and series taken off the Continue shelves. BookOrbit has no way to
+  // hide one, so Absorb keeps the list, per account; a book comes back once
+  // it is listened to or read again, the way Audiobookshelf does it.
+  static const _hiddenBooksKey = 'bookorbit_hidden_continue';
+  static const _hiddenSeriesKey = 'bookorbit_hidden_continue_series';
+
+  Future<void> _hideFromContinue(String key, String id) async {
+    final ids = await ScopedPrefs.getStringList(key);
+    if (!ids.contains(id)) await ScopedPrefs.setStringList(key, [...ids, id]);
+    _recent.removeWhere((k, _) => k.startsWith('personalized:'));
+  }
+
+  Future<void> _backOnContinue(String bookId) async {
+    final ids = await ScopedPrefs.getStringList(_hiddenBooksKey);
+    if (!ids.remove(bookId)) return;
+    await ScopedPrefs.setStringList(_hiddenBooksKey, ids);
+    _recent.removeWhere((k, _) => k.startsWith('personalized:'));
+  }
+
   Future<int> _putPosition(String bookId, double absoluteSeconds, {DateTime? capturedAt}) async {
+    await _backOnContinue(bookId);
     var manifest = await _manifest(bookId);
     if (manifest == null) return _putNarrationPosition(bookId, absoluteSeconds);
     final when = (capturedAt ?? DateTime.now()).toUtc();
@@ -3846,7 +4260,11 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
 
   Future<void> _setStatus(String bookId, Map<String, dynamic> body) async {
     await _boPatch('/books/$bookId/status', body);
+    // The refresh right after reads progress: a cached list from before the
+    // change showed a just-finished book as still being read.
+    _details.remove(_key(bookId));
     _detailAt.remove(_key(bookId));
+    _recent.removeWhere((key, _) => key == 'progress' || key.startsWith('personalized:'));
   }
 
   static String? _dateParam(Object? ms) {
@@ -3894,6 +4312,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   }
 
   Future<void> _saveEbookProgress(String bookId, String? location, double? progress) async {
+    await _backOnContinue(bookId);
     final detail = await _detail(bookId);
     final media = BookOrbitMapper.item(detail: detail)['media'] as Map;
     final ebook = media['ebookFile'] as Map?;
@@ -4022,7 +4441,15 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     try {
       final d = _dateParam(finishedAt);
       if (d == null) return false;
-      await _setStatus(itemId, {'status': 'read', 'finishedAt': d});
+      try {
+        await _setStatus(itemId, {'status': 'read', 'finishedAt': d});
+      } on _BoHttpError catch (e) {
+        // Marking a book finished today starts its read today too, so an
+        // earlier finish date lands before the start. Move the start with it;
+        // the start date can be set on its own afterwards.
+        if (e.status != 400 || !e.body.contains('READING_DATES_INVALID_ORDER')) rethrow;
+        await _setStatus(itemId, {'status': 'read', 'startedAt': d, 'finishedAt': d});
+      }
       return true;
     } catch (e) {
       debugPrint('[BookOrbit] updateProgressFinishedDate error: $e');
@@ -4030,7 +4457,125 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     }
   }
 
-  final Map<String, ({MediaOverlay overlay, int fileId})> _narrations = {};
+  static int? _boSessionNumber(Object? id) {
+    final s = '$id';
+    return s.startsWith('bo-session-') ? int.tryParse(s.substring('bo-session-'.length)) : null;
+  }
+
+  void _forgetListeningStats() => _recent.removeWhere((k, _) =>
+      k == _key('listening-stats') || k.startsWith(_key('activity-day-')) || k.startsWith(_key('year-stats-')));
+
+  /// The file a listen is logged against: the audiobook's first file, or
+  /// the EPUB that reads itself aloud.
+  Future<String?> _listenFileId(String bookId) async {
+    final manifest = await _manifest(bookId);
+    final assets = manifest?['assets'] as List<dynamic>?;
+    if (assets != null && assets.isNotEmpty) return '${(assets.first as Map)['fileId']}';
+    final narration = (BookOrbitMapper.item(detail: await _detail(bookId))['media'] as Map)['narration'] as Map?;
+    return narration?['fileId'] as String?;
+  }
+
+  /// Logs listening time the way the player does, so BookOrbit counts it as
+  /// listening, or reading time against the ebook file it was read in. No
+  /// end point goes with it: BookOrbit moves a book's read status by a long
+  /// session's end point, which would take a finished book back to reading.
+  Future<void> _saveListen(String bookId, DateTime startedAt, int seconds,
+      {String? fileId, bool reading = false}) async {
+    final file = fileId ?? (reading ? null : await _listenFileId(bookId));
+    if (file == null) throw _BoHttpError(404, 'No file to log the session against');
+    final source = _platformSource();
+    await _boPost('/books/files/$file/sessions', {
+      'sessionId': _uuid(),
+      'startedAt': _iso(startedAt),
+      'endedAt': _iso(startedAt.add(Duration(seconds: seconds))),
+      'durationSeconds': seconds,
+      'sessionType': reading ? 'read' : 'listen',
+      'source': ?source,
+      ...await _clientName(),
+    });
+  }
+
+  @override
+  Future<bool> addListeningSession({
+    required String itemId,
+    required DateTime startedAt,
+    required int seconds,
+  }) async {
+    try {
+      await _saveListen(itemId, startedAt, seconds);
+      _forgetListeningStats();
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Adding a listening session failed: $e');
+      return false;
+    }
+  }
+
+  /// BookOrbit can move a session to another time but not change its
+  /// length, so a new length is logged as a new session in place of the old.
+  @override
+  Future<bool> updateListeningSession(Map<String, dynamic> session) async {
+    final id = _boSessionNumber(session['id']);
+    final bookId = '${session['libraryItemId'] ?? ''}';
+    final origStart = (session['startedAt'] as num?)?.toInt();
+    final origEnd = (session['boEndedAt'] as num?)?.toInt();
+    final origSeconds = (session['boSeconds'] as num?)?.toInt();
+    final newEnd = (session['updatedAt'] as num?)?.toInt();
+    final newSeconds = (session['timeListening'] as num?)?.round();
+    if (id == null || bookId.isEmpty || origStart == null || origEnd == null || origSeconds == null ||
+        newEnd == null || newSeconds == null || newSeconds <= 0) {
+      return false;
+    }
+    // The edit keeps the time of day and moves the date.
+    final start = DateTime.fromMillisecondsSinceEpoch(origStart + newEnd - origEnd);
+    try {
+      if (newSeconds ~/ 60 == origSeconds ~/ 60) {
+        if (start.millisecondsSinceEpoch == origStart) return true;
+        await _boPatch('/user-statistics/session-timeline/$id', {
+          'startedAt': _iso(start),
+          'endedAt': _iso(start.add(Duration(seconds: origSeconds))),
+        });
+      } else {
+        final fileId = session['boFileId'] == null ? null : '${session['boFileId']}';
+        final reading = session['boReading'] == true;
+        // A reading session can only be logged again against its own file.
+        if (reading && fileId == null) return false;
+        await _boDelete('/books/$bookId/sessions/$id');
+        try {
+          await _saveListen(bookId, start, newSeconds, fileId: fileId, reading: reading);
+        } catch (e) {
+          debugPrint('[BookOrbit] New session length not saved, putting the old one back: $e');
+          await _saveListen(bookId, DateTime.fromMillisecondsSinceEpoch(origStart), origSeconds,
+              fileId: fileId, reading: reading);
+          rethrow;
+        }
+      }
+      _forgetListeningStats();
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Editing listening session $id failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> deleteListeningSession(String sessionId, {String? itemId}) async {
+    final id = _boSessionNumber(sessionId);
+    if (id == null || itemId == null) return false;
+    try {
+      await _boDelete('/books/$itemId/sessions/$id');
+      _forgetListeningStats();
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Deleting listening session $id failed: $e');
+      return false;
+    }
+  }
+
+  // Static like the other caches: the app builds a new service for nearly
+  // every call, and reading a long book's timings again takes seconds.
+  static final Map<String, ({MediaOverlay overlay, int fileId})> _narrations = {};
+  static final Map<String, Future<({MediaOverlay overlay, int fileId})?>> _narrationLoads = {};
 
   /// The narration of a book whose only audio is its EPUB reading itself
   /// aloud (EPUB 3 media overlays), or null for any other book.
@@ -4042,6 +4587,25 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final k = _key(bookId);
     final cached = _narrations[k];
     if (!fresh && cached != null) return cached;
+    // Home reads the timings ahead of a play; a play that starts meanwhile
+    // waits for that read instead of making its own.
+    final loading = _narrationLoads[k];
+    if (!fresh && loading != null) return loading;
+    final load = _loadNarration(bookId, k, cached, detail);
+    _narrationLoads[k] = load;
+    try {
+      return await load;
+    } finally {
+      if (identical(_narrationLoads[k], load)) _narrationLoads.remove(k);
+    }
+  }
+
+  Future<({MediaOverlay overlay, int fileId})?> _loadNarration(
+    String bookId,
+    String k,
+    ({MediaOverlay overlay, int fileId})? cached,
+    Map<String, dynamic>? detail,
+  ) async {
     detail ??= await _detail(bookId);
     final media = BookOrbitMapper.item(detail: detail)['media'] as Map<String, dynamic>;
     final fileId = int.tryParse('${(media['narration'] as Map?)?['fileId']}');
@@ -4112,6 +4676,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         if (ebookEnd != null) 'endProgress': (ebookEnd * 100).clamp(0.0, 100.0),
         'sessionType': 'read',
         if (source != null) 'source': source,
+        ...await _clientName(),
       });
       return true;
     } catch (e) {
@@ -4121,16 +4686,20 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   }
 
   /// BookOrbit keeps a narrated EPUB's listening spot on the same row as its
-  /// page, and a page save without it clears it, so the spot rides along.
+  /// page. Before 3.5.0 a page save without it cleared it, so there the spot
+  /// rides along. From 3.5.0 a save that leaves it out keeps it, and sending
+  /// the one read a moment ago could put back an older spot over a newer one.
   Future<Map<String, Object?>> _narrationSpotToKeep(String bookId, Map media, String fileId) async {
     if ('${(media['narration'] as Map?)?['fileId']}' != fileId) return const {};
+    // `reader-file-positions` arrived in the same release.
+    if ((await _features()).contains('reader-file-positions')) return const {};
     try {
-      final at = await _narrationPosition(bookId, int.parse(fileId));
+      final at = await _narrationPosition(bookId, int.parse(fileId), place: false);
       if (at == null) return const {};
       final clip = (await _narration(bookId))?.overlay.clipAt(at.seconds);
       return {
         'positionSeconds': at.seconds,
-        'mediaOverlayFragment': clip?.fragment,
+        'mediaOverlayFragment': clip?.textSrc,
         'mediaOverlaySectionIndex': clip?.section,
       };
     } catch (e) {
@@ -4140,19 +4709,88 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   }
 
   /// Where the narration was left, in seconds, from the EPUB's progress.
-  Future<({double seconds, int? updatedAt})?> _narrationPosition(String bookId, int fileId) async {
+  /// [place] works out a spot BookOrbit kept without seconds; without it
+  /// only seconds saved on the row count.
+  Future<({double seconds, int? updatedAt})?> _narrationPosition(String bookId, int fileId,
+      {bool place = true}) async {
     try {
       final rows = await _boGet('/books/$bookId/progress') as List<dynamic>;
       for (final r in rows.whereType<Map<String, dynamic>>()) {
         if ((r['fileId'] as num?)?.toInt() != fileId) continue;
+        final at = BookOrbitMapper.ms(r['updatedAt']);
         final s = (r['positionSeconds'] as num?)?.toDouble();
-        if (s == null) return null;
-        return (seconds: s, updatedAt: BookOrbitMapper.ms(r['updatedAt']));
+        if (s != null) return (seconds: s, updatedAt: at);
+        if (!place) return null;
+        // BookOrbit's own reader saves the sentence it read aloud, or only
+        // the page it reached, with no seconds: place them on the narration.
+        final placed = await _placeNarrationSpot(bookId,
+            fragment: r['mediaOverlayFragment'] as String?,
+            section: (r['mediaOverlaySectionIndex'] as num?)?.toInt(),
+            cfi: r['cfi'] as String?);
+        return placed == null ? null : (seconds: placed, updatedAt: at);
       }
     } on _BoHttpError catch (e) {
       if (e.status != 404) rethrow;
     }
     return null;
+  }
+
+  /// Places a reading spot in a narrated EPUB on its narration's timeline,
+  /// from the copy of the book kept on this phone. Set by the app at start;
+  /// a spot with no copy here stays unplaced.
+  static Future<double?> Function(String bookId, MediaOverlay overlay, String cfi)? placeReadingSpot;
+  static final Map<String, double> _placedSpots = {};
+
+  /// BookOrbit's timings for a book as kept on this phone (downloaded, or
+  /// read along before). Set by the app at start. A play checks the server's
+  /// spot for a moment only, and fetching a long book's timings takes longer.
+  static Future<MediaOverlay?> Function(String bookId)? keptNarration;
+
+  Future<double?> _placeNarrationSpot(String bookId, {String? fragment, int? section, String? cfi}) async {
+    if ((fragment == null || fragment.isEmpty) && (cfi == null || cfi.isEmpty)) return null;
+    var overlay = _narrations[_key(bookId)]?.overlay;
+    if (overlay == null) {
+      try {
+        overlay = await keptNarration?.call(bookId);
+      } catch (_) {}
+    }
+    if (overlay == null) {
+      debugPrint('[BookOrbit] $bookId: reading the narration timings from the server to place its spot');
+      try {
+        overlay = (await _narration(bookId))?.overlay;
+      } catch (e) {
+        debugPrint('[BookOrbit] $bookId: no narration to place the spot on: $e');
+        return null;
+      }
+    }
+    if (overlay == null) return null;
+    if (fragment != null && fragment.isNotEmpty) {
+      final clip = overlay.clipByFragment(fragment, section);
+      if (clip != null) {
+        final t = overlay.startOf(clip);
+        debugPrint('[BookOrbit] $bookId: BookOrbit read aloud to $fragment, ${t.toStringAsFixed(0)}s into the narration');
+        return t;
+      }
+    }
+    if (cfi == null || cfi.isEmpty) return null;
+    final key = '${_key(bookId)}|$cfi';
+    final known = _placedSpots[key];
+    if (known != null) return known;
+    final place = placeReadingSpot;
+    if (place == null) return null;
+    double? t;
+    try {
+      t = await place(bookId, overlay, cfi);
+    } catch (e) {
+      debugPrint('[BookOrbit] $bookId: reading spot not placed: $e');
+    }
+    if (t == null) {
+      debugPrint('[BookOrbit] $bookId: BookOrbit has only a page here, and it could not be placed on the narration');
+      return null;
+    }
+    _placedSpots[key] = t;
+    debugPrint('[BookOrbit] $bookId: BookOrbit read to a page ${t.toStringAsFixed(0)}s into the narration');
+    return t;
   }
 
   /// Saved where BookOrbit's own read along keeps its place: the narration
@@ -4171,7 +4809,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       await _boPost('/books/files/${n.fileId}/progress', {
         'percentage': total > 0 ? (seconds / total * 100).clamp(0.0, 100.0) : 0,
         'positionSeconds': math.max(0.0, seconds),
-        'mediaOverlayFragment': clip?.fragment,
+        'mediaOverlayFragment': clip?.textSrc,
         'mediaOverlaySectionIndex': clip?.section,
         'source': 'narration',
       });
@@ -4187,6 +4825,14 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     return '/api/v1/epub/$bookId/media-overlay/file/$path?fileId=$fileId';
   }
 
+  /// Escapes BookOrbit leaves in a narration file's path, since it undoes
+  /// them with decodeURI, and then can't find the file under that name: a
+  /// comma written %2C is the usual one.
+  static final _unservableHref = RegExp(r'%(23|24|26|2B|2C|2F|3A|3B|3D|3F|40)', caseSensitive: false);
+
+  @visibleForTesting
+  static bool narrationHrefServable(String href) => !_unservableHref.hasMatch(href);
+
   Future<Map<String, dynamic>> _startNarrationSession(String bookId, Map<String, dynamic> detail) async {
     final n = await _narration(bookId, detail: detail, fresh: true);
     if (n == null) throw _BoHttpError(404, 'Book has no audiobook assets');
@@ -4199,12 +4845,24 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     final edited = BookOrbitMapper.savedChapters(detail, overlay.duration);
     final useEdited = edited.isNotEmpty && (edited.last['start'] as double) < overlay.duration;
     final chapters = useEdited ? edited : overlay.chapters();
-    final tracks = overlay.audioTracks((t) => _narrationTrackPath(bookId, n.fileId, t));
+    final saved = await _narrationPosition(bookId, n.fileId);
+    final current = (saved?.seconds ?? 0).clamp(0.0, overlay.duration).toDouble();
+    var tracks = overlay.audioTracks((t) => _narrationTrackPath(bookId, n.fileId, t));
+    // Files BookOrbit can't find play out of the EPUB itself, the way an
+    // Audiobookshelf narration streams.
+    var fromEpub = false;
+    if (!overlay.tracks.every((t) => narrationHrefServable(t.href))) {
+      final urls = await NarrationStream.instance.serveFromEpub(
+          this, bookId, _boUri('/books/files/${n.fileId}/download'), overlay.tracks,
+          startTime: current);
+      if (urls != null) {
+        tracks = overlay.audioTracks((t) => urls[overlay.tracks.indexOf(t)]);
+        fromEpub = true;
+      }
+    }
     media['chapters'] = chapters;
     media['tracks'] = tracks;
     media['duration'] = overlay.duration;
-    final saved = await _narrationPosition(bookId, n.fileId);
-    final current = (saved?.seconds ?? 0).clamp(0.0, overlay.duration).toDouble();
     final now = DateTime.now();
     final sessionId = 'bo-$bookId-${now.millisecondsSinceEpoch}';
     _sessions[sessionId] = _BoListenSession(bookId, _uuid(), now)
@@ -4212,7 +4870,8 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       ..startPercent = overlay.duration > 0 ? (current / overlay.duration * 100).clamp(0.0, 100.0) : null;
     debugPrint('[BookOrbit] narration session for $bookId: ${tracks.length} tracks, '
         '${overlay.clips.length} sentences, ${overlay.duration.toStringAsFixed(0)}s, from ${current.toStringAsFixed(0)}s, '
-        '${chapters.length} chapters ${useEdited ? 'saved with the book' : 'from the narration'}');
+        '${chapters.length} chapters ${useEdited ? 'saved with the book' : 'from the narration'}'
+        '${fromEpub ? ', played out of the EPUB' : ''}');
     return {
       'id': sessionId,
       'userId': '',
@@ -4323,6 +4982,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         if (s.lastPercent != null) 'endProgress': s.lastPercent!.clamp(0.0, 100.0),
         'sessionType': 'listen',
         if (source != null) 'source': source,
+        ...await _clientName(),
       });
       if (!s.deviceRemembered) {
         s.deviceRemembered = true;
@@ -4336,6 +4996,10 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   /// BookOrbit keeps a platform tag on each session but no device, so the
   /// sessions this phone recorded are remembered here to name them later.
   static const _sessionDevicesKey = 'bookorbit_session_devices';
+
+  /// The same list for the paired watch's sessions, kept up to date by
+  /// WearSessionListenerService from what the watch publishes.
+  static const _watchSessionsKey = 'bookorbit_watch_sessions';
 
   static String _thisDevice() {
     final name = [ApiService.deviceManufacturer, ApiService.deviceModel]
@@ -4403,6 +5067,12 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   Future<Map<String, dynamic>> _localSession(Map<String, dynamic> session) async {
     final bookId = '${session['libraryItemId'] ?? ''}';
     if (bookId.isEmpty || session['episodeId'] != null) return const {};
+    // BookOrbit books have number ids; anything else is another server's
+    // book that was played here.
+    if (int.tryParse(bookId) == null) {
+      debugPrint('[BookOrbit] Skipped a session for $bookId: not a book on this server');
+      return const {};
+    }
     final updated = (session['updatedAt'] as num?)?.toInt();
     final when = updated == null ? DateTime.now() : DateTime.fromMillisecondsSinceEpoch(updated);
     final currentTime = (session['currentTime'] as num?)?.toDouble();
@@ -4417,7 +5087,14 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         started == null ? when.subtract(Duration(seconds: listened.round())) : DateTime.fromMillisecondsSinceEpoch(started),
       )..listenedSeconds = listened;
       final manifest = _manifests[_key(bookId)] ?? await _manifest(bookId);
-      final total = manifest == null ? 0.0 : BookOrbitMapper.totalSeconds(manifest);
+      var total = manifest == null ? 0.0 : BookOrbitMapper.totalSeconds(manifest);
+      // A narrated EPUB has no audiobook; its length is the narration's.
+      // Without one the session went up with no start or end point.
+      if (manifest == null) {
+        try {
+          total = (await _narration(bookId))?.overlay.duration ?? 0.0;
+        } catch (_) {}
+      }
       final startTime = (session['startTime'] as num?)?.toDouble();
       if (total > 0 && currentTime != null) s.lastPercent = (currentTime / total * 100).clamp(0.0, 100.0);
       if (total > 0 && startTime != null) s.startPercent = (startTime / total * 100).clamp(0.0, 100.0);
@@ -4499,53 +5176,508 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     return true;
   }
 
+  /// The Stats screen's numbers in Audiobookshelf's shape, plus a
+  /// `bookOrbit` block with what only BookOrbit keeps: listening and reading
+  /// apart, time of day, where the time was spent, books finished by month,
+  /// and session habits. Every year with activity is read, so totals and
+  /// streaks reach back past January.
   Future<Map<String, dynamic>> _listeningStats() async {
-    final overview = await _boGet('/user-statistics/activity-overview', null, const Duration(seconds: 45)) as Map<String, dynamic>;
-    final days = <String, num>{};
-    void addDays(Object? list) {
-      for (final d in (list as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
-        final day = d['day'] as String?;
-        final secs = (d['listeningSeconds'] as num?) ?? 0;
-        if (day != null && secs > 0) days[day] = secs;
+    const wait = Duration(seconds: 45);
+    final overview = await _boGet('/user-statistics/activity-overview', null, wait) as Map<String, dynamic>;
+    final calendar = overview['calendar'] as Map? ?? const {};
+    final thisYear = (calendar['year'] as num?)?.toInt();
+    final otherYears = [
+      for (final y in (calendar['availableYears'] as List<dynamic>? ?? const []))
+        if (y is num && y.toInt() != thisYear) y.toInt(),
+    ]..sort((a, b) => b.compareTo(a));
+    Future<Map<String, dynamic>?> optional(String path) async {
+      try {
+        return await _boGet(path, null, wait) as Map<String, dynamic>;
+      } catch (e) {
+        debugPrint('[BookOrbit] Stats: $path failed: $e');
+        return null;
       }
     }
 
-    addDays((overview['calendar'] as Map?)?['days']);
+    final extra = await Future.wait([
+      optional('/user-statistics/activity-details/genre-time'),
+      optional('/user-statistics/summary'),
+      optional('/user-statistics/activity-details/completion-speed'),
+      for (final y in otherYears.take(10)) optional('/user-statistics/activity-calendar/$y'),
+    ]);
+    final genreTime = extra[0], summary = extra[1], speed = extra[2];
+
+    final total = <String, num>{}, listen = <String, num>{}, read = <String, num>{};
+    void addDays(Object? list) {
+      for (final d in (list as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+        final day = d['day'] as String?;
+        if (day == null) continue;
+        final l = (d['listeningSeconds'] as num?) ?? 0;
+        final r = (d['readingSeconds'] as num?) ?? 0;
+        final t = (d['totalSeconds'] as num?) ?? l + r;
+        if (l > 0) listen[day] = l;
+        if (r > 0) read[day] = r;
+        if (t > 0) total[day] = t;
+      }
+    }
+
+    for (final cal in extra.skip(3)) {
+      addDays(cal?['days']);
+    }
+    addDays(calendar['days']);
     addDays((overview['dailyActivity'] as Map?)?['days']);
-    const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    final dayOfWeek = <String, num>{};
-    days.forEach((day, secs) {
-      final d = DateTime.tryParse(day);
-      if (d == null) return;
-      final name = names[d.weekday % 7];
-      dayOfWeek[name] = (dayOfWeek[name] ?? 0) + secs;
-    });
-    final today = ((overview['snapshot'] as Map?)?['today'] as Map?)?['listeningSeconds'] as num? ?? 0;
+
     final items = <String, dynamic>{};
+    final genres = <Map<String, dynamic>>[];
+    for (final g in (genreTime?['genres'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+      genres.add({'genre': g['genre'], 'time': g['totalSeconds'] ?? 0});
+      for (final a in (g['authors'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+        for (final b in (a['books'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+          final id = '${b['bookId']}';
+          final prev = (items[id] as Map?)?['timeListening'] as num? ?? 0;
+          items[id] = {
+            'id': id,
+            'timeListening': prev + ((b['totalSeconds'] as num?) ?? 0),
+            'mediaMetadata': {'title': b['title'], 'authorName': a['author']},
+          };
+        }
+      }
+    }
+
+    final rhythm = overview['rhythm'] as Map? ?? const {};
+    final pace = overview['pace'] as Map? ?? const {};
+    num? paceFor(String bucket) => (pace['byMedia'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .where((m) => m['bucket'] == bucket)
+        .map((m) => m['medianDurationSeconds'] as num?)
+        .firstOrNull;
+    return {
+      'totalTime': total.values.fold<num>(0, (sum, v) => sum + v),
+      'items': items,
+      'days': total,
+      'today': ((overview['snapshot'] as Map?)?['today'] as Map?)?['totalSeconds'] as num? ?? 0,
+      'recentSessions': const [],
+      'bookOrbit': {
+        'timezone': overview['timezone'],
+        'listenDays': listen,
+        'readDays': read,
+        'hours': [
+          for (final h in (rhythm['hours'] as List<dynamic>? ?? const []).whereType<Map>())
+            {
+              'hour': h['hour'],
+              'listening': h['listeningSeconds'] ?? 0,
+              'reading': h['readingSeconds'] ?? 0,
+            },
+        ],
+        'peakHour': rhythm['peakHour'],
+        'favoriteDay': rhythm['favoriteDayOfWeek'],
+        'sources': [
+          for (final s in ((overview['sources'] as Map?)?['slices'] as List<dynamic>? ?? const []).whereType<Map>())
+            if (((s['totalSeconds'] as num?) ?? 0) > 0) {'bucket': s['bucket'], 'time': s['totalSeconds']},
+        ],
+        'finishedMonths': [
+          for (final m in ((overview['completion'] as Map?)?['months'] as List<dynamic>? ?? const []).whereType<Map>())
+            {'year': m['year'], 'month': m['month'], 'count': m['count'] ?? 0},
+        ],
+        'genres': genres,
+        'medianSession': pace['medianDurationSeconds'],
+        'medianListen': paceFor('listening'),
+        'medianRead': paceFor('reading'),
+        'medianProgress': pace['medianProgressDelta'],
+        'medianDaysToFinish': speed?['medianDays'],
+        'started': summary?['startedBooks'],
+        'inProgress': summary?['inProgressBooks'],
+        'completed': summary?['completedBooks'],
+        'meanProgress': summary?['meanProgressPercent'],
+        'goalBooks': (overview['goal'] as Map?)?['goalBooks'],
+      },
+    };
+  }
+
+  /// One day's sessions as BookOrbit lists them. Today keeps changing, so it
+  /// is asked again sooner than past days.
+  Future<Map<String, dynamic>> _activityDay(String day) {
+    final now = DateTime.now();
+    final today = day == _dayKey(now) || day == _dayKey(now.toUtc());
+    return _cached('activity-day-$day', Duration(minutes: today ? 1 : 10), () async =>
+        await _boGet('/user-statistics/activity-days/$day', null, const Duration(seconds: 30)) as Map<String, dynamic>);
+  }
+
+  static String _dayKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// The device behind each session this phone or its watch recorded,
+  /// keyed `bookId@startedAt`, as the deviceInfo the Stats screen reads.
+  Future<Map<String, Map<String, String>>> _sessionDevices() async {
+    final out = <String, Map<String, String>>{};
     try {
-      final genres = await _boGet('/user-statistics/activity-details/genre-time', null, const Duration(seconds: 45)) as Map<String, dynamic>;
-      for (final g in (genres['genres'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
-        for (final a in (g['authors'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
-          for (final b in (a['books'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
-            final id = '${b['bookId']}';
-            final prev = (items[id] as Map?)?['timeListening'] as num? ?? 0;
-            items[id] = {
-              'id': id,
-              'timeListening': prev + ((b['totalSeconds'] as num?) ?? 0),
-              'mediaMetadata': {'title': b['title'], 'author': a['author']},
-            };
-          }
+      final prefs = await SharedPreferences.getInstance();
+      for (final (key, client) in [(_sessionDevicesKey, 'Absorb'), (_watchSessionsKey, 'AbsorbWear')]) {
+        final raw = prefs.getString(key);
+        if (raw == null) continue;
+        for (final e in (jsonDecode(raw) as Map<String, dynamic>).entries) {
+          out[e.key] = {'clientName': client, 'deviceName': '${e.value}'};
         }
       }
     } catch (_) {}
+    return out;
+  }
+
+  /// A session from an activity day in the Stats screen's session shape.
+  Map<String, dynamic> _activitySession(
+      Map<String, dynamic> s, Map<String, dynamic> items, Map<String, Map<String, String>> devices) {
+    final bookId = '${s['bookId']}';
+    final meta = (items[bookId] as Map?)?['mediaMetadata'] as Map?;
+    final title = s['bookTitle'] as String? ?? meta?['title'] as String?;
+    final author = meta?['authorName'] as String?;
+    final reading = s['mediaBucket'] == 'reading';
+    final seconds = ((s['durationOnDaySeconds'] as num?) ?? 0).round();
+    final started = DateTime.tryParse(s['startedAt'] as String? ?? '')?.toLocal();
+    final ownDevice = devices['$bookId@${s['startedAt']}'];
     return {
-      'totalTime': days.values.fold<num>(0, (sum, v) => sum + v),
-      'items': items,
-      'days': days,
-      'dayOfWeek': dayOfWeek,
-      'today': today,
-      'recentSessions': const [],
+      'id': 'bo-session-${s['id']}',
+      'libraryItemId': bookId,
+      'episodeId': null,
+      'mediaType': 'book',
+      'displayTitle': title,
+      'displayAuthor': author,
+      'mediaMetadata': {'title': title, 'authorName': author},
+      'timeListening': seconds,
+      'startedAt': BookOrbitMapper.ms(s['startedAt']),
+      'updatedAt': BookOrbitMapper.ms(s['endedAt']),
+      'boEndedAt': BookOrbitMapper.ms(s['endedAt']),
+      'boSeconds': seconds,
+      'boFileId': s['bookFileId'],
+      'boReading': reading,
+      'date': started == null ? null : _dayKey(started),
+      'deviceInfo': ownDevice ?? {'clientName': _sourceLabel(s['sourceBucket'])},
+      'mediaPlayer': reading ? ApiService.readingMediaPlayer : (s['sourceBucket'] ?? 'web'),
     };
+  }
+
+  /// Sessions across every book, newest first. BookOrbit lists sessions by
+  /// day rather than overall, so the days with any activity are read newest
+  /// first until the page is full. A session that runs past midnight shows
+  /// on both days and is put back together, which can take one more day.
+  Future<Map<String, dynamic>> _recentSessions(int page, int perPage) async {
+    final stats = await _cached('listening-stats', const Duration(minutes: 5), _listeningStats);
+    final days = [...((stats['days'] as Map?)?.keys.cast<String>() ?? const <String>[])]
+      ..sort((a, b) => b.compareTo(a));
+    final want = (page + 1) * perPage;
+    final merged = <Object?, Map<String, dynamic>>{};
+    List<Map<String, dynamic>> newestFirst() =>
+        merged.values.toList()..sort((a, b) => '${b['startedAt']}'.compareTo('${a['startedAt']}'));
+    bool cutAtMidnight(Map<String, dynamic> s) {
+      final start = DateTime.tryParse(s['startedAt'] as String? ?? '');
+      final end = DateTime.tryParse(s['endedAt'] as String? ?? '');
+      if (start == null || end == null) return false;
+      return ((s['durationOnDaySeconds'] as num?) ?? 0) < end.difference(start).inSeconds - 60;
+    }
+
+    var next = 0, extraDays = 0;
+    while (next < days.length) {
+      final sorted = newestFirst();
+      final full = sorted.length >= want;
+      if (full && (extraDays >= 2 || !sorted.take(want).any(cutAtMidnight))) break;
+      if (full) extraDays++;
+      final batch = days.sublist(next, math.min(next + (full ? 1 : 4), days.length));
+      next += batch.length;
+      for (final day in await Future.wait(batch.map(_activityDay))) {
+        for (final s in (day['sessions'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+          final prev = merged[s['id']];
+          if (prev == null) {
+            merged[s['id']] = Map.of(s);
+          } else {
+            prev['durationOnDaySeconds'] =
+                ((prev['durationOnDaySeconds'] as num?) ?? 0) + ((s['durationOnDaySeconds'] as num?) ?? 0);
+          }
+        }
+      }
+    }
+    final items = stats['items'] as Map<String, dynamic>? ?? const {};
+    final devices = await _sessionDevices();
+    final sessions = [
+      for (final s in newestFirst().skip(page * perPage).take(perPage)) _activitySession(s, items, devices),
+    ];
+    return {
+      'sessions': sessions,
+      'page': page,
+      'itemsPerPage': perPage,
+    };
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>?> getListeningSessionsForDay(DateTime day) async {
+    try {
+      final key = _dayKey(day);
+      final res = await _activityDay(key);
+      Map<String, dynamic> items = const {};
+      try {
+        items = (await _cached('listening-stats', const Duration(minutes: 5), _listeningStats))['items']
+                as Map<String, dynamic>? ??
+            const {};
+      } catch (_) {}
+      final devices = await _sessionDevices();
+      return [
+        for (final s in (res['sessions'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>())
+          {..._activitySession(s, items, devices), 'date': key},
+      ]..sort((a, b) => ((b['updatedAt'] as num?) ?? 0).compareTo((a['updatedAt'] as num?) ?? 0));
+    } catch (e) {
+      debugPrint('[BookOrbit] Sessions for $day failed: $e');
+      return null;
+    }
+  }
+
+  /// BookOrbit merges settings, so only the zone is sent. It redoes the
+  /// account's past days in the new zone on its own, which can take a while
+  /// on a long history.
+  @override
+  Future<bool> setAccountTimeZone(String zone) async {
+    try {
+      await _boPatch('/users/me/settings', {
+        'settings': {'timezone': zone},
+      });
+      _forgetListeningStats();
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Setting the time zone to $zone failed: $e');
+      return false;
+    }
+  }
+
+  /// The account's own settings, as /auth/me returns them.
+  Future<Map<String, dynamic>> _mySettings({bool fresh = false}) async {
+    if (fresh) _recent.remove(_key('auth-me'));
+    final me = await _cached('auth-me', const Duration(seconds: 30),
+        () async => await _boGet('/auth/me') as Map<String, dynamic>);
+    final settings = me['settings'];
+    return settings is Map ? Map<String, dynamic>.from(settings) : <String, dynamic>{};
+  }
+
+  @override
+  Future<bool> hasServerNotifications() async =>
+      await _can('notification_access') && !_hasPermission('demo_restricted');
+
+  @override
+  Future<({List<ServerNotification> items, int total})?> serverNotifications({int limit = 20, int offset = 0}) async {
+    try {
+      final res = await _boGet('/notifications', {'limit': '$limit', 'offset': '$offset'}) as Map<String, dynamic>;
+      return (
+        items: [
+          for (final raw in (res['items'] as List? ?? const []))
+            if (ServerNotification.fromJson(raw) case final n?) n,
+        ],
+        total: (res['total'] as num?)?.toInt() ?? 0,
+      );
+    } catch (e) {
+      debugPrint('[BookOrbit] Notifications failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> unreadNotificationCount() async {
+    try {
+      return ((await _boGet('/notifications/unread-count') as Map)['count'] as num?)?.toInt();
+    } catch (e) {
+      debugPrint('[BookOrbit] Unread notification count failed: $e');
+      return null;
+    }
+  }
+
+  Future<bool> _notificationCall(String what, Future<void> Function() call) async {
+    try {
+      await call();
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] $what failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> markNotificationRead(int id) =>
+      _notificationCall('Marking notification $id read', () => _boPatch('/notifications/$id/read', const {}));
+
+  @override
+  Future<bool> markAllNotificationsRead() =>
+      _notificationCall('Marking all notifications read', () => _boPatch('/notifications/read-all', const {}));
+
+  @override
+  Future<bool> dismissNotification(int id) =>
+      _notificationCall('Dismissing notification $id', () => _boDelete('/notifications/$id'));
+
+  @override
+  Future<bool> clearNotifications() =>
+      _notificationCall('Clearing notifications', () => _boDelete('/notifications'));
+
+  @override
+  Future<Map<String, String>?> notificationLevels() async {
+    try {
+      final stored = (await _mySettings(fresh: true))['notificationPreferences'];
+      return {
+        for (final category in notificationCategoryGroups.values.expand((c) => c))
+          category: resolveNotificationLevel(stored is Map ? stored[category] : null),
+      };
+    } catch (e) {
+      debugPrint('[BookOrbit] Notification settings failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> setNotificationLevels(Map<String, String> levels) async {
+    try {
+      final stored = (await _mySettings(fresh: true))['notificationPreferences'];
+      await _boPatch('/users/me/settings', {
+        'settings': {
+          'notificationPreferences': {
+            if (stored is Map) ...stored,
+            ...levels,
+          },
+        },
+      });
+      _recent.remove(_key('auth-me'));
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Saving notification settings failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool?> achievementsEnabled() async {
+    try {
+      final prefs = (await _mySettings(fresh: true))['achievementPreferences'];
+      return !(prefs is Map && prefs['enabled'] == false);
+    } catch (e) {
+      debugPrint('[BookOrbit] Achievement setting failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> setAchievementsEnabled(bool enabled) async {
+    try {
+      await _boPatch('/users/me/settings', {
+        'settings': {
+          'achievementPreferences': {'enabled': enabled},
+        },
+      });
+      _recent.remove(_key('auth-me'));
+      _recent.remove(_key('achievements'));
+      return true;
+    } catch (e) {
+      debugPrint('[BookOrbit] Turning achievements ${enabled ? 'on' : 'off'} failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<AchievementCatalogue?> achievements({bool fresh = false}) async {
+    try {
+      // Someone who switched achievements off in BookOrbit doesn't see them
+      // there either.
+      final prefs = (await _mySettings(fresh: fresh))['achievementPreferences'];
+      if (prefs is Map && prefs['enabled'] == false) return null;
+      if (fresh) _recent.remove(_key('achievements'));
+      return await _cached('achievements', const Duration(minutes: 5), () async =>
+          AchievementCatalogue.fromJson(await _boGet('/achievements', null, const Duration(seconds: 30)) as Map<String, dynamic>));
+    } catch (e) {
+      debugPrint('[BookOrbit] Achievements failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<AchievementHint>> achievementHints() async {
+    try {
+      final res = await _boGet('/achievements/hints', null, const Duration(seconds: 30)) as Map<String, dynamic>;
+      return [
+        for (final raw in (res['hints'] as List? ?? const []))
+          if (AchievementHint.fromJson(raw) case final h?) h,
+      ];
+    } catch (e) {
+      debugPrint('[BookOrbit] Achievement hints failed: $e');
+      return const [];
+    }
+  }
+
+  /// Year in Review from that year's activity calendar and finished books.
+  /// BookOrbit keeps no per-book totals by year, so the books listened, top
+  /// authors and narrator are left out.
+  Future<Map<String, dynamic>> _yearStats(int year) async {
+    final now = DateTime.now();
+    final Map<String, dynamic> cal;
+    try {
+      cal = await _boGet('/user-statistics/activity-calendar/$year', null, const Duration(seconds: 30))
+          as Map<String, dynamic>;
+    } on _BoHttpError catch (e) {
+      // Asked for a year before the first one with any activity.
+      if (e.status == 400) return const {};
+      rethrow;
+    }
+    num listen = 0, read = 0, sessions = 0;
+    var activeDays = 0;
+    final byMonth = List<num>.filled(12, 0);
+    for (final d in (cal['days'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>()) {
+      final l = (d['listeningSeconds'] as num?) ?? 0;
+      final r = (d['readingSeconds'] as num?) ?? 0;
+      listen += l;
+      read += r;
+      sessions += (d['sessionsCount'] as num?) ?? 0;
+      if (l + r > 0) activeDays++;
+      final month = DateTime.tryParse(d['day'] as String? ?? '')?.month;
+      if (month != null) byMonth[month - 1] += l + r;
+    }
+    var finished = 0;
+    try {
+      final days = (now.difference(DateTime(year)).inDays + 1).clamp(1, 3650);
+      final months = await _boGet('/user-statistics/completion-timeline', {'days': days}) as List<dynamic>;
+      for (final m in months.whereType<Map>()) {
+        if (m['year'] == year) finished += ((m['count'] as num?) ?? 0).toInt();
+      }
+    } catch (e) {
+      debugPrint('[BookOrbit] Finished books for $year failed: $e');
+    }
+    var topMonth = -1;
+    for (var i = 0; i < 12; i++) {
+      if (byMonth[i] > 0 && (topMonth < 0 || byMonth[i] > byMonth[topMonth])) topMonth = i;
+    }
+    return {
+      'totalListeningTime': listen,
+      'bookOrbitReadingTime': read,
+      'bookOrbitActiveDays': activeDays,
+      'totalListeningSessions': sessions,
+      'numBooksFinished': finished,
+      if (topMonth >= 0) 'mostListenedMonth': {'month': topMonth},
+    };
+  }
+
+  /// One page of a book's reading log, the way BookOrbit's Reading Log tab
+  /// reads it: every kind of session (reading, listening, any device) plus a
+  /// `stats` summary of all of them under the same filters.
+  Future<Map<String, dynamic>> readingLog(
+    String bookId, {
+    int page = 1,
+    int pageSize = 25,
+    String sortBy = 'startedAt',
+    bool descending = true,
+    DateTime? from,
+    String? format,
+  }) async =>
+      await _boGet('/books/$bookId/sessions', {
+        'page': page,
+        'pageSize': pageSize,
+        'sortBy': sortBy,
+        'sortDir': descending ? 'desc' : 'asc',
+        if (from != null) 'dateFrom': _iso(from),
+        if (format != null) 'format': format,
+      }) as Map<String, dynamic>;
+
+  Future<List<Map<String, dynamic>>> readingAttempts(String bookId) async {
+    final res = await _boGet('/books/$bookId/reading-attempts', {'page': 1, 'pageSize': 50}) as Map<String, dynamic>;
+    return (res['items'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>().toList();
   }
 
   Future<Map<String, dynamic>> _itemListeningSessions(String bookId, Map<String, String> q) async {
@@ -4562,7 +5694,18 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
     try {
       manifest = await _manifest(bookId);
     } catch (_) {}
-    final bookSeconds = manifest == null ? 0.0 : BookOrbitMapper.totalSeconds(manifest);
+    // A narrated EPUB with no audiobook: reading and listening both happen in
+    // the one file, so every session on it is this book's, timed against the
+    // narration.
+    Map? narration;
+    if (manifest == null) {
+      try {
+        narration = (BookOrbitMapper.item(detail: await _detail(bookId))['media'] as Map)['narration'] as Map?;
+      } catch (_) {}
+    }
+    final bookSeconds = manifest != null
+        ? BookOrbitMapper.totalSeconds(manifest)
+        : ((narration?['duration'] as num?)?.toDouble() ?? 0.0);
     // Session rows carry the book's own title and author, as Audiobookshelf's do.
     final book = manifest?['book'] as Map?;
     var title = book?['title'] as String?;
@@ -4577,15 +5720,16 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
             .join(', ');
       } catch (_) {}
     }
-    var mine = <String, dynamic>{};
-    try {
-      final raw = (await SharedPreferences.getInstance()).getString(_sessionDevicesKey);
-      if (raw != null) mine = jsonDecode(raw) as Map<String, dynamic>;
-    } catch (_) {}
+    final mine = await _sessionDevices();
     final sessions = (res['items'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
-        // Reading the ebook of the same book is not listening.
-        .where((s) => s['format'] == null || BookOrbitMapper.isAudioFormat(s['format'] as String?))
+        // Reading the ebook of the same book is not listening, unless the
+        // ebook is what reads it aloud.
+        .where((s) =>
+            narration != null ||
+            s['format'] == null ||
+            s['sessionType'] == 'listen' ||
+            BookOrbitMapper.isAudioFormat(s['format'] as String?))
         .map((s) {
       final started = DateTime.tryParse(s['startedAt'] as String? ?? '')?.toLocal();
       final endPct = (s['endProgress'] as num?)?.toDouble();
@@ -4594,7 +5738,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
       final startAt = endAt != null && deltaPct != null
           ? ((endPct! - deltaPct) / 100 * bookSeconds).clamp(0.0, bookSeconds)
           : endAt;
-      final ownDevice = mine['$bookId@${s['startedAt']}'] as String?;
+      final ownDevice = mine['$bookId@${s['startedAt']}'];
       return {
         'id': 'bo-session-${s['id']}',
         'libraryItemId': bookId,
@@ -4609,12 +5753,13 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
         if (endAt != null) 'currentTime': endAt,
         'startedAt': BookOrbitMapper.ms(s['startedAt']),
         'updatedAt': BookOrbitMapper.ms(s['endedAt']),
+        'boEndedAt': BookOrbitMapper.ms(s['endedAt']),
+        'boSeconds': s['durationSeconds'] ?? 0,
+        'boFileId': s['bookFileId'],
         'date': started == null
             ? null
             : '${started.year}-${started.month.toString().padLeft(2, '0')}-${started.day.toString().padLeft(2, '0')}',
-        'deviceInfo': ownDevice != null
-            ? {'clientName': 'Absorb', 'deviceName': ownDevice}
-            : {'clientName': _sourceLabel(s['source'])},
+        'deviceInfo': ownDevice ?? {'clientName': _sourceLabel(s['source'])},
         'mediaPlayer': s['source'] ?? 'web',
       };
     }).toList();

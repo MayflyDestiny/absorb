@@ -32,8 +32,9 @@ void showNavigatorOverlayToast(
   NavigatorState? navigator,
   String message, {
   IconData? icon,
+  VoidCallback? onTap,
 }) {
-  _insertOverlayToast(navigator?.overlay, message, icon: icon);
+  _insertOverlayToast(navigator?.overlay, message, icon: icon, onTap: onTap);
 }
 
 void _insertOverlayToast(

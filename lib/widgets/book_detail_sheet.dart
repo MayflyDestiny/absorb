@@ -29,6 +29,8 @@ import 'package:intl/intl.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/read_status.dart';
 import 'book_stats_sheet.dart';
+import 'book_activity_card.dart';
+import '../screens/reading_log_screen.dart';
 import '../services/book_stats_service.dart';
 import '../services/wording.dart';
 import '../providers/auth_provider.dart';
@@ -40,6 +42,7 @@ import '../services/bookmark_preview_player.dart';
 import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
 import '../services/narrated_books.dart';
+import 'book_files_sheet.dart';
 import '../services/transcription_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/progress_sync_service.dart';
@@ -328,8 +331,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
   /// An Audiobookshelf EPUB that reads itself aloud plays from the phone, so
   /// until its narration is downloaded the Absorb button offers that instead.
+  /// An Audiobookshelf narrated EPUB streams from the server, so only one
+  /// that isn't on the phone while offline has to be downloaded first.
   bool _needsNarrationDownload(AuthProvider auth) =>
       !auth.isBookOrbit &&
+      context.read<LibraryProvider>().isOffline &&
       (NarratedBooks.contains(widget.itemId) ||
           ((_item?['media'] as Map?)?['narration'] as Map?)?['local'] == true) &&
       !NarrationService.instance.hasLocalAudio(widget.itemId);
@@ -420,151 +426,27 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         .ensureLoaded(widget.itemId, api, isAdmin: auth.isAdmin));
   }
 
-  String _sessionDay(BuildContext context, int ms) {
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    final locale = Localizations.localeOf(context).toString();
-    return d.year == DateTime.now().year
-        ? DateFormat.MMMd(locale).format(d)
-        : DateFormat.yMMMd(locale).format(d);
-  }
-
-  String _sessionWhen(BuildContext context, int ms) {
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    final locale = Localizations.localeOf(context).toString();
-    return '${_sessionDay(context, ms)}, ${DateFormat.jm(locale).format(d)}';
-  }
-
   Widget _listeningStatsBlock(BuildContext context, ColorScheme cs, TextTheme tt, Color accent, String title) {
-    final l = AppLocalizations.of(context)!;
-    final me = context.read<AuthProvider>().username;
-    return ListenableBuilder(
-      listenable: BookStatsService.instance.stats(widget.itemId),
-      builder: (context, _) {
-        final s = BookStatsService.instance.stats(widget.itemId);
-        final sessions = s.sessions;
-        Widget stat(String label, String value) => Expanded(
-              child: Column(children: [
-                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
-                const SizedBox(height: 2),
-                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
-              ]),
-            );
-        return Container(
-          decoration: BoxDecoration(
-            color: cs.onSurface.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-          ),
-          child: Column(children: [
-            InkWell(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              onTap: () => showBookStatsSheet(context, itemId: widget.itemId, title: title),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
-                child: Row(children: [
-                  Icon(Icons.insights_rounded, size: 18, color: accent),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(l.bookStatsAction,
-                      style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface))),
-                  // Admins: how many others are on this book. A spinner while
-                  // the first scan for it is still running.
-                  if (s.isAdmin && s.serverLoading && s.users.isEmpty && s.checkedAt == null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: SizedBox(width: 12, height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 1.5, color: cs.onSurfaceVariant)),
-                    )
-                  else if (s.isAdmin && (s.checkedAt != null || s.users.isNotEmpty)) ...[
-                    Text(l.detailOtherListeners(s.othersCount(me)),
-                        style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
-                    const SizedBox(width: 4),
-                  ],
-                  Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurface.withValues(alpha: 0.4)),
-                ]),
+    final auth = context.read<AuthProvider>();
+    final bookOrbit = auth.apiService?.isBookOrbit == true;
+    return BookActivityCard(
+      itemId: widget.itemId,
+      bookOrbit: bookOrbit,
+      accent: accent,
+      me: auth.username,
+      onOpen: () => bookOrbit
+          ? Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
+              builder: (_) => ReadingLogScreen(itemId: widget.itemId, title: title, item: _item, accent: accent)))
+          : showBookStatsSheet(context, itemId: widget.itemId, title: title),
+      onOthers: () => showBookStatsSheet(context, itemId: widget.itemId, title: title),
+      onAllSessions: bookOrbit
+          ? null
+          : () => showPlaybackHistorySheet(
+                context,
+                itemId: widget.itemId,
+                initialTab: PlaybackHistoryTab.sessions,
+                accent: accent,
               ),
-            ),
-            if (s.loading && !s.failed)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: LinearProgressIndicator(minHeight: 2),
-              )
-            else if (s.failed)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Text(l.statsCouldNotLoad, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              )
-            else if (sessions.isEmpty && s.mySessions == 0)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Text(l.detailSessionsNone, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              )
-            else ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-                child: Row(children: [
-                  stat(l.bookStatsListened, formatHm(s.mySeconds)),
-                  stat(l.bookStatsSessions, '${s.mySessions}'),
-                  stat(l.bookStatsLast, s.myLast == null ? '-' : _sessionDay(context, s.myLast!)),
-                ]),
-              ),
-              if (sessions.isNotEmpty) ...[
-                Divider(height: 1, color: cs.onSurface.withValues(alpha: 0.08)),
-                for (final sess in sessions.take(5)) _sessionRow(context, cs, tt, sess),
-              ],
-              if (sessions.length > 5)
-                InkWell(
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-                  onTap: () => showPlaybackHistorySheet(
-                    context,
-                    itemId: widget.itemId,
-                    initialTab: PlaybackHistoryTab.sessions,
-                    accent: accent,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Center(child: Text(l.detailSessionsAll(sessions.length),
-                        style: tt.labelMedium?.copyWith(color: accent, fontWeight: FontWeight.w600))),
-                  ),
-                )
-              else
-                const SizedBox(height: 6),
-            ],
-          ]),
-        );
-      },
-    );
-  }
-  Widget _sessionRow(BuildContext context, ColorScheme cs, TextTheme tt, Map<String, dynamic> s) {
-    final at = (s['updatedAt'] as num?)?.toInt() ?? (s['startedAt'] as num?)?.toInt();
-    final listened = (s['timeListening'] as num?)?.toDouble() ?? 0;
-    final start = (s['startTime'] as num?)?.toDouble() ?? 0;
-    final end = (s['currentTime'] as num?)?.toDouble() ?? start;
-    final device = s['deviceInfo'] as Map<String, dynamic>?;
-    final place = (device?['deviceName'] as String?) ?? (device?['clientName'] as String?) ?? '';
-    final where = s['mediaPlayer'] == ApiService.readingMediaPlayer
-        ? [place, AppLocalizations.of(context)!.sessionReading].where((p) => p.isNotEmpty).join(' · ')
-        : place;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(at == null ? '-' : _sessionWhen(context, at),
-                style: tt.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.8))),
-            const SizedBox(height: 2),
-            Text(
-              '${formatHm(start / _displaySpeed)} - ${formatHm(end / _displaySpeed)}'
-              '${where.isNotEmpty ? '  ·  $where' : ''}',
-              maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: tt.labelSmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.4)),
-            ),
-          ]),
-        ),
-        const SizedBox(width: 8),
-        Text(formatHm(listened), style: tt.labelMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurfaceVariant)),
-      ]),
     );
   }
 
@@ -1716,14 +1598,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
 
   static String _readStatusLabel(AppLocalizations l, String s) => readStatusLabel(l, s);
 
-  static IconData _readStatusIcon(String s) => switch (s) {
-        'want_to_read' => Icons.bookmark_add_outlined,
-        'reading' || 'rereading' => Icons.auto_stories_outlined,
-        'on_hold' => Icons.pause_circle_outline_rounded,
-        'read' || 'skimmed' => Icons.check_circle_outline_rounded,
-        'abandoned' => Icons.do_not_disturb_on_outlined,
-        _ => Icons.radio_button_unchecked_rounded,
-      };
+  static IconData _readStatusIcon(String s) => readStatusIcon(s);
 
   // Unread and Read stay with the finish button: a hand-set Unread would
   // keep BookOrbit from ever moving the book back to Reading.
@@ -1969,7 +1844,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final currentTime = (progressData?['currentTime'] as num?)?.toDouble() ?? 0;
 
     // Continue-shelf actions (mirror the detail sheet's more menu).
-    final inContinueListening = lib.isInContinueListeningShelf(widget.itemId);
+    final continueShelf = lib.continueShelfOf(widget.itemId);
     final rawSeries = ((_item?['media'] as Map<String, dynamic>?)?['metadata']
         as Map<String, dynamic>?)?['series'];
     final bookSeriesIds = <String>[];
@@ -2025,7 +1900,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         // stays open behind navigation actions, so dismiss is a no-op here.
         _actionPillGrid(context, cs, tt, l, auth, lib, title, authorName, progress,
           isFinished, duration, ebookFile, isEbookOnly,
-          inContinueListening,
+          continueShelf,
           continueSeriesId, dismiss: () {}, includeOpenDetails: true),
       ],
     );
@@ -2040,7 +1915,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   Widget _actionPillGrid(BuildContext context, ColorScheme cs, TextTheme tt, AppLocalizations l,
       AuthProvider auth, LibraryProvider lib, String title, String authorName, double progress,
       bool isFinished, double duration, Map<String, dynamic>? ebookFile, bool isEbookOnly,
-    bool inContinueListening, String? continueSeriesId,
+    String? continueShelf, String? continueSeriesId,
       {required VoidCallback dismiss, bool includeOpenDetails = false}) {
     final onAbsorbing = lib.isOnAbsorbingList(widget.itemId);
     return Column(mainAxisSize: MainAxisSize.min, children: [
@@ -2106,8 +1981,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         if (progress > 0 || isFinished) {
           add(Icons.restart_alt_rounded, l.resetProgress, () => _resetProgress(context, auth, duration));
         }
-        if (inContinueListening && !lib.isOffline) {
-          add(Icons.playlist_remove_rounded, l.removeFromContinueListening, () => _removeFromContinueListening(context, auth, lib));
+        if (continueShelf != null && !lib.isOffline) {
+          final reading = continueShelf == 'continue-reading';
+          add(Icons.playlist_remove_rounded, reading ? l.removeFromContinueReading : l.removeFromContinueListening,
+            () => _removeFromContinueListening(context, auth, lib, reading: reading));
         }
         if (continueSeriesId != null && !lib.isOffline) {
           add(Icons.bookmark_remove_rounded, l.removeSeriesFromContinueSeries, () => _removeSeriesFromContinueSeries(context, auth, lib, continueSeriesId));
@@ -2124,6 +2001,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
         }
         if (auth.canUpdateMetadata && !lib.isOffline) {
           add(Icons.edit_rounded, l.edit, () => _openEditPage(auth, title, isEbookOnly));
+        }
+        final item = _item;
+        if (item != null) {
+          add(Icons.info_outline_rounded, l.fileInfoTitle, () => showBookFilesSheet(context, item));
         }
         if (auth.canDelete && !lib.isOffline) {
           add(Icons.delete_outline_rounded, l.deleteFromServerAction,
@@ -2304,7 +2185,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     final l = AppLocalizations.of(context)!;
     // Continue-shelf actions only make sense when this book is actually shown
     // in the relevant home shelf right now.
-    final inContinueListening = lib.isInContinueListeningShelf(widget.itemId);
+    final continueShelf = lib.continueShelfOf(widget.itemId);
     final rawSeries = ((_item?['media'] as Map<String, dynamic>?)?['metadata']
         as Map<String, dynamic>?)?['series'];
     final bookSeriesIds = <String>[];
@@ -2336,7 +2217,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
                 child: SingleChildScrollView(
                   child: _actionPillGrid(context, cs, tt, l, auth, lib, title, authorName,
                     progress, isFinished, duration, ebookFile, isEbookOnly,
-                    inContinueListening, continueSeriesId, dismiss: () => Navigator.pop(ctx)),
+                    continueShelf, continueSeriesId, dismiss: () => Navigator.pop(ctx)),
                 ),
               ),
             ]),
@@ -2347,7 +2228,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   }
 
   Future<void> _removeFromContinueListening(
-      BuildContext context, AuthProvider auth, LibraryProvider lib) async {
+      BuildContext context, AuthProvider auth, LibraryProvider lib, {bool reading = false}) async {
     final l = AppLocalizations.of(context)!;
     final api = auth.apiService;
     final progressId = lib.getProgressData(widget.itemId)?['id'] as String?;
@@ -2359,12 +2240,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
     final ok = await api.removeItemFromContinueListening(progressId);
     if (ok) {
+      lib.hideFromContinueShelves(itemId: widget.itemId);
       await lib.refreshProgressShelves(force: true, reason: 'remove-continue-listening');
     }
     if (!context.mounted) return;
     HapticFeedback.mediumImpact();
     showOverlayToast(context,
-        ok ? l.removedFromContinueListening : l.couldNotUpdate,
+        ok ? (reading ? l.removedFromContinueReading : l.removedFromContinueListening) : l.couldNotUpdate,
         icon: ok ? Icons.playlist_remove_rounded : Icons.error_outline_rounded);
   }
 
@@ -2380,6 +2262,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
     }
     final ok = await api.removeSeriesFromContinueListening(seriesId);
     if (ok) {
+      lib.hideFromContinueShelves(seriesId: seriesId);
       await lib.refreshProgressShelves(force: true, reason: 'remove-continue-series');
     }
     if (!context.mounted) return;
@@ -2876,10 +2759,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
       }
     }
     final l = AppLocalizations.of(context)!;
+    final item = _item;
+    final showFiles = item == null ? null : () => showBookFilesSheet(context, item);
     return [
-      if (codec != null && codec.isNotEmpty) _chip(Icons.audio_file_rounded, codec),
-      if (bitRate != null && bitRate > 0) _chip(Icons.speed_rounded, l.kbpsValue((bitRate / 1000).round())),
-      if (totalSize > 0) _chip(Icons.storage_rounded, _fmtSize(totalSize)),
+      if (codec != null && codec.isNotEmpty) _chip(Icons.audio_file_rounded, codec, onTap: showFiles),
+      if (bitRate != null && bitRate > 0) _chip(Icons.speed_rounded, l.kbpsValue((bitRate / 1000).round()), onTap: showFiles),
+      if (totalSize > 0) _chip(Icons.storage_rounded, _fmtSize(totalSize), onTap: showFiles),
     ];
   }
 
@@ -3650,8 +3535,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> {
   /// [startTime] plays from there instead of the saved position (a chapter
   /// tapped in the list); on the live session it is a seek.
   Future<void> _startAbsorb(BuildContext context, {required AuthProvider auth, required String title, required String author, required String? coverUrl, required double duration, required List<dynamic> chapters, double? startTime}) async {
-    // An Audiobookshelf narrated EPUB plays once its narration is downloaded:
-    // asked first, with the reason.
+    // An Audiobookshelf narrated EPUB that can't stream right now plays once
+    // its narration is downloaded: asked first, with the reason.
     if (_needsNarrationDownload(auth)) {
       if (mounted) setState(() => _isAbsorbing = false);
       if (DownloadService().isDownloading(widget.itemId)) {
