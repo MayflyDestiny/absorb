@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart' show compute, debugPrint;
 
+import '../utils/percent_escapes.dart';
+
 /// EPUBs whose pages are pictures (scanned or comic-style books) carry no
 /// text for the EPUB reader to lay out or index, so they read better in the
 /// comic reader. This finds their page images in reading order.
@@ -42,7 +44,7 @@ String _dir(String path) {
 
 /// [href] relative to [base]'s folder, as a path inside the zip.
 String _resolve(String base, String href) {
-  final clean = Uri.decodeFull(href.split('#').first.split('?').first);
+  final clean = undoPathEscapes(href.split('#').first.split('?').first);
   final parts = <String>[];
   for (final p in '${_dir(base)}$clean'.split('/')) {
     if (p.isEmpty || p == '.') continue;

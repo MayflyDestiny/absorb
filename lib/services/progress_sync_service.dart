@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'api_service.dart';
+import 'download_service.dart';
 import 'scoped_prefs.dart';
 import 'sync_logic.dart';
 
@@ -69,6 +70,7 @@ class ProgressSyncService {
       'timestamp': DateTime.now().millisecondsSinceEpoch,
     };
     await ScopedPrefs.setString('progress_$itemId', jsonEncode(data));
+    if (_staysOnPhone(itemId)) return;
 
     final pendingList = await ScopedPrefs.getStringList('pending_syncs');
     if (!pendingList.contains(itemId)) {
@@ -187,6 +189,10 @@ class ProgressSyncService {
     return localDuration;
   }
 
+  /// Another account's download keeps its place on this phone only: the
+  /// server signed in now can have a different book under the same id.
+  bool _staysOnPhone(String itemId) => DownloadService().isFromOtherAccount(itemId);
+
   /// Sync a single item to the server. Returns true if synced.
   Future<bool> syncToServer({
     required ApiService api,
@@ -197,6 +203,7 @@ class ProgressSyncService {
       debugPrint('[Sync] Skipped — offline');
       return false;
     }
+    if (_staysOnPhone(itemId)) return true;
 
     final data = await getLocal(itemId);
     if (data == null) {
@@ -276,7 +283,7 @@ class ProgressSyncService {
 
       for (final itemId in batch) {
         final data = await getLocal(itemId);
-        if (data == null) {
+        if (data == null || _staysOnPhone(itemId)) {
           final updated = await ScopedPrefs.getStringList('pending_syncs');
           updated.remove(itemId);
           await ScopedPrefs.setStringList('pending_syncs', updated);

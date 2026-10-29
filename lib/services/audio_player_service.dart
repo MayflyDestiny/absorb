@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'download_service.dart';
 import 'narrated_books.dart';
+import 'narration_stream.dart';
 import 'offline_source.dart';
 import 'playback_history_service.dart' hide PlaybackEvent;
 import 'progress_sync_service.dart';
@@ -1522,6 +1523,7 @@ class AudioPlayerService extends ChangeNotifier {
     double duration,
     String title,
     String author,
+    bool streamed,
   })? _pendingLoadOnlySession;
 
   /// Externally-pushed signal that the server is currently unreachable.
@@ -3845,11 +3847,42 @@ class AudioPlayerService extends ChangeNotifier {
     String? result;
     if (episodeId == null && !api.isBookOrbit && NarratedBooks.contains(itemId) &&
         !_downloadService.isDownloaded(progressKey)) {
-      // An Audiobookshelf EPUB that reads itself aloud plays once downloaded.
-      debugPrint('[Player] $itemId is narration that is not downloaded - not starting');
-      _endAdvanceBuffering();
-      _clearState();
-      return 'Download this book to play its narration';
+      // An Audiobookshelf EPUB that reads itself aloud: its audio files play
+      // straight out of the EPUB on the server, and otherwise like a download.
+      final prefs = await SharedPreferences.getInstance();
+      final offline = (prefs.getBool('manual_offline_mode') ?? false) || _knownOffline;
+      final stream = offline ? null : await NarrationStream.instance.open(api, itemId, startTime: startTime);
+      if (_startSuperseded(playbackGeneration)) {
+        return _abandonStart(null, null, 'narration, after opening the stream');
+      }
+      if (stream == null) {
+        debugPrint('[Player] $itemId is narration that is not downloaded and '
+            '${offline ? 'this phone is offline' : 'could not be streamed'} - not starting');
+        _endAdvanceBuffering();
+        _clearState();
+        return 'Download this book to play its narration';
+      }
+      // The stream's timeline is laid on the audio's real lengths.
+      totalDuration = stream.duration;
+      _totalDuration = stream.duration;
+      if (stream.chapters.isNotEmpty) {
+        chapters = stream.chapters;
+        _chapters = stream.chapters;
+        _handler?.updateChaptersQueue(stream.chapters);
+      }
+      result = await _playFromLocal(
+        progressKey,
+        title,
+        author,
+        coverUrl,
+        totalDuration,
+        chapters,
+        startTime,
+        forceStartTime,
+        loadOnly,
+        playbackGeneration,
+        stream,
+      );
     } else if (_downloadService.isDownloaded(progressKey)) {
       result = await _playFromLocal(
         progressKey,
@@ -4281,6 +4314,9 @@ class AudioPlayerService extends ChangeNotifier {
     bool forceStartTime = false,
     bool loadOnly = false,
     int? generation,
+    // A narration streamed out of its EPUB on the server: its files and
+    // timeline stand in for a download's.
+    NarrationStreamSource? stream,
   ]) async {
     final gen = generation ?? _playbackGeneration;
     if (_startSuperseded(gen)) return null;
@@ -4288,7 +4324,9 @@ class AudioPlayerService extends ChangeNotifier {
     // to a newer start as soon as one begins.
     final rawItemId = _currentItemId!;
     final episodeId = _currentEpisodeId;
-    debugPrint('[Player] Playing from local files: $title');
+    debugPrint(stream != null
+        ? '[Player] Streaming the narration out of the EPUB: $title'
+        : '[Player] Playing from local files: $title');
     // Alpha [PodDur]: trace podcast-episode duration loading. Symptom:
     // Android Auto progress bar missing for ~60s on cold-start podcast play
     // because the first MediaItem push carries dur=0. We want to know what
@@ -4325,6 +4363,10 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint(
         '[Player] Forced start time: ${startTime}s — skipping server/local position comparison',
       );
+    } else if (_downloadService.isFromOtherAccount(rawItemId)) {
+      // The server signed in now doesn't hold this book's place, and could
+      // hold a different book's under the same id.
+      debugPrint('[Player] Another account\'s download - playing its spot on this phone, ${startTime.toStringAsFixed(1)}s');
     } else if (!_playFromUi && startTime > 0) {
       debugPrint(
         '[Player] Skipping progress reconcile - not started from the app screen, playing local position ${startTime.toStringAsFixed(1)}s now',
@@ -4398,7 +4440,7 @@ class AudioPlayerService extends ChangeNotifier {
     if (_startSuperseded(gen)) {
       return _abandonStart(null, null, 'local, after the position check');
     }
-    final localPaths = _downloadService.getLocalPaths(itemId);
+    final localPaths = stream?.urls ?? _downloadService.getLocalPaths(itemId);
     if (localPaths == null || localPaths.isEmpty) {
       debugPrint('[Player] No local files found');
       _clearState();
@@ -4406,7 +4448,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     // Get cached session data for track durations (and chapters if needed)
-    final cachedJson = _downloadService.getCachedSessionData(itemId);
+    final cachedJson = stream != null ? jsonEncode(stream.session) : _downloadService.getCachedSessionData(itemId);
     List<dynamic>? audioTracks;
     if (cachedJson != null) {
       try {
@@ -4552,6 +4594,7 @@ class AudioPlayerService extends ChangeNotifier {
           duration: totalDuration,
           title: title,
           author: author,
+          streamed: stream != null,
         );
         _handler?.refreshPlaybackState();
         notifyListeners();
@@ -4579,6 +4622,7 @@ class AudioPlayerService extends ChangeNotifier {
         startTime: startTime,
         displayTitle: title,
         displayAuthor: author,
+        streamed: stream != null,
       );
       Future.delayed(const Duration(milliseconds: 500), () {
         _handler?.refreshPlaybackState();
@@ -7348,6 +7392,7 @@ class AudioPlayerService extends ChangeNotifier {
           startTime: position.inMilliseconds / 1000.0,
           displayTitle: pendingSession.title,
           displayAuthor: pendingSession.author,
+          streamed: pendingSession.streamed,
         );
         // The loadOnly playItem returned before _setupSync, so this session
         // has no completion listener, no position sync, no EQ attach and no

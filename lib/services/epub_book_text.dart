@@ -6,6 +6,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:xml/xml.dart';
 
 import 'media_overlay.dart';
+import '../utils/percent_escapes.dart';
 
 /// A spot found in a book's text: the spine section, where the words start
 /// and end in its text, and how well they matched (0 to 1).
@@ -161,10 +162,7 @@ class EpubBookText {
   }
 
   static String _resolve(String base, String href) {
-    var clean = href.split('#').first.split('?').first;
-    try {
-      clean = Uri.decodeFull(clean);
-    } catch (_) {}
+    final clean = undoPathEscapes(href.split('#').first.split('?').first);
     final parts = <String>[];
     for (final p in '${_dir(base)}$clean'.split('/')) {
       if (p.isEmpty || p == '.') continue;
@@ -310,17 +308,26 @@ class EpubBookText {
     return el == null ? null : _flat(el.text);
   }
 
+  /// Where each element with an id starts in section [si]'s text: the
+  /// offset of its first text. Elements with no text are left out.
+  Map<String, int> elementOffsets(int si) {
+    final s = _section(si);
+    if (s == null) return const {};
+    final out = <String, int>{};
+    for (var k = 0; k < s.nodes.length; k++) {
+      for (html.Node? up = s.nodes[k].parent; up != null; up = up.parent) {
+        if (up is html.Element && up.id.isNotEmpty) out.putIfAbsent(up.id, () => s.starts[k]);
+        if (identical(up, s.root)) break;
+      }
+    }
+    return out;
+  }
+
   /// The TOC title for a spine href, matched the way the reader matches it:
   /// by file name first, then by the end of the path.
   String? chapterForHref(String href) {
     if (href.isEmpty || toc.isEmpty) return null;
-    String base(String s) {
-      var p = s.split('#').first;
-      try {
-        p = Uri.decodeFull(p);
-      } catch (_) {}
-      return p.split('/').last.toLowerCase();
-    }
+    String base(String s) => undoPercentEscapes(s.split('#').first.split('/').last).toLowerCase();
 
     String? label(String t) => t.trim().isEmpty ? null : t.trim();
     final b = base(href);
@@ -448,4 +455,69 @@ class EpubBookText {
     }
     return null;
   }
+}
+
+/// Book time of the narrated sentence a reading spot [cfi] falls in: the
+/// last one in its section to start at or before it, or the section's first
+/// when the spot comes before them all. Null when the spot isn't in [book] or
+/// its section isn't narrated.
+double? narrationTimeAtCfi(MediaOverlay overlay, EpubBookText book, String cfi) =>
+    placeCfiOnNarration(overlay, book, cfi).seconds;
+
+/// [narrationTimeAtCfi], with how the spot was found or why it wasn't.
+/// Another reader's CFI can count a chapter's elements differently (an XML
+/// parse against this HTML one), so the ids it names are tried first: a
+/// narrated sentence it names is the answer outright, and any other named
+/// element gives a place in the text when the steps don't resolve here.
+({double? seconds, String how}) placeCfiOnNarration(MediaOverlay overlay, EpubBookText book, String cfi) {
+  final m = RegExp(r'^epubcfi\((.*)\)$').firstMatch(cfi.trim());
+  final bang = m?.group(1)?.indexOf('!') ?? -1;
+  if (m == null || bang < 0) return (seconds: null, how: 'not a CFI');
+  final inner = m.group(1)!;
+  final pkg = inner.substring(0, bang).split('/').where((p) => p.isNotEmpty).toList();
+  final spineStep = pkg.isEmpty ? null : int.tryParse(pkg.last.split('[').first);
+  if (spineStep == null || spineStep < 2) return (seconds: null, how: 'no chapter in the CFI');
+  final si = spineStep ~/ 2 - 1;
+  final sectionOfHref = <String, int>{};
+  final clips = [
+    for (final c in overlay.clips)
+      if (c.fragment != null && sectionOfHref.putIfAbsent(c.textHref, () => book.sectionOf(c.textHref)) == si) c,
+  ];
+  if (clips.isEmpty) return (seconds: null, how: 'chapter $si is not narrated');
+  // The ids the CFI names, deepest first, leaving out text assertions.
+  final ids = [
+    for (final a in RegExp(r'\[([^\]]*)\]').allMatches(inner.substring(bang + 1)))
+      if (a.group(1)!.isNotEmpty && !a.group(1)!.startsWith(';')) a.group(1)!.split(';').first,
+  ].reversed.toList();
+  for (final id in ids) {
+    for (final c in clips) {
+      if (c.fragment == id) return (seconds: overlay.startOf(c), how: 'it names sentence $id');
+    }
+  }
+  final offsets = book.elementOffsets(si);
+  var target = book.locate(cfi)?.offset;
+  var how = 'its place in chapter $si';
+  if (target == null) {
+    for (final id in ids) {
+      final off = offsets[id];
+      if (off != null) {
+        target = off;
+        how = 'the element $id it names';
+        break;
+      }
+    }
+  }
+  if (target == null) return (seconds: null, how: 'its steps and ids are not in chapter $si here');
+  OverlayClip? best;
+  var bestOffset = -1;
+  for (final c in clips) {
+    final off = offsets[c.fragment];
+    if (off == null || off > target) continue;
+    if (off >= bestOffset) {
+      best = c;
+      bestOffset = off;
+    }
+  }
+  final pick = best ?? clips.first;
+  return (seconds: overlay.startOf(pick), how: how);
 }

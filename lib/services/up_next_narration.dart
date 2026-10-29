@@ -14,11 +14,12 @@ import 'audio_player_service.dart';
 import 'download_service.dart';
 import 'narrated_books.dart';
 
-/// An Audiobookshelf EPUB that reads itself aloud plays only once its
-/// narration is downloaded, so a queue must never reach one unready. Starting
-/// a book from the app when it is three quarters done offers the download of
-/// an EPUB that is next in the queue; a queue that gets there anyway stops
-/// (never skipping it) and says why.
+/// An Audiobookshelf EPUB that reads itself aloud streams from the server,
+/// so offline it plays only once its narration is downloaded, and a queue
+/// must never reach one unready. Starting a book from the app offline when it
+/// is three quarters done offers the download of an EPUB that is next in the
+/// queue; a queue that gets there anyway stops (never skipping it) and says
+/// why.
 class UpNextNarration {
   UpNextNarration._();
   static final UpNextNarration instance = UpNextNarration._();
@@ -28,9 +29,10 @@ class UpNextNarration {
   // Asked once a run for each up-next book, so "Not now" sticks.
   final Set<String> _asked = {};
 
-  /// Whether [key] is a narrated EPUB on Audiobookshelf that can't play yet.
-  bool needsDownload(String key) {
-    if (key.length > 36 || !NarratedBooks.contains(key)) return false;
+  /// Whether [key] is a narrated EPUB on Audiobookshelf that can't play yet:
+  /// [offline], so it can't stream, and not on the phone.
+  bool needsDownload(String key, {required bool offline}) {
+    if (!offline || key.length > 36 || !NarratedBooks.contains(key)) return false;
     final dl = DownloadService();
     return !dl.isDownloaded(key) && !dl.isDownloading(key);
   }
@@ -45,7 +47,7 @@ class UpNextNarration {
       final done = player.position.inMilliseconds / 1000.0 / total;
       if (done < _nearTheEnd) return;
       final next = await lib.upNextEntry(currentItemId: itemId);
-      if (next == null || !needsDownload(next.key) || !_asked.add(next.key)) return;
+      if (next == null || !needsDownload(next.key, offline: lib.isOffline) || !_asked.add(next.key)) return;
       final ctx = rootNavigatorKey.currentContext;
       if (ctx == null || !ctx.mounted) return;
       final api = ctx.read<AuthProvider>().apiService;
