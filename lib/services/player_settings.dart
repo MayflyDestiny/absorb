@@ -1105,6 +1105,11 @@ class PlayerSettings {
   static Future<bool> getEreaderVolumeNavWhilePlaying() => _get('ereaderVolumeNavWhilePlaying', false);
   static Future<void> setEreaderVolumeNavWhilePlaying(bool value) => _set('ereaderVolumeNavWhilePlaying', value, notify: true);
 
+  // Ebook reader: where the Translate button sends a selection. Empty means
+  // the first translator this device has (see TranslateService).
+  static Future<String> getEreaderTranslateWith() => _get('ereaderTranslateWith', '');
+  static Future<void> setEreaderTranslateWith(String value) => _set('ereaderTranslateWith', value);
+
   static Future<double> getEreaderAutoScrollSpeed() => _get('ereaderAutoScrollSpeed', 40.0);
   static Future<void> setEreaderAutoScrollSpeed(double value) => _set('ereaderAutoScrollSpeed', value);
   static Future<int> getEreaderAutoScrollSleepMinutes() => _get('ereaderAutoScrollSleepMinutes', 30);

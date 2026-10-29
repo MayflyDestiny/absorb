@@ -25,6 +25,7 @@ import '../services/download_service.dart';
 import '../services/ebook_annotation_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/find_in_ebook.dart';
+import '../services/highlight_sync.dart';
 import '../services/progress_sync_service.dart';
 import '../services/reader_font_service.dart';
 import '../services/scoped_prefs.dart';
@@ -38,11 +39,13 @@ import '../services/media_overlay.dart';
 import '../services/narration_script.dart';
 import '../services/narration_service.dart';
 import '../services/screen_wake.dart';
+import '../services/translate_service.dart';
 import '../services/sync_point_store.dart';
 import '../services/transcript_line_store.dart';
 import '../services/transcription_service.dart';
 import '../services/volume_key_service.dart';
 import '../utils/chapter_title_match.dart';
+import '../utils/percent_escapes.dart';
 import 'overlay_toast.dart';
 import 'page_curl.dart';
 import 'reader_tap_zones.dart';
@@ -310,12 +313,14 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // Reader settings
   int _fontSize = 16;
   double _lineHeight = 1.4;
-  // Books justify their text by default; on a narrow screen that opens wide
-  // gaps between words, so the reader can force a ragged right edge.
+  // Justified evens out the book's paragraphs; on a narrow screen that opens
+  // wide gaps between words, so the reader can force a ragged right edge.
   bool _alignLeft = false;
   int _marginH = 16; // left + right
   String _volumeNavMode = 'off';
   bool _volumeNavWhilePlaying = false;
+  List<Translator> _translators = const [];
+  String _translateWith = '';
 
   // Auto scroll (rolling blind). Speed is px/sec of blind descent; the text
   // itself never moves, so this is how fast the next page paints over this one.
@@ -432,8 +437,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     WidgetsBinding.instance.addObserver(this);
     ReadListenSync.instance.readerOpened(widget.itemId);
     _readingApi = context.read<AuthProvider>().apiService;
+    // BookOrbit keeps reading time as reading, the way its own reader logs
+    // it, so it's always counted there. Audiobookshelf has only listening
+    // time to put it in, so there it waits for the setting.
+    final bookOrbit = _readingApi?.isBookOrbit == true;
     ScopedPrefs.getBool(_kLogReading).then((on) {
-      if (on == true && mounted) {
+      if ((bookOrbit || on == true) && mounted) {
         setState(() => _logReading = true);
         _startReadingClock();
       }
@@ -630,6 +639,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     if (mounted) _syncScreenWake();
     _volumeNavMode = await PlayerSettings.getEreaderVolumeNav();
     _volumeNavWhilePlaying = await PlayerSettings.getEreaderVolumeNavWhilePlaying();
+    _translateWith = await PlayerSettings.getEreaderTranslateWith();
+    _translators = await TranslateService.available();
     _autoScrollSpeed = (await PlayerSettings.getEreaderAutoScrollSpeed())
         .clamp(_autoScrollMin, _autoScrollMax)
         .toDouble();
@@ -651,6 +662,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     if (id == _themeId) return;
     setState(() => _themeId = id);
     _applySettings();
+    if (PlayerSettings.einkMode) _redrawHighlights();
     await ScopedPrefs.setString(_kTheme, id);
   }
 
@@ -942,8 +954,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         // Contain keeps a narrowed picture's shape without resizing small
         // inline ones.
         'img': {'max-width': '100% !important', 'object-fit': 'contain'},
+        // The viewer tags the book's paragraphs "absorb-p", <div>s included:
+        // Calibre conversions often set their paragraphs in <div>s.
         if (_paragraphSpacing >= 0)
-          'p': {'margin-top': '0 !important', 'margin-bottom': '${_paragraphSpacing}em !important'},
+          'p, div.absorb-p': {'margin-top': '0 !important', 'margin-bottom': '${_paragraphSpacing}em !important'},
+        if (!_alignLeft) '.absorb-p': {'text-align': 'justify !important'},
       },
     );
   }
@@ -1608,6 +1623,16 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       } else {
         unawaited(_rememberForOffline(api));
         await serverSpot;
+        // Read while the book wrongly counted as another account's (its
+        // account's address changed before downloads followed it): carry on
+        // from the spot kept on the phone, which then goes to the server.
+        if (_initialCfi == null && _progress <= 0) {
+          final spot = await DownloadService().otherAccountReadingSpot(widget.itemId);
+          if (spot != null && mounted) {
+            debugPrint('[EbookReader] item=${widget.itemId}: carrying on from the place kept on this phone');
+            _usePhoneSpot(spot);
+          }
+        }
       }
       final len = file.existsSync() ? await file.length() : 0;
       final locations = await loadCachedLocations(file);
@@ -1638,6 +1663,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         'its place stays on this phone');
     final spot = await DownloadService().otherAccountReadingSpot(widget.itemId);
     if (spot == null || !mounted) return;
+    _usePhoneSpot(spot);
+  }
+
+  void _usePhoneSpot(({String location, double progress}) spot) {
     _progress = spot.progress.clamp(0.0, 1.0);
     if (_initialCfi != null) return;
     if (spot.location.startsWith('epubcfi(')) {
@@ -1707,6 +1736,73 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     if (mounted) setState(() {});
   }
 
+  /// BookOrbit keeps highlights too. Opening the book brings them in step
+  /// both ways ([pull]); a change made here only needs sending.
+  Future<void> _syncHighlights({bool pull = false}) async {
+    if (!mounted) return;
+    final api = context.read<AuthProvider>().apiService;
+    final fileId = widget.ebookFile['ino'] as String?;
+    if (api == null || !api.keepsEbookHighlights || fileId == null) return;
+    if (!pull) {
+      await HighlightSync.instance.push(api, widget.itemId, fileId);
+      return;
+    }
+    final before = List.of(_annotations);
+    final changed = await HighlightSync.instance.sync(api, widget.itemId, fileId);
+    if (!changed || !mounted) return;
+    final after = await _annotationService.getAnnotations(widget.itemId);
+    if (!mounted) return;
+    _repaintChangedHighlights(before, after);
+    setState(() => _annotations = after);
+    _updateBookmarkState();
+  }
+
+  void _repaintChangedHighlights(List<EbookAnnotation> before, List<EbookAnnotation> after) {
+    Map<String, EbookAnnotation> highlights(List<EbookAnnotation> list) =>
+        {for (final a in list) if (a.type == AnnotationType.highlight) a.id: a};
+    final was = highlights(before);
+    final now = highlights(after);
+    for (final a in was.values) {
+      final b = now[a.id];
+      if (b == null || b.color != a.color) _epubController?.removeHighlight(cfi: a.cfi);
+    }
+    for (final b in now.values) {
+      final a = was[b.id];
+      final color = b.color;
+      if ((a == null || a.color != color) && color != null) _paintHighlight(b.cfi, color);
+    }
+  }
+
+  /// Draws a highlight on the page. An e-ink panel turns colors into pale
+  /// greys, some next to invisible, so there every highlight is one shade that
+  /// stands out from the page: dark on a light one, light on a dark one.
+  void _paintHighlight(String cfi, HighlightColor color) {
+    if (PlayerSettings.einkMode) {
+      final darkPage = _resolvePalette(context).bgColor.computeLuminance() < 0.3;
+      _epubController?.addHighlight(
+        cfi: cfi,
+        color: darkPage ? Colors.white : Colors.black,
+        opacity: darkPage ? 0.35 : 0.2,
+        blend: darkPage ? 'normal' : 'multiply',
+      );
+      return;
+    }
+    _epubController?.addHighlight(
+      cfi: cfi,
+      color: Color(int.parse('FF${color.hex.substring(1)}', radix: 16)),
+      opacity: 0.35,
+    );
+  }
+
+  /// Draws every highlight again, for an e-ink page whose theme just changed.
+  void _redrawHighlights() {
+    for (final a in _annotations) {
+      if (a.type != AnnotationType.highlight || a.color == null) continue;
+      _epubController?.removeHighlight(cfi: a.cfi);
+      _paintHighlight(a.cfi, a.color!);
+    }
+  }
+
   void _restoreHighlights() {
     _epubController?.webViewController?.addJavaScriptHandler(
       handlerName: 'absorbCfiText',
@@ -1730,11 +1826,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     );
     for (final a in _annotations) {
       if (a.type == AnnotationType.highlight && a.color != null) {
-        _epubController?.addHighlight(
-          cfi: a.cfi,
-          color: Color(int.parse('FF${a.color!.hex.substring(1)}', radix: 16)),
-          opacity: 0.35,
-        );
+        _paintHighlight(a.cfi, a.color!);
         _probeHighlightCfi(a.cfi);
       }
     }
@@ -1842,13 +1934,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       color: color,
       chapter: _currentChapterTitle,
     );
-    _epubController?.addHighlight(
-      cfi: annotation.cfi,
-      color: Color(int.parse('FF${color.hex.substring(1)}', radix: 16)),
-      opacity: 0.35,
-    );
+    _paintHighlight(annotation.cfi, color);
     _annotations.insert(0, annotation);
     if (mounted) _dismissSelection();
+    unawaited(_syncHighlights());
   }
 
   /// [onThisPage] is for a highlight tapped in the book: the reader is sitting
@@ -1876,6 +1965,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     );
     _annotations.removeWhere((a) => a.id == annotation.id);
     if (mounted) setState(() {});
+    unawaited(_syncHighlights());
   }
 
   Future<void> _changeHighlightColor(
@@ -1888,12 +1978,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     );
     annotation.color = color;
     _epubController?.removeHighlight(cfi: annotation.cfi);
-    _epubController?.addHighlight(
-      cfi: annotation.cfi,
-      color: Color(int.parse('FF${color.hex.substring(1)}', radix: 16)),
-      opacity: 0.35,
-    );
+    _paintHighlight(annotation.cfi, color);
     if (mounted) setState(() {});
+    unawaited(_syncHighlights());
   }
 
   /// A highlight tapped on the page: cancel the pending page turn and open
@@ -1951,30 +2038,35 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   style: tt.bodyMedium?.copyWith(
                       color: cs.onSurfaceVariant, fontStyle: FontStyle.italic)),
             ),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              for (final c in HighlightColor.values)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _changeHighlightColor(annotation, c);
-                    },
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: Color(
-                            int.parse('FF${c.hex.substring(1)}', radix: 16)),
-                        shape: BoxShape.circle,
-                        border: annotation.color == c
-                            ? Border.all(color: cs.onSurface, width: 2.5)
-                            : null,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final c in HighlightColor.values)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _changeHighlightColor(annotation, c);
+                      },
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: Color(
+                              int.parse('FF${c.hex.substring(1)}', radix: 16)),
+                          shape: BoxShape.circle,
+                          border: annotation.color == c
+                              ? Border.all(color: cs.onSurface, width: 2.5)
+                              : null,
+                        ),
                       ),
                     ),
-                  ),
-                ),
-            ]),
+                ],
+              ),
+            ),
             const SizedBox(height: 8),
             ListTile(
               leading: Icon(Icons.edit_note_rounded, color: cs.onSurfaceVariant),
@@ -2067,11 +2159,6 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     setState(() => _clearSelection());
   }
 
-  Widget _divider(ColorScheme cs) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 2),
-    child: Container(width: 1, height: 24, color: cs.onSurface.withValues(alpha: 0.15)),
-  );
-
   void _copySelection() {
     if (_selectionText == null) return;
     Clipboard.setData(ClipboardData(text: _selectionText!));
@@ -2102,6 +2189,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // English lookup sheet only when the device has nothing to offer.
     if (await NativeDictionary.define(word)) return;
     if (mounted) showDictionarySheet(context, word);
+  }
+
+  void _translateSelection() {
+    final text = _selectionText;
+    if (text == null) return;
+    _dismissSelection();
+    TranslateService.translate(text);
   }
 
   void _onSelection(String text, String cfi, Rect selRect, Rect vRect) {
@@ -2160,6 +2254,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       );
       annotation.note = result.isEmpty ? null : result;
       if (mounted) setState(() {});
+      unawaited(_syncHighlights());
     }
   }
 
@@ -2673,6 +2768,31 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                       PlayerSettings.setEreaderVolumeNavWhilePlaying(v);
                     },
                   ),
+                if (_translators.isNotEmpty)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      await _showTranslatorSheet();
+                      setSheetState(() {});
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(children: [
+                        Icon(Icons.translate_rounded, size: 20, color: cs.onSurfaceVariant),
+                        const SizedBox(width: 12),
+                        Text(l.readerTranslateWith, style: tt.bodyMedium),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(TranslateService.pick(_translators, _translateWith).label,
+                              textAlign: TextAlign.end,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant),
+                      ]),
+                    ),
+                  ),
 
                 // Read along, mirrored from the transcription settings so the
                 // reader can change them without leaving the book.
@@ -2724,18 +2844,20 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   const SizedBox(height: 16),
                 ],
 
-                section(l.readerSectionStats),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l.readerLogReading, style: tt.bodyMedium),
-                  subtitle: Text(l.readerLogReadingHint,
-                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                  value: _logReading,
-                  onChanged: (v) {
-                    _setLogReading(v);
-                    setSheetState(() {});
-                  },
-                ),
+                if (_readingApi?.isBookOrbit != true) ...[
+                  section(l.readerSectionStats),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l.readerLogReading, style: tt.bodyMedium),
+                    subtitle: Text(l.readerLogReadingHint,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                    value: _logReading,
+                    onChanged: (v) {
+                      _setLogReading(v);
+                      setSheetState(() {});
+                    },
+                  ),
+                ],
 
               ],
             ),
@@ -3009,6 +3131,85 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     );
   }
 
+  Future<void> _showTranslatorSheet() async {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
+    _translators = await TranslateService.available();
+    if (!mounted) return;
+    final current = TranslateService.pick(_translators, _translateWith).id;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: cs.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(l.readerTranslateWith,
+                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final t in _translators)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        t.id == current ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                        color: t.id == current ? cs.primary : cs.onSurfaceVariant,
+                      ),
+                      title: Text(t.label,
+                          style: TextStyle(
+                              color: cs.onSurface,
+                              fontWeight: t.id == current ? FontWeight.w700 : FontWeight.w400)),
+                      subtitle: Text(
+                        switch (t.kind) {
+                          TranslatorKind.app => l.readerTranslateApp,
+                          TranslatorKind.apple => l.readerTranslateApple,
+                          TranslatorKind.web => l.readerTranslateWeb,
+                        },
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                      onTap: () {
+                        setState(() => _translateWith = t.id);
+                        PlayerSettings.setEreaderTranslateWith(t.id);
+                        Navigator.of(ctx).pop();
+                      },
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Text(l.readerTranslateHint,
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Maps a spine item href to its TOC chapter title. The spine href and the
   /// TOC href often differ by directory prefix or URL-encoding (e.g.
   /// `OEBPS/Text/ch1.xhtml` vs `Text/ch1.xhtml` vs `ch1%20.xhtml`), so match on
@@ -3017,11 +3218,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// label, which is fine for a search result subtitle.
   String? _chapterForHref(String href) {
     if (href.isEmpty || _chapters.isEmpty) return null;
-    String basename(String s) {
-      var p = s.split('#').first;
-      try { p = Uri.decodeFull(p); } catch (_) {}
-      return p.split('/').last.toLowerCase();
-    }
+    String basename(String s) => undoPercentEscapes(s.split('#').first.split('/').last).toLowerCase();
     // TOC labels often carry the nav markup's indentation/newlines, so trim.
     String? label(String t) => t.trim().isEmpty ? null : t.trim();
     final base = basename(href);
@@ -4283,8 +4480,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
   /// Plays the narration from the sentence [from]: a seek when this book is
   /// already in the player, otherwise a start there. An Audiobookshelf book
-  /// gets its narration onto the phone first, with how far along that is.
-  /// Null when the download question took over and nothing more needs saying.
+  /// streams it, or offline offers the download. Null when the download
+  /// question took over and nothing more needs saying.
   Future<bool?> _playNarrationFrom(OverlayClip? from) async {
     final player = AudioPlayerService();
     final n = _narration;
@@ -4298,7 +4495,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return false;
     final cover = context.read<LibraryProvider>().getCoverUrl(widget.itemId);
-    if (!api.isBookOrbit && !NarrationService.instance.hasLocalAudio(widget.itemId)) {
+    if (!api.isBookOrbit &&
+        context.read<LibraryProvider>().isOffline &&
+        !NarrationService.instance.hasLocalAudio(widget.itemId)) {
       await showNarrationDownloadDialog(context,
           itemId: widget.itemId,
           title: widget.title,
@@ -4388,8 +4587,21 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     debugPrint('[ReadAlong] opened while the narration is at ${clip.textHref}#$id - going there');
     _rememberSpot(EbookSpotReason.beforeSync);
     await wc.evaluateJavascript(source: _narrationBootstrapSource());
-    await wc.evaluateJavascript(
-        source: 'window.__absorbMO && __absorbMO.go(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})');
+    final go = 'window.__absorbMO && __absorbMO.go(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})';
+    await wc.evaluateJavascript(source: go);
+    // The font and the first re-displays can still reflow the book after the
+    // jump and leave it a page or more off the sentence: look again, and go
+    // back to it unless the page has been moved by hand since.
+    final openedAt = DateTime.now();
+    for (final wait in const [1500, 2000]) {
+      await Future.delayed(Duration(milliseconds: wait));
+      if (!mounted || _readAlongOn || _userMovedAt.isAfter(openedAt)) return;
+      final where = await wc.evaluateJavascript(
+          source: 'window.__absorbMO ? __absorbMO.where(${jsonEncode(clip.textHref)}, ${jsonEncode(id)}) : ""');
+      if (where == 'on' || where == 'missing' || where == null || where == '') continue;
+      debugPrint('[ReadAlong] the page settled $where of the narration - going there again');
+      await wc.evaluateJavascript(source: go);
+    }
   }
 
   // Where reading has got to in narration time, noted as pages turn, so
@@ -4537,6 +4749,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         _narrationTurnAt = now;
         await wc.evaluateJavascript(
             source: 'window.__absorbMO && __absorbMO.reveal(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})');
+      } else if (where == 'far-after' || where == 'far-before') {
+        // Pages away (the reader opened short of it, or it was left behind):
+        // straight there, not a page at a time.
+        _narrationTurnAt = now;
+        _readAlongTurnPending = now;
+        debugPrint('[ReadAlong] narration is pages ${where == 'far-after' ? 'ahead' : 'back'} - '
+            'going to ${clip.textHref}#$id');
+        await wc.evaluateJavascript(
+            source: 'window.__absorbMO && __absorbMO.go(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})');
       } else if (where == 'after' || where == 'before') {
         _narrationTurnAt = now;
         _readAlongTurnPending = now;
@@ -5297,8 +5518,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
   /// A page turn, jump or scroll the reader asked for. From here on the
   /// place is the reader's own and gets saved.
+  DateTime _userMovedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   void _userMoved(String how) {
     _readingActiveAt = DateTime.now();
+    _userMovedAt = DateTime.now();
     if (const {'chapter', 'highlight', 'bookmark', 'history'}.contains(how)) {
       _rememberSpot(EbookSpotReason.beforeJump);
     }
@@ -5796,7 +6020,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   }
 
   void _readingTick() {
-    if (!_logReading || !_readerActive) return;
+    if (!_logReading || !_readerActive || _otherAccount) return;
     // This book's audio playing at either end of the tick means the time
     // is listening (read along included), counted by that session alone.
     final player = AudioPlayerService();
@@ -6581,6 +6805,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     accent: accent,
                     scrollController: sc,
                     onChanged: () {},
+                    showHighlights: false,
                   ),
                 ),
               ),
@@ -7077,7 +7302,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 }
                 if (!_didInitViewer) {
                   _didInitViewer = true;
-                  _loadAnnotations().then((_) => _restoreHighlights());
+                  _loadAnnotations().then((_) {
+                    _restoreHighlights();
+                    unawaited(_syncHighlights(pull: true));
+                  });
                   _setupPageInfoHandler();
                   _setupTapHandler();
                   _applyTurnStyle();
@@ -7278,65 +7506,78 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
               ),
             ),
 
-          // Selection toolbar - appears when text is selected
+          // Selection toolbar - appears when text is selected. It spans the
+          // screen so ten colors get room to be a decent size.
           if (_selectionRect != null && _selectionCfi != null)
             Positioned(
-              left: 0,
-              right: 0,
+              left: 12,
+              right: 12,
               bottom: MediaQuery.of(context).padding.bottom + 16,
               child: Center(
-                child: Material(
-                  elevation: 8,
-                  borderRadius: BorderRadius.circular(28),
-                  color: cs.surfaceContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final color in HighlightColor.values)
-                          _HighlightColorButton(
-                            color: Color(int.parse('FF${color.hex.substring(1)}', radix: 16)),
-                            onTap: () => _addHighlight(color),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(28),
+                    color: cs.surfaceContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 12, 10, 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              for (final color in HighlightColor.values)
+                                Expanded(
+                                  child: _HighlightColorButton(
+                                    color: Color(int.parse('FF${color.hex.substring(1)}', radix: 16)),
+                                    onTap: () => _addHighlight(color),
+                                  ),
+                                ),
+                            ],
                           ),
-                        _divider(cs),
-                        IconButton(
-                          icon: Icon(Icons.copy_rounded, size: 20, color: cs.onSurfaceVariant),
-                          onPressed: _copySelection,
-                          tooltip: AppLocalizations.of(context)!.readerTooltipCopy,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.search_rounded, size: 20, color: cs.onSurfaceVariant),
-                          onPressed: _searchSelection,
-                          tooltip: AppLocalizations.of(context)!.readerTooltipSearch,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.menu_book_rounded, size: 20, color: cs.onSurfaceVariant),
-                          onPressed: _defineSelection,
-                          tooltip: AppLocalizations.of(context)!.readerTooltipDefine,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        if (_transcriptionOn || _useNarration)
-                          IconButton(
-                            icon: Icon(
-                                _useNarration ? Icons.play_arrow_rounded : Icons.headphones_rounded,
-                                size: 20,
-                                color: cs.onSurfaceVariant),
-                            onPressed: _findInAudiobookFromSelection,
-                            tooltip: _useNarration
-                                ? AppLocalizations.of(context)!.narrationPlayFromHere
-                                : AppLocalizations.of(context)!.findInAudiobook,
-                            visualDensity: VisualDensity.compact,
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.copy_rounded, color: cs.onSurfaceVariant),
+                                onPressed: _copySelection,
+                                tooltip: AppLocalizations.of(context)!.readerTooltipCopy,
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.search_rounded, color: cs.onSurfaceVariant),
+                                onPressed: _searchSelection,
+                                tooltip: AppLocalizations.of(context)!.readerTooltipSearch,
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.menu_book_rounded, color: cs.onSurfaceVariant),
+                                onPressed: _defineSelection,
+                                tooltip: AppLocalizations.of(context)!.readerTooltipDefine,
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.translate_rounded, color: cs.onSurfaceVariant),
+                                onPressed: _translateSelection,
+                                tooltip: AppLocalizations.of(context)!.readerTooltipTranslate,
+                              ),
+                              if (_transcriptionOn || _useNarration)
+                                IconButton(
+                                  icon: Icon(
+                                      _useNarration ? Icons.play_arrow_rounded : Icons.headphones_rounded,
+                                      color: cs.onSurfaceVariant),
+                                  onPressed: _findInAudiobookFromSelection,
+                                  tooltip: _useNarration
+                                      ? AppLocalizations.of(context)!.narrationPlayFromHere
+                                      : AppLocalizations.of(context)!.findInAudiobook,
+                                ),
+                              IconButton(
+                                icon: Icon(Icons.close_rounded, color: cs.onSurfaceVariant),
+                                onPressed: _dismissSelection,
+                              ),
+                            ],
                           ),
-                        _divider(cs),
-                        IconButton(
-                          icon: Icon(Icons.close_rounded, size: 20, color: cs.onSurfaceVariant),
-                          onPressed: _dismissSelection,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -7581,10 +7822,10 @@ class _HighlightColorButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Container(
-          width: 32,
-          height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Container(
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
@@ -7593,6 +7834,7 @@ class _HighlightColorButton extends StatelessWidget {
               width: 1,
             ),
           ),
+        ),
         ),
       ),
     );

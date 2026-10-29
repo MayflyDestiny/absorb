@@ -31,6 +31,44 @@ bool canReadEbook(Map<String, dynamic>? ebookFile) {
   return readableEbookFormats.contains(ext);
 }
 
+/// Opens a book's ebook at a highlight. A downloaded ebook opens from the
+/// reader cache, so this works offline. [title] is looked up when not given.
+Future<void> openHighlightInReader(
+  BuildContext context, {
+  required String itemId,
+  required String cfi,
+  String? title,
+}) async {
+  final l = AppLocalizations.of(context)!;
+  final api = context.read<AuthProvider>().apiService;
+  var ebookFile = await cachedEbookFileFor(itemId);
+  if ((ebookFile == null || title == null) && api != null) {
+    final item = await api.getLibraryItem(itemId);
+    ebookFile ??= resolveEbookFile(item);
+    if (title == null) {
+      final media = item?['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      title = metadata['title'] as String?;
+    }
+  }
+  if (!context.mounted) return;
+  if (ebookFile == null) {
+    showOverlayToast(
+      context,
+      api == null ? l.bookmarksNotConnected : l.noEbookFileFound,
+      icon: Icons.menu_book_outlined,
+    );
+    return;
+  }
+  await openEbookReader(
+    context,
+    itemId: itemId,
+    title: title ?? '',
+    ebookFile: ebookFile,
+    openAtCfi: cfi,
+  );
+}
+
 /// Routes an ebook to the right reader for its format, or toasts when the
 /// format isn't supported in-app. [openAtCfi] jumps an EPUB straight to a
 /// saved location (a highlight) instead of resuming where reading left off.
