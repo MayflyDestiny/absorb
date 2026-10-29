@@ -48,6 +48,7 @@ class ListeningSessionCard extends StatelessWidget {
         deviceInfo['deviceName'] as String? ??
         '';
     final isAbsorb = clientName.toLowerCase().contains('absorb');
+    final isWear = isAbsorb && clientName.toLowerCase().contains('wear');
     final isReading = session['mediaPlayer'] == ApiService.readingMediaPlayer;
 
     return Padding(
@@ -79,6 +80,11 @@ class ListeningSessionCard extends StatelessWidget {
                         ? Icon(
                             Icons.menu_book_rounded,
                             size: 18,
+                            color: Colors.tealAccent.withValues(alpha: 0.9),
+                          )
+                        : isWear
+                        ? AbsorbWatchIcon(
+                            size: 20,
                             color: Colors.tealAccent.withValues(alpha: 0.9),
                           )
                         : isAbsorb
