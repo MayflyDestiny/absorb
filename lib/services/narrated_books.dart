@@ -9,6 +9,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// them as audiobooks, and the detail sheet knows straight away which
 /// buttons a book gets. Item ids are unique across servers, so one list
 /// serves every account.
+/// Whether [item] has an EPUB that reads itself aloud: BookOrbit says so in
+/// its book lists, an Audiobookshelf book once its EPUB has been looked at.
+bool hasReadAlongEbook(Map<String, dynamic>? item) {
+  if (item == null) return false;
+  final bookOrbit = item['bookOrbit'];
+  if (bookOrbit is Map && bookOrbit['readAlong'] == true) return true;
+  if ((item['media'] as Map?)?['narration'] != null) return true;
+  final id = item['id'];
+  return id is String && NarratedBooks.contains(id);
+}
+
 class NarratedBooks {
   NarratedBooks._();
 

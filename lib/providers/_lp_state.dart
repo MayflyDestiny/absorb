@@ -11,6 +11,10 @@ mixin _StateMixin on ChangeNotifier {
   bool _librariesFromCache = false;
   String? _selectedLibraryId;
   List<dynamic> _personalizedSections = [];
+  // Books and series just taken off the Continue shelves, kept off them
+  // until the server's own lists catch up.
+  final Map<String, DateTime> _hiddenShelfItems = {};
+  final Map<String, DateTime> _hiddenShelfSeries = {};
   List<dynamic> _series = [];
   bool _isLoading = false;
   bool _isLoadingSeries = false;

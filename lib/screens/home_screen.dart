@@ -794,7 +794,9 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                     } else if (isCollection) {
                       titleTap = () => CollectionDetailSheet.show(
                           context, section['_collectionId'] as String);
-                      sectionIcon = Icons.collections_bookmark_rounded;
+                      sectionIcon = section['_smartScope'] == true
+                          ? Icons.filter_alt_rounded
+                          : Icons.collections_bookmark_rounded;
                     } else if (id.startsWith('genre:')) {
                       sectionIcon = Icons.label_outline_rounded;
                       final sectionLabel = label;
@@ -1369,9 +1371,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       return;
     }
 
-    // An Audiobookshelf EPUB that reads itself aloud plays from the phone, so
-    // its narration is downloaded first.
+    // An Audiobookshelf EPUB that reads itself aloud streams from the server,
+    // so offline it has to be on the phone already.
     if (!auth.isBookOrbit &&
+        widget.lib.isOffline &&
         NarratedBooks.contains(itemId) &&
         !NarrationService.instance.hasLocalAudio(itemId)) {
       setState(() => _isLoading = false);

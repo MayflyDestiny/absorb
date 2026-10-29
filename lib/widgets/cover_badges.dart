@@ -107,13 +107,29 @@ class CoverStateBadges extends StatelessWidget {
   }
 }
 
-/// Small book icon for a cover corner, on books that come with an ebook:
+/// Small book icon for a cover corner, on books that come with an ebook,
+/// with headphones beside it when the ebook reads itself aloud:
 ///   Positioned(top: 4, left: 4, child: EbookCoverBadge())
 class EbookCoverBadge extends StatelessWidget {
-  const EbookCoverBadge({super.key});
+  final bool readAlong;
+  const EbookCoverBadge({super.key, this.readAlong = false});
 
   @override
   Widget build(BuildContext context) {
+    if (readAlong) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.menu_book_rounded, size: 11, color: Colors.white),
+          SizedBox(width: 2),
+          Icon(Icons.headphones_rounded, size: 11, color: Colors.white),
+        ]),
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
