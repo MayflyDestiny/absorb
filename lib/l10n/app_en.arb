@@ -38,6 +38,8 @@
   "settingsWhatsNew": "Show what's new after updates",
   "settingsWhatsNewSubtitle": "After Absorb updates, a popup links to the release notes",
   "gotIt": "Got it",
+  "betaLoggingTitle": "Logs are on",
+  "betaLoggingContent": "Since this is a beta, Absorb now keeps logs to help track down problems. They stay on this device unless you share them.\n\nYou can send them or turn them off in Settings, under Issues & Support. If you turn them off, later betas leave them off.",
   "preview": "Preview",
   "or": "or",
   "file": "File",

@@ -1092,6 +1092,9 @@ class PlayerSettings {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('loggingEnabled', value);
   }
+  /// Whether the logging switch was ever set, by hand or from a backup.
+  static Future<bool> loggingChosen() async =>
+      (await SharedPreferences.getInstance()).containsKey('loggingEnabled');
 
   static Future<bool> getFullScreenPlayer() => _get('fullScreenPlayer', false);
   static Future<void> setFullScreenPlayer(bool value) => _set('fullScreenPlayer', value);

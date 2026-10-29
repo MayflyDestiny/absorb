@@ -115,6 +115,13 @@ class AppLocalizationsEs extends AppLocalizations {
   String get gotIt => 'Entendido';
 
   @override
+  String get betaLoggingTitle => 'Logs are on';
+
+  @override
+  String get betaLoggingContent =>
+      'Since this is a beta, Absorb now keeps logs to help track down problems. They stay on this device unless you share them.\n\nYou can send them or turn them off in Settings, under Issues & Support. If you turn them off, later betas leave them off.';
+
+  @override
   String get preview => 'Vista previa';
 
   @override

@@ -60,6 +60,7 @@ import 'stats_screen.dart';
 import 'settings_screen.dart';
 import 'app_shell_navigation_policy.dart';
 import '../widgets/library_picker_sheet.dart';
+import '../widgets/beta_logging_notice.dart';
 import '../widgets/welcome_sheet.dart';
 import '../widgets/whats_new_prompt.dart';
 import '../services/review_service.dart';
@@ -392,9 +393,17 @@ class _AppShellState extends State<AppShell>
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
     _loadPodcastTabPrefs();
     PlayerSettings.settingsChanged.addListener(_loadPodcastTabPrefs);
-    WhatsNewPrompt.showIfUpdated(context);
-    WelcomeSheet.showIfNeeded(context);
+    _showLaunchPrompts();
     _checkForUpdate();
+  }
+
+  /// One after another, so they never land on top of each other.
+  Future<void> _showLaunchPrompts() async {
+    await WhatsNewPrompt.showIfUpdated(context);
+    if (!mounted) return;
+    await WelcomeSheet.showIfNeeded(context);
+    if (!mounted) return;
+    await BetaLoggingNotice.showIfPending(context);
   }
 
   Future<void> _loadPodcastTabPrefs() async {

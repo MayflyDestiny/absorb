@@ -316,6 +316,18 @@ abstract class AppLocalizations {
   /// **'Got it'**
   String get gotIt;
 
+  /// No description provided for @betaLoggingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs are on'**
+  String get betaLoggingTitle;
+
+  /// No description provided for @betaLoggingContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Since this is a beta, Absorb now keeps logs to help track down problems. They stay on this device unless you share them.\n\nYou can send them or turn them off in Settings, under Issues & Support. If you turn them off, later betas leave them off.'**
+  String get betaLoggingContent;
+
   /// No description provided for @preview.
   ///
   /// In en, this message translates to:

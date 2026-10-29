@@ -45,6 +45,7 @@ import 'services/wording.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/auth_loading_screen.dart';
+import 'widgets/beta_logging_notice.dart';
 import 'widgets/setup_link_login.dart';
 
 /// Global notifier so any widget (e.g. settings) can change the theme instantly.
@@ -695,6 +696,9 @@ class _AuthGateState extends State<AuthGate> {
 
     // Initialize log service early so all debugPrint calls are captured in the
     // log file. This is critical for diagnosing startup freezes in production.
+    try {
+      await BetaLoggingNotice.applyDefault(ApiService.appVersionFull);
+    } catch (_) {}
     try {
       final loggingEnabled = await PlayerSettings.getLoggingEnabled();
       await LogService().init(loggingEnabled);
