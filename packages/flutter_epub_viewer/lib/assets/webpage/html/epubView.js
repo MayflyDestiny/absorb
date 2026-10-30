@@ -211,6 +211,7 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
   rendition.hooks.content.register(function (contents) {
     attachTurnDrag(contents.document);
   });
+  rendition.hooks.content.register(markParagraphs);
 
   // Absorb patch: scroll mode only moves up and down, down to each chapter's
   // own page, so a drag that drifts sideways can't nudge the text aside.
@@ -2465,6 +2466,49 @@ function addHighlight(cfiRange, color, opacity) {
   }, "hl", { "fill": color, "fill-opacity": '0.3', "mix-blend-mode": "multiply" });
 }
 
+// Absorb: a highlight drawn with its own opacity and blend. E-ink draws every
+// highlight as one shade the panel can show, whatever its color.
+// Absorb patch: tag the book's paragraphs with "absorb-p", so paragraph
+// spacing and justified text reach books that set them in <div>s (Calibre
+// conversions) as well as <p>s. A paragraph is a <p>, or a <div> holding
+// text and no other blocks, that the book itself doesn't center or align
+// right. <div>s only count in a chapter with next to no <p> paragraphs:
+// where a book has them, its <div>s are headings, list entries and the
+// like. The reader's own styles are switched off while looking, so the
+// book's alignment is what's read, not the one the reader forces.
+function markParagraphs(contents) {
+  try {
+    var doc = contents.document;
+    var win = contents.window || doc.defaultView;
+    if (!doc || !doc.body || !win) return;
+    var injected = Array.prototype.slice.call(doc.querySelectorAll('style[id^="epubjs-inserted-css"]'));
+    injected.forEach(function (st) { if (st.sheet) st.sheet.disabled = true; });
+    try {
+      var blocks = "p, div, h1, h2, h3, h4, h5, h6, ul, ol, table, blockquote, section, figure, pre, img, svg";
+      var textParagraphs = 0;
+      doc.body.querySelectorAll("p").forEach(function (el) {
+        if (el.textContent && el.textContent.trim()) textParagraphs++;
+      });
+      var divsAreParagraphs = textParagraphs < 3;
+      doc.body.querySelectorAll(divsAreParagraphs ? "p, div" : "p").forEach(function (el) {
+        if (el.tagName === "DIV") {
+          if (el.querySelector(blocks)) return;
+          if (!el.textContent || !el.textContent.trim()) return;
+        }
+        var align = win.getComputedStyle(el).textAlign;
+        if (align === "center" || align === "right" || align === "end" || align === "-webkit-center") return;
+        el.classList.add("absorb-p");
+      });
+    } finally {
+      injected.forEach(function (st) { if (st.sheet) st.sheet.disabled = false; });
+    }
+  } catch (e) {}
+}
+
+function addHighlightStyled(cfiRange, color, opacity, blend) {
+  rendition.annotations.highlight(cfiRange, {}, () => {}, "hl", { "fill": color, "fill-opacity": opacity, "mix-blend-mode": blend });
+}
+
 function addUnderLine(cfiString) {
   rendition.annotations.underline(cfiString)
 }
@@ -3209,6 +3253,7 @@ function autoScrollStart(speed) {
     blindRendition.hooks.content.register(function (contents) {
       if (window.__absorbApplyFontToDoc) window.__absorbApplyFontToDoc(contents.document);
     });
+    blindRendition.hooks.content.register(markParagraphs);
   } catch (e) {}
   // renderTo points book.rendition at whatever it just made - epub.js internals
   // still expect the live one.

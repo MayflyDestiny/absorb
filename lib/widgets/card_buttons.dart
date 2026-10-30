@@ -13,6 +13,7 @@ import '../services/audio_player_service.dart';
 import '../services/bookmark_service.dart';
 import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
+import '../services/ebook_annotation_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/transcription_service.dart';
 import '../services/equalizer_service.dart';
@@ -32,6 +33,7 @@ import 'card_chapters_sheet.dart';
 import 'chapter_download_sheet.dart';
 import 'chromecast_button.dart';
 import 'download_confirm.dart';
+import 'ebook_router.dart';
 import 'episode_detail_sheet.dart';
 import 'episode_list_sheet.dart';
 import 'equalizer_sheet.dart';
@@ -940,7 +942,9 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
 
 class SimpleBookmarkSheet extends StatefulWidget {
   final String itemId; final String? episodeId; final AudioPlayerService player; final Color accent; final ScrollController scrollController; final VoidCallback onChanged;
-  const SimpleBookmarkSheet({super.key, required this.itemId, this.episodeId, required this.player, required this.accent, required this.scrollController, required this.onChanged});
+  /// Off inside the reader, which lists its own highlights.
+  final bool showHighlights;
+  const SimpleBookmarkSheet({super.key, required this.itemId, this.episodeId, required this.player, required this.accent, required this.scrollController, required this.onChanged, this.showHighlights = true});
 
   /// Storage key: 'showId-episodeId' for a podcast episode, the item id for a
   /// book. [itemId] stays the library item for anything the server answers.
@@ -950,12 +954,17 @@ class SimpleBookmarkSheet extends StatefulWidget {
 
 class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
   List<Bookmark>? _bookmarks;
+  // The book's ebook highlights, for a book with an ebook beside its audio or
+  // one that reads itself aloud.
+  List<EbookAnnotation> _highlights = const [];
+  bool _onHighlights = false;
   String _sort = 'newest';
   bool _speedAdjustedTime = false;
   double _savedSpeed = 1.0;
   @override void initState() {
     super.initState();
     _loadSort();
+    if (widget.showHighlights && widget.episodeId == null) _loadHighlights();
     PlayerSettings.getSpeedAdjustedTime().then((v) {
       if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v);
     });
@@ -999,6 +1008,80 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
     widget.onChanged();
   }
 
+  Future<void> _loadHighlights() async {
+    final all = await EbookAnnotationService().getAnnotations(widget.itemId);
+    final highlights = all.where((a) => a.type == AnnotationType.highlight).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (!mounted) return;
+    setState(() {
+      _highlights = highlights;
+      if (highlights.isEmpty) _onHighlights = false;
+    });
+  }
+
+  Future<void> _openHighlight(EbookAnnotation highlight) async {
+    await openHighlightInReader(context, itemId: widget.itemId, cfi: highlight.cfi);
+    // Highlights added, recolored or removed while reading.
+    if (mounted) await _loadHighlights();
+  }
+
+  Widget _tab(String label, bool selected, VoidCallback onTap) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? widget.accent.withValues(alpha: 0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(label, style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: selected ? widget.accent : cs.onSurfaceVariant,
+        )),
+      ),
+    );
+  }
+
+  Widget _highlightList(TextTheme tt, ColorScheme cs, AppLocalizations l) => ListView.builder(
+    controller: widget.scrollController, padding: const EdgeInsets.only(bottom: 24), itemCount: _highlights.length,
+    itemBuilder: (ctx, i) {
+      final h = _highlights[i];
+      final hex = (h.color ?? HighlightColor.yellow).hex;
+      final created = h.createdAt;
+      final date = l.backupDateFormat(created.month, created.day, created.year);
+      final chapter = h.chapter;
+      final meta = chapter != null && chapter.isNotEmpty ? l.highlightsMeta(chapter, date) : date;
+      final hasNote = h.note != null && h.note!.isNotEmpty;
+      return InkWell(
+        onTap: () => _openHighlight(h),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Container(
+            padding: const EdgeInsets.only(left: 10),
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: Color(int.parse('FF${hex.substring(1)}', radix: 16)), width: 3)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(h.selectedText ?? '', maxLines: 4, overflow: TextOverflow.ellipsis, style: tt.bodyMedium),
+              if (hasNote) ...[
+                const SizedBox(height: 4),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.sticky_note_2_outlined, size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(h.note!, maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))),
+                ]),
+              ],
+              const SizedBox(height: 4),
+              Text(meta, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+            ]),
+          ),
+        ),
+      );
+    },
+  );
+
   @override Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
@@ -1013,7 +1096,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
         Padding(padding: const EdgeInsets.symmetric(vertical: 12),
           child: Container(width: 40, height: 4, decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(2)))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Row(children: [
-          GestureDetector(
+          if (_onHighlights) const SizedBox(width: 36) else GestureDetector(
             onTap: () {
               final next = _sort == 'newest' ? 'position'
                   : _sort == 'position' ? 'position_desc'
@@ -1039,16 +1122,24 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
             ),
           ),
           const Spacer(),
-          Text(l.bookmarks, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          if (_highlights.isEmpty)
+            Text(l.bookmarks, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600))
+          else ...[
+            _tab(l.bookmarksTabBookmarks, !_onHighlights, () => setState(() => _onHighlights = false)),
+            const SizedBox(width: 6),
+            _tab(l.bookmarksTabHighlights, _onHighlights, () => setState(() => _onHighlights = true)),
+          ],
           const Spacer(),
-          GestureDetector(onTap: () => _addBookmark(), child: Container(
+          if (_onHighlights) const SizedBox(width: 36) else GestureDetector(onTap: () => _addBookmark(), child: Container(
             width: 36, height: 36,
             decoration: BoxDecoration(color: widget.accent.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
             child: Icon(Icons.add_rounded, color: widget.accent, size: 20),
           )),
         ])),
         const SizedBox(height: 8),
-        Expanded(child: _bookmarks == null
+        Expanded(child: _onHighlights
+            ? _highlightList(tt, cs, l)
+            : _bookmarks == null
             ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
             : _bookmarks!.isEmpty
                 ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -3143,14 +3234,31 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
             showRetry: widget.api != null,
           );
         }
+        final add = widget.episodeId == null
+            ? Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _addSession,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text(l.sessionAdd),
+                  ),
+                ),
+              )
+            : null;
         if (sessions.isEmpty) {
-          return _serverMessage(l.historyNoServerSessions, l, cs);
+          return Column(children: [
+            if (add != null) Padding(padding: const EdgeInsets.fromLTRB(20, 12, 20, 0), child: add),
+            Expanded(child: _serverMessage(l.historyNoServerSessions, l, cs)),
+          ]);
         }
 
         return ListView(
           controller: widget.scrollController,
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
           children: [
+            ?add,
             for (final session in sessions)
               ListeningSessionCard(
                 session: session,
@@ -3160,6 +3268,106 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
         );
       },
     );
+  }
+
+  /// Logs listening done away from the app, to catch a book's listening
+  /// time up on the server.
+  Future<void> _addSession() async {
+    final api = widget.api;
+    if (api == null) return;
+    final l = AppLocalizations.of(context)!;
+    final now = DateTime.now();
+    var day = DateTime(now.year, now.month, now.day);
+    var start = TimeOfDay.fromDateTime(now.subtract(const Duration(hours: 1)));
+    final hoursCtrl = TextEditingController(text: '1');
+    final minutesCtrl = TextEditingController(text: '0');
+    String two(int v) => v.toString().padLeft(2, '0');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialog) => AlertDialog(
+          scrollable: true,
+          title: Text(l.sessionAdd),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(l.statsScreenListened, style: Theme.of(dialogCtx).textTheme.labelLarge),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: hoursCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: l.statsHoursUnit, border: const OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: minutesCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: l.statsMinutesUnit, border: const OutlineInputBorder()),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
+              Text(l.sessionDayLabel, style: Theme.of(dialogCtx).textTheme.bodyMedium),
+              const Spacer(),
+              TextButton.icon(
+                icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                label: Text('${day.year}-${two(day.month)}-${two(day.day)}'),
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: dialogCtx,
+                    initialDate: day,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) setDialog(() => day = DateTime(picked.year, picked.month, picked.day));
+                },
+              ),
+            ]),
+            Row(children: [
+              Text(l.sessionStartLabel, style: Theme.of(dialogCtx).textTheme.bodyMedium),
+              const Spacer(),
+              TextButton.icon(
+                icon: const Icon(Icons.schedule_rounded, size: 16),
+                label: Text(start.format(dialogCtx)),
+                onPressed: () async {
+                  final picked = await showTimePicker(context: dialogCtx, initialTime: start);
+                  if (picked != null) setDialog(() => start = picked);
+                },
+              ),
+            ]),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogCtx, false), child: Text(l.cancel)),
+            FilledButton(onPressed: () => Navigator.pop(dialogCtx, true), child: Text(l.save)),
+          ],
+        ),
+      ),
+    );
+    final h = int.tryParse(hoursCtrl.text.trim()) ?? 0;
+    final m = int.tryParse(minutesCtrl.text.trim()) ?? 0;
+    hoursCtrl.dispose();
+    minutesCtrl.dispose();
+    final seconds = (h < 0 ? 0 : h) * 3600 + (m < 0 ? 0 : m) * 60;
+    if (saved != true || !mounted || seconds <= 0) return;
+
+    var startedAt = DateTime(day.year, day.month, day.day, start.hour, start.minute);
+    final latest = DateTime.now().subtract(Duration(seconds: seconds));
+    if (startedAt.isAfter(latest)) startedAt = latest;
+    final ok = await api.addListeningSession(itemId: widget.itemId, startedAt: startedAt, seconds: seconds);
+    if (!mounted) return;
+    showOverlayToast(
+      context,
+      ok ? l.sessionAdded : l.sessionAddFailed,
+      icon: ok ? Icons.check_rounded : Icons.error_outline_rounded,
+    );
+    if (ok) setState(() => _serverFuture = _fetchServerSessions());
   }
 
   Future<void> _showServerSessionDetails(

@@ -245,6 +245,20 @@
             </intent-filter>
         </service>
 
+        <!-- The watch names the BookOrbit listening sessions it recorded, so
+             the Stats screen can show them with the watch icon. -->
+        <service
+            android:name=".WearSessionListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/absorb/player/sessions" />
+            </intent-filter>
+        </service>
+
     </application>
 
     <queries>

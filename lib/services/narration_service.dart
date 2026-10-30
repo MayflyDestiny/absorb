@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
@@ -14,8 +16,10 @@ import 'ebook_cache.dart';
 import 'epub_book_text.dart';
 import 'media_overlay.dart';
 import 'narrated_books.dart';
+import 'progress_sync_service.dart';
 import 'remote_zip.dart';
 import 'scoped_prefs.dart';
+import '../utils/percent_escapes.dart';
 
 Future<MediaOverlay?> _parseEpub(String path) async {
   final input = InputFileStream(path);
@@ -29,6 +33,26 @@ Future<MediaOverlay?> _parseEpub(String path) async {
   }
 }
 
+/// A zip path with every escape undone, so a name stored escaped and one
+/// stored plain compare equal.
+String _plainPath(String path) => undoPathEscapes(path);
+
+ArchiveFile? _entryFor(Archive archive, String href) {
+  final exact = archive.findFile(href);
+  if (exact != null) return exact;
+  final want = _plainPath(href);
+  for (final f in archive.files) {
+    final name = _plainPath(f.name);
+    if (name == want || name.endsWith('/$want')) return f;
+  }
+  // Last, the file name alone, when only one file in the EPUB has it.
+  final base = want.split('/').last;
+  final named = archive.files.where((f) => _plainPath(f.name).split('/').last == base).toList();
+  return named.length == 1 ? named.single : null;
+}
+
+const _audioExts = {'.mp3', '.m4a', '.m4b', '.mp4', '.aac', '.ogg', '.opus', '.wav', '.flac'};
+
 List<String> _extract(({String epub, String dir, List<String> hrefs, List<String> names}) job) {
   final input = InputFileStream(job.epub);
   try {
@@ -36,8 +60,15 @@ List<String> _extract(({String epub, String dir, List<String> hrefs, List<String
     Directory(job.dir).createSync(recursive: true);
     final out = <String>[];
     for (var i = 0; i < job.hrefs.length; i++) {
-      final entry = archive.findFile(job.hrefs[i]);
-      if (entry == null) throw StateError('${job.hrefs[i]} is not in the EPUB');
+      final entry = _entryFor(archive, job.hrefs[i]);
+      if (entry == null) {
+        final audio = archive.files
+            .map((f) => f.name)
+            .where((n) => _audioExts.any(n.toLowerCase().endsWith))
+            .take(5)
+            .join(' | ');
+        throw StateError('${job.hrefs[i]} is not in the EPUB (its audio: $audio)');
+      }
       final path = '${job.dir}/${job.names[i]}';
       final file = File(path);
       if (!(file.existsSync() && file.lengthSync() == entry.size)) {
@@ -64,11 +95,11 @@ void _copyWithout(({String from, String to, List<String> skip}) job) {
   try {
     File(job.to).parent.createSync(recursive: true);
     final archive = ZipDecoder().decodeStream(input);
-    final skip = job.skip.toSet();
+    final skip = job.skip.map(_plainPath).toSet();
     final out = ZipFileEncoder()..create(part);
     try {
       for (final f in archive.files) {
-        if (!skip.contains(f.name)) out.addArchiveFile(f);
+        if (!skip.contains(_plainPath(f.name))) out.addArchiveFile(f);
       }
     } finally {
       out.closeSync();
@@ -325,13 +356,35 @@ class NarrationService {
   /// without its audio, pulled from the server a piece at a time, so a
   /// several hundred MB file opens in seconds. Anything else is the usual
   /// cached download.
+  /// [wholeFallback] false keeps a copy without the audio from falling back
+  /// to the whole file, for a download riding along with an audiobook.
   Future<File> readerFile(
     ApiService api,
     String itemId,
     Map<String, dynamic> ebookFile,
-    String title,
-  ) async {
+    String title, {
+    bool wholeFallback = true,
+  }) async {
     final cached = await ebookCacheFileFor(itemId, ebookFile);
+    if (cached.existsSync() && cached.lengthSync() > 0 && !await cachedEbookIsCurrent(cached, ebookFile)) {
+      // The server rewrote the book (BookOrbit writing metadata back, a file
+      // replaced). Fetch the new one, keeping the old copy if that fails.
+      final old = File('${cached.path}.old');
+      debugPrint('[EbookCache] $itemId changed on the server - getting the new copy');
+      await cached.rename(old.path);
+      try {
+        final fresh = await _freshReaderFile(api, itemId, ebookFile, title, cached, wholeFallback: wholeFallback);
+        await rememberEbookVersion(fresh, ebookFile);
+        await dropCachedLocations(ebookLocationsKey(itemId, ebookFile));
+        if (old.existsSync()) await old.delete();
+        return fresh;
+      } catch (e) {
+        debugPrint('[EbookCache] new copy of $itemId failed ($e) - keeping the old one');
+        if (cached.existsSync()) await cached.delete();
+        await old.rename(cached.path);
+        return cached;
+      }
+    }
     if (cached.existsSync() && cached.lengthSync() > 0) {
       if (_slimFailed.contains(itemId) || !await _cachedWithAudio(api, itemId, ebookFile, cached)) {
         debugPrint('[EbookCache] cache hit item=$itemId bytes=${cached.lengthSync()}');
@@ -345,6 +398,7 @@ class NarrationService {
       await cached.rename(aside.path);
       try {
         final slim = await _freshReaderFile(api, itemId, ebookFile, title, cached, wholeFallback: false);
+        await rememberEbookVersion(slim, ebookFile);
         if (aside.existsSync()) await aside.delete();
         return slim;
       } catch (e) {
@@ -355,7 +409,9 @@ class NarrationService {
         return cached;
       }
     }
-    return _freshReaderFile(api, itemId, ebookFile, title, cached);
+    final fresh = await _freshReaderFile(api, itemId, ebookFile, title, cached, wholeFallback: wholeFallback);
+    await rememberEbookVersion(fresh, ebookFile);
+    return fresh;
   }
 
   /// A cached EPUB that still holds the narration: big, the book reads
@@ -589,6 +645,105 @@ class NarrationService {
     return true;
   }
 
+  /// The narration time of a reading spot [cfi] in a BookOrbit EPUB, found
+  /// in the copy the reader keeps on this phone. Null when there is none.
+  static Future<double?> readingSpotSeconds(String bookId, MediaOverlay overlay, String cfi) async {
+    final file = await ebookCacheFileFor(bookId, const {'ebookFormat': 'epub'});
+    if (!file.existsSync()) {
+      debugPrint('[Narration] $bookId: no copy of the book here to place $cfi');
+      return null;
+    }
+    final path = file.path;
+    final placed = await Isolate.run(() {
+      final book = EpubBookText.open(path);
+      if (book == null) return (seconds: null, how: 'the copy here is not an EPUB it can read');
+      try {
+        return placeCfiOnNarration(overlay, book, cfi);
+      } finally {
+        book.close();
+      }
+    });
+    debugPrint('[Narration] $bookId: $cfi ${placed.seconds == null ? 'not placed' : 'is ${placed.seconds!.toStringAsFixed(0)}s'}'
+        ' - ${placed.how}');
+    return placed.seconds;
+  }
+
+  static final Map<String, double?> _pagesPlaced = {};
+
+  /// How far past the words heard a page has to be to move the audio: a page
+  /// with them on it is no reason to jump.
+  static const _pageAheadOfAudio = 30.0;
+
+  /// The server stamps a save a moment after this phone stamps its own, so a
+  /// record only this much newer is still this phone's.
+  static const _ownSaveStamp = Duration(minutes: 1);
+
+  /// The narration time of the page [itemId] was read to on another device
+  /// (the Audiobookshelf web reader, another app), found in the copy the
+  /// reader keeps here. Audiobookshelf stamps the page and the audio with one
+  /// time, so the page counts only when the record was saved after this phone
+  /// last saved its own place, and only ahead of the audio. A page this phone
+  /// saved, or one behind the words heard, never moves it.
+  static Future<double?> pageReadElsewhere(String itemId, Map<String, dynamic> progress) async {
+    final cfi = progress['ebookLocation'];
+    if (progress['isFinished'] == true || cfi is! String || !cfi.startsWith('epubcfi(')) return null;
+    final sync = ProgressSyncService();
+    final saved = (progress['lastUpdate'] as num?)?.toInt() ?? 0;
+    final mine = await sync.getSavedTimestamp(itemId);
+    if (mine > 0 && saved <= mine + _ownSaveStamp.inMilliseconds) return null;
+    // A page read here that hasn't reached the server yet is newer than the
+    // one it holds.
+    if ((await sync.getPendingEbookProgress()).containsKey(itemId)) return null;
+    final heard = (progress['currentTime'] as num?)?.toDouble() ?? 0;
+    final key = '$itemId|$cfi';
+    final double? at;
+    if (_pagesPlaced.containsKey(key)) {
+      at = _pagesPlaced[key];
+    } else {
+      final overlay = await instance.localOverlay(itemId);
+      if (overlay == null) return null;
+      at = _pagesPlaced[key] = await readingSpotSeconds(itemId, overlay, cfi);
+    }
+    if (at == null || at < heard + _pageAheadOfAudio) return null;
+    debugPrint('[Narration] $itemId: read to a page ${at.toStringAsFixed(0)}s in on another device, '
+        'past the ${heard.toStringAsFixed(0)}s heard - listening picks up there');
+    return at;
+  }
+
+  @visibleForTesting
+  static void debugPlacePage(String itemId, String cfi, double? at) => _pagesPlaced['$itemId|$cfi'] = at;
+
+  /// [o] laid on its audio files' real lengths, read over the network once
+  /// per book through [measure] (null for a file it can't read that way), so
+  /// a streamed book keeps the same timeline as a downloaded one. Kept, and
+  /// the book's length brought up to date.
+  Future<MediaOverlay> timedForStream(
+    String itemId,
+    MediaOverlay o,
+    Future<double?> Function(int track) measure,
+  ) async {
+    if (await ScopedPrefs.getBool(_timedKey(itemId)) == true) return o;
+    final started = DateTime.now();
+    final measured = List<double?>.filled(o.tracks.length, null);
+    for (var i = 0; i < o.tracks.length; i += 8) {
+      await Future.wait([
+        for (var j = i; j < min(i + 8, o.tracks.length); j++)
+          measure(j).then((d) => measured[j] = d).catchError((Object e) {
+            debugPrint('[Narration] $itemId file $j not measured: $e');
+            return null;
+          }),
+      ]);
+    }
+    final timed = o.withTrackDurations(measured);
+    debugPrint('[Narration] $itemId measured ${measured.where((m) => m != null).length} of '
+        '${measured.length} files over the network in ${DateTime.now().difference(started).inMilliseconds}ms: '
+        '${o.duration.toStringAsFixed(0)}s from the timings, ${timed.duration.toStringAsFixed(0)}s from the audio');
+    await keepTimings(itemId, timed);
+    if (measured.every((m) => m != null)) await ScopedPrefs.setBool(_timedKey(itemId), true);
+    if (NarratedBooks.contains(itemId)) await markAudiobook(itemId, timed);
+    return timed;
+  }
+
   /// Keeps [o] as [itemId]'s narration on this phone (memory and disk).
   Future<void> keepTimings(String itemId, MediaOverlay o) async {
     _overlays[itemId] = o;
@@ -597,7 +752,7 @@ class NarrationService {
 
   /// Plays the narration, from the sentence [from] when given (read along
   /// starting at the page in view, "play from here"). An Audiobookshelf book
-  /// plays it once downloaded: false until then.
+  /// that isn't downloaded streams it out of the EPUB on the server.
   Future<bool> play(
     ApiService api,
     Map<String, dynamic> item, {
@@ -606,7 +761,6 @@ class NarrationService {
   }) async {
     final itemId = item['id'] as String?;
     if (itemId == null) return false;
-    if (!api.isBookOrbit && !hasLocalAudio(itemId)) return false;
     final o = await localOverlay(itemId);
     double? startTime;
     if (from != null && o != null) {

@@ -15,6 +15,7 @@ import '../l10n/app_localizations.dart';
 import '../main.dart' show rootNavigatorKey;
 import '../widgets/overlay_toast.dart';
 import '../widgets/stable_cached_network_image.dart' show coverCacheIdentity;
+import '../utils/percent_escapes.dart';
 import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'cover_blur_cache.dart';
@@ -25,6 +26,7 @@ import 'narrated_books.dart';
 import 'narration_service.dart';
 import 'offline_source.dart';
 import 'scoped_prefs.dart';
+import 'server_backend.dart';
 import 'user_account_service.dart';
 
 enum DownloadStatus { none, downloading, downloaded, error, paused }
@@ -208,6 +210,10 @@ class _PendingBook {
   /// Set synchronously the moment a terminal handler (success/fail/cancel) is
   /// chosen, so a burst of terminal updates can't finalize the book twice.
   bool finalizing = false;
+
+  /// Times a narrated EPUB went on with a fresh sign-in after the server
+  /// turned it away.
+  int signInRenewals = 0;
 
   /// A hard track failure aborts the whole book; remember why for the message.
   bool failing = false;
@@ -521,7 +527,9 @@ class DownloadService extends ChangeNotifier {
   DownloadService._()
     : _initializeOverride = null,
       _cancelTasksOverride = null,
-      _deleteTaskRecordOverride = null;
+      _deleteTaskRecordOverride = null {
+    UserAccountService.onScopeMoved = _moveOrigins;
+  }
 
   @visibleForTesting
   DownloadService.forTesting({
@@ -559,12 +567,63 @@ class DownloadService extends ChangeNotifier {
   }
 
   /// Whether [itemId] is a download made on a different account than the one
-  /// signed in now. Downloads from before origins were kept count as this
-  /// account's.
+  /// signed in now. Downloads from before origins were kept give themselves
+  /// away by their id: a BookOrbit book's is a number and an Audiobookshelf
+  /// one's never is.
   bool isFromOtherAccount(String itemId) {
+    final accounts = UserAccountService();
+    final current = accounts.activeScopeKey;
+    if (current.isEmpty) return false;
     final origin = _origins[itemId];
-    final current = UserAccountService().activeScopeKey;
-    return origin != null && current.isNotEmpty && origin != current;
+    if (origin == current) return false;
+    final bookOrbitId = int.tryParse(itemId) != null;
+    if (origin == null) return bookOrbitId != ServerBackend.active.isBookOrbit;
+    final me = accounts.accounts.where((a) => a.scopeKey == current).firstOrNull;
+    if (me == null) return true;
+    // Another user on the same server has the same books under the same
+    // ids, so their download is this account's to read and sync too.
+    if (origin.startsWith('${_serverOf(me)}_')) return false;
+    final from = accounts.accounts.where((a) => a.scopeKey == origin).firstOrNull ??
+        _movedAccount(origin, accounts.accounts, bookOrbit: bookOrbitId);
+    return from == null || _serverOf(from) != _serverOf(me);
+  }
+
+  static String _serverOf(SavedAccount a) =>
+      a.scopeKey.substring(0, a.scopeKey.length - a.username.length - 1);
+
+  /// The saved account an origin no account has any more stands for: its
+  /// address was changed before origins followed it, so it is the one
+  /// account with that user on the same kind of server.
+  static SavedAccount? _movedAccount(String origin, List<SavedAccount> accounts, {required bool bookOrbit}) {
+    final candidates = accounts
+        .where((a) => origin.endsWith('_${a.username}') && a.backend.isBookOrbit == bookOrbit)
+        .toList();
+    return candidates.length == 1 ? candidates.single : null;
+  }
+
+  @visibleForTesting
+  void debugSetOrigin(String itemId, String scope) => _origins[itemId] = scope;
+
+  /// An account's address changed: its downloads are still its own, and so
+  /// are the places kept for another account's books.
+  Future<void> _moveOrigins(String from, String to) async {
+    var moved = 0;
+    _origins.updateAll((_, scope) {
+      if (scope != from) return scope;
+      moved++;
+      return to;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final spots = jsonDecode(prefs.getString(_otherAccountSpotsKey) ?? '{}') as Map<String, dynamic>;
+      final renamed = {
+        for (final e in spots.entries)
+          e.key.startsWith('$from|') ? '$to|${e.key.substring(from.length + 1)}' : e.key: e.value,
+      };
+      await prefs.setString(_otherAccountSpotsKey, jsonEncode(renamed));
+    } catch (_) {}
+    if (moved > 0) await _save();
+    debugPrint('[Download] $moved download(s) moved with their account: $from -> $to');
   }
 
   static const _otherAccountSpotsKey = 'other_account_reading';
@@ -639,6 +698,11 @@ class DownloadService extends ChangeNotifier {
 
   /// Play sessions kept open for downloads that use their temporary links.
   final Map<String, ({ApiService api, String sessionId})> _linkSessions = {};
+
+  /// The API each narrated EPUB download started with, so one the server
+  /// turns away for a lapsed sign-in can go on with a fresh one. Empty after
+  /// a restart, when such a download fails the way it always did.
+  final Map<String, ApiService> _narrationApis = {};
 
   StreamSubscription<TaskUpdate>? _updatesSub;
   bool _downloaderConfigured = false;
@@ -1237,10 +1301,9 @@ class DownloadService extends ChangeNotifier {
   String _friendlySafLabel(String uriString) {
     try {
       final uri = Uri.parse(uriString);
-      var docId = uri.pathSegments.isNotEmpty
-          ? uri.pathSegments.last
-          : uriString;
-      docId = Uri.decodeComponent(docId);
+      var docId =
+          uri.pathSegments.isNotEmpty ? uri.pathSegments.last : uriString;
+      docId = undoPercentEscapes(docId);
       final colon = docId.indexOf(':');
       final rel = colon >= 0 ? docId.substring(colon + 1) : docId;
       return rel.isEmpty ? docId : rel;
@@ -1516,6 +1579,105 @@ class DownloadService extends ChangeNotifier {
       debugPrint('[Download] ebook kept for offline: $itemId');
   }
 
+  /// What a downloaded book has on the phone, for choosing what to remove:
+  /// whether its audio is here and how big it is (null when that can't be
+  /// told, as in a custom folder), the ebook copy's size, or null when there
+  /// is no copy, and whether the audio was taken out of that ebook (a
+  /// narrated EPUB, one file on the server and one book to remove).
+  Future<({bool audio, int? audioBytes, int? ebookBytes, bool fromEbook})> onPhone(String itemId) async {
+    final info = _downloads[itemId];
+    final audio = info != null && info.localPaths.isNotEmpty;
+    var fromEbook = false;
+    if (audio) {
+      try {
+        final media = ((jsonDecode(info.sessionData ?? '') as Map)['libraryItem'] as Map?)?['media'] as Map?;
+        final audioFiles = (media?['audioFiles'] as List?) ?? const [];
+        fromEbook = audioFiles.isEmpty && (media?['narration'] != null || NarratedBooks.contains(itemId));
+      } catch (_) {}
+    }
+    int? audioBytes;
+    if (audio) {
+      var total = 0;
+      var known = true;
+      for (final path in info.localPaths) {
+        if (isContentUri(path)) {
+          known = false;
+          continue;
+        }
+        try {
+          final f = File(path);
+          if (f.existsSync()) total += f.lengthSync();
+        } catch (_) {}
+      }
+      // Files in a custom folder can't be measured here; the server's sizes
+      // for the book's audio stand in.
+      audioBytes = known ? total : _serverAudioBytes(info.sessionData);
+    }
+    int? ebookBytes;
+    try {
+      final entry = await cachedEbookFileFor(itemId);
+      if (entry != null) {
+        final f = await ebookCacheFileFor(itemId, entry);
+        if (f.existsSync()) ebookBytes = f.lengthSync();
+      }
+    } catch (_) {}
+    return (audio: audio, audioBytes: audioBytes, ebookBytes: ebookBytes, fromEbook: fromEbook);
+  }
+
+  static int? _serverAudioBytes(String? sessionData) {
+    try {
+      final session = jsonDecode(sessionData ?? '') as Map<String, dynamic>;
+      final media = (session['libraryItem'] as Map?)?['media'] as Map?;
+      final files = (media?['audioFiles'] as List?) ?? (session['audioTracks'] as List?) ?? const [];
+      var total = 0;
+      for (final f in files.whereType<Map>()) {
+        total += ((f['metadata'] as Map?)?['size'] as num?)?.toInt() ?? 0;
+      }
+      return total > 0 ? total : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Takes a downloaded book's audio off the phone and keeps its ebook copy,
+  /// listed on its own the way one the reader kept is.
+  Future<void> deleteAudioKeepEbook(String itemId) async {
+    final info = _downloads[itemId];
+    if (info != null && !_keptEbooks.containsKey(itemId)) {
+      Map<String, dynamic>? stored;
+      try {
+        stored = (jsonDecode(info.sessionData ?? '') as Map<String, dynamic>)['libraryItem'] as Map<String, dynamic>?;
+      } catch (_) {}
+      String? cover;
+      try {
+        final from = info.localCoverPath == null ? null : File(info.localCoverPath!);
+        if (from != null && from.existsSync()) {
+          final to = await ebookCoverCacheFile(itemId);
+          await from.copy(to.path);
+          cover = to.path;
+        }
+      } catch (_) {}
+      _keptEbooks[itemId] = DownloadInfo(
+        itemId: itemId,
+        status: DownloadStatus.downloaded,
+        sessionData: stored == null
+            ? null
+            : jsonEncode({
+                'libraryItem': stored,
+                'mediaMetadata': (stored['media'] as Map?)?['metadata'],
+                'duration': 0,
+                'chapters': const <dynamic>[],
+              }),
+        title: info.title,
+        author: info.author,
+        coverUrl: info.coverUrl,
+        localCoverPath: cover,
+        libraryId: info.libraryId,
+      );
+    }
+    await deleteDownload(itemId, byUser: true);
+  }
+
   Future<void> deleteKeptEbook(String itemId) async {
     if (_keptEbooks.remove(itemId) == null) return;
     if (!_downloads.containsKey(itemId)) _origins.remove(itemId);
@@ -1563,6 +1725,7 @@ class DownloadService extends ChangeNotifier {
     _ebookRemovedIds.add(itemId);
     // deleteCachedEbook sweeps the book's files and the kept cover for the id.
     await deleteCachedEbook(itemId);
+    if (!_downloads.containsKey(itemId)) _origins.remove(itemId);
     await _save();
     notifyListeners();
   }
@@ -2058,7 +2221,13 @@ class DownloadService extends ChangeNotifier {
       // gone, so they hold a slot with e.g. 40% forever). A healthy transfer
       // emits updates constantly, so real downloads never sit silent this long
       // while the app is running.
-      final silence = DateTime.now().difference(p.lastUpdate);
+      // A book waiting in the downloader's queue behind another one's files
+      // hears nothing while the other book moves, and isn't stuck.
+      var heardAt = p.lastUpdate;
+      for (final other in _pending.values) {
+        if (other.lastUpdate.isAfter(heardAt)) heardAt = other.lastUpdate;
+      }
+      final silence = DateTime.now().difference(heardAt);
       if ((p.overallProgress == 0 && silence > const Duration(minutes: 3)) ||
           silence > const Duration(minutes: 10)) {
         debugPrint(
@@ -2086,6 +2255,11 @@ class DownloadService extends ChangeNotifier {
     if (Platform.isAndroid) {
       try {
         await FileDownloader().configure(
+          // A book in 93 files started all 93 at once, which swamped the
+          // server and the connection until Absorb's own requests timed out
+          // and it went offline. The queue is native, so it keeps feeding
+          // files with the app in the background.
+          globalConfig: [(Config.holdingQueue, (6, 4, null))],
           androidConfig: [
             (
               Config.runInForeground,
@@ -2093,6 +2267,7 @@ class DownloadService extends ChangeNotifier {
             ),
           ],
         );
+        debugPrint('[Download] at most 4 files at a time per server, 6 in all');
       } catch (e) {
         debugPrint('[Download] androidConfig failed: $e');
       }
@@ -3436,6 +3611,7 @@ class DownloadService extends ChangeNotifier {
       final filename = _sanitizePath(fileMeta?['filename'] as String? ?? 'book.epub');
       final size = (fileMeta?['size'] as num?)?.toInt();
       final target = await api.narratedEpubDownload(itemId, ino);
+      _narrationApis[itemId] = api;
       final url = target.url;
       final wifiOnly = await PlayerSettings.getWifiOnlyDownloads();
       // BookOrbit streams and keeps places by its own timings, so the
@@ -3829,9 +4005,10 @@ class DownloadService extends ChangeNotifier {
     var originalName = trackMeta?['filename'] as String? ?? '';
     if (originalName.isEmpty) {
       final contentPath = Uri.tryParse(contentUrl)?.path ?? contentUrl;
-      originalName = Uri.decodeComponent(contentPath.split('/').last);
-      if (originalName.contains('?'))
+      originalName = undoPercentEscapes(contentPath.split('/').last);
+      if (originalName.contains('?')) {
         originalName = originalName.split('?').first;
+      }
     }
     if (originalName.isNotEmpty && originalName.contains('.')) {
       return _sanitizePath(originalName.replaceAll(RegExp(r'\.[^.]+$'), '')) +
@@ -3943,6 +4120,11 @@ class DownloadService extends ChangeNotifier {
         _emitBookProgress(itemId, p);
       }
     } else if (update is TaskStatusUpdate) {
+      if (_signInRanOut(itemId, p, update)) {
+        p.signInRenewals++;
+        unawaited(_carryOnWithFreshSignIn(itemId, i, update));
+        return;
+      }
       unawaited(
         _handleTaskStatus(
           itemId: itemId,
@@ -3953,6 +4135,44 @@ class DownloadService extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  /// A narrated EPUB downloads whole as one long request, signed in once.
+  /// When it has to start a new request (a dropped connection, Android's
+  /// nine-minute work limit) after BookOrbit's 15-minute sign-in has lapsed,
+  /// the server says 401 and the plugin retries with the same headers.
+  bool _signInRanOut(String itemId, _PendingBook p, TaskStatusUpdate update) {
+    if (update.status != TaskStatus.failed || !p.narration) return false;
+    if (p.cancelled || p.failing || p.signInRenewals >= 2) return false;
+    if (!_narrationApis.containsKey(itemId)) return false;
+    final ex = update.exception;
+    final code = update.responseStatusCode ?? (ex is TaskHttpException ? ex.httpResponseCode : null);
+    return code == 401;
+  }
+
+  Future<void> _carryOnWithFreshSignIn(String itemId, int trackIndex, TaskStatusUpdate update) async {
+    final task = update.task;
+    final api = _narrationApis[itemId];
+    if (task is DownloadTask && api != null) {
+      try {
+        final headers = await api.renewedMediaHeaders();
+        final renewed = task.copyWith(headers: {...task.headers, ...headers});
+        final resumed = await FileDownloader().resume(renewed);
+        final ok = resumed || await FileDownloader().enqueue(renewed);
+        debugPrint('[Download] $itemId: the sign-in ran out mid-download, '
+            '${ok ? (resumed ? 'resuming' : 'starting over') : 'could not go on'} with a fresh one');
+        if (ok) return;
+      } catch (e) {
+        debugPrint('[Download] $itemId: could not renew the download sign-in: $e');
+      }
+    }
+    await _handleTaskStatus(
+      itemId: itemId,
+      trackIndex: trackIndex,
+      status: update.status,
+      exception: update.exception,
+      responseCode: update.responseStatusCode,
+    );
   }
 
   Future<void> _handleTaskStatus({
@@ -4014,6 +4234,7 @@ class DownloadService extends ChangeNotifier {
       final s = p.trackStatus[i];
       if (s == null || !_terminal.contains(s)) return;
     }
+    _narrationApis.remove(itemId);
     if (p.trackStatus.values.every((s) => s == TaskStatus.complete)) {
       p.finalizing = true;
       await _finalizeSuccess(itemId);
@@ -4977,11 +5198,7 @@ class DownloadService extends ChangeNotifier {
   bool _folderTakenByOther(String nestedName, String itemId) {
     bool matches(String? dir) {
       if (dir == null) return false;
-      var d = dir;
-      try {
-        d = Uri.decodeComponent(dir);
-      } catch (_) {}
-      d = d.replaceAll(r'\', '/');
+      final d = undoPercentEscapes(dir).replaceAll(r'\', '/');
       return d.endsWith('/$nestedName');
     }
 

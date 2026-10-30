@@ -84,6 +84,10 @@
 			<string>audio</string>
 			<string>fetch</string>
 		</array>
+		<key>BGTaskSchedulerPermittedIdentifiers</key>
+		<array>
+			<string>com.barnabas.absorb.episodeNotifCheck</string>
+		</array>
 		<key>NSSiriUsageDescription</key>
 		<string>Siri can play, pause and find your audiobooks and podcasts in Absorb.</string>
 		<key>INIntentsSupported</key>

@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:archive/archive_io.dart';
 
+import '../utils/percent_escapes.dart';
+
 /// One narrated sentence: where its text is and which stretch of which audio
 /// file reads it.
 class OverlayClip {
@@ -21,6 +23,10 @@ class OverlayClip {
     required this.begin,
     required this.end,
   });
+
+  /// The sentence the way the SMIL file names it, document and id. BookOrbit's
+  /// read along keeps its place in this form and only matches it exactly.
+  String get textSrc => fragment == null ? textHref : '$textHref#$fragment';
 }
 
 /// An audio file inside the EPUB, placed on the book's timeline.
@@ -184,8 +190,33 @@ class MediaOverlay {
 
   static bool sameDoc(String a, String b) {
     if (a == b) return true;
-    final x = a.split('#').first, y = b.split('#').first;
+    final x = _docPath(a), y = _docPath(b);
     return x == y || x.endsWith('/$y') || y.endsWith('/$x');
+  }
+
+  // BookOrbit's timings can keep a name escaped (%2C) where the EPUB's own
+  // path has it plain, so both are compared with every escape undone.
+  static String _docPath(String href) {
+    final path = href.split('#').first;
+    return undoPathEscapes(path);
+  }
+
+  /// The sentence whose element is [fragment], in [section] when given (an
+  /// id can repeat across sections). The id can come bare or with its
+  /// document in front (`text/ch1.xhtml#s12`), the way BookOrbit keeps it.
+  /// Null when nothing narrated has it.
+  OverlayClip? clipByFragment(String fragment, int? section) {
+    final hash = fragment.indexOf('#');
+    final id = hash < 0 ? fragment : fragment.substring(hash + 1);
+    final doc = hash > 0 ? fragment.substring(0, hash) : null;
+    OverlayClip? any;
+    for (final c in clips) {
+      if (c.fragment != id) continue;
+      if (doc != null && !sameDoc(c.textHref, doc)) continue;
+      if (section == null || c.section == section) return c;
+      any ??= c;
+    }
+    return any;
   }
 
   /// The first sentence whose element is [fragment] in [href], or the first
@@ -470,7 +501,7 @@ class MediaOverlay {
         raw.add(_RawClip(
           spineIndex,
           _resolve(smilPath!, src),
-          hash < 0 ? null : Uri.decodeComponent(src.substring(hash + 1)),
+          hash < 0 ? null : undoPercentEscapes(src.substring(hash + 1)),
           _resolve(smilPath, audioSrc),
           begin,
           parseClock(au['clipend']),
@@ -577,7 +608,10 @@ String _dir(String path) {
 
 /// [href] relative to [base]'s folder, as a path inside the zip.
 String _resolve(String base, String href) {
-  final clean = Uri.decodeFull(href.split('#').first.split('?').first);
+  // Every escape undone, segment by segment: Uri.decodeFull leaves reserved
+  // characters like %2C (a comma) encoded, and a file with one in its name
+  // was then looked for under a name the zip doesn't have.
+  final clean = undoPathEscapes(href.split('#').first.split('?').first);
   final parts = <String>[];
   for (final p in '${_dir(base)}$clean'.split('/')) {
     if (p.isEmpty || p == '.') continue;
@@ -589,6 +623,8 @@ String _resolve(String base, String href) {
   }
   return parts.join('/');
 }
+
+
 
 String? _text(Archive archive, String name) {
   final f = archive.findFile(name);

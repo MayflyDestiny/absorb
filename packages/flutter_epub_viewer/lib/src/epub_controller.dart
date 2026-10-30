@@ -121,12 +121,17 @@ class EpubController {
 
     ///Opacity of the highlight
     double opacity = 0.3,
+
+    ///Absorb: a blend mode, which also draws at [opacity] as given
+    String? blend,
   }) {
     var colorHex = color.toHex();
     var opacityString = opacity.toString();
     checkEpubLoaded();
     webViewController?.evaluateJavascript(
-      source: 'addHighlight("$cfi", "$colorHex", "$opacityString")',
+      source: blend == null
+          ? 'addHighlight("$cfi", "$colorHex", "$opacityString")'
+          : 'addHighlightStyled("$cfi", "$colorHex", "$opacityString", "$blend")',
     );
   }
 

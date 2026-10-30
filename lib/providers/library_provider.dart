@@ -8,6 +8,7 @@ import '../services/scoped_prefs.dart';
 import '../services/audio_player_service.dart';
 import 'auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/bookorbit_notification_socket.dart';
 import '../services/progress_sync_service.dart';
 import '../services/local_session_service.dart';
 import '../services/download_service.dart';

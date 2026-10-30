@@ -94,6 +94,10 @@ class UserAccountService {
   /// being recorded for the old one is saved under it first.
   static Future<void> Function(SavedAccount next)? beforeAccountChange;
 
+  /// Told when an account's address changes, for data kept outside its
+  /// scope that names the scope (which account each download came from).
+  static Future<void> Function(String from, String to)? onScopeMoved;
+
   List<SavedAccount> _accounts = [];
   String? _activeScopeKey;
 
@@ -211,6 +215,10 @@ class UserAccountService {
         (a) => a.serverUrl == serverUrl && a.username == username);
     if (idx >= 0) {
       final old = _accounts[idx];
+      if (old.token == newToken &&
+          (refreshToken == null || old.refreshToken == refreshToken)) {
+        return;
+      }
       _accounts[idx] = SavedAccount(
         serverUrl: old.serverUrl,
         username: old.username,
@@ -385,6 +393,7 @@ class UserAccountService {
     final oldScope = old.scopeKey;
     final newScope = updated.scopeKey;
     await _migrateScopedData(oldScope, newScope);
+    if (oldScope != newScope) await onScopeMoved?.call(oldScope, newScope);
 
     _accounts[idx] = updated;
     // If this was the active account, re-point the active scope so scoped

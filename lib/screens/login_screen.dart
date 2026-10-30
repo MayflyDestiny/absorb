@@ -15,9 +15,9 @@ import '../services/log_service.dart';
 import '../services/oidc_service.dart';
 import '../services/server_backend.dart';
 import '../services/settings_sync_service.dart';
-import '../services/setup_link_service.dart';
 import '../services/user_account_service.dart';
 import '../utils/ping_failure_text.dart';
+import 'bookorbit_set_password_screen.dart';
 import '../widgets/absorb_wave_icon.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/server_address_field.dart'
@@ -397,6 +397,15 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _handleLogin() async {
     final apiKey = _apiKeyController.text.trim();
 
+    if (_backend.isBookOrbit && BookOrbitApiService.passwordLink(apiKey) != null) {
+      final link = Uri.parse(apiKey);
+      _apiKeyController.clear();
+      setState(() {});
+      final signedIn = await handleSetupLinkLogin(context, link, customHeaders: _collectHeaders());
+      if (signedIn && mounted && Navigator.of(context).canPop()) Navigator.of(context).pop();
+      return;
+    }
+
     // A magic link carries its server, so an empty address can come from it.
     final linkServer = _backend.isBookOrbit && _serverController.text.trim().isEmpty
         ? BookOrbitApiService.serverFromMagicLink(apiKey)
@@ -463,7 +472,23 @@ class _LoginScreenState extends State<LoginScreen>
     if (mounted) {
       setState(() => _isConnecting = false);
 
-      if (!success) {
+      if (!success && auth.needsNewBookOrbitPassword) {
+        final signedIn = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => BookOrbitSetPasswordScreen.replaceStarting(
+            serverUrl: fullUrl,
+            username: _usernameController.text.trim(),
+            currentPassword: _passwordController.text,
+            customHeaders: headers,
+          ),
+        ));
+        if (!mounted) return;
+        if (signedIn == true) {
+          _passwordController.clear();
+          if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+        } else {
+          setState(() => _loginError = auth.errorMessage ?? AppLocalizations.of(context)!.loginFailed);
+        }
+      } else if (!success) {
         setState(() {
           _loginError = auth.errorMessage ?? AppLocalizations.of(context)!.loginFailed;
         });
@@ -1369,12 +1394,10 @@ class _LoginScreenState extends State<LoginScreen>
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
           void submit() {
-            final uri = Uri.tryParse(controller.text.trim());
-            try {
-              if (uri == null) throw const SetupLinkException('Invalid link');
-              SetupLinkService.parseLink(uri);
-              Navigator.pop(dialogContext, uri);
-            } on SetupLinkException {
+            final text = controller.text.trim();
+            if (isLoginLink(text)) {
+              Navigator.pop(dialogContext, Uri.parse(text));
+            } else {
               setDialogState(() => errorText = l.setupLinkInvalid);
             }
           }
@@ -1429,7 +1452,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
     controller.dispose();
     if (link == null || !mounted) return;
-    await handleSetupLinkLogin(context, link);
+    await handleSetupLinkLogin(context, link, customHeaders: _collectHeaders());
   }
 
   Future<void> _quickSwitch(SavedAccount account) async {

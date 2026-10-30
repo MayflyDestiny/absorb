@@ -21,6 +21,7 @@ import 'providers/auth_provider.dart';
 import 'providers/library_provider.dart';
 import 'services/audio_player_service.dart';
 import 'services/api_service.dart';
+import 'services/narration_service.dart';
 import 'services/download_service.dart';
 import 'services/progress_sync_service.dart';
 import 'services/local_session_service.dart';
@@ -48,6 +49,7 @@ import 'services/wording.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/auth_loading_screen.dart';
+import 'widgets/beta_logging_notice.dart';
 import 'widgets/setup_link_login.dart';
 
 /// Global notifier so any widget (e.g. settings) can change the theme instantly.
@@ -231,6 +233,9 @@ void main() async {
   CoverCacheManager.install();
 
   ReadListenSync.instance.start();
+  BookOrbitApiService.placeReadingSpot = NarrationService.readingSpotSeconds;
+  BookOrbitApiService.keptNarration = NarrationService.instance.localOverlay;
+  ApiService.pageReadElsewhere = NarrationService.pageReadElsewhere;
   try {
     await NarratedBooks.load().timeout(const Duration(seconds: 2));
   } catch (_) {}
@@ -771,6 +776,9 @@ class _AuthGateState extends State<AuthGate> {
 
     // Initialize log service early so all debugPrint calls are captured in the
     // log file. This is critical for diagnosing startup freezes in production.
+    try {
+      await BetaLoggingNotice.applyDefault(ApiService.appVersionFull);
+    } catch (_) {}
     try {
       final loggingEnabled = await PlayerSettings.getLoggingEnabled();
       await LogService().init(loggingEnabled);

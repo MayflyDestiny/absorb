@@ -114,7 +114,30 @@ class AppLocalizationsDe extends AppLocalizations {
       'Off - do not show update highlights';
 
   @override
+  String get whatsNewButton => 'See what\'s new';
+
+  @override
+  String get whatsNewKeepShowing => 'Show this after every update';
+
+  @override
+  String get whatsNewKeepShowingHint => 'You can turn it back on in Settings';
+
+  @override
+  String get settingsWhatsNew => 'Show what\'s new after updates';
+
+  @override
+  String get settingsWhatsNewSubtitle =>
+      'After Absorb updates, a popup links to the release notes';
+
+  @override
   String get gotIt => 'Verstanden';
+
+  @override
+  String get betaLoggingTitle => 'Logs are on';
+
+  @override
+  String get betaLoggingContent =>
+      'Since this is a beta, Absorb now keeps logs to help track down problems. They stay on this device unless you share them.\n\nYou can send them or turn them off in Settings, under Issues & Support. If you turn them off, later betas leave them off.';
 
   @override
   String get preview => 'Vorschau';
@@ -4532,6 +4555,24 @@ class AppLocalizationsDe extends AppLocalizations {
   String get removedFromContinueListening => 'Aus \"Weiterhören\" entfernt';
 
   @override
+  String get removeFromContinueReading => 'Remove from Continue Reading';
+
+  @override
+  String get removedFromContinueReading => 'Removed from Continue Reading';
+
+  @override
+  String get sessionAdd => 'Add session';
+
+  @override
+  String get sessionStartLabel => 'Started at';
+
+  @override
+  String get sessionAdded => 'Session added';
+
+  @override
+  String get sessionAddFailed => 'Could not add the session';
+
+  @override
   String get removeSeriesFromContinueSeries =>
       'Aus \"Serie fortsetzen\" entfernen';
 
@@ -5288,6 +5329,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get removeDownloadContent => 'Dies wird von deinem Gerät entfernt.';
 
   @override
+  String get removeWhichDownload =>
+      'The audiobook and the ebook are both on this device. Choose what to remove.';
+
+  @override
   String get downloadRemoved => 'Download entfernt';
 
   @override
@@ -6000,6 +6045,53 @@ class AppLocalizationsDe extends AppLocalizations {
   String kbpsValue(int value) {
     return '$value kbps';
   }
+
+  @override
+  String get fileInfoTitle => 'File info';
+
+  @override
+  String fileInfoFileCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '1 file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fileInfoNone => 'This book has no file details.';
+
+  @override
+  String get fileInfoAudio => 'Audio';
+
+  @override
+  String get fileInfoEbook => 'Ebook';
+
+  @override
+  String get fileInfoOther => 'Other files';
+
+  @override
+  String get fileInfoBookOrbitNote =>
+      'BookOrbit doesn\'t report codec or bitrate.';
+
+  @override
+  String fileInfoChannels(int count) {
+    return '$count channels';
+  }
+
+  @override
+  String get fileInfoCover => 'Cover';
+
+  @override
+  String get fileInfoMetadata => 'Metadata';
+
+  @override
+  String get fileInfoSupplement => 'Extra';
+
+  @override
+  String get fileInfoPathCopied => 'Path copied';
 
   @override
   String get resetMayNotHaveSynced =>
@@ -11210,6 +11302,22 @@ class AppLocalizationsDe extends AppLocalizations {
       'Selbst während Audio abgespielt wird';
 
   @override
+  String get readerTranslateWith => 'Translate with';
+
+  @override
+  String get readerTranslateApp => 'App on this device';
+
+  @override
+  String get readerTranslateApple => 'Built into iOS';
+
+  @override
+  String get readerTranslateWeb => 'Opens in your browser';
+
+  @override
+  String get readerTranslateHint =>
+      'Selected text is sent to the translator you pick.';
+
+  @override
   String get readerMoreFonts => 'Weitere Schriftarten herunterladen';
 
   @override
@@ -11536,6 +11644,309 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get activityYourReading => 'Your reading';
+
+  @override
+  String get activityYourListening => 'Your listening';
+
+  @override
+  String activityLastRead(String when) {
+    return 'Last read $when';
+  }
+
+  @override
+  String activityLastListened(String when) {
+    return 'Last listened $when';
+  }
+
+  @override
+  String get activityNotStarted => 'Not started';
+
+  @override
+  String get activityNoReading => 'No reading sessions yet';
+
+  @override
+  String get activityTime => 'Time';
+
+  @override
+  String get activityAverage => 'Avg';
+
+  @override
+  String get activityProgress => 'Progress';
+
+  @override
+  String activityReached(String percent) {
+    return '$percent reached';
+  }
+
+  @override
+  String get readingLogTitle => 'Reading log';
+
+  @override
+  String get readingLogTotalTime => 'Total time';
+
+  @override
+  String get readingLogAverageSession => 'Average session';
+
+  @override
+  String get readingLogActiveDays => 'Active days';
+
+  @override
+  String readingLogActiveDaysOf(int active, int total) {
+    return '$active of $total';
+  }
+
+  @override
+  String get readingLogPace => 'Pace';
+
+  @override
+  String readingLogPacePerHour(String percent) {
+    return '$percent%/h';
+  }
+
+  @override
+  String get readingLogLastRead => 'Last read';
+
+  @override
+  String get readingLogStarted => 'Started';
+
+  @override
+  String get readingLogFinished => 'Finished';
+
+  @override
+  String get readingLogNotSet => 'Not set';
+
+  @override
+  String readingLogLeftMinutes(int m) {
+    return 'About ${m}m to finish';
+  }
+
+  @override
+  String readingLogLeftHours(int h) {
+    return 'About ${h}h to finish';
+  }
+
+  @override
+  String readingLogLeftHoursMinutes(int h, int m) {
+    return 'About ${h}h ${m}m to finish';
+  }
+
+  @override
+  String get readingLogLeftMax => 'Over 99h to finish';
+
+  @override
+  String readingLogUpOnLastWeek(int percent) {
+    return 'Up $percent% on the week before';
+  }
+
+  @override
+  String readingLogDownOnLastWeek(int percent) {
+    return 'Down $percent% on the week before';
+  }
+
+  @override
+  String get readingLogNewThisWeek => 'New this week';
+
+  @override
+  String get readingLogSameAsLastWeek => 'Same as the week before';
+
+  @override
+  String get readingLogQuietTwoWeeks => 'Nothing in the last two weeks';
+
+  @override
+  String get readingLogWhereYouRead => 'Where you read it';
+
+  @override
+  String get readingLogSourceIos => 'iOS app';
+
+  @override
+  String get readingLogSourceAndroid => 'Android app';
+
+  @override
+  String get readingLogChartTitle => 'Progress over time';
+
+  @override
+  String get readingLogChartPosition => 'Position reached';
+
+  @override
+  String get readingLogChartMinutes => 'Minutes';
+
+  @override
+  String get readingLogRecords => 'Records';
+
+  @override
+  String get readingLogLongestSession => 'Longest session';
+
+  @override
+  String get readingLogBestDay => 'Best day';
+
+  @override
+  String get readingLogLongestStreak => 'Longest streak';
+
+  @override
+  String readingLogStreakDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days',
+      one: '1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readingLogJumpedBack => 'Jumped back';
+
+  @override
+  String readingLogJumpedBackTimes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count times',
+      one: '1 time',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readingLogFirstOpened => 'First opened';
+
+  @override
+  String get readingLogAttempts => 'Attempts';
+
+  @override
+  String readingLogAttempt(int index) {
+    return 'Attempt $index';
+  }
+
+  @override
+  String readingLogAttemptBegan(int index) {
+    return 'Attempt $index began';
+  }
+
+  @override
+  String get readingLogOutcomeCompleted => 'Completed';
+
+  @override
+  String get readingLogOutcomeSkimmed => 'Skimmed';
+
+  @override
+  String get readingLogOutcomeAbandoned => 'Abandoned';
+
+  @override
+  String get readingLogOutcomeInProgress => 'In progress';
+
+  @override
+  String readingLogSpanRange(String from, String to) {
+    return '$from to $to';
+  }
+
+  @override
+  String readingLogSpanSince(String from) {
+    return 'Since $from';
+  }
+
+  @override
+  String readingLogSpanEnded(String to) {
+    return 'Ended $to';
+  }
+
+  @override
+  String get readingLogSpanUnknown => 'No dates recorded';
+
+  @override
+  String readingLogSessionCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sessions',
+      one: '1 session',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String readingLogShowing(int shown, int total) {
+    return '$shown of $total';
+  }
+
+  @override
+  String readingLogGapDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days without reading',
+      one: '1 day without reading',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readingLogEmpty => 'No sessions recorded yet';
+
+  @override
+  String get readingLogEmptyHint =>
+      'Sessions show up here as you read or listen, from any app or device that syncs with BookOrbit.';
+
+  @override
+  String get readingLogNoMatches => 'No sessions in this range';
+
+  @override
+  String get readingLogAllTime => 'All time';
+
+  @override
+  String get readingLogLast30 => 'Last 30 days';
+
+  @override
+  String get readingLogLast90 => 'Last 90 days';
+
+  @override
+  String get readingLogThisYear => 'This year';
+
+  @override
+  String get readingLogAllFormats => 'All formats';
+
+  @override
+  String get readingLogSortBy => 'Sort by';
+
+  @override
+  String get readingLogSortDay => 'Day';
+
+  @override
+  String get readingLogSortLength => 'Length';
+
+  @override
+  String get readingLogSortChange => 'Change';
+
+  @override
+  String get readingLogSortReached => 'Reached';
+
+  @override
+  String get readingLogNewestFirst => 'Newest first';
+
+  @override
+  String get readingLogOldestFirst => 'Oldest first';
+
+  @override
+  String get readingLogMostFirst => 'Most first';
+
+  @override
+  String get readingLogLeastFirst => 'Least first';
+
+  @override
+  String get readingLogDeleteTitle => 'Delete this session?';
+
+  @override
+  String get readingLogDeleteBody =>
+      'It comes off the book\'s reading log and your stats on BookOrbit.';
+
+  @override
+  String get readingLogDeleteFailed => 'Couldn\'t delete the session';
+
+  @override
+  String get readingLogLoadFailed => 'Couldn\'t load the reading log';
+
+  @override
   String get navHoldServerScan => 'Server scan';
 
   @override
@@ -11621,6 +12032,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get readerTooltipDefine => 'Definieren';
+
+  @override
+  String get readerTooltipTranslate => 'Translate';
 
   @override
   String get readerSearchHint => 'Dieses Buch durchsuchen…';
@@ -12363,7 +12777,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get loginMagicLinkDescription =>
-      'Sign in with a BookOrbit magic link instead of a password.';
+      'Sign in with a BookOrbit magic link, or paste a password link to set your password.';
 
   @override
   String get collectionPublicTitle => 'Public';
@@ -12689,4 +13103,1164 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get bookFinishActionReplay => 'Replay';
+
+  @override
+  String get boAdminTitle => 'Server admin';
+
+  @override
+  String get boAdminSubtitle => 'Users and libraries on this BookOrbit server';
+
+  @override
+  String get boAdminUsers => 'Users';
+
+  @override
+  String get boAdminLibraries => 'Libraries';
+
+  @override
+  String boAdminUserCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count people',
+      one: '1 person',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String boAdminLibraryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count libraries',
+      one: '1 library',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boAdminSaved => 'Saved';
+
+  @override
+  String get boAdminFailed => 'That didn\'t work. Try again.';
+
+  @override
+  String get boAdminOffline => 'Couldn\'t reach the server.';
+
+  @override
+  String get boUsersSearch => 'Search users';
+
+  @override
+  String get boUsersNone => 'No users here';
+
+  @override
+  String get boUsersFilterAll => 'All';
+
+  @override
+  String get boUsersFilterAdmins => 'Admins';
+
+  @override
+  String get boUsersFilterActive => 'Active';
+
+  @override
+  String get boUsersFilterInactive => 'Inactive';
+
+  @override
+  String get boUsersFilterAttention => 'Needs attention';
+
+  @override
+  String get boUserBadgeAdmin => 'Admin';
+
+  @override
+  String get boUserBadgeInactive => 'Inactive';
+
+  @override
+  String get boUserBadgeLocked => 'Locked';
+
+  @override
+  String get boUserBadgeNoPassword => 'No password yet';
+
+  @override
+  String boUserLastActive(String date) {
+    return 'Last active $date';
+  }
+
+  @override
+  String get boUserNeverSignedIn => 'Never signed in';
+
+  @override
+  String get boUserNew => 'New user';
+
+  @override
+  String get boUserCreate => 'Create';
+
+  @override
+  String get boUserUsername => 'Username';
+
+  @override
+  String get boUserUsernameHint =>
+      'At least 3 characters. It cannot be changed later.';
+
+  @override
+  String get boUserName => 'Name';
+
+  @override
+  String get boUserEmail => 'Email';
+
+  @override
+  String get boUserEmailInvalid => 'Enter a valid email address';
+
+  @override
+  String get boUserActive => 'Active';
+
+  @override
+  String get boUserActiveSubtitle => 'Inactive users can\'t sign in';
+
+  @override
+  String get boUserAdmin => 'Administrator';
+
+  @override
+  String get boUserAdminSubtitle => 'Full access to everything on the server';
+
+  @override
+  String get boUserAdminHasAll =>
+      'Administrators have every permission and see every library.';
+
+  @override
+  String get boUserPermissions => 'Permissions';
+
+  @override
+  String get boUserPresetNone => 'None';
+
+  @override
+  String get boUserPresetStandard => 'Standard';
+
+  @override
+  String get boUserPresetEverything => 'Everything';
+
+  @override
+  String get boUserLibraries => 'Libraries';
+
+  @override
+  String get boUserLibrariesHint => 'The libraries this person can see.';
+
+  @override
+  String get boUserPasswordLink => 'Send password link';
+
+  @override
+  String get boUserPasswordLinkSubtitle =>
+      'A link to set a new password, valid for 15 minutes';
+
+  @override
+  String get boUserExternal =>
+      'Signs in through single sign-on, so the password is managed there.';
+
+  @override
+  String get boUserUnlock => 'Unlock account';
+
+  @override
+  String get boUserUnlocked => 'Account unlocked';
+
+  @override
+  String get boUserDelete => 'Delete user';
+
+  @override
+  String boUserDeleteTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get boUserDeleteBody =>
+      'Their account and everything they have on this server are removed. This cannot be undone.';
+
+  @override
+  String get boUserDeleted => 'User deleted';
+
+  @override
+  String get boUserLinkTitle => 'Password link';
+
+  @override
+  String boUserLinkBody(String name) {
+    return 'Share this link with $name. It lets them set a password and works for 15 minutes.';
+  }
+
+  @override
+  String get boPasswordRules =>
+      'At least 8 characters, with an uppercase letter, a lowercase letter and a number.';
+
+  @override
+  String get boSetPasswordTitle => 'Set your password';
+
+  @override
+  String get boSetPasswordSubmit => 'Set password and sign in';
+
+  @override
+  String boSetPasswordLinkBody(String username, String server) {
+    return 'Choose a password for $username on $server.';
+  }
+
+  @override
+  String boSetPasswordLinkBodyNoName(String server) {
+    return 'Choose a password for your account on $server.';
+  }
+
+  @override
+  String get boSetPasswordStartingBody =>
+      'This account still has the password it was created with. Choose a new one to finish signing in.';
+
+  @override
+  String get boSetPasswordTrust =>
+      'Only continue if you trust who sent this link.';
+
+  @override
+  String get boPasswordLinkExpired =>
+      'This link has expired or was already used. Ask your server admin for a new one.';
+
+  @override
+  String boPasswordSetSignInFailed(String error) {
+    return 'Your password is set, but signing in failed: $error';
+  }
+
+  @override
+  String get boChangePasswordSubtitle => 'Update your BookOrbit password';
+
+  @override
+  String get boPasswordChangeEffect =>
+      'Changing your password signs out your other BookOrbit sessions. This device stays signed in.';
+
+  @override
+  String get boPasswordChanged =>
+      'Password changed. Other signed-in devices were signed out.';
+
+  @override
+  String boPasswordShareDescription(String username) {
+    return 'Send this link or have $username scan the QR code to choose a password and sign in to Absorb. It works for 15 minutes.';
+  }
+
+  @override
+  String boPasswordShareWarning(String username) {
+    return 'Anyone with this link can choose the password for $username until it is used or expires.';
+  }
+
+  @override
+  String get setupLinkCopyWebLink => 'Copy web link';
+
+  @override
+  String get boUserLinkCopy => 'Copy link';
+
+  @override
+  String get boUserLinkCopied => 'Link copied';
+
+  @override
+  String get boUserLinkShare => 'Share';
+
+  @override
+  String get boUserNoLink =>
+      'The user was added, but the server sent no password link. Send one from their page.';
+
+  @override
+  String get boPermGroupLibrary => 'Library and books';
+
+  @override
+  String get boPermGroupRequests => 'Book requests';
+
+  @override
+  String get boPermGroupDevices => 'Devices';
+
+  @override
+  String get boPermGroupIntegrations => 'Reading integrations';
+
+  @override
+  String get boPermGroupDock => 'Book Dock';
+
+  @override
+  String get boPermGroupEmail => 'Email and notifications';
+
+  @override
+  String get boPermGroupAdmin => 'Administration';
+
+  @override
+  String get boPermLibraryDownload => 'Download books';
+
+  @override
+  String get boPermLibraryUpload => 'Upload books';
+
+  @override
+  String get boPermLibraryEditMetadata => 'Edit metadata';
+
+  @override
+  String get boPermLibraryDeleteBooks => 'Delete books';
+
+  @override
+  String get boPermBookRequestAccess => 'Request books';
+
+  @override
+  String get boPermBookRequestAutoApprove => 'Requests approved automatically';
+
+  @override
+  String get boPermBookRequestSelfFulfill =>
+      'Download requested books directly';
+
+  @override
+  String get boPermManageBookRequests => 'Manage book requests';
+
+  @override
+  String get boPermKoboSync => 'Kobo sync';
+
+  @override
+  String get boPermKoreaderSync => 'KOReader sync';
+
+  @override
+  String get boPermOpdsAccess => 'OPDS access';
+
+  @override
+  String get boPermHardcoverSync => 'Hardcover sync';
+
+  @override
+  String get boPermReadwiseSync => 'Readwise sync';
+
+  @override
+  String get boPermStorygraphSync => 'StoryGraph sync';
+
+  @override
+  String get boPermBookDockAccess => 'Use the Book Dock';
+
+  @override
+  String get boPermManageBookDock => 'Manage the Book Dock';
+
+  @override
+  String get boPermEmailSend => 'Send books by email';
+
+  @override
+  String get boPermNotificationAccess => 'Notifications';
+
+  @override
+  String get boPermManageEmail => 'Manage email';
+
+  @override
+  String get boPermManageLibraries => 'Manage libraries';
+
+  @override
+  String get boPermManageMetadataConfig => 'Metadata settings';
+
+  @override
+  String get boPermManageIcons => 'Manage icons';
+
+  @override
+  String get boPermManageUsers => 'Manage users';
+
+  @override
+  String get boPermViewUserActivity => 'View user activity';
+
+  @override
+  String get boPermViewAuditLog => 'View the audit log';
+
+  @override
+  String get boPermManageAppSettings => 'App settings';
+
+  @override
+  String get boLibsNone => 'No libraries yet';
+
+  @override
+  String boLibBookCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books',
+      one: '1 book',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boLibScanNow => 'Scan now';
+
+  @override
+  String get boLibScanStarted => 'Scan started';
+
+  @override
+  String get boLibScanning => 'Scanning';
+
+  @override
+  String boLibLastScan(String date, int added, int updated, int missing) {
+    return 'Scanned $date: $added added, $updated updated, $missing missing';
+  }
+
+  @override
+  String get boLibScanFailed => 'The last scan failed';
+
+  @override
+  String get boLibNeverScanned => 'Not scanned yet';
+
+  @override
+  String get boLibNew => 'New library';
+
+  @override
+  String get boLibName => 'Name';
+
+  @override
+  String get boLibNeedName => 'Give the library a name';
+
+  @override
+  String get boLibIcon => 'Icon';
+
+  @override
+  String get boLibFolders => 'Folders';
+
+  @override
+  String get boLibFoldersHint =>
+      'Folders on the server where this library\'s books live.';
+
+  @override
+  String get boLibNeedFolder => 'Add at least one folder';
+
+  @override
+  String get boLibAddFolder => 'Add folder';
+
+  @override
+  String boLibFolderFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '1 file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String boLibFolderInUse(String library) {
+    return 'Already in $library';
+  }
+
+  @override
+  String get boLibFolderUnreadable => 'The server can\'t read this folder';
+
+  @override
+  String get boLibFolderRescan => 'Changing the folders rescans the library.';
+
+  @override
+  String get boLibOrganization => 'Books are stored as';
+
+  @override
+  String get boLibPerFolder => 'One book per folder';
+
+  @override
+  String get boLibPerFile => 'One book per file';
+
+  @override
+  String get boLibOrganizationFixed =>
+      'This cannot be changed after the library is created.';
+
+  @override
+  String get boLibWatch => 'Watch for changes';
+
+  @override
+  String get boLibWatchSubtitle =>
+      'Pick up new and changed files as they appear';
+
+  @override
+  String get boLibSchedule => 'Scheduled scan';
+
+  @override
+  String get boLibScheduleOff => 'Off';
+
+  @override
+  String get boLibScheduleDaily => 'Daily';
+
+  @override
+  String get boLibScheduleWeekly => 'Weekly';
+
+  @override
+  String boLibScheduleCustom(String cron) {
+    return 'Custom ($cron)';
+  }
+
+  @override
+  String get boLibScheduleHint => 'Runs at 3 AM server time.';
+
+  @override
+  String get boLibCovers => 'Cover shape';
+
+  @override
+  String get boLibCoverBook => 'Book (2:3)';
+
+  @override
+  String get boLibCoverSquare => 'Square (1:1)';
+
+  @override
+  String get boLibAccess => 'Who can see it';
+
+  @override
+  String get boLibAccessHint =>
+      'Administrators see every library. Others need access here.';
+
+  @override
+  String get boLibAccessNone => 'Only administrators so far';
+
+  @override
+  String get boLibAccessAdd => 'Add person';
+
+  @override
+  String get boLibAccessEveryoneHas => 'Everyone already has access';
+
+  @override
+  String get boLibLevelViewer => 'Viewer';
+
+  @override
+  String get boLibLevelEditor => 'Editor';
+
+  @override
+  String get boLibLevelOwner => 'Owner';
+
+  @override
+  String get boLibAccessRemove => 'Remove access';
+
+  @override
+  String get boLibDelete => 'Delete library';
+
+  @override
+  String boLibDeleteTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get boLibDeleteBody =>
+      'The library is removed from BookOrbit, with its books\' progress and highlights. The files on the server stay where they are.';
+
+  @override
+  String get boLibDeleted => 'Library deleted';
+
+  @override
+  String get boFolderPickTitle => 'Choose a folder';
+
+  @override
+  String get boFolderUseThis => 'Use this folder';
+
+  @override
+  String get boFolderEmpty => 'No folders inside';
+
+  @override
+  String get statsTotalTime => 'TOTAL TIME';
+
+  @override
+  String get statsTotalReadingTime => 'TOTAL READING TIME';
+
+  @override
+  String statsDaysOfTime(String days) {
+    return 'That\'s $days days';
+  }
+
+  @override
+  String statsHoursOfTime(String hours) {
+    return 'That\'s $hours hours';
+  }
+
+  @override
+  String get statsMediaAll => 'All';
+
+  @override
+  String get statsMediaListening => 'Listening';
+
+  @override
+  String get statsMediaReading => 'Reading';
+
+  @override
+  String statsZoneMismatch(String server, String phone) {
+    return 'BookOrbit counts your days in $server, but this phone is set to $phone. Time late in the day can land on the wrong day.';
+  }
+
+  @override
+  String statsZoneUse(String zone) {
+    return 'Use $zone';
+  }
+
+  @override
+  String statsZoneSaved(String zone) {
+    return 'BookOrbit now uses $zone. Older days can take a few minutes to catch up.';
+  }
+
+  @override
+  String get statsZoneFailed => 'Couldn\'t change the time zone on BookOrbit';
+
+  @override
+  String get statsTimeOfDay => 'Time of day';
+
+  @override
+  String statsBusiestAround(String time) {
+    return 'Busiest around $time';
+  }
+
+  @override
+  String get statsFinishedByMonth => 'Books finished by month';
+
+  @override
+  String statsFinishedLast12(int count) {
+    return '$count in the last 12 months';
+  }
+
+  @override
+  String get statsWhereTitle => 'Where you listen and read';
+
+  @override
+  String get statsLast12Months => 'Last 12 months';
+
+  @override
+  String get statsHabits => 'Habits';
+
+  @override
+  String get statsTypicalSession => 'Typical session';
+
+  @override
+  String get statsProgressPerSession => 'Progress per session';
+
+  @override
+  String get statsTimeToFinish => 'Time to finish';
+
+  @override
+  String statsDayCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days',
+      one: '1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsBooksStarted => 'Books started';
+
+  @override
+  String get statsBooksInProgress => 'In progress';
+
+  @override
+  String get statsAverageProgress => 'Average progress';
+
+  @override
+  String get statsTopBooks => 'Top books';
+
+  @override
+  String get statsYearRead => 'Read';
+
+  @override
+  String boNotificationsUnread(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count unread',
+      one: '1 unread',
+      zero: 'Nothing new',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boNotificationsMarkAllRead => 'Mark all read';
+
+  @override
+  String get boNotificationsClearAll => 'Clear all';
+
+  @override
+  String get boNotificationsClearTitle => 'Clear all notifications?';
+
+  @override
+  String get boNotificationsClearBody =>
+      'This removes every notification from your BookOrbit account.';
+
+  @override
+  String get boNotificationsEmpty => 'No notifications yet';
+
+  @override
+  String get boNotificationsLoadFailed => 'Couldn\'t load notifications';
+
+  @override
+  String get boNotificationsUpdateFailed =>
+      'Couldn\'t update notifications on BookOrbit';
+
+  @override
+  String boNotificationsOccurrences(int count) {
+    return 'Happened $count times';
+  }
+
+  @override
+  String get boNotificationsSettings => 'Notification settings';
+
+  @override
+  String get boNotificationsSettingsIntro =>
+      'Choose which notifications BookOrbit keeps for you.';
+
+  @override
+  String get boNotificationsProblemsHint =>
+      'Problems only notifies you when something fails or needs attention.';
+
+  @override
+  String get boNotificationLevelOff => 'Off';
+
+  @override
+  String get boNotificationLevelProblems => 'Problems';
+
+  @override
+  String get boNotificationLevelAll => 'All';
+
+  @override
+  String get boNotificationsSaved => 'Notification settings saved';
+
+  @override
+  String get boNotificationsSaveFailed =>
+      'Couldn\'t save notification settings';
+
+  @override
+  String get boNotificationGroupLibrary => 'Library';
+
+  @override
+  String get boNotificationGroupFiles => 'Files';
+
+  @override
+  String get boNotificationGroupIntegrations => 'Integrations';
+
+  @override
+  String get boNotificationGroupPersonal => 'Personal';
+
+  @override
+  String get boNotifyScanning => 'Library scanning';
+
+  @override
+  String get boNotifyScanningDesc =>
+      'When a library scan finishes, fails, or finds missing books.';
+
+  @override
+  String get boNotifyMetadata => 'Metadata fetching';
+
+  @override
+  String get boNotifyMetadataDesc =>
+      'When metadata lookups for your books finish or fail.';
+
+  @override
+  String get boNotifyAuthorEnrichment => 'Author details';
+
+  @override
+  String get boNotifyAuthorEnrichmentDesc =>
+      'When author biographies and photos finish downloading.';
+
+  @override
+  String get boNotifyFileWriteBack => 'Saving to files';
+
+  @override
+  String get boNotifyFileWriteBackDesc =>
+      'When edited details are saved into the book files on disk.';
+
+  @override
+  String get boNotifyFileRename => 'File renaming';
+
+  @override
+  String get boNotifyFileRenameDesc =>
+      'When a book file is renamed to match your naming pattern.';
+
+  @override
+  String get boNotifyBulkRename => 'Bulk renaming';
+
+  @override
+  String get boNotifyBulkRenameDesc =>
+      'When renaming many books, or moving books between libraries, finishes or fails.';
+
+  @override
+  String get boNotifyMigration => 'Imports';
+
+  @override
+  String get boNotifyMigrationDesc =>
+      'When an import from another library app finishes or fails.';
+
+  @override
+  String get boNotifyBookDock => 'Book Dock';
+
+  @override
+  String get boNotifyBookDockDesc =>
+      'When Book Dock finishes adding books or runs into problems.';
+
+  @override
+  String get boNotifyBookRequests => 'Book requests';
+
+  @override
+  String get boNotifyBookRequestsDesc =>
+      'When a book request is submitted or decided, or the book becomes available.';
+
+  @override
+  String get boNotifyEmail => 'Email delivery';
+
+  @override
+  String get boNotifyEmailDesc =>
+      'When sending a book by email works or fails.';
+
+  @override
+  String get boNotifyAchievements => 'Achievements';
+
+  @override
+  String get boNotifyAchievementsDesc => 'When you unlock a new achievement.';
+
+  @override
+  String get achievementsTitle => 'Achievements';
+
+  @override
+  String achievementsEarnedSummary(int earned, int total) {
+    return '$earned of $total earned';
+  }
+
+  @override
+  String get achievementsFilterAll => 'All';
+
+  @override
+  String get achievementsFilterEarned => 'Earned';
+
+  @override
+  String get achievementsFilterInProgress => 'In progress';
+
+  @override
+  String get achievementsFilterLocked => 'Locked';
+
+  @override
+  String get achievementsCategoryReading => 'Reading';
+
+  @override
+  String get achievementsCategoryLibrary => 'Library';
+
+  @override
+  String get achievementsCategoryExploration => 'Exploration';
+
+  @override
+  String get achievementsCategoryDedication => 'Dedication';
+
+  @override
+  String get achievementsCategoryDevices => 'Devices';
+
+  @override
+  String get achievementsRarityCommon => 'Common';
+
+  @override
+  String get achievementsRarityRare => 'Rare';
+
+  @override
+  String get achievementsRarityEpic => 'Epic';
+
+  @override
+  String get achievementsRarityLegendary => 'Legendary';
+
+  @override
+  String get achievementsLoadFailed => 'Couldn\'t load achievements';
+
+  @override
+  String get achievementsNoneMatch => 'No achievements match this filter';
+
+  @override
+  String get achievementsSecretName => 'Secret achievement';
+
+  @override
+  String get achievementsSecretHint => 'Keep reading to reveal this one.';
+
+  @override
+  String achievementsEarnedOn(String date) {
+    return 'Earned $date';
+  }
+
+  @override
+  String achievementsWhileReading(String title) {
+    return 'While reading $title';
+  }
+
+  @override
+  String achievementsTierOf(int earned, int total) {
+    return 'Tier $earned of $total';
+  }
+
+  @override
+  String get achievementsTiers => 'Tiers';
+
+  @override
+  String get achievementsAllTiers => 'Every tier earned';
+
+  @override
+  String achievementsProgress(String current, String threshold) {
+    return '$current / $threshold';
+  }
+
+  @override
+  String achievementsProgressBooks(String current, String threshold) {
+    return '$current / $threshold books';
+  }
+
+  @override
+  String achievementsProgressPages(String current, String threshold) {
+    return '$current / $threshold pages';
+  }
+
+  @override
+  String achievementsProgressHours(String current, String threshold) {
+    return '$current / $threshold hours';
+  }
+
+  @override
+  String achievementsProgressAnnotations(String current, String threshold) {
+    return '$current / $threshold highlights and notes';
+  }
+
+  @override
+  String achievementsProgressRatings(String current, String threshold) {
+    return '$current / $threshold ratings';
+  }
+
+  @override
+  String achievementsProgressGenres(String current, String threshold) {
+    return '$current / $threshold genres';
+  }
+
+  @override
+  String achievementsProgressLanguages(String current, String threshold) {
+    return '$current / $threshold languages';
+  }
+
+  @override
+  String achievementsProgressDays(String current, String threshold) {
+    return '$current / $threshold days';
+  }
+
+  @override
+  String get achievementsHowToGetIt => 'How to get it';
+
+  @override
+  String achievementsHintReadingPace(int count, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'You read $count hours in the last $days days.',
+      one: 'You read 1 hour in the last $days days.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintEtaDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'About $count days at this pace.',
+      one: 'About 1 day at this pace.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintEtaWeeks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'About $count weeks at this pace.',
+      one: 'About 1 week at this pace.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintEtaMonths(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'About $count months at this pace.',
+      one: 'About 1 month at this pace.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintDecadeUnread(int count, String decade) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books from the ${decade}s are waiting on your shelves.',
+      one: '1 book from the ${decade}s is waiting on your shelves.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintCenturyUnread(int count, String century) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books from the ${century}s are waiting on your shelves.',
+      one: '1 book from the ${century}s is waiting on your shelves.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintStalled(String title, String percent, String date) {
+    return '$title is $percent read and was started on $date.';
+  }
+
+  @override
+  String achievementsHintStalledNoProgress(String title, String date) {
+    return '$title was started on $date.';
+  }
+
+  @override
+  String get achievementsHintUntitledBook => 'A book in progress';
+
+  @override
+  String achievementsHintNearlyFinished(int count, String percent) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books in progress are past $percent.',
+      one: '1 book in progress is past $percent.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintUnrated(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books you finished have no rating yet.',
+      one: '1 book you finished has no rating yet.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintShortBooks(int count, String pages) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books under $pages pages are waiting on your shelves.',
+      one: '1 book under $pages pages is waiting on your shelves.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintAlreadyStarted(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count are already in progress.',
+      one: '1 is already in progress.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintLongBooks(int count, String pages) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count books of $pages pages or more are waiting on your shelves.',
+      one: '1 book of $pages pages or more is waiting on your shelves.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintOldBooks(int count, String year) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books published before $year are waiting on your shelves.',
+      one: '1 book published before $year is waiting on your shelves.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintAuthorUnread(String author, int finished, int count) {
+    return '$author: $finished finished, $count more on your shelves.';
+  }
+
+  @override
+  String achievementsHintLanguageUnread(int count, String language) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count books in $language are waiting on your shelves.',
+      one: '1 book in $language is waiting on your shelves.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintMonthsRead(int count, String year) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'You have read in $count months of $year so far.',
+      one: 'You have read in 1 month of $year so far.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintMonthsLeft(int count, String months) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$months are left.',
+      one: '$months is left.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintNoLongBook(String pages) {
+    return 'No book on your shelves has $pages pages or more yet.';
+  }
+
+  @override
+  String achievementsHintNothingBefore(String year) {
+    return 'Nothing on your shelves was published before $year.';
+  }
+
+  @override
+  String achievementsHintTooFewDecades(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Your shelves span only $count decades so far.',
+      one: 'Your shelves span only 1 decade so far.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintTooFewCenturies(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Your shelves span only $count centuries so far.',
+      one: 'Your shelves span only 1 century so far.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintMissedMonth(String month, String year) {
+    return 'You did not read in $month, so $year is out of reach. The count starts again in January.';
+  }
+
+  @override
+  String get achievementsSwitch => 'Achievements';
+
+  @override
+  String get achievementsSwitchSubtitle =>
+      'Track achievements on BookOrbit. Turning this off hides them here and on the web.';
+
+  @override
+  String get achievementsTurnedOn => 'Achievements turned on';
+
+  @override
+  String get achievementsTurnedOff => 'Achievements turned off';
+
+  @override
+  String get achievementsSwitchFailed =>
+      'Couldn\'t change achievements on BookOrbit';
 }

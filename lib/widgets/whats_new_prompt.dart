@@ -19,6 +19,8 @@ class WhatsNewPrompt {
   static const _lastBuildKey = 'whats_new_last_build';
   static const _isDevBuild = bool.fromEnvironment('DEV_BUILD');
 
+  /// Call before [WelcomeSheet.showIfNeeded]: a fresh install hasn't seen the
+  /// welcome yet, and that's how it's told apart from an update.
   static Future<void> showIfUpdated(BuildContext context) async {
     if (kIsWeb || _isDevBuild) return;
     final prefs = await SharedPreferences.getInstance();
@@ -74,10 +76,17 @@ class _WhatsNewDialogState extends State<_WhatsNewDialog> {
   /// Fetched release notes, or null while loading / when the fetch failed.
   String? _notes;
 
+  /// Same switch as the one in Settings, so the prompt can be turned off here
+  /// without a second, separate preference.
+  var _keepShowing = true;
+
   @override
   void initState() {
     super.initState();
     _loadNotes();
+    PlayerSettings.getShowWhatsNew().then((on) {
+      if (mounted) setState(() => _keepShowing = on);
+    });
   }
 
   Future<void> _loadNotes() async {
@@ -127,6 +136,16 @@ class _WhatsNewDialogState extends State<_WhatsNewDialog> {
               styleSheet: _styleSheet(context),
             ),
           ],
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(l.whatsNewKeepShowing),
+            subtitle: Text(l.whatsNewKeepShowingHint),
+            value: _keepShowing,
+            onChanged: (v) {
+              setState(() => _keepShowing = v);
+              PlayerSettings.setShowWhatsNew(v);
+            },
+          ),
         ],
       ),
       actions: [

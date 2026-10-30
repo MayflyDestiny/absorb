@@ -74,6 +74,7 @@ const String _body = r'''
         var x = fr.left + (rect.left + rect.right) / 2;
         out.v = x >= 0 && x < window.innerWidth;
         out.dir = x < 0 ? -1 : (x >= window.innerWidth ? 1 : 0);
+        out.far = x < -window.innerWidth || x >= window.innerWidth * 2;
       } else {
         var y = fr.top + (rect.top + rect.bottom) / 2;
         out.v = y >= 0 && y < window.innerHeight;
@@ -104,8 +105,9 @@ const String _body = r'''
   };
 
   // 'on' when the sentence is on the page in view ('low' when that is near
-  // the bottom of a scroll), 'before' or 'after' when it is on another page
-  // of the loaded section, 'missing' when its section isn't loaded.
+  // the bottom of a scroll), 'before' or 'after' when it is on the page next
+  // to it, 'far-before' or 'far-after' when it is further along the section,
+  // 'missing' when its section isn't loaded.
   MO.show = function(href, id) {
     var el = MO.find(href, id);
     if (!el) { MO.clear(); return 'missing'; }
@@ -117,6 +119,15 @@ const String _body = r'''
     }
     var vis = MO.visible(el);
     if (vis.low) return 'low';
+    if (vis.far) return vis.dir < 0 ? 'far-before' : 'far-after';
+    return vis.v ? 'on' : (vis.dir < 0 ? 'before' : 'after');
+  };
+
+  // Where the sentence is, the same way, without lighting it.
+  MO.where = function(href, id) {
+    var el = MO.find(href, id);
+    if (!el) return 'missing';
+    var vis = MO.visible(el);
     return vis.v ? 'on' : (vis.dir < 0 ? 'before' : 'after');
   };
 

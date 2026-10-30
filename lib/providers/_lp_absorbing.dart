@@ -971,7 +971,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       final title = metadata['title'] as String? ?? '';
       final author = metadata['authorName'] as String? ?? '';
-      if (UpNextNarration.instance.needsDownload(key)) {
+      if (UpNextNarration.instance.needsDownload(key, offline: isOffline)) {
         unawaited(UpNextNarration.instance.stopped(key, title));
         return;
       }
@@ -1157,7 +1157,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final nextData = next.value;
     final media = nextData['media'] as Map<String, dynamic>? ?? {};
     final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
-    if (UpNextNarration.instance.needsDownload(nextKey)) {
+    if (UpNextNarration.instance.needsDownload(nextKey, offline: isOffline)) {
       unawaited(UpNextNarration.instance.stopped(nextKey, metadata['title'] as String? ?? ''));
       return;
     }
@@ -1533,7 +1533,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       final key = _playlistItemKey(m);
       if (key.isEmpty) continue;
       if (self.isItemFinishedByKey(key)) continue;
-      if (UpNextNarration.instance.needsDownload(key)) {
+      if (UpNextNarration.instance.needsDownload(key, offline: isOffline)) {
         unawaited(UpNextNarration.instance.stopped(key, _playlistItemTitle(m) ?? ''));
         return;
       }
@@ -1979,7 +1979,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       final key = _playlistItemKey(items[i]);
       if (key.isEmpty) continue;
       if (self.isItemFinishedByKey(key)) continue;
-      if (UpNextNarration.instance.needsDownload(key)) {
+      if (UpNextNarration.instance.needsDownload(key, offline: isOffline)) {
         unawaited(UpNextNarration.instance.stopped(key, _playlistItemTitle(items[i]) ?? ''));
         return;
       }

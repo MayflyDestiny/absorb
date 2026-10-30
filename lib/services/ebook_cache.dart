@@ -494,6 +494,54 @@ Future<void> saveCachedLocations(String key, int size, String locations) async {
   } catch (_) {}
 }
 
+/// Drops the location index stored under [key], for a copy that changed.
+Future<void> dropCachedLocations(String key) async {
+  try {
+    final f = await _locationsFileForKey(key);
+    if (f.existsSync()) await f.delete();
+  } catch (_) {}
+}
+
+/// What identifies the server's copy of an ebook, so a cached copy can tell
+/// when the server has rewritten it (BookOrbit writing metadata back, a file
+/// replaced on disk). Null when the item says nothing about it.
+String? ebookFileVersion(Map<String, dynamic> ebookFile) {
+  final v = ebookFile['version'];
+  if (v is String && v.isNotEmpty) return v;
+  final meta = ebookFile['metadata'] as Map?;
+  final mtime = meta?['mtimeMs'];
+  if (mtime is num && mtime > 0) return '${mtime.toInt()}:${meta?['size'] ?? ''}';
+  return null;
+}
+
+File _versionFileFor(File cached) => File('${cached.path}.version');
+
+/// Whether [cached] is still the server's current copy. One cached before
+/// versions were kept takes the current version as its own.
+Future<bool> cachedEbookIsCurrent(File cached, Map<String, dynamic> ebookFile) async {
+  final version = ebookFileVersion(ebookFile);
+  if (version == null) return true;
+  try {
+    final f = _versionFileFor(cached);
+    if (!f.existsSync()) {
+      await f.writeAsString(version);
+      return true;
+    }
+    return await f.readAsString() == version;
+  } catch (_) {
+    return true;
+  }
+}
+
+/// Notes which server copy [cached] is, once it has been fetched.
+Future<void> rememberEbookVersion(File cached, Map<String, dynamic> ebookFile) async {
+  final version = ebookFileVersion(ebookFile);
+  if (version == null) return;
+  try {
+    await _versionFileFor(cached).writeAsString(version);
+  } catch (_) {}
+}
+
 /// True if the item's ebook is already cached on disk (readable offline).
 Future<bool> isEbookCached(String itemId, Map<String, dynamic> ebookFile) async {
   final f = await ebookCacheFileFor(itemId, ebookFile);
@@ -512,20 +560,39 @@ Future<File> fetchEbookToCache(
 ) async {
   final cachedFile = await ebookCacheFileFor(itemId, ebookFile);
   if (cachedFile.existsSync() && await cachedFile.length() > 0) {
-    debugPrint('[EbookCache] cache hit item=$itemId bytes=${await cachedFile.length()}');
-    return cachedFile;
+    if (await cachedEbookIsCurrent(cachedFile, ebookFile)) {
+      debugPrint('[EbookCache] cache hit item=$itemId bytes=${await cachedFile.length()}');
+      return cachedFile;
+    }
+    debugPrint('[EbookCache] item=$itemId changed on the server - fetching the new copy');
+    try {
+      final fresh = await _downloadEbookShared(api, itemId, ebookFile, cachedFile);
+      await dropCachedLocations(ebookLocationsKey(itemId, ebookFile));
+      return fresh;
+    } catch (e) {
+      debugPrint('[EbookCache] item=$itemId new copy failed, keeping the old one: $e');
+      return cachedFile;
+    }
   }
+  return _downloadEbookShared(api, itemId, ebookFile, cachedFile);
+}
 
-  // Two callers racing to cache the same version (e.g. catch-up fired from both
-  // the library provider and the socket path) share one transfer instead of
-  // pulling the whole file down twice.
+/// Two callers racing to cache the same version (e.g. catch-up fired from both
+/// the library provider and the socket path) share one transfer instead of
+/// pulling the whole file down twice.
+Future<File> _downloadEbookShared(
+  ApiService api,
+  String itemId,
+  Map<String, dynamic> ebookFile,
+  File cachedFile,
+) async {
   final key = cachedFile.path;
   final pending = _ebookFetchInflight[key];
   if (pending != null) {
     debugPrint('[EbookCache] joining in-flight download item=$itemId');
     return pending;
   }
-  final future = _fetchEbookToCacheOnce(api, itemId, ebookFile, cachedFile);
+  final future = _downloadEbook(api, itemId, ebookFile, cachedFile);
   _ebookFetchInflight[key] = future;
   try {
     return await future;
@@ -537,7 +604,7 @@ Future<File> fetchEbookToCache(
 /// In-flight ebook downloads keyed by destination path (see [fetchEbookToCache]).
 final Map<String, Future<File>> _ebookFetchInflight = {};
 
-Future<File> _fetchEbookToCacheOnce(
+Future<File> _downloadEbook(
   ApiService api,
   String itemId,
   Map<String, dynamic> ebookFile,
@@ -616,6 +683,7 @@ Future<File> _fetchEbookToCacheOnce(
       // redundant. Anything else (no complete file present) is a real error.
       if (!(cachedFile.existsSync() && await cachedFile.length() > 0)) rethrow;
     }
+    await rememberEbookVersion(cachedFile, ebookFile);
     final secs = DateTime.now().difference(startedAt).inMilliseconds / 1000.0;
     debugPrint('[EbookCache] downloaded item=$itemId bytes=${await cachedFile.length()} in ${secs}s');
     // The version is now fully cached, so any temp stream blocks for it are

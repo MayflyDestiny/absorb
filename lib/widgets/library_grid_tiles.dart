@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import 'cover_badges.dart';
+import '../services/narrated_books.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -82,6 +83,7 @@ class _GridBookTileState extends State<GridBookTile> {
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final isDownloaded = _dl.isDownloaded(itemId);
     final hasEbook = PlayerSettings.showEbookBadge && hasEbookFile(widget.item);
+    final readAlong = hasEbook && hasReadAlongEbook(widget.item);
     final isFinished = lib.getProgressData(itemId)?['isFinished'] == true;
     final isSkimmed = lib.getProgressData(itemId)?['skimmed'] == true;
     final dlCounts = isDownloaded ? _dl.chapterDownloadCounts(itemId) : null;
@@ -227,7 +229,7 @@ class _GridBookTileState extends State<GridBookTile> {
                   if (hasEbook && !widget.selectionMode)
                     Positioned(
                       top: widget.sequenceBadge != null ? 24 : 4, left: 4,
-                      child: const EbookCoverBadge(),
+                      child: EbookCoverBadge(readAlong: readAlong),
                     ),
 
                   // Sequence badge

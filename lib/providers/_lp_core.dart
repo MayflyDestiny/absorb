@@ -841,15 +841,63 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   /// True if [itemId] currently appears in the personalized "Continue Listening"
   /// shelf. Gates the "Remove from Continue Listening" book action.
-  bool isInContinueListeningShelf(String itemId) {
-    for (final section in _personalizedSections) {
-      if (section is! Map<String, dynamic>) continue;
-      if (section['id'] != 'continue-listening') continue;
-      for (final e in (section['entities'] as List<dynamic>? ?? const [])) {
-        if (e is Map<String, dynamic> && e['id'] == itemId) return true;
+  bool isInContinueListeningShelf(String itemId) => continueShelfOf(itemId) == 'continue-listening';
+
+  /// Which Continue shelf shows [itemId], 'continue-listening' or
+  /// 'continue-reading', or null. Gates the remove-from-Continue action.
+  String? continueShelfOf(String itemId) {
+    for (final id in const ['continue-listening', 'continue-reading']) {
+      for (final section in _personalizedSections) {
+        if (section is! Map<String, dynamic> || section['id'] != id) continue;
+        for (final e in (section['entities'] as List<dynamic>? ?? const [])) {
+          if (e is Map<String, dynamic> && e['id'] == itemId) return id;
+        }
       }
     }
-    return false;
+    return null;
+  }
+
+  /// Takes a book or a series off the Continue shelves straight away. A
+  /// refresh already on its way could otherwise put it back from before the
+  /// server heard.
+  void hideFromContinueShelves({String? itemId, String? seriesId}) {
+    final now = DateTime.now();
+    if (itemId != null) _hiddenShelfItems[itemId] = now;
+    if (seriesId != null) _hiddenShelfSeries[seriesId] = now;
+    _personalizedSections = _withoutJustHidden(_personalizedSections);
+    notifyListeners();
+  }
+
+  List<dynamic> _withoutJustHidden(List<dynamic> sections) {
+    final now = DateTime.now();
+    bool stale(String _, DateTime at) => now.difference(at) > const Duration(minutes: 2);
+    _hiddenShelfItems.removeWhere(stale);
+    _hiddenShelfSeries.removeWhere(stale);
+    if (_hiddenShelfItems.isEmpty && _hiddenShelfSeries.isEmpty) return sections;
+    bool hidden(String shelf, Object? e) {
+      if (e is! Map) return false;
+      if (shelf != 'continue-series') return _hiddenShelfItems.containsKey(e['id']);
+      final series = [
+        ((e['media'] as Map?)?['metadata'] as Map?)?['series'],
+        e['series'],
+      ].expand((s) => s is List ? s : [s]);
+      return series.any((s) => s is Map && _hiddenShelfSeries.containsKey(s['id']));
+    }
+
+    return [
+      for (final section in sections)
+        if (section is Map<String, dynamic> &&
+            const {'continue-listening', 'continue-reading', 'continue-series'}.contains(section['id']))
+          {
+            ...section,
+            'entities': [
+              for (final e in (section['entities'] as List<dynamic>? ?? const []))
+                if (!hidden(section['id'] as String, e)) e,
+            ],
+          }
+        else
+          section,
+    ];
   }
 
   /// If one of [seriesIds] (the opened book's series) is currently shown in the
@@ -1662,19 +1710,25 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   /// BookOrbit pushes no progress events, so while the app is open the book
   /// sitting paused in the player is checked against the server instead, and
   /// a newer position from another device goes through the same handler the
-  /// Audiobookshelf socket feeds.
+  /// Audiobookshelf socket feeds. Its notification feed runs alongside.
   void _startBookOrbitPoll() {
     _bookOrbitPollTimer?.cancel();
     _bookOrbitPollTimer = null;
-    if (_auth?.isBookOrbit != true) return;
-    if (_isBackgrounded || _readerQuiet || PlayerSettings.einkMode) return;
+    final api = _api;
+    if (_auth?.isBookOrbit != true || api == null ||
+        _isBackgrounded || _readerQuiet || PlayerSettings.einkMode) {
+      BookOrbitNotificationSocket.instance.stop();
+      return;
+    }
     _bookOrbitPollTimer = Timer.periodic(
         const Duration(seconds: 30), (_) => _pollPausedBookProgress());
+    unawaited(BookOrbitNotificationSocket.instance.start(api));
   }
 
   void _stopBookOrbitPoll() {
     _bookOrbitPollTimer?.cancel();
     _bookOrbitPollTimer = null;
+    BookOrbitNotificationSocket.instance.stop();
   }
 
   Future<void> _pollPausedBookProgress() async {
@@ -2459,7 +2513,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // A null response is a failed fetch, not "no shelves". Keep whatever is
       // already on screen (the cache we just painted) rather than wiping it.
       if (fetched != null) {
-        _personalizedSections = _mergeSections(_personalizedSections, fetched);
+        // Filtering after the merge also drops a hidden shelf item that the
+        // cached snapshot still carries.
+        _personalizedSections = _withoutJustHidden(
+          _mergeSections(_personalizedSections, fetched),
+        );
         _registerSectionsEpochs(_personalizedSections);
         await (this as _AbsorbingMixin)._updateAbsorbingCache();
 
@@ -2565,7 +2623,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final existing = _progressShelvesInFlight;
     if (existing != null) {
       await existing;
-      return;
+      // A forced refresh wants an answer from after it was asked for.
+      if (!force) return;
+      if (_progressShelvesInFlight != null) {
+        await _progressShelvesInFlight;
+        return;
+      }
     }
 
     if (!force &&
@@ -2656,7 +2719,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
     }
 
-    _personalizedSections = merged;
+    _personalizedSections = _withoutJustHidden(merged);
     _narratedToContinueListening();
   }
 
@@ -2747,7 +2810,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
         if (_selectedLibraryId == libraryId && sections.isNotEmpty) {
           _registerSectionsEpochs(sections);
-          _personalizedSections = sections;
+          _personalizedSections = _withoutJustHidden(sections);
           await (this as _AbsorbingMixin)._updateAbsorbingCache();
           notifyListeners();
         }
@@ -3141,10 +3204,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final id = 'collection:${cm['id']}';
       allSections[id] = {
         'id': id,
-        'label': 'Server Collection - ${cm['name'] ?? 'Collection'}',
+        'label': _collectionSectionLabel(cm),
         'type': 'collection',
         'entities': (cm['books'] as List<dynamic>?) ?? [],
         '_collectionId': cm['id'],
+        if (_isSmartScope(cm)) '_smartScope': true,
       };
     }
 
@@ -3233,7 +3297,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final cm = c as Map<String, dynamic>;
       result.add({
         'id': 'collection:${cm['id']}',
-        'label': 'Server Collection - ${cm['name'] as String? ?? 'Collection'}',
+        'label': _collectionSectionLabel(cm),
+        if (_isSmartScope(cm)) 'smartScope': 'true',
       });
     }
     for (final genre in _addedGenres) {
@@ -3243,6 +3308,19 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       });
     }
     return result;
+  }
+
+  bool _isSmartScope(Map<String, dynamic> cm) =>
+      (cm['bookOrbit'] as Map?)?['smartScope'] == true;
+
+  // Audiobookshelf collections are shared by everyone on the server, so their
+  // rows say so. BookOrbit lists the user's own collections and Smart Scopes.
+  String _collectionSectionLabel(Map<String, dynamic> cm) {
+    final name = cm['name'] as String? ?? 'Collection';
+    final kind = cm['bookOrbit'] is! Map
+        ? 'Server Collection'
+        : _isSmartScope(cm) ? 'Smart Scope' : 'Collection';
+    return '$kind - $name';
   }
 
   // ── Podcast subscriptions ──

@@ -245,8 +245,10 @@ class HomeSection extends StatelessWidget {
   }
 
   String _collectionNameFromTitle(String value) {
-    const prefix = 'Server Collection - ';
-    return value.startsWith(prefix) ? value.substring(prefix.length) : value;
+    for (final prefix in const ['Server Collection - ', 'Smart Scope - ', 'Collection - ']) {
+      if (value.startsWith(prefix)) return value.substring(prefix.length);
+    }
+    return value;
   }
 }
 

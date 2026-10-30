@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
 import 'cover_badges.dart';
+import '../services/narrated_books.dart';
 import '../services/ebook_cache.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
@@ -72,6 +73,7 @@ class BookCard extends StatelessWidget {
     final savedChapters = dlCounts?.saved ?? -1;
     final totalChapters = dlCounts?.total ?? 0;
     final hasEbook = PlayerSettings.showEbookBadge && hasEbookFile(item);
+    final readAlong = hasEbook && hasReadAlongEbook(item);
     // Only compute for podcast shows that aren't being rendered as an episode
     // (an episode card shows the recentEpisode payload, not show-level info).
     final unfinishedCount = (lib.isPodcastLibrary && item['recentEpisode'] == null)
@@ -84,6 +86,7 @@ class BookCard extends StatelessWidget {
         ? _buildWideCard(context, cs, tt, l, title, authorName, coverUrl, progress, headers,
             isExplicit: isExplicit,
             hasEbook: hasEbook,
+            readAlong: readAlong,
             savedChapters: savedChapters,
             totalChapters: totalChapters)
         : _buildCompactCard(context, cs, tt, l, title, subtitle, authorName, coverUrl, progress, headers,
@@ -91,6 +94,7 @@ class BookCard extends StatelessWidget {
             isSkimmed: isSkimmed,
             isDownloaded: isDownloaded,
             hasEbook: hasEbook,
+            readAlong: readAlong,
             savedChapters: savedChapters,
             totalChapters: totalChapters,
             isExplicit: isExplicit,
@@ -226,6 +230,7 @@ class BookCard extends StatelessWidget {
     int savedChapters = -1,
     int totalChapters = 0,
     bool hasEbook = false,
+    bool readAlong = false,
   }) {
     return Card(
       elevation: 0,
@@ -246,7 +251,7 @@ class BookCard extends StatelessWidget {
                 children: [
                   _CoverImage(coverUrl: coverUrl, cs: cs, fit: BoxFit.contain, httpHeaders: headers, title: title, author: authorName),
                   if (hasEbook && !selectionMode)
-                    const Positioned(top: 4, left: 4, child: EbookCoverBadge()),
+                    Positioned(top: 4, left: 4, child: EbookCoverBadge(readAlong: readAlong)),
                   if (isExplicit)
                     Positioned(
                       top: 4, right: DownloadService().isDownloaded(item['id'] as String? ?? '') ? 30 : 4,
@@ -355,6 +360,7 @@ class BookCard extends StatelessWidget {
     int savedChapters = -1,
     int totalChapters = 0,
     bool hasEbook = false,
+    bool readAlong = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -446,7 +452,7 @@ class BookCard extends StatelessWidget {
                       ),
                     ),
                   if (hasEbook && !selectionMode)
-                    const Positioned(top: 4, left: 4, child: EbookCoverBadge()),
+                    Positioned(top: 4, left: 4, child: EbookCoverBadge(readAlong: readAlong)),
                 ],
               ),
             ),

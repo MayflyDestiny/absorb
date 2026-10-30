@@ -4,11 +4,17 @@ import Flutter
 import UIKit
 import AVFoundation
 import AVKit
+import BackgroundTasks
 import CoreMedia
 import Intents
 import MediaPlayer
 import just_audio
 import os
+import SwiftUI
+#if canImport(Translation)
+import Translation
+#endif
+import UserNotifications
 
 let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadlessExecution: true)
 
@@ -16,6 +22,11 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 @objc class AppDelegate: FlutterAppDelegate {
   private var widgetChannel: FlutterMethodChannel?
   private var volumeKeysChannel: FlutterMethodChannel?
+  private var backgroundChannel: FlutterMethodChannel?
+  // New podcast episodes and release-day books, checked when iOS gives the
+  // app background refresh time. Listed in Info.plist.
+  private let episodeCheckTaskId = "com.barnabas.absorb.episodeNotifCheck"
+  private let episodeCheckMinutesKey = "absorb_episode_check_minutes"
   private let volumeKeyWatcher = VolumeKeyWatcher()
 
   // Native log lines emitted before Dart's channel handler registers, kept
@@ -134,6 +145,13 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
 
     registerAudioSessionObservers()
 
+    // Notifications the app shows (new episodes, release days) reach the
+    // plugin through FlutterAppDelegate, for taps and showing them in-app.
+    UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
+
+    // Must be registered before launch finishes, or iOS drops the task.
+    registerEpisodeCheckTask()
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -240,6 +258,63 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
     ) { [weak self] note in
       if let msg = note.userInfo?["message"] as? String {
         self?.logToFlutter(msg)
+      }
+    }
+  }
+
+  private func registerEpisodeCheckTask() {
+    BGTaskScheduler.shared.register(forTaskWithIdentifier: episodeCheckTaskId, using: nil) { [weak self] task in
+      guard let self, let refresh = task as? BGAppRefreshTask else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      self.runEpisodeCheck(refresh)
+    }
+  }
+
+  /// Asks iOS for the next background refresh, no sooner than the chosen
+  /// interval. iOS decides when it actually comes. A request already waiting
+  /// is kept unless [replacing]: the app asks on every launch, and starting
+  /// the wait over each time could push the refresh off for good.
+  private func scheduleEpisodeCheck(replacing: Bool) {
+    let minutes = UserDefaults.standard.integer(forKey: episodeCheckMinutesKey)
+    guard minutes > 0 else {
+      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: episodeCheckTaskId)
+      return
+    }
+    BGTaskScheduler.shared.getPendingTaskRequests { [weak self] pending in
+      guard let self else { return }
+      if !replacing && pending.contains(where: { $0.identifier == self.episodeCheckTaskId }) { return }
+      let request = BGAppRefreshTaskRequest(identifier: self.episodeCheckTaskId)
+      request.earliestBeginDate = Date(timeIntervalSinceNow: TimeInterval(max(minutes, 15) * 60))
+      do {
+        try BGTaskScheduler.shared.submit(request)
+      } catch {
+        self.logToFlutter("[EpisodeNotif] background refresh not scheduled: \(error.localizedDescription)")
+      }
+    }
+  }
+
+  /// The check runs in the app's own Dart code. On a cold background launch
+  /// the message waits in the channel until Dart is listening.
+  private func runEpisodeCheck(_ task: BGAppRefreshTask) {
+    scheduleEpisodeCheck(replacing: true)
+    var done = false
+    let finish: (Bool) -> Void = { ok in
+      DispatchQueue.main.async {
+        guard !done else { return }
+        done = true
+        task.setTaskCompleted(success: ok)
+      }
+    }
+    task.expirationHandler = { finish(false) }
+    DispatchQueue.main.async { [weak self] in
+      guard let channel = self?.backgroundChannel else {
+        finish(false)
+        return
+      }
+      channel.invokeMethod("runEpisodeCheck", arguments: nil) { reply in
+        finish(!(reply is FlutterError))
       }
     }
   }
@@ -371,6 +446,21 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
     // decorate CPNowPlayingTemplate only — the lock screen is untouched.
     CarPlayNowPlaying.shared.register(with: messenger)
 
+    let background = FlutterMethodChannel(name: "com.barnabas.absorb/background",
+                                          binaryMessenger: messenger)
+    background.setMethodCallHandler { [weak self] call, result in
+      guard let self, call.method == "scheduleEpisodeCheck" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let minutes = (call.arguments as? [String: Any])?["minutes"] as? Int ?? 0
+      let changed = UserDefaults.standard.integer(forKey: self.episodeCheckMinutesKey) != minutes
+      UserDefaults.standard.set(minutes, forKey: self.episodeCheckMinutesKey)
+      self.scheduleEpisodeCheck(replacing: changed)
+      result(nil)
+    }
+    backgroundChannel = background
+
     // iOS audio output device switching is not implemented yet — iOS routes
     // through the system's MPVolumeView/AVRoutePicker rather than letting apps
     // pick output devices directly. Stub those, but do expose the AirPlay
@@ -468,6 +558,28 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+
+    // The phone's time zone, and how far another one (the zone BookOrbit
+    // counts days in) is from UTC right now, so the Stats screen can say when
+    // the two split days differently.
+    let timeZoneChannel = FlutterMethodChannel(name: "com.absorb.time_zone",
+                                               binaryMessenger: messenger)
+    timeZoneChannel.setMethodCallHandler { (call, result) in
+      guard call.method == "compare" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let here = TimeZone.current
+      var answer: [String: Any] = [
+        "id": here.identifier,
+        "offsetSeconds": here.secondsFromGMT(),
+      ]
+      if let otherId = (call.arguments as? [String: Any])?["other"] as? String,
+         let other = TimeZone(identifier: otherId) {
+        answer["otherOffsetSeconds"] = other.secondsFromGMT()
+      }
+      result(answer)
     }
 
     // Bookmark clip export: extract a time window of a book and write a .m4a.
@@ -720,6 +832,39 @@ let flutterEngine = FlutterEngine(name: "SharedEngine", project: nil, allowHeadl
             result(true)
           }
         }
+
+      case "translateText":
+        // Reader Translate: Apple's translation sheet, the same one the system
+        // text menu offers. Before iOS 17.4 Dart falls back to the web.
+        let text = args?["text"] as? String ?? ""
+        #if canImport(Translation)
+        if #available(iOS 17.4, *), !text.isEmpty {
+          DispatchQueue.main.async {
+            let scene = UIApplication.shared.connectedScenes
+              .compactMap { $0 as? UIWindowScene }
+              .first { $0.activationState == .foregroundActive }
+            let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+            guard var presenter = window?.rootViewController else {
+              result(false)
+              return
+            }
+            while let presented = presenter.presentedViewController {
+              presenter = presented
+            }
+            weak var hostRef: UIViewController?
+            let host = UIHostingController(rootView: TranslateSheetHost(text: text) {
+              hostRef?.dismiss(animated: false)
+            })
+            hostRef = host
+            host.view.backgroundColor = .clear
+            host.modalPresentationStyle = .overFullScreen
+            presenter.present(host, animated: false)
+            result(true)
+          }
+          return
+        }
+        #endif
+        result(false)
 
       case "init":
         result([
@@ -1042,3 +1187,29 @@ enum AudioWindowExtractor {
     }
   }
 }
+
+#if canImport(Translation)
+/// Invisible full-screen host for Apple's translation sheet; tells the caller
+/// to take it down once the sheet closes.
+@available(iOS 17.4, *)
+struct TranslateSheetHost: View {
+  let text: String
+  let onDone: () -> Void
+  @State private var shown = false
+
+  init(text: String, onDone: @escaping () -> Void) {
+    self.text = text
+    self.onDone = onDone
+  }
+
+  var body: some View {
+    Color.clear
+      .ignoresSafeArea()
+      .translationPresentation(isPresented: $shown, text: text, attachmentAnchor: .point(.center))
+      .onAppear { DispatchQueue.main.async { shown = true } }
+      .onChange(of: shown) { _, isShown in
+        if !isShown { onDone() }
+      }
+  }
+}
+#endif

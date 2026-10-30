@@ -54,6 +54,9 @@ import 'admin_users_screen.dart';
 import 'bookmarks_screen.dart';
 import 'downloads_screen.dart';
 import 'upcoming_releases_screen.dart';
+import 'server_notifications_screen.dart';
+import '../services/bookorbit_notification_socket.dart';
+import '../services/server_notifications.dart';
 import '../services/ebook_cache.dart';
 import '../widgets/action_pill.dart';
 import '../widgets/book_detail_sheet.dart' show showBookDetailSheet;
@@ -72,6 +75,7 @@ import 'stats_screen.dart';
 import 'settings_screen.dart';
 import 'app_shell_navigation_policy.dart';
 import '../widgets/library_picker_sheet.dart';
+import '../widgets/beta_logging_notice.dart';
 import '../widgets/welcome_sheet.dart';
 import '../widgets/download_location_prompt.dart';
 import '../widgets/whats_new_prompt.dart';
@@ -390,6 +394,8 @@ class _AppShellState extends State<AppShell>
   void initState() {
     super.initState();
     _instance = this;
+    _incomingNotifications =
+        BookOrbitNotificationSocket.instance.incoming.listen(showIncomingNotificationToast);
     EreaderVolumeNav.ensureHandler();
     PlayerScreenWake.start();
     if (!widget.startOnAbsorbing) _loadStartScreen();
@@ -428,10 +434,9 @@ class _AppShellState extends State<AppShell>
     context.read<LibraryProvider>().addListener(_onLibraryChanged);
     _loadPodcastTabPrefs();
     PlayerSettings.settingsChanged.addListener(_loadPodcastTabPrefs);
-    // On-boarding runs serially so the dialogs never stack: whats-new first
-    // (its own doc says to call it before the welcome sheet), then welcome,
-    // then the (Android-only) download-location prompt once it's dismissed.
-    _runOnboarding();
+    // Launch prompts run serially so they never stack: whats-new, welcome, the
+    // beta logging notice, then the (Android-only) download-location prompt.
+    _showLaunchPrompts();
     // Same reason as _deriveCoverScheme below: the release check is a network
     // call that can raise its own dialog, and there is no reason for it to
     // compete with the first frame.
@@ -449,9 +454,14 @@ class _AppShellState extends State<AppShell>
     });
   }
 
-  Future<void> _runOnboarding() async {
+  /// One after another, so they never land on top of each other.
+  Future<void> _showLaunchPrompts() async {
     await WhatsNewPrompt.showIfUpdated(context);
+    if (!mounted) return;
     await WelcomeSheet.showIfNeeded(context);
+    if (!mounted) return;
+    await BetaLoggingNotice.showIfPending(context);
+    if (!mounted) return;
     await DownloadLocationPrompt.showIfNeeded(context);
   }
 
@@ -539,8 +549,11 @@ class _AppShellState extends State<AppShell>
     await UpdateDialog.show(context, result.info!);
   }
 
+  StreamSubscription<ServerNotification>? _incomingNotifications;
+
   @override
   void dispose() {
+    _incomingNotifications?.cancel();
     _fadeController.dispose();
     _detachNavBarListener();
     _navBarAnimController.dispose();

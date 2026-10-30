@@ -107,7 +107,29 @@ class AppLocalizationsZh extends AppLocalizations {
   String get showWhatsNewOnLaunchOffSubtitle => '关闭 - 不再显示更新说明';
 
   @override
+  String get whatsNewButton => '查看更新内容';
+
+  @override
+  String get whatsNewKeepShowing => '每次更新后都显示';
+
+  @override
+  String get whatsNewKeepShowingHint => '之后可在设置中重新开启';
+
+  @override
+  String get settingsWhatsNew => '更新后显示新版说明';
+
+  @override
+  String get settingsWhatsNewSubtitle => 'Absorb 更新后弹窗，内含更新日志链接';
+
+  @override
   String get gotIt => '知道了';
+
+  @override
+  String get betaLoggingTitle => '日志已开启';
+
+  @override
+  String get betaLoggingContent =>
+      '这是测试版，Absorb 现在会记录日志以便排查问题。除非你主动分享，日志只保存在这台设备上。\n\n你可以在设置的“问题与支持”中发送它们或将其关闭。若选择关闭，之后的测试版也会保持关闭。';
 
   @override
   String get preview => '预览';
@@ -4331,6 +4353,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get removedFromContinueListening => '已从“继续收听”中移出';
 
   @override
+  String get removeFromContinueReading => '移出继续阅读';
+
+  @override
+  String get removedFromContinueReading => '已从“继续阅读”中移出';
+
+  @override
+  String get sessionAdd => '添加会话';
+
+  @override
+  String get sessionStartLabel => '开始于';
+
+  @override
+  String get sessionAdded => '会话已添加';
+
+  @override
+  String get sessionAddFailed => '无法添加该会话';
+
+  @override
   String get removeSeriesFromContinueSeries => '从继续收听中移除';
 
   @override
@@ -5048,6 +5088,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get removeDownloadContent => '这将从你的设备中移除。';
 
   @override
+  String get removeWhichDownload => '有声书和电子书都在这台设备上。请选择要移除哪个。';
+
+  @override
   String get downloadRemoved => '下载已移除';
 
   @override
@@ -5729,6 +5772,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String kbpsValue(int value) {
     return '$value kbps';
   }
+
+  @override
+  String get fileInfoTitle => '文件信息';
+
+  @override
+  String fileInfoFileCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个文件',
+      one: '1 个文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fileInfoNone => '这本书没有文件详细信息。';
+
+  @override
+  String get fileInfoAudio => '音频';
+
+  @override
+  String get fileInfoEbook => '电子书';
+
+  @override
+  String get fileInfoOther => '其他文件';
+
+  @override
+  String get fileInfoBookOrbitNote => 'BookOrbit 不会报告编码器和码率。';
+
+  @override
+  String fileInfoChannels(int count) {
+    return '$count 个声道';
+  }
+
+  @override
+  String get fileInfoCover => '封面';
+
+  @override
+  String get fileInfoMetadata => '元数据';
+
+  @override
+  String get fileInfoSupplement => '附加文件';
+
+  @override
+  String get fileInfoPathCopied => '路径已复制';
 
   @override
   String get resetMayNotHaveSynced => '重置可能尚未同步 - 请检查您的服务器';
@@ -10750,6 +10839,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerVolumeNavWhilePlaying => '音频播放时也生效';
 
   @override
+  String get readerTranslateWith => '翻译方式';
+
+  @override
+  String get readerTranslateApp => '本机应用';
+
+  @override
+  String get readerTranslateApple => 'iOS 内置';
+
+  @override
+  String get readerTranslateWeb => '在浏览器中打开';
+
+  @override
+  String get readerTranslateHint => '选中的文字会发送给你选择的翻译服务。';
+
+  @override
   String get readerMoreFonts => '下载更多字体';
 
   @override
@@ -11065,6 +11169,307 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get activityYourReading => '你的阅读';
+
+  @override
+  String get activityYourListening => '你的收听';
+
+  @override
+  String activityLastRead(String when) {
+    return '上次阅读 $when';
+  }
+
+  @override
+  String activityLastListened(String when) {
+    return '上次收听 $when';
+  }
+
+  @override
+  String get activityNotStarted => '未开始';
+
+  @override
+  String get activityNoReading => '还没有阅读会话';
+
+  @override
+  String get activityTime => '时长';
+
+  @override
+  String get activityAverage => '平均';
+
+  @override
+  String get activityProgress => '进度';
+
+  @override
+  String activityReached(String percent) {
+    return '已达 $percent';
+  }
+
+  @override
+  String get readingLogTitle => '阅读记录';
+
+  @override
+  String get readingLogTotalTime => '总时长';
+
+  @override
+  String get readingLogAverageSession => '平均会话';
+
+  @override
+  String get readingLogActiveDays => '活跃天数';
+
+  @override
+  String readingLogActiveDaysOf(int active, int total) {
+    return '$active / $total 天';
+  }
+
+  @override
+  String get readingLogPace => '速度';
+
+  @override
+  String readingLogPacePerHour(String percent) {
+    return '$percent%/小时';
+  }
+
+  @override
+  String get readingLogLastRead => '最近阅读';
+
+  @override
+  String get readingLogStarted => '开始';
+
+  @override
+  String get readingLogFinished => '读完';
+
+  @override
+  String get readingLogNotSet => '未设置';
+
+  @override
+  String readingLogLeftMinutes(int m) {
+    return '还需约 $m 分钟读完';
+  }
+
+  @override
+  String readingLogLeftHours(int h) {
+    return '还需约 $h 小时读完';
+  }
+
+  @override
+  String readingLogLeftHoursMinutes(int h, int m) {
+    return '还需约 $h 小时 $m 分钟读完';
+  }
+
+  @override
+  String get readingLogLeftMax => '还需 99 小时以上才能读完';
+
+  @override
+  String readingLogUpOnLastWeek(int percent) {
+    return '比上一周多 $percent%';
+  }
+
+  @override
+  String readingLogDownOnLastWeek(int percent) {
+    return '比上一周少 $percent%';
+  }
+
+  @override
+  String get readingLogNewThisWeek => '本周新增';
+
+  @override
+  String get readingLogSameAsLastWeek => '与上一周持平';
+
+  @override
+  String get readingLogQuietTwoWeeks => '最近两周没有记录';
+
+  @override
+  String get readingLogWhereYouRead => '你在哪里阅读';
+
+  @override
+  String get readingLogSourceIos => 'iOS 应用';
+
+  @override
+  String get readingLogSourceAndroid => 'Android 应用';
+
+  @override
+  String get readingLogChartTitle => '进度随时间变化';
+
+  @override
+  String get readingLogChartPosition => '到达的位置';
+
+  @override
+  String get readingLogChartMinutes => '分钟';
+
+  @override
+  String get readingLogRecords => '记录';
+
+  @override
+  String get readingLogLongestSession => '最长会话';
+
+  @override
+  String get readingLogBestDay => '单日最高';
+
+  @override
+  String get readingLogLongestStreak => '最长连续';
+
+  @override
+  String readingLogStreakDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 天',
+      one: '1 天',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readingLogJumpedBack => '回退';
+
+  @override
+  String readingLogJumpedBackTimes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 次',
+      one: '1 次',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readingLogFirstOpened => '首次打开';
+
+  @override
+  String get readingLogAttempts => '开始次数';
+
+  @override
+  String readingLogAttempt(int index) {
+    return '第 $index 次';
+  }
+
+  @override
+  String readingLogAttemptBegan(int index) {
+    return '第 $index 次开始';
+  }
+
+  @override
+  String get readingLogOutcomeCompleted => '已完成';
+
+  @override
+  String get readingLogOutcomeSkimmed => '略读';
+
+  @override
+  String get readingLogOutcomeAbandoned => '已弃读';
+
+  @override
+  String get readingLogOutcomeInProgress => '进行中';
+
+  @override
+  String readingLogSpanRange(String from, String to) {
+    return '$from 至 $to';
+  }
+
+  @override
+  String readingLogSpanSince(String from) {
+    return '自 $from 起';
+  }
+
+  @override
+  String readingLogSpanEnded(String to) {
+    return '结束于 $to';
+  }
+
+  @override
+  String get readingLogSpanUnknown => '没有记录日期';
+
+  @override
+  String readingLogSessionCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 次会话',
+      one: '1 次会话',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String readingLogShowing(int shown, int total) {
+    return '显示 $shown / 共 $total';
+  }
+
+  @override
+  String readingLogGapDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 天未阅读',
+      one: '1 天未阅读',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readingLogEmpty => '还没有会话记录';
+
+  @override
+  String get readingLogEmptyHint => '你在任何与 BookOrbit 同步的应用或设备上阅读或收听时，会话会显示在这里。';
+
+  @override
+  String get readingLogNoMatches => '此范围内没有会话';
+
+  @override
+  String get readingLogAllTime => '全部时间';
+
+  @override
+  String get readingLogLast30 => '最近 30 天';
+
+  @override
+  String get readingLogLast90 => '最近 90 天';
+
+  @override
+  String get readingLogThisYear => '今年';
+
+  @override
+  String get readingLogAllFormats => '全部格式';
+
+  @override
+  String get readingLogSortBy => '排序方式';
+
+  @override
+  String get readingLogSortDay => '日期';
+
+  @override
+  String get readingLogSortLength => '时长';
+
+  @override
+  String get readingLogSortChange => '变化';
+
+  @override
+  String get readingLogSortReached => '到达位置';
+
+  @override
+  String get readingLogNewestFirst => '最新优先';
+
+  @override
+  String get readingLogOldestFirst => '最早优先';
+
+  @override
+  String get readingLogMostFirst => '最多优先';
+
+  @override
+  String get readingLogLeastFirst => '最少优先';
+
+  @override
+  String get readingLogDeleteTitle => '删除这次会话？';
+
+  @override
+  String get readingLogDeleteBody => '它会从这本书的阅读记录和你的 BookOrbit 统计中扣除。';
+
+  @override
+  String get readingLogDeleteFailed => '无法删除该会话';
+
+  @override
+  String get readingLogLoadFailed => '无法加载阅读记录';
+
+  @override
   String get navHoldServerScan => '服务器扫描';
 
   @override
@@ -11147,6 +11552,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerTooltipDefine => '释义';
+
+  @override
+  String get readerTooltipTranslate => '翻译';
 
   @override
   String get readerSearchHint => '搜索本书…';
@@ -12158,4 +12566,1130 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get bookFinishActionReplay => '重播';
+
+  @override
+  String get boAdminTitle => '服务器管理员';
+
+  @override
+  String get boAdminSubtitle => '这台 BookOrbit 服务器上的用户与媒体库';
+
+  @override
+  String get boAdminUsers => '用户';
+
+  @override
+  String get boAdminLibraries => '媒体库';
+
+  @override
+  String boAdminUserCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 人',
+      one: '1 人',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String boAdminLibraryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个媒体库',
+      one: '1 个媒体库',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boAdminSaved => '已保存';
+
+  @override
+  String get boAdminFailed => '操作未成功，请重试。';
+
+  @override
+  String get boAdminOffline => '无法连接到服务器。';
+
+  @override
+  String get boUsersSearch => '搜索用户';
+
+  @override
+  String get boUsersNone => '这里没有用户';
+
+  @override
+  String get boUsersFilterAll => '全部';
+
+  @override
+  String get boUsersFilterAdmins => '管理员';
+
+  @override
+  String get boUsersFilterActive => '已启用';
+
+  @override
+  String get boUsersFilterInactive => '未启用';
+
+  @override
+  String get boUsersFilterAttention => '需要处理';
+
+  @override
+  String get boUserBadgeAdmin => '管理员';
+
+  @override
+  String get boUserBadgeInactive => '未启用';
+
+  @override
+  String get boUserBadgeLocked => '已锁定';
+
+  @override
+  String get boUserBadgeNoPassword => '尚未设置密码';
+
+  @override
+  String boUserLastActive(String date) {
+    return '最近活动 $date';
+  }
+
+  @override
+  String get boUserNeverSignedIn => '从未登录';
+
+  @override
+  String get boUserNew => '新建用户';
+
+  @override
+  String get boUserCreate => '创建';
+
+  @override
+  String get boUserUsername => '用户名';
+
+  @override
+  String get boUserUsernameHint => '至少 3 个字符，创建后无法更改。';
+
+  @override
+  String get boUserName => '名称';
+
+  @override
+  String get boUserEmail => '邮箱';
+
+  @override
+  String get boUserEmailInvalid => '请输入有效的邮箱地址';
+
+  @override
+  String get boUserActive => '已启用';
+
+  @override
+  String get boUserActiveSubtitle => '未启用的用户无法登录';
+
+  @override
+  String get boUserAdmin => '管理员';
+
+  @override
+  String get boUserAdminSubtitle => '对服务器上的所有内容拥有完全访问权';
+
+  @override
+  String get boUserAdminHasAll => '管理员拥有全部权限，可以看到所有媒体库。';
+
+  @override
+  String get boUserPermissions => '权限';
+
+  @override
+  String get boUserPresetNone => '无';
+
+  @override
+  String get boUserPresetStandard => '标准';
+
+  @override
+  String get boUserPresetEverything => '全部';
+
+  @override
+  String get boUserLibraries => '媒体库';
+
+  @override
+  String get boUserLibrariesHint => '此人可以查看的媒体库。';
+
+  @override
+  String get boUserPasswordLink => '发送密码链接';
+
+  @override
+  String get boUserPasswordLinkSubtitle => '用于设置新密码的链接，有效期 15 分钟';
+
+  @override
+  String get boUserExternal => '该用户通过单点登录，密码在那里管理。';
+
+  @override
+  String get boUserUnlock => '解锁账号';
+
+  @override
+  String get boUserUnlocked => '账号已解锁';
+
+  @override
+  String get boUserDelete => '删除用户';
+
+  @override
+  String boUserDeleteTitle(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get boUserDeleteBody => '该账号及其在此服务器上的所有内容都会被移除。此操作无法撤销。';
+
+  @override
+  String get boUserDeleted => '用户已删除';
+
+  @override
+  String get boUserLinkTitle => '密码链接';
+
+  @override
+  String boUserLinkBody(String name) {
+    return '将此链接分享给 $name，用于设置密码，有效期 15 分钟。';
+  }
+
+  @override
+  String get boPasswordRules => '至少 8 个字符，并包含大写字母、小写字母和数字。';
+
+  @override
+  String get boSetPasswordTitle => '设置你的密码';
+
+  @override
+  String get boSetPasswordSubmit => '设置密码并登录';
+
+  @override
+  String boSetPasswordLinkBody(String username, String server) {
+    return '为 $server 上的 $username 设置密码。';
+  }
+
+  @override
+  String boSetPasswordLinkBodyNoName(String server) {
+    return '为你在 $server 上的账号设置密码。';
+  }
+
+  @override
+  String get boSetPasswordStartingBody => '此账号仍在使用创建时分配的密码。请设置一个新密码以完成登录。';
+
+  @override
+  String get boSetPasswordTrust => '仅在你信任链接发送者时继续。';
+
+  @override
+  String get boPasswordLinkExpired => '此链接已过期或已被使用。请向你的服务器管理员索取新链接。';
+
+  @override
+  String boPasswordSetSignInFailed(String error) {
+    return '密码已设置，但登录失败：$error';
+  }
+
+  @override
+  String get boChangePasswordSubtitle => '更新你的 BookOrbit 密码';
+
+  @override
+  String get boPasswordChangeEffect => '修改密码会退出你其他的 BookOrbit 会话。这台设备保持登录。';
+
+  @override
+  String get boPasswordChanged => '密码已修改，其他已登录的设备已退出。';
+
+  @override
+  String boPasswordShareDescription(String username) {
+    return '发送此链接，或让 $username 扫描二维码，即可设置密码并登录 Absorb。链接有效期 15 分钟。';
+  }
+
+  @override
+  String boPasswordShareWarning(String username) {
+    return '在链接被使用或过期之前，任何拿到它的人都能为 $username 设置密码。';
+  }
+
+  @override
+  String get setupLinkCopyWebLink => '复制网页链接';
+
+  @override
+  String get boUserLinkCopy => '复制链接';
+
+  @override
+  String get boUserLinkCopied => '链接已复制';
+
+  @override
+  String get boUserLinkShare => '分享';
+
+  @override
+  String get boUserNoLink => '用户已添加，但服务器没有返回密码链接。请在其页面发送一个。';
+
+  @override
+  String get boPermGroupLibrary => '媒体库与书籍';
+
+  @override
+  String get boPermGroupRequests => '求书';
+
+  @override
+  String get boPermGroupDevices => '设备';
+
+  @override
+  String get boPermGroupIntegrations => '阅读集成';
+
+  @override
+  String get boPermGroupDock => 'Book Dock';
+
+  @override
+  String get boPermGroupEmail => '邮件与通知';
+
+  @override
+  String get boPermGroupAdmin => '管理';
+
+  @override
+  String get boPermLibraryDownload => '下载书籍';
+
+  @override
+  String get boPermLibraryUpload => '上传书籍';
+
+  @override
+  String get boPermLibraryEditMetadata => '编辑元数据';
+
+  @override
+  String get boPermLibraryDeleteBooks => '删除书籍';
+
+  @override
+  String get boPermBookRequestAccess => '提交求书';
+
+  @override
+  String get boPermBookRequestAutoApprove => '求书自动通过';
+
+  @override
+  String get boPermBookRequestSelfFulfill => '直接下载所求书籍';
+
+  @override
+  String get boPermManageBookRequests => '管理求书';
+
+  @override
+  String get boPermKoboSync => 'Kobo 同步';
+
+  @override
+  String get boPermKoreaderSync => 'KOReader 同步';
+
+  @override
+  String get boPermOpdsAccess => 'OPDS 访问';
+
+  @override
+  String get boPermHardcoverSync => 'Hardcover 同步';
+
+  @override
+  String get boPermReadwiseSync => 'Readwise 同步';
+
+  @override
+  String get boPermStorygraphSync => 'StoryGraph 同步';
+
+  @override
+  String get boPermBookDockAccess => '使用 Book Dock';
+
+  @override
+  String get boPermManageBookDock => '管理 Book Dock';
+
+  @override
+  String get boPermEmailSend => '通过邮件发送书籍';
+
+  @override
+  String get boPermNotificationAccess => '通知';
+
+  @override
+  String get boPermManageEmail => '管理邮件';
+
+  @override
+  String get boPermManageLibraries => '管理媒体库';
+
+  @override
+  String get boPermManageMetadataConfig => '元数据设置';
+
+  @override
+  String get boPermManageIcons => '管理图标';
+
+  @override
+  String get boPermManageUsers => '管理用户';
+
+  @override
+  String get boPermViewUserActivity => '查看用户活动';
+
+  @override
+  String get boPermViewAuditLog => '查看审计日志';
+
+  @override
+  String get boPermManageAppSettings => '应用设置';
+
+  @override
+  String get boLibsNone => '还没有媒体库';
+
+  @override
+  String boLibBookCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 本书',
+      one: '1 本书',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boLibScanNow => '立即扫描';
+
+  @override
+  String get boLibScanStarted => '扫描已开始';
+
+  @override
+  String get boLibScanning => '扫描中';
+
+  @override
+  String boLibLastScan(String date, int added, int updated, int missing) {
+    return '$date 扫描：新增 $added，更新 $updated，缺失 $missing';
+  }
+
+  @override
+  String get boLibScanFailed => '上次扫描失败';
+
+  @override
+  String get boLibNeverScanned => '尚未扫描';
+
+  @override
+  String get boLibNew => '新建媒体库';
+
+  @override
+  String get boLibName => '名称';
+
+  @override
+  String get boLibNeedName => '请填写媒体库名称';
+
+  @override
+  String get boLibIcon => '图标';
+
+  @override
+  String get boLibFolders => '文件夹';
+
+  @override
+  String get boLibFoldersHint => '服务器上存放该媒体库书籍的文件夹。';
+
+  @override
+  String get boLibNeedFolder => '请至少添加一个文件夹';
+
+  @override
+  String get boLibAddFolder => '添加文件夹';
+
+  @override
+  String boLibFolderFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个文件',
+      one: '1 个文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String boLibFolderInUse(String library) {
+    return '已属于「$library」';
+  }
+
+  @override
+  String get boLibFolderUnreadable => '服务器无法读取此文件夹';
+
+  @override
+  String get boLibFolderRescan => '更改文件夹会重新扫描该媒体库。';
+
+  @override
+  String get boLibOrganization => '书籍的存放形式';
+
+  @override
+  String get boLibPerFolder => '每个文件夹一本书';
+
+  @override
+  String get boLibPerFile => '每个文件一本书';
+
+  @override
+  String get boLibOrganizationFixed => '媒体库创建后无法更改此项。';
+
+  @override
+  String get boLibWatch => '监测变化';
+
+  @override
+  String get boLibWatchSubtitle => '新文件和改动的文件一出现就收录';
+
+  @override
+  String get boLibSchedule => '定时扫描';
+
+  @override
+  String get boLibScheduleOff => '关闭';
+
+  @override
+  String get boLibScheduleDaily => '每天';
+
+  @override
+  String get boLibScheduleWeekly => '每周';
+
+  @override
+  String boLibScheduleCustom(String cron) {
+    return '自定义（$cron）';
+  }
+
+  @override
+  String get boLibScheduleHint => '按服务器时间凌晨 3 点运行。';
+
+  @override
+  String get boLibCovers => '封面比例';
+
+  @override
+  String get boLibCoverBook => '书籍 (2:3)';
+
+  @override
+  String get boLibCoverSquare => '方形 (1:1)';
+
+  @override
+  String get boLibAccess => '谁可以查看';
+
+  @override
+  String get boLibAccessHint => '管理员可以看到全部媒体库，其他用户需要在此授予访问权限。';
+
+  @override
+  String get boLibAccessNone => '目前仅管理员可见';
+
+  @override
+  String get boLibAccessAdd => '添加用户';
+
+  @override
+  String get boLibAccessEveryoneHas => '所有人已拥有访问权限';
+
+  @override
+  String get boLibLevelViewer => '查看者';
+
+  @override
+  String get boLibLevelEditor => '编辑者';
+
+  @override
+  String get boLibLevelOwner => '拥有者';
+
+  @override
+  String get boLibAccessRemove => '移除访问权限';
+
+  @override
+  String get boLibDelete => '删除媒体库';
+
+  @override
+  String boLibDeleteTitle(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get boLibDeleteBody =>
+      '该媒体库将从 BookOrbit 移除，书中进度和高亮也会一并删除。服务器上的文件保持原位。';
+
+  @override
+  String get boLibDeleted => '媒体库已删除';
+
+  @override
+  String get boFolderPickTitle => '选择一个文件夹';
+
+  @override
+  String get boFolderUseThis => '使用此文件夹';
+
+  @override
+  String get boFolderEmpty => '里面没有文件夹';
+
+  @override
+  String get statsTotalTime => '总时长';
+
+  @override
+  String get statsTotalReadingTime => '总阅读时长';
+
+  @override
+  String statsDaysOfTime(String days) {
+    return '相当于 $days 天';
+  }
+
+  @override
+  String statsHoursOfTime(String hours) {
+    return '相当于 $hours 小时';
+  }
+
+  @override
+  String get statsMediaAll => '全部';
+
+  @override
+  String get statsMediaListening => '收听';
+
+  @override
+  String get statsMediaReading => '阅读';
+
+  @override
+  String statsZoneMismatch(String server, String phone) {
+    return 'BookOrbit 按 $server 计算你的日期，但本机时区是 $phone。一天中较晚的记录可能被算到错误的一天。';
+  }
+
+  @override
+  String statsZoneUse(String zone) {
+    return '使用 $zone';
+  }
+
+  @override
+  String statsZoneSaved(String zone) {
+    return 'BookOrbit 已改用 $zone。较早日期的统计需要几分钟重新计算。';
+  }
+
+  @override
+  String get statsZoneFailed => '无法在 BookOrbit 上更改时区';
+
+  @override
+  String get statsTimeOfDay => '时段';
+
+  @override
+  String statsBusiestAround(String time) {
+    return '$time 左右最活跃';
+  }
+
+  @override
+  String get statsFinishedByMonth => '按月统计读完的书';
+
+  @override
+  String statsFinishedLast12(int count) {
+    return '最近 12 个月读完 $count 本';
+  }
+
+  @override
+  String get statsWhereTitle => '你在哪里收听和阅读';
+
+  @override
+  String get statsLast12Months => '最近 12 个月';
+
+  @override
+  String get statsHabits => '习惯';
+
+  @override
+  String get statsTypicalSession => '典型会话';
+
+  @override
+  String get statsProgressPerSession => '每次会话推进';
+
+  @override
+  String get statsTimeToFinish => '读完所需时间';
+
+  @override
+  String statsDayCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 天',
+      one: '1 天',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsBooksStarted => '已开始的书籍';
+
+  @override
+  String get statsBooksInProgress => '进行中';
+
+  @override
+  String get statsAverageProgress => '平均进度';
+
+  @override
+  String get statsTopBooks => '热门书籍';
+
+  @override
+  String get statsYearRead => '阅读';
+
+  @override
+  String boNotificationsUnread(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 条未读',
+      one: '1 条未读',
+      zero: '无新内容',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boNotificationsMarkAllRead => '全部标记为已读';
+
+  @override
+  String get boNotificationsClearAll => '清除全部';
+
+  @override
+  String get boNotificationsClearTitle => '清除所有通知？';
+
+  @override
+  String get boNotificationsClearBody => '这会移除你 BookOrbit 账号中的所有通知。';
+
+  @override
+  String get boNotificationsEmpty => '还没有通知';
+
+  @override
+  String get boNotificationsLoadFailed => '无法加载通知';
+
+  @override
+  String get boNotificationsUpdateFailed => '无法在 BookOrbit 上更新通知';
+
+  @override
+  String boNotificationsOccurrences(int count) {
+    return '发生 $count 次';
+  }
+
+  @override
+  String get boNotificationsSettings => '通知设置';
+
+  @override
+  String get boNotificationsSettingsIntro => '选择 BookOrbit 为你保留哪些通知。';
+
+  @override
+  String get boNotificationsProblemsHint => '选择“仅问题”时，只有失败或需要处理的事项才会通知你。';
+
+  @override
+  String get boNotificationLevelOff => '关闭';
+
+  @override
+  String get boNotificationLevelProblems => '仅问题';
+
+  @override
+  String get boNotificationLevelAll => '全部';
+
+  @override
+  String get boNotificationsSaved => '通知设置已保存';
+
+  @override
+  String get boNotificationsSaveFailed => '无法保存通知设置';
+
+  @override
+  String get boNotificationGroupLibrary => '媒体库';
+
+  @override
+  String get boNotificationGroupFiles => '文件';
+
+  @override
+  String get boNotificationGroupIntegrations => '集成';
+
+  @override
+  String get boNotificationGroupPersonal => '个人';
+
+  @override
+  String get boNotifyScanning => '媒体库扫描';
+
+  @override
+  String get boNotifyScanningDesc => '媒体库扫描完成、失败或发现缺失书籍时。';
+
+  @override
+  String get boNotifyMetadata => '元数据获取';
+
+  @override
+  String get boNotifyMetadataDesc => '书籍元数据查询完成或失败时。';
+
+  @override
+  String get boNotifyAuthorEnrichment => '作者资料';
+
+  @override
+  String get boNotifyAuthorEnrichmentDesc => '作者简介和照片下载完成时。';
+
+  @override
+  String get boNotifyFileWriteBack => '写回文件';
+
+  @override
+  String get boNotifyFileWriteBackDesc => '将修改的详细信息保存到磁盘上的书籍文件时。';
+
+  @override
+  String get boNotifyFileRename => '文件重命名';
+
+  @override
+  String get boNotifyFileRenameDesc => '书籍文件按你的命名规则重命名时。';
+
+  @override
+  String get boNotifyBulkRename => '批量重命名';
+
+  @override
+  String get boNotifyBulkRenameDesc => '批量重命名书籍或在媒体库之间移动书籍完成或失败时。';
+
+  @override
+  String get boNotifyMigration => '导入';
+
+  @override
+  String get boNotifyMigrationDesc => '从其他书库应用导入完成或失败时。';
+
+  @override
+  String get boNotifyBookDock => 'Book Dock';
+
+  @override
+  String get boNotifyBookDockDesc => 'Book Dock 添加书籍完成或出现问题时。';
+
+  @override
+  String get boNotifyBookRequests => '求书';
+
+  @override
+  String get boNotifyBookRequestsDesc => '求书被提交、处理，或所求书籍可获取时。';
+
+  @override
+  String get boNotifyEmail => '邮件发送';
+
+  @override
+  String get boNotifyEmailDesc => '通过邮件发送书籍成功或失败时。';
+
+  @override
+  String get boNotifyAchievements => '成就';
+
+  @override
+  String get boNotifyAchievementsDesc => '解锁新成就时。';
+
+  @override
+  String get achievementsTitle => '成就';
+
+  @override
+  String achievementsEarnedSummary(int earned, int total) {
+    return '已获得 $earned/$total';
+  }
+
+  @override
+  String get achievementsFilterAll => '全部';
+
+  @override
+  String get achievementsFilterEarned => '已获得';
+
+  @override
+  String get achievementsFilterInProgress => '进行中';
+
+  @override
+  String get achievementsFilterLocked => '未解锁';
+
+  @override
+  String get achievementsCategoryReading => '阅读';
+
+  @override
+  String get achievementsCategoryLibrary => '媒体库';
+
+  @override
+  String get achievementsCategoryExploration => '探索';
+
+  @override
+  String get achievementsCategoryDedication => '坚持';
+
+  @override
+  String get achievementsCategoryDevices => '设备';
+
+  @override
+  String get achievementsRarityCommon => '常见';
+
+  @override
+  String get achievementsRarityRare => '稀有';
+
+  @override
+  String get achievementsRarityEpic => '史诗';
+
+  @override
+  String get achievementsRarityLegendary => '传说';
+
+  @override
+  String get achievementsLoadFailed => '无法加载成就';
+
+  @override
+  String get achievementsNoneMatch => '没有符合此筛选条件的成就';
+
+  @override
+  String get achievementsSecretName => '隐藏成就';
+
+  @override
+  String get achievementsSecretHint => '继续阅读即可揭晓这个成就。';
+
+  @override
+  String achievementsEarnedOn(String date) {
+    return '$date 获得';
+  }
+
+  @override
+  String achievementsWhileReading(String title) {
+    return '阅读《$title》时';
+  }
+
+  @override
+  String achievementsTierOf(int earned, int total) {
+    return '第 $earned 级，共 $total 级';
+  }
+
+  @override
+  String get achievementsTiers => '等级';
+
+  @override
+  String get achievementsAllTiers => '已获得全部等级';
+
+  @override
+  String achievementsProgress(String current, String threshold) {
+    return '$current / $threshold';
+  }
+
+  @override
+  String achievementsProgressBooks(String current, String threshold) {
+    return '$current / $threshold 本书';
+  }
+
+  @override
+  String achievementsProgressPages(String current, String threshold) {
+    return '$current / $threshold 页';
+  }
+
+  @override
+  String achievementsProgressHours(String current, String threshold) {
+    return '$current / $threshold 小时';
+  }
+
+  @override
+  String achievementsProgressAnnotations(String current, String threshold) {
+    return '$current / $threshold 条高亮和笔记';
+  }
+
+  @override
+  String achievementsProgressRatings(String current, String threshold) {
+    return '$current / $threshold 次评分';
+  }
+
+  @override
+  String achievementsProgressGenres(String current, String threshold) {
+    return '$current / $threshold 个分类';
+  }
+
+  @override
+  String achievementsProgressLanguages(String current, String threshold) {
+    return '$current / $threshold 种语言';
+  }
+
+  @override
+  String achievementsProgressDays(String current, String threshold) {
+    return '$current / $threshold 天';
+  }
+
+  @override
+  String get achievementsHowToGetIt => '如何获得';
+
+  @override
+  String achievementsHintReadingPace(int count, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '最近 $days 天你读了 $count 小时。',
+      one: '最近 $days 天你读了 1 小时。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintEtaDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '按这个速度还需约 $count 天。',
+      one: '按这个速度还需约 1 天。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintEtaWeeks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '按这个速度还需约 $count 周。',
+      one: '按这个速度还需约 1 周。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintEtaMonths(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '按这个速度还需约 $count 个月。',
+      one: '按这个速度还需约 1 个月。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintDecadeUnread(int count, String decade) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '书架上还有 $count 本 $decade 年代的书。',
+      one: '书架上还有 1 本 $decade 年代的书。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintCenturyUnread(int count, String century) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '书架上还有 $count 本 $century 年代的书。',
+      one: '书架上还有 1 本 $century 年代的书。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintStalled(String title, String percent, String date) {
+    return '《$title》已读 $percent，开始于 $date。';
+  }
+
+  @override
+  String achievementsHintStalledNoProgress(String title, String date) {
+    return '《$title》开始于 $date。';
+  }
+
+  @override
+  String get achievementsHintUntitledBook => '一本在读的书';
+
+  @override
+  String achievementsHintNearlyFinished(int count, String percent) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '有 $count 本在读已超过 $percent。',
+      one: '有 1 本在读已超过 $percent。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintUnrated(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '有 $count 本已读完的书还没有评分。',
+      one: '有 1 本已读完的书还没有评分。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintShortBooks(int count, String pages) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '书架上还有 $count 本不足 $pages 页的书。',
+      one: '书架上还有 1 本不足 $pages 页的书。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintAlreadyStarted(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已有 $count 本在读。',
+      one: '已有 1 本在读。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintLongBooks(int count, String pages) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '书架上还有 $count 本不少于 $pages 页的书。',
+      one: '书架上还有 1 本不少于 $pages 页的书。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintOldBooks(int count, String year) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '书架上还有 $count 本 $year 年之前出版的书。',
+      one: '书架上还有 1 本 $year 年之前出版的书。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintAuthorUnread(String author, int finished, int count) {
+    return '$author：已读完 $finished 本，书架上还有 $count 本。';
+  }
+
+  @override
+  String achievementsHintLanguageUnread(int count, String language) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '书架上还有 $count 本$language的书。',
+      one: '书架上还有 1 本$language的书。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintMonthsRead(int count, String year) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '今年到目前为止，你在 $count 个月里读过。',
+      one: '今年到目前为止，你只在 1 个月里读过。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintMonthsLeft(int count, String months) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '还剩 $months。',
+      one: '还剩 $months。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintNoLongBook(String pages) {
+    return '书架上还没有不少于 $pages 页的书。';
+  }
+
+  @override
+  String achievementsHintNothingBefore(String year) {
+    return '书架上还没有 $year 年之前出版的书。';
+  }
+
+  @override
+  String achievementsHintTooFewDecades(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '你的书架目前只跨越 $count 个十年。',
+      one: '你的书架目前只跨越 1 个十年。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintTooFewCenturies(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '你的书架目前只跨越 $count 个世纪。',
+      one: '你的书架目前只跨越 1 个世纪。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String achievementsHintMissedMonth(String month, String year) {
+    return '你在$month没有阅读，$year已无法达成。计数将从 1 月重新累计。';
+  }
+
+  @override
+  String get achievementsSwitch => '成就';
+
+  @override
+  String get achievementsSwitchSubtitle =>
+      '在 BookOrbit 上记录成就。关闭后，这里和网页端都会隐藏成就。';
+
+  @override
+  String get achievementsTurnedOn => '已开启成就';
+
+  @override
+  String get achievementsTurnedOff => '已关闭成就';
+
+  @override
+  String get achievementsSwitchFailed => '无法在 BookOrbit 上更改成就设置';
 }

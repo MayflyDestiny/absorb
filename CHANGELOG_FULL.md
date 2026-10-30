@@ -3,12 +3,48 @@
 本文件记录 [pounat/absorb](https://github.com/pounat/absorb) Fork 之后由 AI 生成的全部变更，按发布版本倒序排列，仅涉及 Android 平台。
 
 - Fork 基线：`v1.11.2+280`（上游 `284e16c`）
-- 最新版本：`v1.23.1+443`
+- 最新版本：`v1.24.0+444`
 - 摘要版见 [README.md](README.md#更新日志)
 
 > 版本号以 `pubspec.yaml` 为准。少数提交信息里写的版本号与实际 `pubspec.yaml` 不一致（例如 `a709776` 写 1.21.8+380、实际 1.21.8+381；`6b09bfe` 写 1.21.9+385、实际 1.21.10+386），本文件采用 `pubspec.yaml` 的值。
 
 ---
+
+## v1.24.0+444 — 同步上游 1.12.1+302：BookOrbit 成就、阅读记录与服务器管理，新界面全量汉化
+
+合并自上游 `2940f1f4` · 2026-10-30
+
+- **同步上游新功能（1.12.1+302）**：合并上游 `upstream/main`（`761ec117` → `2940f1f4`，7 个提交、92 个 lib 文件）
+  - **BookOrbit 成就**：新增成就页与服务（`achievements_screen.dart` / `services/achievements.dart`），按阅读、坚持、探索、设备、媒体库分类，含稀有度、等级进度、达成条件说明与已获得/进行中/未解锁筛选；可在设置或账号面板开关，关闭后网页端同步隐藏
+  - **BookOrbit 阅读记录**：新增阅读记录页（`reading_log_screen.dart`），展示单次会话、活跃天数、最长连续、开始次数、进度曲线与剩余时间，支持排序、筛选和删除会话；书籍统计卡改为对齐 BookOrbit 的「Your reading」
+  - **服务器管理（管理员）**：新增用户与媒体库管理页（`bookorbit_admin_screen.dart` / `bookorbit_users_screen.dart` / `bookorbit_libraries_screen.dart`），可管理媒体库文件夹、封面比例、书籍存放形式、定时扫描与变化监测、访问权限与扫描结果；可新建用户、分配权限预设、发送 15 分钟有效的密码链接、解锁与删除账号
+  - **BookOrbit 通知**：新增服务器通知页与设置（`server_notifications_screen.dart` / `bookorbit_notification_socket.dart`），按文件、媒体库、集成、个人分组，级别可选关闭/仅问题/全部，支持全部已读与清空
+  - **阅读器翻译与高亮同步**：长按选词新增「翻译」入口（`translate_service.dart`），可选本机应用或浏览器；高亮与笔记改为与 BookOrbit 双向同步（`highlight_sync.dart`）
+  - **跟读（Read along）**：落后较多时点按句子可直接跳到该句；分页模式不再抖动；封面新增跟读徽标
+  - **Wear OS 手表**：可通过手机换章、加书签、设睡眠定时器、跳转、调速与调音量；手表来源的会话显示手表图标；手表操作不再把手机登出 BookOrbit
+  - **下载与流式**：Audiobookshelf 带旁白的 EPUB 改为按需流式播放，无需先整本下载；文件名含逗号的有声书可正常播放；车载不再从头重播已完成的书；大批量下载不再让应用掉线；有声书与电子书都在本机时，移除时可自选移除哪个
+  - **文件信息弹层**：新增 `book_files_sheet.dart`，列出音频、电子书、封面与附加文件的编码、声道、码率与路径（BookOrbit 不报告编码器与码率时给出说明）
+  - **更新说明弹窗**：What's new 弹窗可在设置项或弹窗内关闭；新增「更新后显示新版说明」开关
+  - **测试版日志**：beta 默认开启日志并在更新后一次性说明（`beta_logging_notice.dart`），关闭后后续 beta 保持关闭
+  - **统计时区**：新增 `device_time_zone.dart`，手机时区与 BookOrbit 计日时区不一致时提示切换，避免深夜记录算错一天
+  - **其他**：iPhone 新增单集更新通知（仅 iOS）；首页为 BookOrbit 书单 / Smart Scope 行加标签；切换到不可达服务器不再卡死
+- **新增中文翻译（398 条）**：本次合并带来的全部新键已汉化，`app_zh.arb` 与模板键完全对齐（3968 / 3968），`flutter gen-l10n` 后 zh 缺译归零
+  - 分组：BookOrbit 管理 196、阅读记录 69、成就 63、统计 27、文件信息 12、活动 10、阅读器翻译 6、会话 4、其余（更新说明 / 设置 / beta 日志 / 移除 / 分享链接）11
+  - 术语沿用既有约定：library → 媒体库、shelves → 书架、session → 会话、achievements → 成就、reading log → 阅读记录、server admin → 服务器管理员；书名用《》、对象名用「」
+  - 84 条带占位符消息（其中 28 条 ICU 复数）逐条对齐英文模板的分支与占位符；非模板 ARB 继承模板的占位符定义，因此无需为新键补 `@` 元数据
+  - 新条目按模板顺序插入既有译文之间，未重排或改写原有 3570 行；文件保持 UTF-8 + CRLF，差异为 399 行新增、1 行仅补逗号
+- **冲突处理（31 个文件）**
+  - 更新说明弹窗：上游新增的开关与 Fork 已有的 `PlayerSettings.getShowWhatsNew` 合并为同一个开关，弹窗内的 Switch 直接读写该设置，不再引入第二份偏好
+  - 启动弹层改为串行执行：What's new → 欢迎页 → beta 日志说明 → 下载位置，避免相互叠加
+  - 电子书缓存：保留 Fork 的按需 HTTP-Range 流式取书与并发去重（`_ebookFetchInflight`），丢弃上游新增的 `_cacheEbookForOffline` 预下载死代码；`dropCachedLocations` 参数由 `File` 改为 key，配合 Fork 的 `ebook_locations/` 版本化索引，两处调用点同步更新
+  - 下载记录：保留 Fork 更完整的 `deleteEbookCopy`（含 `_keptEbooks` / `_ebookRemovedIds` 处理）并补入上游的 `_origins.remove` 清理，删除上游重复定义导致的编译错误
+  - 首页书架：保留 Fork 的 `_mergeSections` 增量刷新 + `_withoutJustHidden` 隐藏过滤，替换上游的整表重建与逐个注册循环
+  - 封面卡片：上游重复出现的 `CoverStateBadges` 片段只保留一份
+  - 设置页：上游新增的 BookOrbit 收件箱、服务器管理员、通知与成就入口按 Fork 的分区结构与缩进并入，保留 `_revealExpandedSection` 展开定位；`isBookOrbit` 相关的显示 gate 采纳上游写法
+  - 版本与 beta：`pubspec.yaml` 与 `kBetaNumber = 0` 以 Fork 为准（上游 1.12.1+302 仅作对照），Fork 独有依赖 `flutter_cache_manager` / `pdfrx` / `flutter_tts` 保留
+  - `download_service`：合入上游的 `holdingQueue` 全局配置、`UserAccountService.onScopeMoved` 账号迁移与 `undoPercentEscapes` 文件名还原
+- **无 GMS（fdroid）构建**：上游未改动投屏服务与投屏按钮的接口面，`MainActivity` 只新增 `PlatformIntegration.registerChannels` 调用，fdroid 侧的 no-op 替身已覆盖，`*_stub.dart` 无需同步
+- **验证**：`flutter gen-l10n` 通过；`flutter analyze` 0 error（14 条既有 info / warning）；`flutter test` 26/26 通过
 
 ## v1.23.1+443 — 封面邻居预热、配色跨进程缓存与章节搜索优化
 
