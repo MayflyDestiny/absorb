@@ -3925,8 +3925,14 @@ lib.registerHasCoverFromItem(id, r);
       // (we already wrap the whole NestedScrollView in
       // SafeArea above).
       primary: false,
+      // The bar has a fixed extent, so the header's own height has to be
+      // stated here: branding row (48) + title + the search field, which
+      // measures 164 (168 under the taller Chinese type) and grows by 24 for
+      // the count row below it. Search mode drops that row, so it is 24
+      // shorter - any less and the ClipRect around the bar slices the bottom
+      // off the search field, which reads as the header gradient covering it.
       toolbarHeight: _isInSearchMode
-          ? 156
+          ? 176
           : ((_filter != LibraryFilter.none ||
                     _seriesFilter != SeriesFilter.none)
                 ? 212
