@@ -133,8 +133,8 @@ class BookActivityCard extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   _stat(l.bookStatsSessions, '${a.sessions}', cs, tt),
-                  _stat(l.activityTime, activityDuration(l, a.seconds), cs, tt),
-                  _stat(l.activityAverage, activityDuration(l, a.avgSeconds), cs, tt),
+                  _stat(l.activityTime, activityDuration(l, a.seconds), cs, tt, flex: 2),
+                  _stat(l.activityAverage, activityDuration(l, a.avgSeconds), cs, tt, flex: 2),
                   _stat(l.activityProgress, a.progress == null ? '-' : activityPercent(a.progress!), cs, tt),
                 ]),
               ),
@@ -184,7 +184,8 @@ class BookActivityCard extends StatelessWidget {
     );
   }
 
-  Widget _stat(String label, String value, ColorScheme cs, TextTheme tt) => Expanded(
+  Widget _stat(String label, String value, ColorScheme cs, TextTheme tt, {int flex = 1}) => Expanded(
+        flex: flex,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label.toUpperCase(),
               maxLines: 1,
@@ -192,10 +193,17 @@ class BookActivityCard extends StatelessWidget {
               style: tt.labelSmall?.copyWith(
                   fontSize: 9, letterSpacing: 0.8, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant)),
           const SizedBox(height: 2),
-          Text(value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+          // A translated length ("63 小时 19 分") is twice as wide as the "63h 19m"
+          // these cells were sized for, so the durations get the double share
+          // and any value that still doesn't fit shrinks instead of ending in
+          // an ellipsis.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(value,
+                maxLines: 1,
+                style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+          ),
         ]),
       );
 
@@ -213,9 +221,13 @@ class BookActivityCard extends StatelessWidget {
               maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
         ),
         SizedBox(
-          width: 56,
-          child: Text(activityDuration(l, r.seconds),
-              maxLines: 1, style: tt.labelSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+          width: 72,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(activityDuration(l, r.seconds),
+                maxLines: 1, style: tt.labelSmall?.copyWith(fontWeight: FontWeight.w700, color: cs.onSurface)),
+          ),
         ),
         Expanded(child: Text(reached, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted)),
         if (r.format != null) FormatChip(format: r.format!),
