@@ -14,29 +14,40 @@ const supportedAndroidUpdateAbis = <String>{
   'x86_64',
 };
 
+/// The GMS-free release names its APKs after the ELF architecture rather than
+/// the Android ABI (`-fdroid-aarch64.apk`), so neither flavor can be handed
+/// the other's file - installing the wrong kind would put Google Play Services
+/// back on a device that asked not to have them.
+const fdroidAbiTokens = <String, String>{
+  'armeabi-v7a': 'armv7',
+  'arm64-v8a': 'aarch64',
+  'x86_64': 'amd64',
+};
+
 UpdateReleaseAsset? selectAndroidUpdateAsset({
   required List<UpdateReleaseAsset> assets,
   required List<String> supportedAbis,
+  bool fdroid = false,
 }) {
   final apks = assets
       .where((asset) => asset.name.toLowerCase().endsWith('.apk'))
+      .where((asset) => _isFdroidAsset(asset.name) == fdroid)
       .toList();
 
   for (final abi in supportedAbis.map((value) => value.toLowerCase())) {
     if (!supportedAndroidUpdateAbis.contains(abi)) continue;
+    final token = fdroid ? fdroidAbiTokens[abi]! : abi;
     for (final asset in apks) {
-      if (_hasFilenameToken(asset.name, abi)) return asset;
+      if (_hasFilenameToken(asset.name, token)) return asset;
     }
   }
 
+  final universal = fdroid ? 'all' : 'universal';
   for (final asset in apks) {
-    if (_hasFilenameToken(asset.name, 'universal')) return asset;
+    if (_hasFilenameToken(asset.name, universal)) return asset;
   }
 
-  if (apks.length == 1 &&
-      !supportedAndroidUpdateAbis.any(
-        (abi) => _hasFilenameToken(apks.single.name, abi),
-      )) {
+  if (apks.length == 1 && !_isAbiSpecific(apks.single.name, fdroid)) {
     return apks.single;
   }
   return null;
@@ -69,20 +80,28 @@ int compareUpdateVersions(String a, String b) {
 
 String androidUpdatePackageLabel(UpdateReleaseAsset asset) {
   var packageKind = 'Universal';
-  for (final abi in supportedAndroidUpdateAbis) {
-    if (_hasFilenameToken(asset.name, abi)) {
-      packageKind = abi;
+  for (final entry in fdroidAbiTokens.entries) {
+    if (_hasFilenameToken(asset.name, entry.key) ||
+        _hasFilenameToken(asset.name, entry.value)) {
+      packageKind = entry.key;
       break;
     }
   }
 
   final build = RegExp(
-    r'-(\d+)-(?:universal|armeabi-v7a|arm64-v8a|x86_64)(?:-pre)?\.apk$',
+    r'-(\d+)(?:-fdroid)?-(?:universal|all|armeabi-v7a|armv7|arm64-v8a|aarch64|x86_64|amd64)(?:-pre)?\.apk$',
     caseSensitive: false,
   ).firstMatch(asset.name)?.group(1);
   return build == null
       ? '$packageKind APK'
       : '$packageKind APK • build $build';
+}
+
+bool _isFdroidAsset(String name) => _hasFilenameToken(name, 'fdroid');
+
+bool _isAbiSpecific(String name, bool fdroid) {
+  final tokens = fdroid ? fdroidAbiTokens.values : supportedAndroidUpdateAbis;
+  return tokens.any((token) => _hasFilenameToken(name, token));
 }
 
 bool _hasFilenameToken(String filename, String token) {

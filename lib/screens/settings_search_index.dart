@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'package:flutter/widgets.dart';
+import '../build_info.dart';
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 
@@ -165,7 +166,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('About', l.aboutSection, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
     SettingSearchEntry('About', l.aboutSection, l.sendLogs, [l.sendLogsSubtitle]),
     SettingSearchEntry('About', l.aboutSection, l.clearLogs, const []),
-    if (const bool.fromEnvironment('GITHUB_BUILD'))
+    if (kUpdatesFromReleases)
       SettingSearchEntry('About', l.aboutSection, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
     SettingSearchEntry('About', l.aboutSection, l.autoCheckUpdate, [l.autoCheckUpdateOnSubtitle, l.autoCheckUpdateOffSubtitle]),
     SettingSearchEntry('About', l.aboutSection, l.showWhatsNewOnLaunch, [l.showWhatsNewOnLaunchOnSubtitle, l.showWhatsNewOnLaunchOffSubtitle]),

@@ -14,6 +14,7 @@ import '../services/media_overlay.dart';
 import '../services/narration_service.dart';
 import '../services/read_listen_sync.dart';
 import '../services/book_dock.dart';
+import '../services/bookorbit_email.dart';
 import '../services/bookorbit_mapper.dart';
 import 'absorb_placement.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -45,6 +46,7 @@ import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
 import '../services/narrated_books.dart';
 import 'book_files_sheet.dart';
+import 'bookorbit_send_sheet.dart';
 import '../services/transcription_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/ebook_preferences.dart';
@@ -565,6 +567,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       bookOrbit: bookOrbit,
       accent: accent,
       me: auth.username,
+      meId: auth.userId,
       onOpen: () => bookOrbit
           ? Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
               builder: (_) => ReadingLogScreen(itemId: widget.itemId, title: title, item: _item, accent: accent)))
@@ -594,6 +597,12 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     PlayerSettings.getRectangleCoversFor(libraryId).then((rect) {
       if (mounted && _squareCovers == rect) setState(() => _squareCovers = !rect);
     });
+  }
+
+  /// A read along made from File info is a new file on the book, and it
+  /// changes the buttons.
+  void _filesChanged() {
+    if (mounted) _loadItem();
   }
 
   Future<void> _loadItem() async {
@@ -1887,9 +1896,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
 
   static IconData _readStatusIcon(String s) => readStatusIcon(s);
 
-  // Unread and Read stay with the finish button: a hand-set Unread would
-  // keep BookOrbit from ever moving the book back to Reading.
-  static const _pickableReadStatuses = ['want_to_read', 'reading', 'rereading', 'on_hold', 'skimmed', 'abandoned'];
+  // Read stays with the finish button, which also moves the spot to the end.
+  static const _pickableReadStatuses = ['unread', 'want_to_read', 'reading', 'rereading', 'on_hold', 'skimmed', 'abandoned'];
 
   Future<void> _pickReadStatus(AuthProvider auth, LibraryProvider lib, String current) async {
     final l = AppLocalizations.of(context)!;
@@ -2253,8 +2261,15 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         if (!lib.isOffline && !lib.isPodcastLibrary && (auth.isAdmin || auth.isBookOrbit)) {
           add(Icons.collections_bookmark_rounded, l.addToCollection, () => CollectionPickerSheet.show(context, widget.itemId));
         }
-        if (progress > 0 || isFinished) {
-          add(Icons.restart_alt_rounded, l.resetProgress, () => _resetProgress(context, auth, duration));
+        // The ebook pills (read / save / send) stay in the trailing dynamic
+        // group below: they depend on the full item, which arrives late on an
+        // uncached open. Only the reset gate moved here from upstream.
+        final listened = !isEbookOnly && (progress > 0 || isFinished);
+        final read = lib.getEbookProgress(widget.itemId) > 0 ||
+            (isEbookOnly && (progress > 0 || isFinished));
+        if (listened || read) {
+          add(Icons.restart_alt_rounded, l.resetProgress,
+            () => _resetProgress(context, auth, duration, listened: listened, read: read));
         }
         if (continueShelf != null && !lib.isOffline) {
           final reading = continueShelf == 'continue-reading';
@@ -2279,7 +2294,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         }
         final item = _item;
         if (item != null) {
-          add(Icons.info_outline_rounded, l.fileInfoTitle, () => showBookFilesSheet(context, item));
+          add(Icons.info_outline_rounded, l.fileInfoTitle, () => showBookFilesSheet(context, item, onFilesChanged: _filesChanged));
         }
         if (auth.canDelete && !lib.isOffline) {
           add(Icons.delete_outline_rounded, l.deleteFromServerAction,
@@ -2339,6 +2354,14 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
         }
         if (serverEbookFile != null && auth.ereaderDevices.isNotEmpty) {
           addDynamic(Icons.send_to_mobile_rounded, l.sendToEreader, () => _sendToEreader(context, auth));
+        }
+        // BookOrbit sends through the server's email instead of a paired device.
+        if (auth.bookOrbitAdmin?.emailSend == true &&
+            !lib.isOffline &&
+            !ApiService.isBookDockItem(widget.itemId) &&
+            boSendableFiles(_item).isNotEmpty) {
+          addDynamic(Icons.send_to_mobile_rounded, l.sendToEreader,
+              () => showBookOrbitSendSheet(context, item: _item!, title: title));
         }
         // The main grid is gated on `_pillsReady` (local, fast reads only):
         // a skeleton holds the height briefly, then the grid cross-fades in.
@@ -3296,7 +3319,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     }
     final l = AppLocalizations.of(context)!;
     final item = _item;
-    final showFiles = item == null ? null : () => showBookFilesSheet(context, item);
+    final showFiles = item == null ? null : () => showBookFilesSheet(context, item, onFilesChanged: _filesChanged);
     return [
       if (codec != null && codec.isNotEmpty) _chip(Icons.audio_file_rounded, codec, onTap: showFiles),
       if (bitRate != null && bitRate > 0) _chip(Icons.speed_rounded, l.kbpsValue((bitRate / 1000).round()), onTap: showFiles),
@@ -4421,13 +4444,23 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     }
   }
 
-  Future<void> _resetProgress(BuildContext context, AuthProvider auth, double duration) async {
+  Future<void> _resetProgress(BuildContext context, AuthProvider auth, double duration,
+      {required bool listened, required bool read}) async {
     final l = AppLocalizations.of(context)!;
+    final content = [
+      listened && read
+          ? l.resetProgressListeningAndReading
+          : read
+              ? l.resetProgressReading
+              : l.resetProgressListening,
+      if (auth.isBookOrbit) l.resetProgressMarksUnread,
+      l.resetProgressCantUndo,
+    ].join(' ');
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l.resetProgressQuestion),
-        content: Text(l.resetProgressContent),
+        content: Text(content),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
           FilledButton(onPressed: () => Navigator.pop(ctx, true),
@@ -4454,6 +4487,8 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
 
     // Clear local progress
     await ProgressSyncService().deleteLocal(widget.itemId);
+    // A page saved while offline would put the old place back on the next sync.
+    await ProgressSyncService().dropPendingEbookProgress(widget.itemId);
 
     // Reset server progress (PATCH to zero + hide from continue listening)
     final progressData = lib.getProgressData(widget.itemId);

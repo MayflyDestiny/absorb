@@ -3,12 +3,41 @@
 本文件记录 [pounat/absorb](https://github.com/pounat/absorb) Fork 之后由 AI 生成的全部变更，按发布版本倒序排列，仅涉及 Android 平台。
 
 - Fork 基线：`v1.11.2+280`（上游 `284e16c`）
-- 最新版本：`v1.24.0+444`
+- 最新版本：`v1.24.1+445`
 - 摘要版见 [README.md](README.md#更新日志)
 
 > 版本号以 `pubspec.yaml` 为准。少数提交信息里写的版本号与实际 `pubspec.yaml` 不一致（例如 `a709776` 写 1.21.8+380、实际 1.21.8+381；`6b09bfe` 写 1.21.9+385、实际 1.21.10+386），本文件采用 `pubspec.yaml` 的值。
 
 ---
+
+## v1.24.1+445 — 同步上游 1.12.1+303：BookOrbit 伴读创建、邮件发送中心与章节工具
+
+合并自上游 `8411ffc7` · 2026-11-02
+
+- **同步上游新功能（1.12.1+303）**：合并上游 `upstream/main`（`2940f1f4` → `8411ffc7`，4 个提交、69 个文件）
+  - **BookOrbit 伴读（Read along）创建**：新增 `read_along_panel.dart` 与 `services/read_along_jobs.dart`，可选电子书与语种、句/词高亮方式、替换或并存，显示服务器排队、六个阶段进度、磁盘与首次下载语音模型提示；结果进入待确认态，可预览匹配率、查看警告、仍然添加或丢弃，失败给出 15 种具体原因，重试可从最后完成步骤续跑
+  - **BookOrbit 邮件发送中心**：新增 `bookorbit_email_screen.dart` / `bookorbit_email_editors.dart` / `services/bookorbit_email*.dart`，四个分区：设备（Kindle / Kobo / 其他 / 普通邮箱、格式与伴读版本策略、分组）、邮件服务器（预设、STARTTLS/SSL、应用专用密码、共享、连接测试、证书校验）、模板（变量插入与预览）、发送记录（状态、重发、移除）；详情页新增「发送到 E-Reader / 通过邮件发送」弹层 `bookorbit_send_sheet.dart`
+  - **BookOrbit 章节工具**：新增 `services/bookorbit_chapters.dart`，标注章节来源（音频文件 / 每文件一章 / 电子书目录 / 伴读 / 元数据 / 导入 / 人工编辑）、保护不受重扫覆盖、历史版本与还原、把章节写回音频文件（含部分成功的提示），他人已保存时提示重载
+  - **重置进度改造**：区分「只听过 / 只读过 / 两者都有」并据此措辞；BookOrbit 上重置后不再停留在 Currently Reading、可把书标记为未读、同时清除离线待同步的电子书位置，避免下次同步把旧位置写回
+  - **匹配与元数据**：批量快速匹配（Quick Match）新增「重新询问每个来源」，匹配结果新增敏感内容与删节版两项供选择
+  - **Audible**：支持请求整个系列（`audible_book_request.dart`）
+  - **文件信息弹层**：补充「尚无有声书 / 尚无电子书 / 已由他人请求 / 在你的媒体库中是独立一本书」状态、复制路径与在服务器上删除文件（含最后一个文件的后果与权限提示）
+  - **其他**：与 Audiobookshelf 2.37 保持 live updates；手表端在手机上开始播放时尝试自动打开；`epubView.js` 随上游更新；统计与设置页多处文案微调
+- **新增中文翻译（330 条）**：伴读 127、BookOrbit 邮件与发送 150、章节工具 34、文件信息 9、重置进度 5、匹配选项 4、系列求书 1；`app_zh.arb` 与英文模板键完全对齐（4297 / 4297），`gen-l10n` 后 zh 缺译归零
+  - 术语沿用既有约定：read along → 伴读（与已有 `readAlong`、`readAlongFollowSentence` 一致）、narration → 朗读、explicit → 敏感内容、abridged → 删节版、e-reader → 电子阅读器（入口文案仍作「发送到 E-Reader」）、worker → 处理节点、template → 模板
+  - 49 条带占位符消息（其中 11 条 ICU 复数）逐条对齐英文模板的分支与占位符；新条目按模板顺序插入，既有译文行未重排，文件保持 UTF-8 + CRLF
+  - 清理上游删除后遗留的孤儿键 `resetProgressContent`（上游用 `resetProgressListening/Reading/…` 取代），en / zh 键集再次严格相等
+- **冲突处理（9 个文件）**
+  - `app_shell.dart`（6 处）：采纳上游把 `isAdmin: bool` 重构为 `NavHoldAdmin{pages, scans}`（区分 ABS 管理员与 BookOrbit 的按权限细分），因此 fork 侧「文件夹项直接看 isAdmin」的特例随上游移除；`case 'admin'` 改为走 `_openAdminPage('home')`，BookOrbit 账号进入 BookOrbit 管理页；采纳 `_scannableLibraries()` 排除 Book Dock；合并时产生的重复「添加」药丸已手工去重并保留 fork 的换行风格
+  - `settings_screen.dart`：以 fork 版为底（fork 全文重新格式化，上游仅 29 行改动，直接取上游会丢掉 fork 的分区与展开动画），逐条贴回上游语义：`NavHoldAdmin.forAccount`、长按菜单排除 Book Dock 库、账号面板新增「通过邮件发送」入口（按 `bookOrbitAdmin.email` 显示）；上游改的 Discord 邀请链接在 fork 中位于登录页且已随自动合并更新，故该 hunk 不适用
+  - `downloads_screen.dart`：保留 fork 版。上游这次的四项改动（已保存电子书纳入全选、删除时区分 `deleteKeptEbook`、仅有电子书时显示选择按钮、电子书行可选）fork 均已实现且更完整：行渲染统一走同一构建器，删除走 `_deleteArtifacts`（下载记录 / 已存电子书 / 独立缓存副本 / 已导出副本四种情况），选择按钮以 `_visibleCompleted().isNotEmpty` 为条件比上游的判据更严格
+  - `book_detail_sheet.dart`（2 处）：采纳上游的重置进度双状态与 `dropPendingEbookProgress`；但上游把「阅读电子书 / 保存到设备 / 发送到 E-Reader」提前到主网格的写法未采纳——fork 因 `_item` 晚到而把这三项放进尾部 `addDynamic` 淡入组，直接照抄会重复声明 `serverEbookFile` 并破坏懒加载；上游新增的 BookOrbit 邮件发送项改为并入该动态组
+  - `pubspec.yaml` / `lib/build_info.dart` / `README.md`：版本号与 `kBetaNumber = 0` 以 fork 为准（上游 1.12.1+303 仅作对照），本次按小版本升 `1.24.1+445`
+  - `app_localizations_ru.dart` / `app_localizations_zh.dart`：生成物，先取 fork 侧占位，最终以 `flutter gen-l10n` 重新生成覆盖，避免手工拼接
+- **无 GMS（fdroid）构建**：上游未改投屏 / 评分 / 媒体代理的 Dart 接口面，`MainActivity` 仍只调用 `PlatformIntegration.registerChannels`（fdroid 侧 no-op 替身已提供）；新增的 `wear-remote-interactions` 与 `guava` 依赖位于 `gmsImpl` 列表内，只注入 github / playstore / dev 三个 flavor；主清单新增的是 `<queries>` 可见性声明，不含组件类名。以三个 stub 覆盖真实文件后 `flutter analyze` 仍 0 error
+- **无 GMS 版恢复应用内自动更新**：fdroid flavor 的构建此前不带 `GITHUB_BUILD` define，关于页的「检查更新」与设置底部「启动时自动检查新版本 / 包含预发布」整块被编译掉。新增独立开关 `FDROID_BUILD`，由 `lib/build_info.dart` 的 `kFdroidBuild` / `kUpdatesFromReleases` 统一供三处 gate 使用（复用 `GITHUB_BUILD` 会让分流标签误显示成 GitHub），工作流的 fdroid 两步构建传入该 define；`fdroid/com.barnabas.absorb.yml`（F-Droid 仓库配方）刻意不传，仓库分发版仍不自更新
+- 同时给 `update_policy` 加 flavor 过滤：GMS-free 构建只在 `-fdroid-{all,aarch64,armv7,amd64}` 资产里挑，Google 服务构建只认 Android ABI 名，两种包互不串台；包类型标签对两套命名都能还原成 ABI 名。新增 `test/update_policy_test.dart` 4 条用例锁定该属性
+- **验证**：`flutter gen-l10n` 通过、zh 缺译 0；`flutter analyze` 0 error（14 条既有 info / warning）；`flutter test` 30/30 通过；stub 覆盖下的 fdroid 路径 analyze 同样 0 error，替换文件按 sha256 原样还原
 
 ## v1.24.0+444 — 同步上游 1.12.1+302：BookOrbit 成就、阅读记录与服务器管理，新界面全量汉化
 

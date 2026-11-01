@@ -2495,6 +2495,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String breqBookCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 本书',
+      one: '1 本书',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String breqDownloadingPercent(int percent) {
     return '正在下载，$percent%';
   }
@@ -4531,7 +4542,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get resetProgressQuestion => '重置进度？';
 
   @override
-  String get resetProgressContent => '这将清除这本书的所有进度并将其重置到开头。此操作无法撤销。';
+  String get resetProgressListeningAndReading => '你的收听进度和阅读进度都会回到 0%。';
+
+  @override
+  String get resetProgressListening => '你的收听进度会回到 0%。';
+
+  @override
+  String get resetProgressReading => '你的阅读进度会回到 0%。';
+
+  @override
+  String get resetProgressMarksUnread => '这本书同时会被标记为未读。';
+
+  @override
+  String get resetProgressCantUndo => '此操作无法撤销。';
 
   @override
   String get progressResetFreshStart => '进度已重置 - 全新开始！';
@@ -13692,4 +13715,1139 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get achievementsSwitchFailed => '无法在 BookOrbit 上更改成就设置';
+
+  @override
+  String get boNotifyReadAlong => '伴读';
+
+  @override
+  String get boNotifyReadAlongDesc => '你发起的伴读任务就绪、需要检查或失败时。';
+
+  @override
+  String get readAlongCreate => '创建伴读';
+
+  @override
+  String get readAlongLoadFailed => '无法确认这本书是否可以创建伴读。';
+
+  @override
+  String get readAlongCheckAgain => '重新检查';
+
+  @override
+  String get readAlongWhyWorkerOffline => 'BookOrbit 的伴读处理节点当前离线。';
+
+  @override
+  String get readAlongWhyWorkerOutdated => 'BookOrbit 的伴读处理节点需要更新才能配合此服务器工作。';
+
+  @override
+  String get readAlongWhyFilesMissing => '请先恢复这本书缺失的文件，再创建伴读。';
+
+  @override
+  String get readAlongWhyNoEpub => '请为这本书添加一个普通 EPUB，再创建伴读。';
+
+  @override
+  String get readAlongWhyNoEpubHasOne => '这本书已有伴读，且没有可用于再生成一个的普通 EPUB。';
+
+  @override
+  String get readAlongWhyTooManyTracks => '这本有声书的文件数量超出可创建伴读的范围。';
+
+  @override
+  String get readAlongWhyEpubNotAllowed => '该媒体库不接受 EPUB 文件，因此无法添加伴读。';
+
+  @override
+  String get readAlongWhyNotMounted => 'BookOrbit 的伴读处理节点无法访问该媒体库的文件夹。';
+
+  @override
+  String get readAlongWhyRunning => '这本书的伴读正在创建中。';
+
+  @override
+  String get readAlongWhyUnknown => '当前无法为这本书创建伴读。';
+
+  @override
+  String get readAlongSheetTitle => '创建伴读';
+
+  @override
+  String get readAlongSheetIntro =>
+      'BookOrbit 会把朗读音频与电子书正文相互比对，生成一个随音频高亮的 EPUB。';
+
+  @override
+  String get readAlongEbook => '电子书';
+
+  @override
+  String get readAlongEbookHint => '选择与朗读音频匹配的普通 EPUB。';
+
+  @override
+  String get readAlongAudio => '有声书';
+
+  @override
+  String readAlongTracks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 条音频',
+      one: '1 条音频',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String readAlongExistingTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '这本书已有 $count 个伴读',
+      one: '这本书已有一个伴读',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String readAlongReplace(String name) {
+    return '替换 $name';
+  }
+
+  @override
+  String readAlongKeepBoth(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '全部保留',
+      one: '两者都保留',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readAlongKeepHint => '新的伴读会作为另一个文件添加。';
+
+  @override
+  String get readAlongReplaceHint => '只有新文件通过检查后才会替换旧文件，阅读位置会保留。';
+
+  @override
+  String get readAlongReplaceNotAllowed => '替换伴读需要删除书籍的权限，因此新文件将作为另一个文件添加。';
+
+  @override
+  String get readAlongMadeByBookOrbit => '由 BookOrbit 生成';
+
+  @override
+  String get readAlongImported => '已导入';
+
+  @override
+  String get readAlongLanguage => '朗读语种';
+
+  @override
+  String get readAlongPickLanguage => '选择语种';
+
+  @override
+  String readAlongLanguageUnsupported(String language) {
+    return '语音模型不认识这本书的语种（$language）。';
+  }
+
+  @override
+  String get readAlongLanguageFromBook => '来自这本书的详细信息。';
+
+  @override
+  String get readAlongLanguageIsDefault => '你的默认语种。';
+
+  @override
+  String get readAlongLanguageSaved => '已保存为你的默认语种。';
+
+  @override
+  String get readAlongSetDefault => '设为默认';
+
+  @override
+  String get readAlongDefaultFailed => '无法保存你的默认语种。';
+
+  @override
+  String get readAlongHighlighting => '高亮方式';
+
+  @override
+  String get readAlongSentence => '句子';
+
+  @override
+  String get readAlongSentenceHint => '每次高亮一句。推荐。';
+
+  @override
+  String get readAlongWord => '单词';
+
+  @override
+  String get readAlongWordHint => '逐词高亮。耗时更长、文件更大，仍是实验性功能。';
+
+  @override
+  String readAlongEstimatedSize(String size) {
+    return '预计大小：$size';
+  }
+
+  @override
+  String get readAlongBackgroundNote =>
+      '任务在服务器上运行，你可以关闭此页。长篇有声书可能需要数小时；某语种首次运行还会下载其语音模型。';
+
+  @override
+  String readAlongLowDisk(String needed, String free) {
+    return '磁盘空间不足：这大约需要 $needed 的工作空间，而处理节点只剩 $free。';
+  }
+
+  @override
+  String get readAlongStart => '开始';
+
+  @override
+  String get readAlongStartFailed => '无法开始伴读，请重试。';
+
+  @override
+  String get readAlongStartInvalid => '所选的某些文件已不在这本书上，请检查后重试。';
+
+  @override
+  String get readAlongStartOffline => 'BookOrbit 的伴读处理节点离线，请稍后再试。';
+
+  @override
+  String get readAlongNotAllowed => '你没有执行该操作的权限。';
+
+  @override
+  String get readAlongGone => '这个伴读任务已不存在。';
+
+  @override
+  String get readAlongMovedOn => '该任务已经推进，现在显示的是它的实际状态。';
+
+  @override
+  String get readAlongActionFailed => '操作未成功，请重试。';
+
+  @override
+  String readAlongStartedBy(String name) {
+    return '由 $name 发起';
+  }
+
+  @override
+  String get readAlongStartedByOther => '由其他用户发起';
+
+  @override
+  String get readAlongWaiting => '等待开始';
+
+  @override
+  String get readAlongNextInLine => '排队下一个';
+
+  @override
+  String readAlongJobsAhead(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '前面还有 $count 个任务',
+      one: '前面还有 1 个任务',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readAlongStopping => '正在停止';
+
+  @override
+  String get readAlongStoppingHint => '完成当前步骤后即停止，不会向这本书添加任何内容。';
+
+  @override
+  String get readAlongStagePreparingAudio => '准备音频';
+
+  @override
+  String get readAlongStageDownloadingModel => '下载语音模型';
+
+  @override
+  String get readAlongStageListening => '聆听朗读音频';
+
+  @override
+  String get readAlongStageMarkingUp => '标注电子书正文';
+
+  @override
+  String get readAlongStageAligning => '将正文与朗读匹配';
+
+  @override
+  String get readAlongStageChecking => '检查结果';
+
+  @override
+  String get readAlongStagePublishing => '将伴读添加到这本书';
+
+  @override
+  String get readAlongStageWorking => '处理中';
+
+  @override
+  String readAlongFileOf(int current, int total) {
+    return '文件 $current/$total';
+  }
+
+  @override
+  String readAlongTrackOf(int current, int total) {
+    return '音轨 $current/$total';
+  }
+
+  @override
+  String readAlongChapterOf(int current, int total) {
+    return '章节 $current/$total';
+  }
+
+  @override
+  String readAlongStepOf(int current, int total) {
+    return '步骤 $current/$total';
+  }
+
+  @override
+  String get readAlongFirstRun => '该语种首次运行';
+
+  @override
+  String get readAlongJustStarted => '刚刚开始';
+
+  @override
+  String readAlongRunningFor(String duration) {
+    return '已运行 $duration';
+  }
+
+  @override
+  String get readAlongStepAudio => '音频';
+
+  @override
+  String get readAlongStepSpeech => '语音';
+
+  @override
+  String get readAlongStepText => '正文';
+
+  @override
+  String get readAlongStepAlign => '匹配';
+
+  @override
+  String get readAlongStepCheck => '检查';
+
+  @override
+  String get readAlongStepAdd => '添加';
+
+  @override
+  String get readAlongReviewTitle => '待确认';
+
+  @override
+  String readAlongReviewMatched(String percent) {
+    return '$percent 的正文与朗读匹配成功，添加到书里之前请先检查。';
+  }
+
+  @override
+  String get readAlongReviewPlain => '添加到书里之前请先检查。';
+
+  @override
+  String get readAlongReviewWeb => '若要排除某些章节重新匹配，请在网页版 BookOrbit 中打开这本书。';
+
+  @override
+  String readAlongReviewExpires(String date) {
+    return '若不在 $date 前确认，它会被自动丢弃。';
+  }
+
+  @override
+  String get readAlongAddAnyway => '仍然添加';
+
+  @override
+  String get readAlongDiscard => '丢弃';
+
+  @override
+  String get readAlongDiscardPrompt => '丢弃这个伴读？';
+
+  @override
+  String get readAlongKeepIt => '保留';
+
+  @override
+  String get readAlongReady => '伴读已就绪';
+
+  @override
+  String get readAlongReadyWarnings => '伴读已就绪（有警告）';
+
+  @override
+  String get readAlongAdded => '已作为新的 EPUB 添加到这本书。';
+
+  @override
+  String get readAlongReplaced => '已替换旧的伴读，阅读位置保留。';
+
+  @override
+  String readAlongMatchedSentences(String matched, String total) {
+    return '$total 句中有 $matched 句与朗读匹配';
+  }
+
+  @override
+  String readAlongAudioUsed(String percent) {
+    return '已使用 $percent 的音频';
+  }
+
+  @override
+  String readAlongOutside(String chapters) {
+    return '不在朗读范围内，因此保持无音频：$chapters。';
+  }
+
+  @override
+  String readAlongOutsideMore(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '还有 $count 章',
+      one: '还有 1 章',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get readAlongWarnUnaligned => '有音轨无法完成匹配。';
+
+  @override
+  String get readAlongWarnUnmatched => '电子书正文中有相当一部分未能与朗读匹配。';
+
+  @override
+  String get readAlongWarnInterpolated => '部分正文的时间是在可信匹配之间估算得出。';
+
+  @override
+  String get readAlongWarnDropped => '部分电子书正文未纳入高亮。';
+
+  @override
+  String get readAlongFailed => '伴读创建失败';
+
+  @override
+  String get readAlongCancelled => '伴读已取消';
+
+  @override
+  String get readAlongDiscarded => '伴读已丢弃';
+
+  @override
+  String get readAlongNothingAdded => '未向这本书添加任何内容。';
+
+  @override
+  String get readAlongExpired => '14 天内未确认，因此未向这本书添加任何内容。';
+
+  @override
+  String readAlongRetryUntil(String date) {
+    return '重试会从最后一个完成的步骤继续，直到 $date。';
+  }
+
+  @override
+  String get readAlongStartOver => '重新开始';
+
+  @override
+  String get readAlongCancel => '取消伴读';
+
+  @override
+  String get readAlongCancelPrompt => '取消这个伴读？';
+
+  @override
+  String get readAlongKeepRunning => '继续运行';
+
+  @override
+  String get readAlongErrorWorkerOffline => 'BookOrbit 无法连接它的伴读处理节点。';
+
+  @override
+  String get readAlongErrorWorkerCrashed => '伴读处理节点意外停止。';
+
+  @override
+  String get readAlongErrorSourceMissing => '某个所选文件已不存在。';
+
+  @override
+  String get readAlongErrorSourceChanged => '某个所选文件在任务开始后发生了变化。';
+
+  @override
+  String get readAlongErrorInvalidSource => '无法读取该 EPUB 或有声书。';
+
+  @override
+  String get readAlongErrorLanguage => '语音模型不认识所选语种。';
+
+  @override
+  String get readAlongErrorStorage => '处理节点上的可用磁盘空间不足以完成任务。';
+
+  @override
+  String get readAlongErrorAudio => '无法准备该有声书。';
+
+  @override
+  String get readAlongErrorModel => '无法下载语音模型。';
+
+  @override
+  String get readAlongErrorListening => '聆听朗读音频时语音识别失败。';
+
+  @override
+  String get readAlongErrorMarkup => '无法为匹配准备电子书正文。';
+
+  @override
+  String get readAlongErrorAlignment => '正文无法与朗读匹配。';
+
+  @override
+  String get readAlongErrorOutput => '新生成的 EPUB 未通过检查。';
+
+  @override
+  String get readAlongErrorPublish => '新 EPUB 无法添加到这本书。';
+
+  @override
+  String get readAlongErrorDiscarded => '它在确认环节被丢弃。';
+
+  @override
+  String get readAlongErrorCancelled => '它已被取消。';
+
+  @override
+  String get readAlongErrorUnknown => '创建伴读时出现问题。';
+
+  @override
+  String get fileInfoNoAudiobook => '尚无有声书';
+
+  @override
+  String get fileInfoNoEbook => '尚无电子书';
+
+  @override
+  String get fileInfoRequestedBySomeone => '已由他人请求';
+
+  @override
+  String get fileInfoOwnedSeparately => '在你的媒体库中是一本独立的书';
+
+  @override
+  String get fileInfoCopyPath => '复制路径';
+
+  @override
+  String get fileInfoDeleteTitle => '删除文件？';
+
+  @override
+  String fileInfoDeletePrompt(String name) {
+    return '「$name」将从服务器删除，此操作无法撤销。';
+  }
+
+  @override
+  String get fileInfoDeleteLast => '这是这本书最后一个音频或电子书文件，删除后该书会显示为缺失。';
+
+  @override
+  String get fileInfoDeleteNotAllowed => '你没有删除文件的权限';
+
+  @override
+  String get chapterSourceEmbedded => '读取自音频文件';
+
+  @override
+  String get chapterSourceTracks => '每个音频文件一章，未保存';
+
+  @override
+  String get chapterSourceProvider => '来自获取的元数据';
+
+  @override
+  String get chapterSourceMigration => '从 Audiobookshelf 导入';
+
+  @override
+  String get chapterSourceManual => '在 BookOrbit 中编辑';
+
+  @override
+  String chapterSourceManualBy(String name) {
+    return '由 $name 编辑';
+  }
+
+  @override
+  String get chapterSourceNone => '尚无章节';
+
+  @override
+  String get chapterProtected => '已保护，重新扫描不会覆盖';
+
+  @override
+  String get chapterNotProtected => '重新扫描可能替换这些章节';
+
+  @override
+  String get chapterProtectOnSave => '保护，不受重新扫描影响';
+
+  @override
+  String get chapterGetFrom => '章节来源';
+
+  @override
+  String get chapterFromFiles => '音频文件';
+
+  @override
+  String get chapterFromEbookToc => '电子书目录';
+
+  @override
+  String get chapterFromReadAlong => '伴读';
+
+  @override
+  String get chapterFromHistory => '历史版本';
+
+  @override
+  String get chapterHistoryTitle => '历史版本';
+
+  @override
+  String get chapterHistoryEmpty => '保存过的版本会显示在这里。';
+
+  @override
+  String chapterHistoryBy(String source, String name) {
+    return '$source（$name）';
+  }
+
+  @override
+  String get chapterReadingFiles => '正在读取音频文件…';
+
+  @override
+  String get chapterRevertToFiles => '还原为文件章节';
+
+  @override
+  String get chapterRevertTitle => '回到文件中的章节？';
+
+  @override
+  String get chapterRevertMessage =>
+      'BookOrbit 会重新读取音频文件中的章节，并取消对重新扫描的保护。未保存的修改会丢失，当前列表会存入历史版本。';
+
+  @override
+  String get chapterReverted => '章节已还原为音频文件中的章节';
+
+  @override
+  String get chapterWriteFiles => '写入文件';
+
+  @override
+  String get chapterWriteTitle => '将章节写入音频文件？';
+
+  @override
+  String chapterWriteMessage(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '这将用这些章节重写本书的 $count 个音频文件。',
+      one: '这将用这些章节重写本书的音频文件。',
+    );
+    return '$_temp0 音频本身原样复制。已下载本书的设备在重新下载前仍保留原副本。';
+  }
+
+  @override
+  String get chapterWriteConfirm => '写入';
+
+  @override
+  String get chapterWriting => '正在将章节写入音频文件…';
+
+  @override
+  String chapterWritten(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '章节已写入全部 $count 个音频文件',
+      one: '章节已写入音频文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String chapterWrittenPartly(int written, int total) {
+    return '章节已写入 $total 个文件中的 $written 个，其余保持原样。';
+  }
+
+  @override
+  String get chapterStaleTitle => '这些章节已被改动';
+
+  @override
+  String get chapterStaleMessage =>
+      '在你打开之后，其他人保存了这些章节。请重新加载查看对方的版本；在重新加载前你的修改仍会保留。';
+
+  @override
+  String get chapterReload => '重新加载';
+
+  @override
+  String get chapterKeepEditing => '继续编辑';
+
+  @override
+  String get matchExplicitYes => '标记为敏感内容';
+
+  @override
+  String get matchExplicitNo => '无敏感内容标记';
+
+  @override
+  String get matchAbridgedYes => '删节版';
+
+  @override
+  String get matchAbridgedNo => '未删节';
+
+  @override
+  String boQuickMatchBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '这 $count 本书',
+      one: '这本书',
+    );
+    return 'BookOrbit 会查找 $_temp0，并按其元数据设置填入查找到的内容。';
+  }
+
+  @override
+  String get boQuickMatchIgnoreCache => '重新询问每个来源';
+
+  @override
+  String get boQuickMatchIgnoreCacheHint => '跳过已保存的结果。更慢，且更消耗各来源的请求配额。';
+
+  @override
+  String boAdminServerCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个邮件服务器',
+      one: '1 个邮件服务器',
+      zero: '尚无',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boEmailTitle => '通过邮件发送';
+
+  @override
+  String get boEmailSubtitle => '发送书籍用的设备、邮件服务器与模板';
+
+  @override
+  String get boEmailTabDevices => '设备';
+
+  @override
+  String get boEmailTabServers => '邮件服务器';
+
+  @override
+  String get boEmailTabTemplates => '模板';
+
+  @override
+  String get boEmailTabHistory => '发送记录';
+
+  @override
+  String get boEmailName => '名称';
+
+  @override
+  String boEmailDeleteTitle(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get boEmailMakeDefault => '设为默认';
+
+  @override
+  String get boEmailBadgeDefault => '默认';
+
+  @override
+  String get boEmailBadgeShared => '已共享';
+
+  @override
+  String get boEmailBadgeSystem => '密码重置';
+
+  @override
+  String get boEmailBadgeBuiltIn => '内置';
+
+  @override
+  String get boEmailDevicesEmpty => '尚无设备。添加电子阅读器的邮箱地址即可向它发送书籍。';
+
+  @override
+  String get boEmailAddDevice => '添加设备';
+
+  @override
+  String get boEmailNewDevice => '新建设备';
+
+  @override
+  String get boEmailDeviceNameHint => '我的 Kindle';
+
+  @override
+  String get boEmailDeviceAddress => '邮箱地址';
+
+  @override
+  String get boEmailDeviceType => '设备类型';
+
+  @override
+  String get boEmailDeviceNone => '个人或收件箱';
+
+  @override
+  String get boEmailDeviceKindle => 'Kindle';
+
+  @override
+  String get boEmailDeviceKobo => 'Kobo';
+
+  @override
+  String get boEmailDeviceOther => '其他电子阅读器';
+
+  @override
+  String get boEmailKindleHint => 'Kindle 会以“convert”为主题接收，且邮件只支持 EPUB 和 PDF。';
+
+  @override
+  String boEmailKindleApprove(String address) {
+    return 'Kindle 会丢弃来自陌生地址的邮件。请在亚马逊的 Personal Document Settings 中把 $address 加入白名单。';
+  }
+
+  @override
+  String get boEmailKindleApproveNoServer => '请先添加邮件服务器，才能看到 Kindle 需要白名单的地址。';
+
+  @override
+  String get boEmailFormat => '格式';
+
+  @override
+  String get boEmailFormatPrimary => '书籍主文件';
+
+  @override
+  String get boEmailFormatHint => '若书籍没有该格式，则发送主文件。';
+
+  @override
+  String get boEmailReadAlong => '伴读书籍';
+
+  @override
+  String get boEmailReadAlongAuto => '自动';
+
+  @override
+  String get boEmailReadAlongAutoHint => '能生成纯文本版就发纯文本版，否则发送原文件。';
+
+  @override
+  String get boEmailReadAlongText => '仅文本';
+
+  @override
+  String get boEmailReadAlongTextHint => '去掉朗读音频，体积适合邮件发送。';
+
+  @override
+  String get boEmailReadAlongOriginal => '含朗读音频';
+
+  @override
+  String get boEmailReadAlongOriginalHint =>
+      '保留朗读音频，通常 100 MB 以上，超过多数邮件服务器的限制。';
+
+  @override
+  String get boEmailTemplate => '模板';
+
+  @override
+  String get boEmailTemplateYourDefault => '你的默认模板';
+
+  @override
+  String get boEmailTemplateKindleHint => 'Kindle 不显示邮件正文，因此会跳过模板。';
+
+  @override
+  String get boEmailDefaultDevice => '默认设备';
+
+  @override
+  String get boEmailDefaultDeviceHint => '发送书籍时优先选中。';
+
+  @override
+  String get boEmailSendTest => '发送测试邮件';
+
+  @override
+  String get boEmailTestSubject => '来自 Absorb 的测试邮件';
+
+  @override
+  String boEmailTestBody(String name) {
+    return '这是 Absorb 发出的测试邮件。你能看到这封信，说明发送给 $name 的书籍也会到达这里。';
+  }
+
+  @override
+  String boEmailTestSent(String name) {
+    return '测试邮件已发送给 $name';
+  }
+
+  @override
+  String boEmailTestFailed(String error) {
+    return '测试邮件未发出：$error';
+  }
+
+  @override
+  String get boEmailDeleteDevice => '删除设备';
+
+  @override
+  String get boEmailDeleteDeviceBody => '它的发送记录会保留。';
+
+  @override
+  String get boEmailDeviceRequired => '请填写名称和邮箱地址';
+
+  @override
+  String get boEmailLastSendFailed => '上次发送失败';
+
+  @override
+  String get boEmailGroups => '分组';
+
+  @override
+  String get boEmailGroupsHint => '一次发送给多个设备。';
+
+  @override
+  String get boEmailNewGroup => '新建分组';
+
+  @override
+  String get boEmailGroupNameHint => '读书会';
+
+  @override
+  String get boEmailGroupMembers => '组内设备';
+
+  @override
+  String get boEmailGroupMembersEmpty => '请先添加设备。';
+
+  @override
+  String boEmailGroupMemberCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 台设备',
+      one: '1 台设备',
+      zero: '没有设备',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get boEmailDeleteGroup => '删除分组';
+
+  @override
+  String get boEmailDeleteGroupBody => '组内设备会保留。';
+
+  @override
+  String get boEmailGroupRequired => '请填写分组名称';
+
+  @override
+  String get boEmailServersEmptyManage => '尚无邮件服务器。添加一个后即可发送书籍。';
+
+  @override
+  String get boEmailServersEmpty => '尚无邮件服务器。请让管理员添加一个。';
+
+  @override
+  String get boEmailAddServer => '添加邮件服务器';
+
+  @override
+  String get boEmailNewServer => '新建邮件服务器';
+
+  @override
+  String get boEmailServerPresetOther => '其他';
+
+  @override
+  String get boEmailServerPresetHint => '选择预设会自动填入主机、端口和加密方式，你仍可修改。';
+
+  @override
+  String get boEmailServerHost => '主机';
+
+  @override
+  String get boEmailServerPort => '端口';
+
+  @override
+  String get boEmailServerSecurity => '加密方式';
+
+  @override
+  String get boEmailServerSecurityNone => '无';
+
+  @override
+  String get boEmailServerSecurityHint => '587 端口用 STARTTLS，465 端口用 SSL/TLS。';
+
+  @override
+  String get boEmailServerNeedsPassword => '使用密码登录';
+
+  @override
+  String get boEmailServerUsername => '用户名';
+
+  @override
+  String get boEmailServerPassword => '密码';
+
+  @override
+  String get boEmailServerAppPassword => '应用专用密码';
+
+  @override
+  String get boEmailServerPasswordKeep => '已保存。输入新值可替换';
+
+  @override
+  String get boEmailServerAppPasswordHint => 'Gmail 和 iCloud 需要应用专用密码，而不是账号密码。';
+
+  @override
+  String get boEmailServerFromName => '发件人名称';
+
+  @override
+  String get boEmailServerFromAddress => '发件人地址';
+
+  @override
+  String get boEmailServerFromAddressHint => 'Kindle 用户需要把这个地址加入白名单。';
+
+  @override
+  String get boEmailServerShare => '共享给所有人';
+
+  @override
+  String get boEmailServerShareHint => '其他人可以通过该服务器发送书籍，但看不到密码。';
+
+  @override
+  String get boEmailServerSystem => '发送密码重置与登录链接';
+
+  @override
+  String get boEmailServerSystemHint => 'BookOrbit 自身邮件所使用的服务器。';
+
+  @override
+  String get boEmailServerVerifyTls => '校验服务器证书';
+
+  @override
+  String get boEmailServerVerifyTlsHint => '仅在你自己网络内、使用自签名证书的服务器上才建议关闭。';
+
+  @override
+  String get boEmailServerTest => '测试连接';
+
+  @override
+  String get boEmailServerTestSaveFirst => '请先保存再测试';
+
+  @override
+  String get boEmailServerTestOk => '已连接';
+
+  @override
+  String boEmailServerTestFailed(String error) {
+    return '无法连接：$error';
+  }
+
+  @override
+  String get boEmailServerDelete => '删除邮件服务器';
+
+  @override
+  String get boEmailServerDeleteBody => '所有与它共享的人都会失去该服务器。';
+
+  @override
+  String get boEmailServerSystemFirst => '请先在该服务器上关闭密码重置，再删除它。';
+
+  @override
+  String get boEmailServerRequired => '请填写名称和主机';
+
+  @override
+  String get boEmailServerNotYours => '该服务器由他人添加，只有本人可以修改。';
+
+  @override
+  String get boEmailTemplatesEmpty => '尚无模板。';
+
+  @override
+  String get boEmailNewTemplate => '新建模板';
+
+  @override
+  String get boEmailTemplateSubject => '主题';
+
+  @override
+  String get boEmailTemplateMessage => '正文';
+
+  @override
+  String get boEmailTemplateInsert => '插入';
+
+  @override
+  String get boEmailTemplateInsertHint => '插入到光标所在位置。书籍没有的字段不会输出任何内容。';
+
+  @override
+  String get boEmailVarBook => '书籍';
+
+  @override
+  String get boEmailVarFile => '文件';
+
+  @override
+  String get boEmailVarOther => '其他';
+
+  @override
+  String get boEmailTemplatePreview => '预览';
+
+  @override
+  String get boEmailTemplatePreviewNone => '先发送一次书籍，才能对照书籍预览模板。';
+
+  @override
+  String boEmailTemplateAttached(String name) {
+    return '附件：$name';
+  }
+
+  @override
+  String get boEmailTemplateBuiltIn => '内置模板，仅管理员可修改。';
+
+  @override
+  String get boEmailTemplateKindleNote => 'Kindle 从不使用模板，主题一律为“convert”。';
+
+  @override
+  String get boEmailTemplateDelete => '删除模板';
+
+  @override
+  String get boEmailTemplateDeleteBody => '使用它的设备会回到你的默认模板。';
+
+  @override
+  String get boEmailTemplateRequired => '请填写名称和主题';
+
+  @override
+  String get boEmailHistoryEmpty => '尚无发送记录。';
+
+  @override
+  String get boEmailHistoryAll => '全部';
+
+  @override
+  String get boEmailHistoryEveryone => '所有人';
+
+  @override
+  String get boEmailStatusSent => '已发送';
+
+  @override
+  String get boEmailStatusSending => '发送中';
+
+  @override
+  String boEmailStatusRetrying(int attempt) {
+    return '重试中（第 $attempt 次）';
+  }
+
+  @override
+  String get boEmailStatusFailed => '失败';
+
+  @override
+  String boEmailTo(String name) {
+    return '发给 $name';
+  }
+
+  @override
+  String get boEmailResend => '重新发送';
+
+  @override
+  String get boEmailResent => '正在重新发送';
+
+  @override
+  String get boEmailForget => '从记录中移除';
+
+  @override
+  String get boEmailLoadMore => '加载更多';
+
+  @override
+  String get boEmailUnknownBook => '已删除的书籍';
+
+  @override
+  String get boEmailSendNoServer => '此服务器尚未配置邮件服务器。';
+
+  @override
+  String get boEmailSendAskAdmin => '请让管理员添加一个。';
+
+  @override
+  String get boEmailSendNoDevices => '请先添加接收这本书的设备。';
+
+  @override
+  String get boEmailSendOptions => '选项';
+
+  @override
+  String get boEmailSendFormatEach => '各设备自己的格式';
+
+  @override
+  String get boEmailSendServer => '邮件服务器';
+
+  @override
+  String get boEmailSendButton => '发送';
+
+  @override
+  String boEmailSendGets(String format, String size) {
+    return '将收到 $format · $size';
+  }
+
+  @override
+  String boEmailSendMissing(String format, String got) {
+    return '没有 $format，将发送 $got';
+  }
+
+  @override
+  String boEmailSendKindleRejects(String format) {
+    return 'Kindle 不接受通过邮件发送 $format';
+  }
+
+  @override
+  String boEmailSendOverKindle(String size) {
+    return '$size，超过 Kindle 的 50 MB 限制';
+  }
+
+  @override
+  String boEmailSendOverGmail(String size) {
+    return '$size，超过 Gmail 的 25 MB 限制';
+  }
+
+  @override
+  String boEmailSendNarrated(String size) {
+    return '将收到含朗读音频的版本 · $size';
+  }
+
+  @override
+  String boEmailSendHanding(String server) {
+    return '正通过 $server 发送';
+  }
+
+  @override
+  String boEmailSendAccepted(String server) {
+    return '已通过 $server 发出';
+  }
+
+  @override
+  String boEmailSendFailedLine(String error) {
+    return '未发送：$error';
+  }
+
+  @override
+  String get boEmailSendStillGoing => '仍在发送，完成后你会收到通知。';
+
+  @override
+  String get boEmailKindleOriginal => 'Kindle 无法接收含朗读音频的版本，请改为仅文本。';
+
+  @override
+  String get boEmailNoCopy => '无法生成去掉朗读音频的副本。';
 }

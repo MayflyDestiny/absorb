@@ -404,6 +404,7 @@ class LibraryScreenState extends State<LibraryScreen>
   String? _matchingAuthorId;
   int _authorMatchPosition = 0;
   int _authorMatchTotal = 0;
+  String? _bookMatchProgress;
   final Set<String> _selectedItemIds = {};
   int? _lastSelectedVisibleIndex;
 
@@ -3647,7 +3648,8 @@ lib.registerHasCoverFromItem(id, r);
               selectedCount: _selectedItemIds.length,
               selectableCount: selectableCount,
               busy: _batchActionBusy,
-              canQuickMatch: auth.isAdmin && !libWatch.isPodcastLibrary,
+              busyLabel: _bookMatchProgress,
+              canQuickMatch: _canQuickMatchBooks(auth, libWatch),
               canMarkProgress: !libWatch.isPodcastLibrary,
               canDelete: auth.canDelete,
               canDownload: !libWatch.isPodcastLibrary,
@@ -3661,12 +3663,17 @@ lib.registerHasCoverFromItem(id, r);
                       .toList(),
                 ),
               ),
-              onQuickMatch: () => _runBatchAction(
-                () => DesktopBatchActions.quickMatch(
+              onQuickMatch: () => _runBatchAction(() async {
+                final ok = await DesktopBatchActions.quickMatch(
                   context,
                   _selectedItemIds.toList(),
-                ),
-              ),
+                  onProgress: (done, total) {
+                    if (mounted) setState(() => _bookMatchProgress = '$done/$total');
+                  },
+                );
+                if (mounted) setState(() => _bookMatchProgress = null);
+                return ok;
+              }),
               onMarkFinished: () => _runBatchAction(
                 () => DesktopBatchActions.setFinished(
                   context,
@@ -4766,6 +4773,16 @@ lib.registerHasCoverFromItem(id, r);
       _batchActionBusy = false;
       if (success == true) _resetSelectionState();
     });
+  }
+
+  /// Audiobookshelf admins, and on BookOrbit anyone who may edit metadata.
+  /// Book Dock files aren't books yet, so they can't be matched in bulk.
+  bool _canQuickMatchBooks(AuthProvider auth, LibraryProvider lib) {
+    if (lib.isPodcastLibrary) return false;
+    if (auth.isAdmin) return true;
+    return auth.isBookOrbit &&
+        auth.canUpdateMetadata &&
+        lib.selectedLibraryId != ApiService.bookDockLibraryId;
   }
 
   List<Map<String, dynamic>> _selectedAuthors() {

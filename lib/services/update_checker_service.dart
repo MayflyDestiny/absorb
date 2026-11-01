@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../build_info.dart';
 import 'inflight_temp_writes.dart';
 import 'player_settings.dart';
 import 'update_policy.dart';
@@ -160,6 +161,7 @@ class UpdateCheckerService {
       final selectedAsset = selectAndroidUpdateAsset(
         assets: releaseAssets,
         supportedAbis: supportedAbis,
+        fdroid: kFdroidBuild,
       );
       final currentVersion = await currentInstalledVersion();
       final rawDownloadUrl = selectedAsset?.downloadUrl ??

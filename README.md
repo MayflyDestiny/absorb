@@ -130,7 +130,18 @@ Absorb 支持 Android Auto 车载浏览和收听。使用 GitHub 版本需要启
 > 详细变更请查看 [CHANGELOG_FULL.md](CHANGELOG_FULL.md)
 
 <details>
-<summary><b>展开查看更新日志（精简版，v1.11.2+280 → v1.24.0+444）</b></summary>
+<summary><b>展开查看更新日志（精简版，v1.11.2+280 → v1.24.1+445）</b></summary>
+
+### v1.24.1+445 — 同步上游 1.12.1+303：BookOrbit 伴读创建、邮件发送中心与章节工具
+
+- 合并上游 `upstream/main`（`2940f1f4` → `8411ffc7`，4 个提交、69 个文件）
+- BookOrbit 伴读（Read along）可在应用内创建：选电子书与语种、句/词高亮、替换或并存，显示服务器排队与六阶段进度，结果先待确认（匹配率、警告、仍然添加 / 丢弃），失败给出具体原因并支持续跑重试
+- 新增 BookOrbit 邮件发送中心：设备（Kindle / Kobo / 其他、格式与伴读版本策略、分组）、邮件服务器（预设、STARTTLS/SSL、应用专用密码、共享、连接测试）、模板（变量插入与预览）、发送记录（重发、移除）；详情页新增「发送到 E-Reader / 通过邮件发送」
+- BookOrbit 章节工具：章节来源标注、保护不受重扫覆盖、历史版本与还原、写回音频文件、他人已改提示；重置进度区分只听过 / 只读过，BookOrbit 上重置后不再停留在 Currently Reading 并可标记未读
+- 批量快速匹配新增「重新询问每个来源」，匹配结果提供敏感内容与删节版选项；Audible 支持请求整个系列；与 Audiobookshelf 2.37 保持 live updates
+- 新增 330 条中文翻译（伴读 127、邮件与发送 150、章节 34、文件信息 9、重置 5、匹配 4、求书 1），en / zh 键 4297 / 4297 对齐、缺译归零，并清理上游删除后遗留的孤儿键
+- 无 GMS（fdroid）版恢复应用内自动更新：新增 `FDROID_BUILD` 开关让该 flavor 也显示「检查更新 / 启动时自动检查新版本」，并给更新策略加 flavor 过滤，GMS-free 包只挑 `-fdroid-*` 资产、GitHub 包只认 Android ABI 名，两种包互不串台（新增 4 条测试锁定）
+- 冲突处理要点：采纳上游 `NavHoldAdmin` 权限细分重构；`settings_screen` / `downloads_screen` / `book_detail_sheet` 以 fork 实现为底逐条贴回上游语义，电子书入口保留 fork 的懒加载动态组而非上游的提前渲染
 
 ### v1.24.0+444 — 同步上游 1.12.1+302：BookOrbit 成就、阅读记录与服务器管理
 

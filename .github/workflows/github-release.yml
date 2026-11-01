@@ -124,9 +124,14 @@ jobs:
           fi
           flutter pub get
           # Universal first, then the per-ABI splits; Flutter emits only one
-          # shape per invocation.
-          flutter build apk --release --flavor fdroid
-          flutter build apk --release --flavor fdroid --split-per-abi
+          # shape per invocation. FDROID_BUILD keeps the in-app updater on:
+          # these APKs live on the same GitHub release, and the update policy
+          # only ever matches the `-fdroid-*` assets, so a Google-services
+          # install can never be handed one (and the reverse can't happen
+          # either). The F-Droid repo recipe deliberately does NOT pass this,
+          # because a repo build must not offer to update itself.
+          flutter build apk --release --flavor fdroid --dart-define=FDROID_BUILD=true
+          flutter build apk --release --flavor fdroid --split-per-abi --dart-define=FDROID_BUILD=true
 
       - name: Stage fdroid APKs
         env:
