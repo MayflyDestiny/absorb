@@ -1823,6 +1823,17 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     final oldDur = (oldMedia?['duration'] as num?)?.toDouble() ?? 0;
     final newDur = (newMedia?['duration'] as num?)?.toDouble() ?? 0;
     if ((oldDur - newDur).abs() > 0.5) return false;
+    // Chapter/track edits usually leave the total duration untouched, so the
+    // counts need their own check - without it a rescan that splits chapters
+    // lands here, the fresh item is adopted silently and the sheet keeps
+    // painting the stale chapter count until it is closed and reopened.
+    if ((oldMedia?['numTracks'] as num?)?.toInt() !=
+        (newMedia?['numTracks'] as num?)?.toInt()) {
+      return false;
+    }
+    final oldChapters = oldMedia?['chapters'] as List<dynamic>?;
+    final newChapters = newMedia?['chapters'] as List<dynamic>?;
+    if ((oldChapters?.length ?? 0) != (newChapters?.length ?? 0)) return false;
     // A flip in whether an eBook is attached changes the grid's eBook pills
     // (read / save-to-device / send-to-reader), which are visible UI — don't
     // let this guard swallow that.

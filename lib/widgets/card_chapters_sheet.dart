@@ -533,9 +533,18 @@ class _ChaptersSheetBodyState extends State<_ChaptersSheetBody> {
         // Prefer the disk-cached item — the sheet is already showing this
         // book's chapter/timing data on screen, so a weak link should never
         // gate a chapter jump behind a full network fetch. Fall back to the
-        // network only when the item was never cached.
+        // network when the item was never cached — or when the grid has seen
+        // a newer snapshot of it: a server-side chapter edit bumps the item's
+        // updatedAt, and jumping onto the stale boundaries would start the
+        // playback in the wrong place.
         final cachedItem = await api.getCachedLibraryItem(widget.itemId!);
-        final fullItem = cachedItem ?? await api.getLibraryItem(widget.itemId!);
+        Map<String, dynamic>? fullItem = cachedItem;
+        final gridTs = lib.itemUpdatedAt(widget.itemId!);
+        final cachedTs = (cachedItem?['updatedAt'] as num?)?.toInt() ?? 0;
+        if (cachedItem == null ||
+            (gridTs != null && gridTs > cachedTs && !lib.isOffline)) {
+          fullItem = await api.getLibraryItem(widget.itemId!);
+        }
         if (fullItem == null) return;
         final media = fullItem['media'] as Map<String, dynamic>? ?? {};
         final metadata = media['metadata'] as Map<String, dynamic>? ?? {};

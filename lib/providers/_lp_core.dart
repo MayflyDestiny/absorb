@@ -2245,7 +2245,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       registerHasCoverFromItem(id, data);
     }
     // Invalidate cached session metadata - track URLs may have changed
-    if (id != null) SessionCache.clear(itemId: id);
+    if (id != null) {
+      SessionCache.clear(itemId: id);
+      // The expanded per-item cache (chapters, tracks, ebook files) is fed by
+      // detail-page fetches; without this eviction a server-side chapter edit
+      // keeps serving the pre-edit snapshot to the cache-first readers.
+      unawaited(JsonFileCache.invalidate('library_item|$id'));
+    }
     _invalidatePayloadCaches();
     _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
@@ -2254,7 +2260,10 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   void _onRemoteItemRemoved(Map<String, dynamic> data) {
     final id = data['id'] as String?;
-    if (id != null) SessionCache.clear(itemId: id);
+    if (id != null) {
+      SessionCache.clear(itemId: id);
+      unawaited(JsonFileCache.invalidate('library_item|$id'));
+    }
     _invalidatePayloadCaches();
     _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
