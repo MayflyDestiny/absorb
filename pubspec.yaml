@@ -1,7 +1,7 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.25.0+447
+version: 1.24.3+447
 
 environment:
   sdk: '>=3.10.0 <4.0.0'
@@ -67,7 +67,7 @@ dependencies:
   path_provider: ^2.1.1
   connectivity_plus: ^6.0.3
   # Native background downloads (iOS background URLSession, Android foreground service)
-  background_downloader: ^9.0.0
+  background_downloader: ^9.6.4
 
   # In-app APK install (GitHub flavor updater)
   open_filex: ^4.5.0

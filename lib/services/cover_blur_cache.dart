@@ -32,10 +32,11 @@ class CoverBlurCache {
 
   static final CoverBlurCache instance = CoverBlurCache._();
 
-  /// How many blurred covers to keep. Six matches the sliding window: current
-  /// ±1/2 cards, so a swipe to a neighbour still hits an in-memory blur without
-  /// keeping a large library of 200px PNGs alive.
-  static const _capacity = 6;
+  /// How many blurred covers to keep. Sized to the prewarm window in
+  /// AbsorbingScreen (-2..+4 around the current page) so generating the
+  /// upcoming cards never evicts the one on screen; a blur is only 200px wide,
+  /// so a dozen of them costs a few MB.
+  static const _capacity = 12;
 
   static const _targetWidth = 200;
   static const _sigma = 30.0;

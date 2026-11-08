@@ -445,6 +445,16 @@ class AbsorbingCardState extends State<AbsorbingCard>
         _blurredCoverIdentity = identity;
       }
     }
+    // Cards beyond the prewarm window (±1/2) usually have no lease and are
+    // already evicted from the 6-entry LRU, so they would paint with no
+    // background at all. Generate this card's own copy instead of waiting for
+    // a prewarm that will never come; acquire() de-duplicates against one.
+    if (identity != null &&
+        _blurLease == null &&
+        coverUrl != null &&
+        coverUrl.isNotEmpty) {
+      unawaited(_loadBlurOnDemand(identity, coverUrl));
+    }
     // 首帧底图：main() 已把上一次的模糊封面预加载到内存，这里同步取 lease，
     // 卡片第一帧就是模糊封面/背景；只有冷启动首次安装等没有缓存时才走异步。
     final cachedLatest = CoverBlurCache.instance.cachedLatestLeaseFor(
@@ -455,6 +465,27 @@ class AbsorbingCardState extends State<AbsorbingCard>
     } else {
       unawaited(_loadPlaceholderBlur());
     }
+  }
+
+  /// Generates this card's blurred background when no prewarm reached it.
+  Future<void> _loadBlurOnDemand(String identity, String coverUrl) async {
+    final lib = context.read<LibraryProvider>();
+    final ImageProvider provider = coverUrl.startsWith('/')
+        ? FileImage(File(coverUrl))
+        : CachedNetworkImageProvider(
+            coverUrl,
+            headers: lib.mediaHeaders,
+            cacheKey: identity,
+          );
+    final lease = await CoverBlurCache.instance.acquire(provider, identity);
+    if (!mounted || _blurLease != null) {
+      lease?.release();
+      return;
+    }
+    setState(() {
+      _blurLease = lease;
+      _blurredCoverIdentity = identity;
+    });
   }
 
   Future<void> _loadPlaceholderBlur() async {

@@ -41,6 +41,7 @@ import '../services/audio_player_service.dart';
 import 'card_buttons.dart';
 import 'download_confirm.dart';
 import '../services/api_service.dart';
+import '../services/chapter_cache.dart';
 import '../services/bookmark_preview_player.dart';
 import '../services/bookmark_service.dart';
 import '../services/download_service.dart';
@@ -625,12 +626,29 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     // feeds the eBook pills.
     if (api != null && !_seededFromCache) {
       _seededFromCache = true;
-      final cached = await api.getCachedLibraryItem(widget.itemId);
+      var cached = await api.getCachedLibraryItem(widget.itemId);
       if (cached != null && mounted) {
+        // The full item may be missing chapters (never fetched before they
+        // existed, or a cache written by an older build). The small chapter
+        // cache paints them now; the expanded fetch below replaces it.
+        final media = cached['media'];
+        final cachedChapters = media is Map ? media['chapters'] : null;
+        if (cachedChapters is! List || cachedChapters.isEmpty) {
+          final chapters = await ChapterCache.read(widget.itemId);
+          if (chapters != null) {
+            cached = {
+              ...cached,
+              'media': {
+                if (media is Map) ...media.cast<String, dynamic>(),
+                'chapters': chapters,
+              },
+            };
+          }
+        }
         final override = await MetadataOverrideService().get(widget.itemId);
         setState(() {
           _item = override != null
-              ? MetadataOverrideService().applyOverrides(cached, override)
+              ? MetadataOverrideService().applyOverrides(cached!, override)
               : cached;
           _hasLocalOverride = override != null;
           _isLoading = false;

@@ -2251,6 +2251,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       // detail-page fetches; without this eviction a server-side chapter edit
       // keeps serving the pre-edit snapshot to the cache-first readers.
       unawaited(JsonFileCache.invalidate('library_item|$id'));
+      unawaited(ChapterCache.invalidate(id));
     }
     _invalidatePayloadCaches();
     _invalidateLibraryScreenCaches();
@@ -2263,6 +2264,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     if (id != null) {
       SessionCache.clear(itemId: id);
       unawaited(JsonFileCache.invalidate('library_item|$id'));
+      unawaited(ChapterCache.invalidate(id));
     }
     _invalidatePayloadCaches();
     _invalidateLibraryScreenCaches();

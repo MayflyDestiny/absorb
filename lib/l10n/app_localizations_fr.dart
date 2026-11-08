@@ -5573,7 +5573,8 @@ class AppLocalizationsFr extends AppLocalizations {
   String get resetButtonGrid => 'Réinitialiser la grille de boutons';
 
   @override
-  String get chapterBarrierOnRewind => 'Skip-back stays within the chapter';
+  String get chapterBarrierOnRewind =>
+      'Skip forward and back stay within the chapter';
 
   @override
   String get chapterBarrierInfoTitle => 'Barrière de chapitre';
@@ -5584,11 +5585,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get chapterBarrierOnRewindOnSubtitle =>
-      'On - skip back stops at the current chapter start instead of entering the previous chapter';
+      'On - skips stop at this chapter\'s start or end instead of entering the neighbouring chapter';
 
   @override
   String get chapterBarrierOnRewindOffSubtitle =>
-      'Off - skip back crosses into previous chapters';
+      'Off - skips can cross into the neighbouring chapters';
 
   @override
   String get prevChapterJumpBehavior => 'Previous-chapter button';

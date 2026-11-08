@@ -9697,7 +9697,7 @@ abstract class AppLocalizations {
   /// No description provided for @chapterBarrierOnRewind.
   ///
   /// In en, this message translates to:
-  /// **'Skip-back stays within the chapter'**
+  /// **'Skip forward and back stay within the chapter'**
   String get chapterBarrierOnRewind;
 
   /// No description provided for @chapterBarrierInfoTitle.
@@ -9709,19 +9709,19 @@ abstract class AppLocalizations {
   /// No description provided for @chapterBarrierInfoContent.
   ///
   /// In en, this message translates to:
-  /// **'When skipping back, the playback will snap to the start of the current chapter instead of crossing into the previous one.\n\nTo reach a previous chapter, use the previous-chapter button.'**
+  /// **'Rewind and skip forward stop at the current chapter\'s start or end instead of crossing into the neighbouring chapter. Jump chapters with the previous/next chapter buttons.'**
   String get chapterBarrierInfoContent;
 
   /// No description provided for @chapterBarrierOnRewindOnSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'On - skip back stops at the current chapter start instead of entering the previous chapter'**
+  /// **'On - skips stop at this chapter\'s start or end instead of entering the neighbouring chapter'**
   String get chapterBarrierOnRewindOnSubtitle;
 
   /// No description provided for @chapterBarrierOnRewindOffSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Off - skip back crosses into previous chapters'**
+  /// **'Off - skips can cross into the neighbouring chapters'**
   String get chapterBarrierOnRewindOffSubtitle;
 
   /// No description provided for @prevChapterJumpBehavior.

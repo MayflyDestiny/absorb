@@ -5312,20 +5312,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get resetButtonGrid => '重置按钮布局';
 
   @override
-  String get chapterBarrierOnRewind => '快退不跨越章节';
+  String get chapterBarrierOnRewind => '快进快退不跨越章节';
 
   @override
   String get chapterBarrierInfoTitle => '章节边界';
 
   @override
   String get chapterBarrierInfoContent =>
-      '快退时，播放将跳到当前章节的开头，而不是跨越到上一章。\n\n如需回到上一章，请使用“上一章”按钮。';
+      '倒回和快进都会停在当前章节的开头或结尾，不会跨越到相邻章节。需要换章时请用上一章/下一章按钮。';
 
   @override
-  String get chapterBarrierOnRewindOnSubtitle => '开启 - 快退最多退到当前章节开头，不进入上一章';
+  String get chapterBarrierOnRewindOnSubtitle =>
+      '开启 - 快进或倒回会停在当前章节的开头或结尾，不进入相邻章节';
 
   @override
-  String get chapterBarrierOnRewindOffSubtitle => '关闭 - 快退可跨越到上一章';
+  String get chapterBarrierOnRewindOffSubtitle => '关闭 - 快进或倒回可以跨越到相邻章节';
 
   @override
   String get prevChapterJumpBehavior => '上一章按钮';

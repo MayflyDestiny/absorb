@@ -3,14 +3,14 @@
 本文件记录 [pounat/absorb](https://github.com/pounat/absorb) Fork 之后由 AI 生成的全部变更，按发布版本倒序排列，仅涉及 Android 平台。
 
 - Fork 基线：`v1.11.2+280`（上游 `284e16c`）
-- 最新版本：`v1.25.0+447`
+- 最新版本：`v1.24.3+447`
 - 摘要版见 [README.md](README.md#更新日志)
 
 > 版本号以 `pubspec.yaml` 为准。少数提交信息里写的版本号与实际 `pubspec.yaml` 不一致（例如 `a709776` 写 1.21.8+380、实际 1.21.8+381；`6b09bfe` 写 1.21.9+385、实际 1.21.10+386），本文件采用 `pubspec.yaml` 的值。
 
 ---
 
-## v1.25.0+447 — 同步上游 1.12.1+304（播放引擎重写、离线同步与 BookOrbit 阅读活动）
+## v1.24.3+447 — 同步上游 1.12.1+304（播放引擎重写、离线同步与 BookOrbit 阅读活动）
 
 合并自上游 `00085b45` · 2026-11-05
 
@@ -26,8 +26,15 @@
   - **跨文件接口按合并后签名对齐**：媒体库网格助手（`libraryGridDelegate` / `CoverTileGridDelegate` / `coverTileLabelHeight` / `libraryGridBottomPadding(context)`）从上游移植进 fork 的 `library_screen`；`PlayerSettings` 补上 `getSpeedOverride` / `setSpeedOverride` / `defaultSpeedFor`
   - 未采用的平台代码（`windows/`、`web/`、`packages/flutter_inappwebview_windows` 等）已随合并进入仓库，但 fork 仍只构建 Android
 - **新增中文翻译（71 条）**：桌面队列表头、库级默认速度、章节进度开关、Audible 评分、离线补同步提示、音调、书签/章节提示、BookOrbit 忘记密码（6 条）与阅读活动（47 条，含 13 个分类名）；en / zh 键 4368 / 4368 对齐、缺译归零
+- **合并后的跟进修复（同一版本）**
+  - **依赖**：合并整份采用的 `pubspec.lock` 把 `background_downloader` 降到 9.5.5，其 Kotlin 源码在当前 Kotlin 2.2.20 / AGP 8.11.1 下大面积 `Unresolved reference`、导致 `assembleDevRelease` 失败；约束改为 `^9.6.4`（现解析 9.6.6），构建恢复；同时补齐无 GMS 版 `chromecast` stub 缺失的 `libraryId` 参数，fdroid flavor 重新可编译（本机完整 fdroid 构建验证通过）
+  - **快进跨章**：设置「快退不跨越章节」改为「快进快退不跨越章节」——快进将跨章时落到**下一章开头**并按设置应用跳过片头（不再停在章尾）；快退仍停在当前章开头。「自动倒回（暂停恢复/新会话）」的文案与逻辑保持不变
+  - **暂停防误播**：`_onPlaybackComplete` 在「非用户请求且当前未播放」时直接返回，避免暂停于章尾时被引擎的 completed 事件带进下一章
+  - **章节更新后续播**：完成事件到达时若服务器章节数多于正在播放的队列（继续收听带的旧会话快照），拉取最新条目**重建队列并从当前位置续播**，不再在旧末尾误报「已播放完」
+  - **章节小型缓存**：新增 `ChapterCache`（`chapters|<id>`，几 KB），全量条目拉取成功即写入；详情页冷启动时用它先渲染章节，`item_updated` / `item_removed` 与条目缓存一同失效
+  - **正在收听卡片背景**：第 7 张起没有模糊背景——`CoverBlurCache` 只有 6 条 LRU，卡片又只取不生成；现改为容量 12、预热 −2…+2 全量（封面 + 背景）/+3、+4 只做背景（200px 小图），未命中时卡片自己 `acquire()` 兜底。+3/+4 不再主动保活 1200px 封面，滑到时正常加载，不会出现「有背景没封面」
 - **验证**：`flutter gen-l10n` 通过、zh 缺译 0；`flutter analyze` **0 error**（220 条 info/warning，主要来自上游新代码风格）；`flutter test` 本机无法运行——合并带入的原生资源钩子需要 MSVC 工具链（`vswhere` 调用失败），需在 CI 或装好 VS C++ 工具的环境验证
-- **版本号**：`1.25.0+447`
+- **版本号**：`1.24.3+447`
 
 ## v1.24.2+446 — 服务器更新章节与音轨后，详情页与播放跳章不再显示旧数据
 

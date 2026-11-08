@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'achievements.dart';
 import 'auth_tokens.dart';
+import 'chapter_cache.dart';
 import 'json_file_cache.dart';
 import 'book_dock.dart';
 import 'book_requests.dart';
@@ -3601,6 +3602,14 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         unawaited(JsonFileCache.write(cacheKey, data));
+        final media = data['media'];
+        if (media is Map && media['chapters'] is List) {
+          unawaited(ChapterCache.write(
+            itemId,
+            (data['updatedAt'] as num?)?.toInt(),
+            media['chapters'] as List,
+          ));
+        }
         return data;
       }
       debugPrint('[API] getLibraryItem $itemId: HTTP ${response.statusCode}');

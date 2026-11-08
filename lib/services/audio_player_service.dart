@@ -25,6 +25,7 @@ import 'equalizer_service.dart';
 import 'external_audio_output_types.dart';
 import 'android_auto_service.dart';
 import 'chromecast_service.dart';
+import 'chapter_cache.dart';
 import 'chapter_lookup.dart';
 import 'now_playing_layout.dart';
 import 'cold_start_play_policy.dart';
@@ -8663,6 +8664,58 @@ class AudioPlayerService extends ChangeNotifier {
     debugPrint(
       '[Complete] entry: pos=${_lastKnownPositionSec.toStringAsFixed(1)}s totalDur=${_totalDuration.toStringAsFixed(1)}s item=$_currentItemId ep=$_currentEpisodeId reentry=$_isCompletingBook',
     );
+    // A paused book must never finish or advance on its own. ExoPlayer can
+    // still report the buffered track as completed after the user paused near
+    // a chapter's end, and auto-advancing there looks like playback starting
+    // by itself on the next chapter. A real end-of-book completion arrives
+    // while still playing, so this only drops the spurious paused ones.
+    if (!userRequested && !(_player?.playing ?? false)) {
+      debugPrint('[Complete] ignored - not playing (paused or stopped)');
+      return;
+    }
+    // A chapter list can be newer on the server than the queue this book was
+    // started from (chapters added after it was queued or downloaded). Rather
+    // than claim the book is finished at the old end, rebuild the queue from
+    // the fresh chapters and carry on from here.
+    if (!userRequested && _currentItemId != null && _api != null) {
+      final freshId = _currentItemId!;
+      try {
+        final cachedChapters = await ChapterCache.read(freshId);
+        if (cachedChapters != null &&
+            cachedChapters.length > _chapters.length) {
+          final item = await _api!.getLibraryItem(freshId);
+          final media = item?['media'];
+          final freshChapters = media is Map ? media['chapters'] : null;
+          if (freshChapters is List && freshChapters.length > _chapters.length) {
+            final metadata = (media as Map)['metadata'];
+            final resumeAt = _lastKnownPositionSec;
+            debugPrint(
+              '[Complete] server has ${freshChapters.length} chapters, '
+              'queue has ${_chapters.length} - re-queuing at '
+              '${resumeAt.toStringAsFixed(1)}s',
+            );
+            await playItem(
+              api: _api!,
+              itemId: freshId,
+              title: metadata is Map ? (metadata['title'] as String? ?? '') : '',
+              author:
+                  metadata is Map ? (metadata['authorName'] as String? ?? '') : '',
+              coverUrl: _currentCoverUrl,
+              totalDuration: (media['duration'] as num?)?.toDouble() ??
+                  _totalDuration,
+              chapters: freshChapters,
+              startTime: resumeAt,
+              forceStartTime: true,
+              libraryId: _currentLibraryId,
+              fromUi: true,
+            );
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('[Complete] chapter refresh failed: $e');
+      }
+    }
     if (_isCompletingBook) return; // prevent re-entry
     _isCompletingBook = true;
 
@@ -10393,7 +10446,33 @@ class AudioPlayerService extends ChangeNotifier {
       '[Service] skipForward(${seconds}s × ${speed}x = ${adjusted}s) — playing=${_player!.playing}',
     );
     final newPos = position + Duration(seconds: adjusted);
-    final newPosS = newPos.inMilliseconds / 1000.0;
+    final posS = position.inMilliseconds / 1000.0;
+    var newPosS = newPos.inMilliseconds / 1000.0;
+    // Mirror of skipBackward's chapter barrier: a forward skip that would
+    // cross into the next chapter stops at this chapter's end (the boundary
+    // itself) instead of skipping over it.
+    if (await PlayerSettings.getSkipChapterBarrier() && _chapters.isNotEmpty) {
+      double? chapterEnd;
+      for (var i = 0; i < _chapters.length; i++) {
+        final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+        if (s > posS + 0.5) {
+          chapterEnd = s;
+          break;
+        }
+      }
+      if (chapterEnd != null && newPosS > chapterEnd) {
+        // Crossing the boundary lands where a chapter jump would: the next
+        // chapter's start, with its intro skip applied by the normal
+        // chapter-entry logic. Snapping to the last frame instead left the
+        // player sitting on a completed chapter.
+        _logEvent(
+          PlaybackEventType.skipForward,
+          detail: 'cross to next chapter (intro skip applies)',
+        );
+        await skipToNextChapter();
+        return;
+      }
+    }
     // A partial download's local audio ends at the download boundary. A forward
     // skip that would cross it has no audio to land on (the engine's seek past
     // the concatenation clamps to the end and "jumps" into the next chapter's

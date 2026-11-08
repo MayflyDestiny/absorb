@@ -145,11 +145,21 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     LibraryProvider lib,
   ) {
     final brightness = Theme.of(context).brightness;
-    // 当前页 ±1/2；当前页本身由 main/card 自己负责，不重复。
-    for (final offset in [-2, -1, 1, 2]) {
+    // 当前页本身由 main/card 自己负责，不重复。
+    // -2..+2：封面与模糊背景都提前就绪（1200px 封面解码后一张约 8 MB，
+    // 只留邻近几张）。
+    // +3/+4：只提前做模糊背景与配色（200px，一张约 0.2 MB），封面到滑过去
+    // 时再按正常渲染加载，避免一次挂太多大图。
+    for (final offset in [-2, -1, 1, 2, 3, 4]) {
       final i = page + offset;
       if (i < 0 || i >= books.length) continue;
-      unawaited(_prewarmCoverForIndex(i, books, lib, brightness));
+      unawaited(_prewarmCoverForIndex(
+        i,
+        books,
+        lib,
+        brightness,
+        preloadCover: offset.abs() <= 2,
+      ));
     }
   }
 
@@ -159,8 +169,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     int index,
     List<Map<String, dynamic>> books,
     LibraryProvider lib,
-    Brightness brightness,
-  ) async {
+    Brightness brightness, {
+    bool preloadCover = true,
+  }) async {
     final book = books[index];
     final id = book['id'] as String?;
     if (id == null || id.isEmpty) return;
@@ -181,7 +192,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
             cacheKey: identity,
           );
     if (!mounted) return;
-    unawaited(precacheImage(provider, context, onError: (_, __) {}));
+    if (preloadCover) {
+      unawaited(precacheImage(provider, context, onError: (_, __) {}));
+    }
     final lease = await CoverBlurCache.instance.acquire(provider, identity);
     if (lease == null) return;
     try {

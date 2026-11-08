@@ -14,6 +14,7 @@ import '../services/local_session_service.dart';
 import '../services/download_service.dart';
 import '../services/episode_notification_service.dart';
 import '../services/library_cache.dart';
+import '../services/chapter_cache.dart';
 import '../services/json_file_cache.dart';
 import '../services/android_auto_service.dart';
 import '../services/carplay_service.dart';

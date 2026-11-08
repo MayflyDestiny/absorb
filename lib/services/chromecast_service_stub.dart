@@ -69,6 +69,7 @@ class ChromecastService extends ChangeNotifier {
     required List<dynamic> chapters,
     double startTime = 0,
     String? episodeId,
+    String? libraryId,
   }) async => false;
 
   Future<void> setVolume(double value) async {}
