@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
@@ -11,6 +13,7 @@ import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
 import '../services/download_service.dart';
 import '../services/scoped_prefs.dart';
+import '../utils/app_platform.dart';
 import 'card_buttons.dart' show showErrorToast;
 import 'download_confirm.dart';
 import 'episode_list_sheet.dart';
@@ -426,7 +429,7 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
       child: url == null
           ? placeholder
           // Downloaded shows resolve to a local file path.
-          : url.startsWith('/')
+          : !AppPlatform.lacksPhonePlugins && url.startsWith('/')
           ? Image.file(
               File(url),
               width: 48,
@@ -434,7 +437,7 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => placeholder,
             )
-          : CachedNetworkImage(
+          : CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
               imageUrl: url,
               useOldImageOnUrlChange: true,
               httpHeaders: lib.mediaHeaders,
@@ -456,7 +459,8 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
       _filter,
       progress: progress,
       finished: finished,
-      downloaded: DownloadService().isDownloaded('$showId-$epId'),
+      downloaded: !AppPlatform.lacksPhonePlugins &&
+          DownloadService().isDownloaded('$showId-$epId'),
       subscribed: lib.isPodcastSubscribed(showId),
     );
   }
@@ -483,6 +487,7 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
         totalDuration: duration,
         chapters: chapters,
         episodeId: episodeId,
+        libraryId: widget.libraryId,
       );
       return;
     }
@@ -508,6 +513,7 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
   }
 
   Future<void> _downloadEpisode(Map<String, dynamic> ep) async {
+    if (AppPlatform.lacksPhonePlugins) return;
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return;
     final showId = _showIdOf(ep);
@@ -617,7 +623,7 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
                         ('unplayed', l.filterUnplayed),
                         ('inprogress', l.inProgress),
                         ('finished', l.filterFinished),
-                        ('downloaded', l.downloaded),
+                        if (!AppPlatform.lacksPhonePlugins) ('downloaded', l.downloaded),
                       ]) ...[
                         ChoiceChip(
                           label: Text(label),
@@ -683,11 +689,13 @@ class _PodcastEpisodeFeedState extends State<PodcastEpisodeFeed> {
                     color: cs.primary,
                     onTrigger: () => _toggleFinished(ep),
                   ),
-                  onEndToStart: SwipeActionSpec(
-                    icon: Icons.download_rounded,
-                    color: cs.secondary,
-                    onTrigger: () => _downloadEpisode(ep),
-                  ),
+                  onEndToStart: AppPlatform.lacksPhonePlugins
+                      ? null
+                      : SwipeActionSpec(
+                          icon: Icons.download_rounded,
+                          color: cs.secondary,
+                          onTrigger: () => _downloadEpisode(ep),
+                        ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [

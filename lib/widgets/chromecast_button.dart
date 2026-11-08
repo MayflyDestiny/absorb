@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../services/chromecast_service.dart';
 import '../services/api_service.dart';
 import '../services/server_backend.dart';
+import 'adaptive_modal.dart';
 import 'overlay_toast.dart';
 
 /// Shows a device picker. If castAfter params are provided, automatically
@@ -27,7 +28,7 @@ void showCastDevicePicker(
     return;
   }
   final cast = ChromecastService();
-  showModalBottomSheet(
+  showAdaptiveActionMenu(
     context: context,
     backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
     shape: const RoundedRectangleBorder(

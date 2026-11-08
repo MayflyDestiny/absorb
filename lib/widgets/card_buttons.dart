@@ -26,6 +26,7 @@ import '../utils/episode_key.dart';
 import '../utils/series_id.dart';
 import 'absorb_slider.dart';
 import 'absorbing_shared.dart';
+import 'adaptive_modal.dart';
 import 'book_detail_sheet.dart';
 import 'bookmark_detail_dialog.dart';
 import 'card_button_config.dart';
@@ -668,12 +669,10 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
   }
 
   void _showBookmarks(BuildContext context) {
-    showModalBottomSheet(
-      context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useSafeArea: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9, expand: false,
-        builder: (ctx, sc) => SimpleBookmarkSheet(itemId: widget.itemId, episodeId: widget.episodeId, player: widget.player, accent: widget.accent, scrollController: sc, onChanged: _loadCount),
-      ),
+    showAdaptiveSheetDialog(
+      context: context, widthClass: DialogWidthClass.action, backgroundColor: Colors.transparent, useSafeArea: true,
+      initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9, expand: false,
+      builder: (ctx, sc) => SimpleBookmarkSheet(itemId: widget.itemId, episodeId: widget.episodeId, player: widget.player, accent: widget.accent, scrollController: sc, onChanged: _loadCount),
     );
   }
 }
@@ -687,7 +686,8 @@ class CardSpeedButtonInline extends StatefulWidget {
   final bool compact;
   final bool iconsOnly;
   final String? itemId;
-  const CardSpeedButtonInline({super.key, required this.player, required this.accent, required this.isActive, this.large = false, this.compact = false, this.iconsOnly = false, this.itemId});
+  final String? libraryId;
+  const CardSpeedButtonInline({super.key, required this.player, required this.accent, required this.isActive, this.large = false, this.compact = false, this.iconsOnly = false, this.itemId, this.libraryId});
 
   @override State<CardSpeedButtonInline> createState() => _CardSpeedButtonInlineState();
 }
@@ -711,7 +711,7 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
   Future<void> _loadSavedSpeed() async {
     if (widget.itemId == null) return;
     final bookSpeed = await PlayerSettings.getBookSpeed(widget.itemId!);
-    final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
+    final speed = bookSpeed ?? await PlayerSettings.defaultSpeedFor(libraryId: widget.libraryId);
     if (mounted && speed != _savedSpeed) setState(() => _savedSpeed = speed);
   }
 
@@ -759,9 +759,9 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
         }
         return Pressable(
           onTap: () {
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent,
+            showAdaptiveActionMenu(context: context, backgroundColor: Colors.transparent,
               useSafeArea: true,
-              builder: (ctx) => CardSpeedSheet(player: widget.player, accent: widget.accent, itemId: widget.itemId));
+              builder: (ctx) => CardSpeedSheet(player: widget.player, accent: widget.accent, itemId: widget.itemId, libraryId: widget.libraryId));
           },
           child: Container(
             height: h,
@@ -781,8 +781,8 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
 // ─── SPEED SHEET ─────────────────────────────────────────────
 
 class CardSpeedSheet extends StatefulWidget {
-  final AudioPlayerService player; final Color accent; final String? itemId;
-  const CardSpeedSheet({super.key, required this.player, required this.accent, this.itemId});
+  final AudioPlayerService player; final Color accent; final String? itemId; final String? libraryId;
+  const CardSpeedSheet({super.key, required this.player, required this.accent, this.itemId, this.libraryId});
   @override State<CardSpeedSheet> createState() => _CardSpeedSheetState();
 }
 
@@ -839,7 +839,7 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
   Future<void> _loadSavedSpeed() async {
     if (widget.itemId == null) return;
     final bookSpeed = await PlayerSettings.getBookSpeed(widget.itemId!);
-    final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
+    final speed = bookSpeed ?? await PlayerSettings.defaultSpeedFor(libraryId: widget.libraryId);
     if (mounted) setState(() => _speed = (speed * 20).round() / 20.0);
   }
   void _setSpeed(double v) {
@@ -969,7 +969,9 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
       if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v);
     });
     PlayerSettings.getBookSpeed(widget.itemId).then((s) async {
-      final speed = s ?? await PlayerSettings.getDefaultSpeed();
+      final speed = s ??
+          await PlayerSettings.defaultSpeedFor(
+              libraryId: context.read<LibraryProvider>().libraryIdOf(widget.itemId, episodeId: widget.episodeId));
       if (mounted && speed != _savedSpeed) setState(() => _savedSpeed = speed);
     });
   }
@@ -1156,7 +1158,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
                       final hasNote = bm.note != null && bm.note!.isNotEmpty;
                       return InkWell(
                         onTap: () async {
-                          final result = await showModalBottomSheet<BookmarkDetailResult>(
+                          final result = await showAdaptiveActionMenu<BookmarkDetailResult>(
                             context: ctx,
                             isScrollControlled: true,
                             showDragHandle: true,
@@ -1777,6 +1779,7 @@ class CardActionDelegate {
   final Map<String, dynamic> item;
   final String itemId;
   final String? episodeId;
+  final String? libraryId;
   final bool isPodcastEpisode;
   final String title;
   final String? author;
@@ -1794,6 +1797,7 @@ class CardActionDelegate {
   final bool iconsOnly;
   final bool moreInline;
   final List<String> buttonOrder;
+  final bool showChaptersAction;
   final VoidCallback removeFromAbsorbing;
   final VoidCallback? onRemoveExtra;
   final void Function(List<String>, int) onReorder;
@@ -1811,6 +1815,7 @@ class CardActionDelegate {
     required this.item,
     required this.itemId,
     this.episodeId,
+    this.libraryId,
     this.isPodcastEpisode = false,
     required this.title,
     this.author,
@@ -1828,6 +1833,7 @@ class CardActionDelegate {
     this.iconsOnly = false,
     this.moreInline = false,
     required this.buttonOrder,
+    this.showChaptersAction = true,
     required this.removeFromAbsorbing,
     this.onRemoveExtra,
     required this.onReorder,
@@ -1995,9 +2001,29 @@ class CardActionDelegate {
     7: [3, 4], 8: [4, 4], 9: [3, 3, 3],
   };
 
-  List<Widget> buildButtonGrid(Color accent, TextTheme tt) {
+  static List<int> _balancedRows(int count, int maxPerRow) {
+    final rowCount = (count / maxPerRow).ceil();
+    final baseSize = count ~/ rowCount;
+    final largerRows = count % rowCount;
+    return <int>[
+      for (int row = 0; row < rowCount; row++)
+        row < rowCount - largerRows ? baseSize : baseSize + 1,
+    ];
+  }
+
+  List<Widget> buildButtonGrid(
+    Color accent,
+    TextTheme tt, {
+    bool showAll = false,
+  }) {
     final count = visibleButtonCount;
-    final ids = _shownOrder.take(count).toList();
+    final order = _shownOrder;
+    final ids = order
+        .take(showAll ? order.length : count)
+        .where((id) => !showAll || id != '_more')
+        .where((id) => !showAll || buttonDefById(id) != null)
+        .where((id) => showChaptersAction || id != 'chapters')
+        .toList();
     final n = ids.length;
     if (n == 0) return [];
 
@@ -2005,7 +2031,9 @@ class CardActionDelegate {
     final short = iconsOnly || n >= 3;
 
     final table = iconsOnly ? _iconRows : _labelRows;
-    final rowSizes = table[n] ?? _labelRows[n] ?? [n];
+    final rowSizes = showAll
+        ? _balancedRows(n, iconsOnly ? 5 : 3)
+        : table[n] ?? _labelRows[n] ?? [n];
 
     final rows = <Widget>[];
     int offset = 0;
@@ -2018,9 +2046,25 @@ class CardActionDelegate {
       Widget row = Row(children: [
         for (int c = 0; c < rowSlots.length; c++) ...[
           if (c > 0) const SizedBox(width: 8),
-          Expanded(child: rowSlots[c] == '_more'
-              ? _buildInlineMoreButton(accent, compact: compact, short: short)
-              : buildCardButton(rowSlots[c], accent, tt, compact: compact, short: short, iconsOnly: iconsOnly)),
+          Expanded(
+            child: KeyedSubtree(
+              key: ValueKey('card-action-${rowSlots[c]}'),
+              child: rowSlots[c] == '_more'
+                  ? _buildInlineMoreButton(
+                      accent,
+                      compact: compact,
+                      short: short,
+                    )
+                  : buildCardButton(
+                      rowSlots[c],
+                      accent,
+                      tt,
+                      compact: compact,
+                      short: short,
+                      iconsOnly: iconsOnly,
+                    ),
+            ),
+          ),
         ],
       ]);
 
@@ -2105,7 +2149,7 @@ class CardActionDelegate {
         return CardWideButton(
           icon: Icons.speed_rounded, label: l.speed,
           accent: accent, isActive: isPlaybackActive, large: large, compact: compact, iconsOnly: iconsOnly,
-          child: CardSpeedButtonInline(player: player, accent: accent, isActive: isActive, large: large, compact: compact, iconsOnly: iconsOnly, itemId: itemId),
+          child: CardSpeedButtonInline(player: player, accent: accent, isActive: isActive, large: large, compact: compact, iconsOnly: iconsOnly, itemId: itemId, libraryId: libraryId),
         );
       case 'sleep':
         return CardWideButton(
@@ -2300,8 +2344,8 @@ class CardActionDelegate {
           enabled: true,
           onTap: () {
             Navigator.pop(ctx);
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, useSafeArea: true,
-              builder: (_) => CardSpeedSheet(player: player, accent: accent, itemId: itemId));
+            showAdaptiveActionMenu(context: context, backgroundColor: Colors.transparent, useSafeArea: true,
+              builder: (_) => CardSpeedSheet(player: player, accent: accent, itemId: itemId, libraryId: libraryId));
           },
         );
       case 'sleep':
@@ -2319,11 +2363,9 @@ class CardActionDelegate {
           enabled: isPlaybackActive,
           onTap: () {
             Navigator.pop(ctx);
-            showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useSafeArea: true,
-              builder: (_) => DraggableScrollableSheet(
-                initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9, expand: false,
-                builder: (_, sc) => SimpleBookmarkSheet(itemId: itemId, episodeId: _bookmarkEpisodeId, player: player, accent: accent, scrollController: sc, onChanged: () {}),
-              ),
+            showAdaptiveSheetDialog(context: context, widthClass: DialogWidthClass.action, backgroundColor: Colors.transparent, useSafeArea: true,
+              initialChildSize: 0.6, minChildSize: 0.05, snap: true, maxChildSize: 0.9, expand: false,
+              builder: (_, sc) => SimpleBookmarkSheet(itemId: itemId, episodeId: _bookmarkEpisodeId, player: player, accent: accent, scrollController: sc, onChanged: () {}),
             );
           },
         );
@@ -2483,9 +2525,14 @@ class CardActionDelegate {
 
   void showMoreMenu(Color accent, TextTheme tt) {
     final count = visibleButtonCount;
-    final overflowIds = _shownOrder.skip(count).where((id) => id != '_more').toList();
-    showModalBottomSheet(
+    final overflowIds = _shownOrder
+        .skip(count)
+        .where((id) => id != '_more' && (showChaptersAction || id != 'chapters'))
+        .toList();
+    showAdaptiveActionMenu(
       context: context,
+      desktopWidth: 520,
+      desktopScrollWrap: false,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => MoreMenuSheet(
@@ -2533,7 +2580,7 @@ class CardActionDelegate {
     final auth = ctx.read<AuthProvider>();
     final api = auth.apiService;
     if (cast.isCasting && cast.castingItemId == itemId) {
-      showModalBottomSheet(
+      showAdaptiveActionMenu(
         context: ctx,
         backgroundColor: Theme.of(ctx).bottomSheetTheme.backgroundColor,
         shape: const RoundedRectangleBorder(
@@ -2547,6 +2594,7 @@ class CardActionDelegate {
           api: api, itemId: itemId, title: title, author: author ?? '',
           coverUrl: coverUrl, totalDuration: duration, chapters: chapters,
           episodeId: episodeId ?? player.currentEpisodeId,
+          libraryId: libraryId,
         );
       }
     } else {
@@ -2857,29 +2905,27 @@ void showPlaybackHistorySheet(
           (episodeId == null ||
               resolvedPlayer.currentEpisodeId == episodeId));
   final theme = Theme.of(context);
-  showModalBottomSheet(
+  showAdaptiveSheetDialog(
     context: context,
-    isScrollControlled: true,
+    widthClass: DialogWidthClass.action,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      minChildSize: 0.05,
-      snap: true,
-      maxChildSize: 0.9,
-      builder: (_, scrollController) => _PlaybackHistoryBody(
-        itemId: itemId,
-        episodeId: episodeId,
-        api: context.read<AuthProvider>().apiService,
-        accent: accent ?? theme.colorScheme.primary,
-        tt: textTheme ?? theme.textTheme,
-        isActive: resolvedIsActive,
-        player: resolvedPlayer,
-        parentCtx: context,
-        scrollController: scrollController,
-        initialTab: initialTab,
-      ),
+    expand: false,
+    initialChildSize: 0.6,
+    minChildSize: 0.05,
+    snap: true,
+    maxChildSize: 0.9,
+    builder: (_, scrollController) => _PlaybackHistoryBody(
+      itemId: itemId,
+      episodeId: episodeId,
+      api: context.read<AuthProvider>().apiService,
+      accent: accent ?? theme.colorScheme.primary,
+      tt: textTheme ?? theme.textTheme,
+      isActive: resolvedIsActive,
+      player: resolvedPlayer,
+      parentCtx: context,
+      scrollController: scrollController,
+      initialTab: initialTab,
     ),
   );
 }
@@ -2940,7 +2986,9 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
       if (mounted && v != _speedAdjustedTime) setState(() => _speedAdjustedTime = v);
     });
     PlayerSettings.getBookSpeed(widget.itemId).then((s) async {
-      final speed = s ?? await PlayerSettings.getDefaultSpeed();
+      final speed = s ??
+          await PlayerSettings.defaultSpeedFor(
+              libraryId: context.read<LibraryProvider>().libraryIdOf(widget.itemId, episodeId: widget.episodeId));
       if (mounted && speed != _savedSpeed) setState(() => _savedSpeed = speed);
     });
     _selectedTab = widget.initialTab.index;
@@ -3373,8 +3421,9 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
   Future<void> _showServerSessionDetails(
     Map<String, dynamic> session,
   ) async {
-    final changed = await showModalBottomSheet<bool>(
+    final changed = await showAdaptiveActionMenu<bool>(
       context: context,
+      desktopWidth: 520,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => SessionDetailsSheet(

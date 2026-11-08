@@ -13,6 +13,8 @@ import '../services/bookmark_service.dart';
 import '../services/bookmark_preview_player.dart';
 import '../services/chapter_lookup.dart';
 import '../services/download_service.dart';
+import '../utils/app_platform.dart';
+import 'adaptive_modal.dart';
 import '../services/ebook_cache.dart';
 import '../services/media_overlay.dart';
 import '../services/narration_service.dart';
@@ -127,7 +129,9 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
                 player.currentEpisodeId == widget.episodeId)
         ? player.speed
         : (await PlayerSettings.getBookSpeed(widget.itemId) ??
-            await PlayerSettings.getDefaultSpeed());
+            await PlayerSettings.defaultSpeedFor(
+                libraryId: context.read<LibraryProvider>().libraryIdOf(
+                    widget.itemId, episodeId: widget.episodeId)));
     if (mounted && speed > 0 && speed != _displaySpeed) {
       setState(() => _displaySpeed = speed);
     }
@@ -181,12 +185,13 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
     // iOS can't export from a streaming book, so prompt to download up front
     // rather than letting the user trim a clip and only fail at Save. Android
     // exports streamed clips fine, so it always opens the editor.
-    if (Platform.isIOS && !DownloadService().isDownloaded(widget._key)) {
+    if (AppPlatform.isIOS && !DownloadService().isDownloaded(widget._key)) {
       await _promptDownload();
       return;
     }
-    await showModalBottomSheet<void>(
+    await showAdaptiveActionMenu<void>(
       context: context,
+      desktopWidth: 560,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
@@ -673,15 +678,17 @@ class _BookmarkDetailSheetState extends State<BookmarkDetailSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.content_cut_rounded, size: 18),
-                label: Text(l.clipExport),
-                onPressed: _saving ? null : _openClipEditor,
+            if (!AppPlatform.lacksPhonePlugins) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.content_cut_rounded, size: 18),
+                  label: Text(l.clipExport),
+                  onPressed: _saving ? null : _openClipEditor,
+                ),
               ),
-            ),
-            if (_transcriptionOn || _fromNarration) ...[
+            ],
+            if (!AppPlatform.isWeb && (_transcriptionOn || _fromNarration)) ...[
               const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,

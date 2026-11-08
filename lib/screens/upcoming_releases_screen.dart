@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -9,11 +11,12 @@ import '../services/audio_player_service.dart';
 import '../services/rmab_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/upcoming_releases_service.dart';
+import '../utils/desktop_workspace.dart';
 import '../utils/series_number_match.dart';
-
 import '../widgets/absorb_page_header.dart';
 import '../widgets/audible_book_request.dart';
 import '../widgets/audible_series_sheet.dart';
+import '../widgets/desktop_page_body.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/rmab_book_detail_sheet.dart';
 import '../widgets/rmab_config_sheet.dart'
@@ -810,11 +813,14 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
+    final desktopWorkspace = isDesktopWorkspace(context);
 
     return Scaffold(
       bottomNavigationBar: _selecting ? _buildSelectionBar(cs, tt, l) : null,
       body: SafeArea(
-        child: Column(
+        child: DesktopPageBody(
+          maxWidth: 1080,
+          child: Column(
           children: [
             AbsorbPageHeader(
               title: l.upcomingReleasesTitle,
@@ -850,6 +856,16 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                     child: Icon(Icons.tune_rounded, size: 18, color: cs.onSurfaceVariant),
                   ),
                 ),
+                if (desktopWorkspace)
+                  IconButton(
+                    key: const Key('upcoming-releases-close'),
+                    tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
               ],
             ),
 
@@ -964,6 +980,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
               child: _buildContent(cs, tt, l),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -1264,7 +1281,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                   child: Stack(children: [
                     Positioned.fill(
                       child: coverUrl.isNotEmpty
-                          ? CachedNetworkImage(
+                          ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                               imageUrl: coverUrl, fit: BoxFit.cover,
                               useOldImageOnUrlChange: true,
                               placeholder: (_, __) => _placeholder(cs),
@@ -1480,7 +1497,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                   child: Stack(children: [
                     Positioned.fill(
                       child: coverUrl.isNotEmpty
-                          ? CachedNetworkImage(
+                          ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                               imageUrl: coverUrl, fit: BoxFit.cover,
                               useOldImageOnUrlChange: true,
                               placeholder: (_, __) => _placeholder(cs),
@@ -1705,7 +1722,7 @@ class _RemovedBooksSheetState extends State<_RemovedBooksSheet> {
                                 width: 44,
                                 height: 44,
                                 child: coverUrl.isNotEmpty
-                                    ? CachedNetworkImage(
+                                    ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                                         imageUrl: coverUrl, fit: BoxFit.cover,
                                         useOldImageOnUrlChange: true,
                                         errorWidget: (_, __, ___) => Container(color: cs.surfaceContainerHighest))

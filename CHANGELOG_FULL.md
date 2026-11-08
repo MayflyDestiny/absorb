@@ -3,12 +3,31 @@
 本文件记录 [pounat/absorb](https://github.com/pounat/absorb) Fork 之后由 AI 生成的全部变更，按发布版本倒序排列，仅涉及 Android 平台。
 
 - Fork 基线：`v1.11.2+280`（上游 `284e16c`）
-- 最新版本：`v1.24.2+446`
+- 最新版本：`v1.25.0+447`
 - 摘要版见 [README.md](README.md#更新日志)
 
 > 版本号以 `pubspec.yaml` 为准。少数提交信息里写的版本号与实际 `pubspec.yaml` 不一致（例如 `a709776` 写 1.21.8+380、实际 1.21.8+381；`6b09bfe` 写 1.21.9+385、实际 1.21.10+386），本文件采用 `pubspec.yaml` 的值。
 
 ---
+
+## v1.25.0+447 — 同步上游 1.12.1+304（播放引擎重写、离线同步与 BookOrbit 阅读活动）
+
+合并自上游 `00085b45` · 2026-11-05
+
+- **同步上游**：`8411ffc7` → `00085b45`，68 个提交、357 个文件（+36.5k/−4.1k）。上游这次把 Web / 桌面 / Windows 三条长期分支并进了 main，因此增量里约一半是跨平台代码
+  - **播放引擎**：均衡器 / 低音增强 / 响度自动电平搬进播放器线程（`packages/just_audio` 新增 EqAudioProcessor、Leveler、PeakLimiter），新增**音调**滑块，Android 上所有机型都生效
+  - **播放与同步修复**：单次 ping 丢失不再切离线（先补一次探测）、离线标记读完联网后补同步、每媒体库可设**默认速度**、跨应用（导航/短视频）开始放音频时可按设置继续播放、从高亮处开始播放、同步节流改为蜂窝网络 60 秒、错乱的 app 端时长不再污染服务器百分比、耳机键暂停/播放与睡眠提醒修复
+  - **设置**：Audible 评分开关、章节进度进底部播放条、音调、库级默认速度
+  - **BookOrbit**：忘记密码（邮件链接）、用户**阅读活动**页（时长/会话/活跃天/趋势/来源/格式/分类/榜单，含共享范围与"对方可见你查看过"提示）
+  - **其他**：Flutter 3.47、登录令牌到期前刷新、封面可移除、播客单集更多排序方式、Audible 区域选择与系列回退美国区
+- **合并策略（与以往不同，需明确）**：上游对共享文件的重构幅度过大，逐 hunk 拼接会让文件失去内部一致性（上一轮尝试曾报 594 条分析问题）。本轮改为**以文件为单位**集成：
+  - **整文件保留 fork**：正在收听 / 首页 / 媒体库 / 设置 / 播放器 / 详情页 / 下载 / 网格卡片等 Android 界面与播放逻辑，保证与 fork 的封面缓存、下载语义、设置结构自洽；这些文件里上游的**桌面/Web 版式改动与部分 UI 修复未并入**
+  - **取上游**：入口（`main.dart`）、日志服务（含 web 日志与新的脱敏）、会话与令牌、`api_service` 自动合并部分；`auth_provider` 因登录返回值是 fork 的命名记录（`data/statusCode/failure`）而保留 fork 版
+  - **跨文件接口按合并后签名对齐**：媒体库网格助手（`libraryGridDelegate` / `CoverTileGridDelegate` / `coverTileLabelHeight` / `libraryGridBottomPadding(context)`）从上游移植进 fork 的 `library_screen`；`PlayerSettings` 补上 `getSpeedOverride` / `setSpeedOverride` / `defaultSpeedFor`
+  - 未采用的平台代码（`windows/`、`web/`、`packages/flutter_inappwebview_windows` 等）已随合并进入仓库，但 fork 仍只构建 Android
+- **新增中文翻译（71 条）**：桌面队列表头、库级默认速度、章节进度开关、Audible 评分、离线补同步提示、音调、书签/章节提示、BookOrbit 忘记密码（6 条）与阅读活动（47 条，含 13 个分类名）；en / zh 键 4368 / 4368 对齐、缺译归零
+- **验证**：`flutter gen-l10n` 通过、zh 缺译 0；`flutter analyze` **0 error**（220 条 info/warning，主要来自上游新代码风格）；`flutter test` 本机无法运行——合并带入的原生资源钩子需要 MSVC 工具链（`vswhere` 调用失败），需在 CI 或装好 VS C++ 工具的环境验证
+- **版本号**：`1.25.0+447`
 
 ## v1.24.2+446 — 服务器更新章节与音轨后，详情页与播放跳章不再显示旧数据
 

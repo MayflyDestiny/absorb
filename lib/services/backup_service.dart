@@ -277,13 +277,14 @@ class BackupService {
         if (!key.startsWith(fullPrefix)) continue;
         final libraryId = key.substring(fullPrefix.length);
         final value = prefs.get(key);
-        if (value is! String && value is! int) continue;
+        if (value is! String && value is! int && value is! double) continue;
         librarySettings.putIfAbsent(libraryId, () => {})[field] = value;
       }
     }
     collectLibrarySetting('rectangleCovers_', 'coverShape');
     collectLibrarySetting('skipOverrideForward_', 'skipForward');
     collectLibrarySetting('skipOverrideBack_', 'skipBack');
+    collectLibrarySetting('speedOverride_', 'speed');
 
     // Per-item metadata overrides (scoped, keyed by itemId)
     final metadataOverrides = <String, String>{};
@@ -923,6 +924,7 @@ class BackupService {
         '${scopePrefix}rectangleCovers_',
         '${scopePrefix}skipOverrideForward_',
         '${scopePrefix}skipOverrideBack_',
+        '${scopePrefix}speedOverride_',
       ];
       final oldKeys = prefs
           .getKeys()
@@ -950,6 +952,8 @@ class BackupService {
             back: skipBack,
           );
         }
+        final speed = (settings['speed'] as num?)?.toDouble();
+        if (speed != null) await PlayerSettings.setSpeedOverride(libraryId, speed);
       }
     }
 

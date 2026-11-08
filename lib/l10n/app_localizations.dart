@@ -1492,6 +1492,12 @@ abstract class AppLocalizations {
   /// **'Manage Queue'**
   String get absorbingManageQueue;
 
+  /// No description provided for @desktopAbsorbingQueueHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Add to Absorbing on a book or episode to put it here. Items play in this order.'**
+  String get desktopAbsorbingQueueHint;
+
   /// No description provided for @absorbingDone.
   ///
   /// In en, this message translates to:
@@ -2899,7 +2905,7 @@ abstract class AppLocalizations {
   /// No description provided for @cardScrubbers.
   ///
   /// In en, this message translates to:
-  /// **'Card scrubbers'**
+  /// **'Progress bars'**
   String get cardScrubbers;
 
   /// No description provided for @cardScrubbersBoth.
@@ -3007,31 +3013,31 @@ abstract class AppLocalizations {
   /// No description provided for @mergeLibraries.
   ///
   /// In en, this message translates to:
-  /// **'Unified Absorbing page'**
+  /// **'Unified Absorbing'**
   String get mergeLibraries;
 
   /// No description provided for @mergeLibrariesInfoTitle.
   ///
   /// In en, this message translates to:
-  /// **'Unified Absorbing Page'**
+  /// **'Unified Absorbing'**
   String get mergeLibrariesInfoTitle;
 
   /// No description provided for @mergeLibrariesInfoContent.
   ///
   /// In en, this message translates to:
-  /// **'When enabled, the Absorbing screen shows all your in-progress books and podcasts from every library in a single view. When disabled, only items from the library you currently have selected are shown.'**
+  /// **'When enabled, Absorbing shows and queues books and podcast episodes from every library together. When disabled, the page and Manual queue stay within the current library or media type.'**
   String get mergeLibrariesInfoContent;
 
   /// No description provided for @mergeLibrariesOnSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Absorbing page shows items from all libraries'**
+  /// **'Show and queue items from all libraries together'**
   String get mergeLibrariesOnSubtitle;
 
   /// No description provided for @mergeLibrariesOffSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Absorbing page shows current library only'**
+  /// **'Keep the page and Manual queue in the current library'**
   String get mergeLibrariesOffSubtitle;
 
   /// No description provided for @queueMode.
@@ -3067,7 +3073,7 @@ abstract class AppLocalizations {
   /// No description provided for @queueModeInfoManualDesc.
   ///
   /// In en, this message translates to:
-  /// **'Your absorbing cards act as a playlist. When one finishes, the next non-finished card auto-plays. Add items with the \"Add to Absorbing\" button on a book or episode and reorder from the absorbing screen.'**
+  /// **'Items in Absorbing are your manual queue. When one finishes, the next unfinished item plays. Use Add to Absorbing on a book or episode, then reorder it in the Queue panel.'**
   String get queueModeInfoManualDesc;
 
   /// No description provided for @queueModeOff.
@@ -3472,6 +3478,30 @@ abstract class AppLocalizations {
   /// **'Off - this library uses the global skip amounts'**
   String get currentLibrarySkipOverrideOffSubtitle;
 
+  /// No description provided for @currentLibrarySpeedOverride.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom default speed'**
+  String get currentLibrarySpeedOverride;
+
+  /// No description provided for @currentLibrarySpeedOverrideOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - new items in this library start at their own speed'**
+  String get currentLibrarySpeedOverrideOnSubtitle;
+
+  /// No description provided for @currentLibrarySpeedOverrideOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - new items in this library start at the global default speed'**
+  String get currentLibrarySpeedOverrideOffSubtitle;
+
+  /// No description provided for @currentLibrarySpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Default speed'**
+  String get currentLibrarySpeed;
+
   /// No description provided for @currentLibrarySkipBack.
   ///
   /// In en, this message translates to:
@@ -3513,6 +3543,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On - lock screen & CarPlay show chapter progress'**
   String get chapterProgressOnSubtitleIos;
+
+  /// No description provided for @chapterProgressInNowPlayingBar.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter progress in now playing bar'**
+  String get chapterProgressInNowPlayingBar;
+
+  /// No description provided for @chapterProgressInNowPlayingBarOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - the bottom player shows current chapter progress'**
+  String get chapterProgressInNowPlayingBarOnSubtitle;
+
+  /// No description provided for @chapterProgressInNowPlayingBarOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - the bottom player shows full book progress'**
+  String get chapterProgressInNowPlayingBarOffSubtitle;
 
   /// No description provided for @nowPlayingText.
   ///
@@ -6082,6 +6130,24 @@ abstract class AppLocalizations {
   /// **'Off - all library items shown'**
   String get hideEbookOnlyOffSubtitle;
 
+  /// No description provided for @audibleRatings.
+  ///
+  /// In en, this message translates to:
+  /// **'Audible ratings'**
+  String get audibleRatings;
+
+  /// No description provided for @audibleRatingsOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - book details show the Audible rating'**
+  String get audibleRatingsOnSubtitle;
+
+  /// No description provided for @audibleRatingsOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - no Audible lookup or stars'**
+  String get audibleRatingsOffSubtitle;
+
   /// No description provided for @homeCardsOpenDetails.
   ///
   /// In en, this message translates to:
@@ -6223,7 +6289,7 @@ abstract class AppLocalizations {
   /// No description provided for @enableLoggingOnSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'On - logs saved to file (restart to apply)'**
+  /// **'On - logs are being captured (restart to apply)'**
   String get enableLoggingOnSubtitle;
 
   /// No description provided for @enableLoggingOffSubtitle.
@@ -6247,19 +6313,19 @@ abstract class AppLocalizations {
   /// No description provided for @sendLogs.
   ///
   /// In en, this message translates to:
-  /// **'Send logs'**
+  /// **'Export logs'**
   String get sendLogs;
 
   /// No description provided for @sendLogsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Share log file as attachment'**
+  /// **'Download or share the .txt log file'**
   String get sendLogsSubtitle;
 
   /// No description provided for @failedToShare.
   ///
   /// In en, this message translates to:
-  /// **'Failed to share: {error}'**
+  /// **'Failed to export: {error}'**
   String failedToShare(String error);
 
   /// No description provided for @clearLogs.
@@ -8206,6 +8272,12 @@ abstract class AppLocalizations {
   /// **'Failed to update - check your connection'**
   String get failedToUpdateCheckConnection;
 
+  /// No description provided for @markedFinishedWillSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Marked as finished - will sync when you\'re back online'**
+  String get markedFinishedWillSync;
+
   /// No description provided for @markAsNotFinishedQuestion.
   ///
   /// In en, this message translates to:
@@ -8980,6 +9052,12 @@ abstract class AppLocalizations {
   /// **'Loudness'**
   String get loudness;
 
+  /// No description provided for @pitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Pitch'**
+  String get pitch;
+
   /// No description provided for @monoAudio.
   ///
   /// In en, this message translates to:
@@ -9411,6 +9489,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Refresh'**
   String get refreshTooltip;
+
+  /// No description provided for @openNowPlayingTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Now Playing'**
+  String get openNowPlayingTooltip;
+
+  /// No description provided for @previousChapterTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous chapter'**
+  String get previousChapterTooltip;
+
+  /// No description provided for @nextChapterTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Next chapter'**
+  String get nextChapterTooltip;
 
   /// No description provided for @noBooksFound.
   ///
@@ -13184,6 +13280,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'NEW'**
   String get upcomingReleasesBadgeNew;
+
+  /// No description provided for @upcomingReleasesOpenSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Open series on Audible'**
+  String get upcomingReleasesOpenSeries;
 
   /// No description provided for @upcomingReleasesOpenLibrarySeries.
   ///
@@ -25922,6 +26024,330 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t make a copy without the narration.'**
   String get boEmailNoCopy;
+
+  /// No description provided for @boForgotLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Forgot password?'**
+  String get boForgotLink;
+
+  /// No description provided for @boForgotTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset your password'**
+  String get boForgotTitle;
+
+  /// No description provided for @boForgotBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the email on your account and the server will send you a link to choose a new password.'**
+  String get boForgotBody;
+
+  /// No description provided for @boForgotSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send link'**
+  String get boForgotSend;
+
+  /// No description provided for @boForgotSent.
+  ///
+  /// In en, this message translates to:
+  /// **'If that email is on an account, a link is on its way. Open it to choose a new password, then sign in here.'**
+  String get boForgotSent;
+
+  /// No description provided for @boForgotNotSetUp.
+  ///
+  /// In en, this message translates to:
+  /// **'This server isn\'t set up to send email. Ask whoever runs it for a password link.'**
+  String get boForgotNotSetUp;
+
+  /// No description provided for @boForgotTooMany.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many tries. Wait a while and try again.'**
+  String get boForgotTooMany;
+
+  /// No description provided for @boActivityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading activity'**
+  String get boActivityTitle;
+
+  /// No description provided for @boActivityPrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Keeps their reading activity private'**
+  String get boActivityPrivate;
+
+  /// No description provided for @boActivitySharesSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Shares a summary. They can see when you view it.'**
+  String get boActivitySharesSummary;
+
+  /// No description provided for @boActivitySharesDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Shares details, including books. They can see when you view it.'**
+  String get boActivitySharesDetails;
+
+  /// No description provided for @boActivityNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This person can see that you viewed this.'**
+  String get boActivityNotice;
+
+  /// No description provided for @boActivityNowPrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'This person isn\'t sharing their reading activity anymore.'**
+  String get boActivityNowPrivate;
+
+  /// No description provided for @boActivityLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load reading activity.'**
+  String get boActivityLoadFailed;
+
+  /// No description provided for @boActivityEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No reading in this period'**
+  String get boActivityEmpty;
+
+  /// No description provided for @boActivityReadingTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading time'**
+  String get boActivityReadingTime;
+
+  /// No description provided for @boActivitySessions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get boActivitySessions;
+
+  /// No description provided for @boActivityActiveDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Active days'**
+  String get boActivityActiveDays;
+
+  /// No description provided for @boActivityStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Books started'**
+  String get boActivityStarted;
+
+  /// No description provided for @boActivityFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Books finished'**
+  String get boActivityFinished;
+
+  /// No description provided for @boActivityTrend.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily reading'**
+  String get boActivityTrend;
+
+  /// No description provided for @boActivitySources.
+  ///
+  /// In en, this message translates to:
+  /// **'Read on'**
+  String get boActivitySources;
+
+  /// No description provided for @boActivityFormats.
+  ///
+  /// In en, this message translates to:
+  /// **'Formats'**
+  String get boActivityFormats;
+
+  /// No description provided for @boActivityGenres.
+  ///
+  /// In en, this message translates to:
+  /// **'Genres'**
+  String get boActivityGenres;
+
+  /// No description provided for @boActivityTopBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Most read'**
+  String get boActivityTopBooks;
+
+  /// No description provided for @boActivityRecentBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently read'**
+  String get boActivityRecentBooks;
+
+  /// No description provided for @boActivityTopAuthors.
+  ///
+  /// In en, this message translates to:
+  /// **'Top authors'**
+  String get boActivityTopAuthors;
+
+  /// No description provided for @boActivityTopGenres.
+  ///
+  /// In en, this message translates to:
+  /// **'Top genres'**
+  String get boActivityTopGenres;
+
+  /// No description provided for @boActivityTopSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Top series'**
+  String get boActivityTopSeries;
+
+  /// No description provided for @boActivityTopNarrators.
+  ///
+  /// In en, this message translates to:
+  /// **'Top narrators'**
+  String get boActivityTopNarrators;
+
+  /// No description provided for @boActivityUntitled.
+  ///
+  /// In en, this message translates to:
+  /// **'Untitled book'**
+  String get boActivityUntitled;
+
+  /// No description provided for @boActivitySourceWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Web reader'**
+  String get boActivitySourceWeb;
+
+  /// No description provided for @boActivitySourceIos.
+  ///
+  /// In en, this message translates to:
+  /// **'iOS app'**
+  String get boActivitySourceIos;
+
+  /// No description provided for @boActivitySourceWatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple Watch'**
+  String get boActivitySourceWatch;
+
+  /// No description provided for @boActivitySourceAndroid.
+  ///
+  /// In en, this message translates to:
+  /// **'Android app'**
+  String get boActivitySourceAndroid;
+
+  /// No description provided for @boActivitySourceManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual'**
+  String get boActivitySourceManual;
+
+  /// No description provided for @boActivitySourceUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get boActivitySourceUnknown;
+
+  /// No description provided for @boActivityGenreSciFi.
+  ///
+  /// In en, this message translates to:
+  /// **'Science fiction'**
+  String get boActivityGenreSciFi;
+
+  /// No description provided for @boActivityGenreFantasy.
+  ///
+  /// In en, this message translates to:
+  /// **'Fantasy'**
+  String get boActivityGenreFantasy;
+
+  /// No description provided for @boActivityGenreMystery.
+  ///
+  /// In en, this message translates to:
+  /// **'Mystery and thriller'**
+  String get boActivityGenreMystery;
+
+  /// No description provided for @boActivityGenreRomance.
+  ///
+  /// In en, this message translates to:
+  /// **'Romance'**
+  String get boActivityGenreRomance;
+
+  /// No description provided for @boActivityGenreHorror.
+  ///
+  /// In en, this message translates to:
+  /// **'Horror'**
+  String get boActivityGenreHorror;
+
+  /// No description provided for @boActivityGenreHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'History and biography'**
+  String get boActivityGenreHistory;
+
+  /// No description provided for @boActivityGenreScience.
+  ///
+  /// In en, this message translates to:
+  /// **'Science and technology'**
+  String get boActivityGenreScience;
+
+  /// No description provided for @boActivityGenreBusiness.
+  ///
+  /// In en, this message translates to:
+  /// **'Business and economics'**
+  String get boActivityGenreBusiness;
+
+  /// No description provided for @boActivityGenreSelf.
+  ///
+  /// In en, this message translates to:
+  /// **'Self-development'**
+  String get boActivityGenreSelf;
+
+  /// No description provided for @boActivityGenreSociety.
+  ///
+  /// In en, this message translates to:
+  /// **'Society and culture'**
+  String get boActivityGenreSociety;
+
+  /// No description provided for @boActivityGenreChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Children and young adult'**
+  String get boActivityGenreChildren;
+
+  /// No description provided for @boActivityGenreComics.
+  ///
+  /// In en, this message translates to:
+  /// **'Comics and graphic novels'**
+  String get boActivityGenreComics;
+
+  /// No description provided for @boActivityGenrePoetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Poetry'**
+  String get boActivityGenrePoetry;
+
+  /// No description provided for @boActivityGenreOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get boActivityGenreOther;
+
+  /// No description provided for @boActivityDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} days'**
+  String boActivityDays(int count);
+
+  /// No description provided for @boActivityMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} min'**
+  String boActivityMinutes(int count);
+
+  /// No description provided for @boActivityHours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} h'**
+  String boActivityHours(double count);
 }
 
 class _AppLocalizationsDelegate

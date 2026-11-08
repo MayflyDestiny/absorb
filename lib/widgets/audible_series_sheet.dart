@@ -1,6 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
@@ -10,7 +11,9 @@ import '../services/player_settings.dart';
 import '../services/rmab_service.dart';
 import '../services/scoped_prefs.dart';
 import '../services/upcoming_releases_service.dart';
+import '../utils/app_platform.dart';
 import '../utils/series_number_match.dart';
+import 'adaptive_modal.dart';
 import 'audible_book_request.dart';
 import 'overlay_toast.dart';
 import 'rmab_book_detail_sheet.dart';
@@ -454,7 +457,7 @@ class _AudibleSeriesSheetState extends State<AudibleSeriesSheet> {
                 child: Stack(children: [
                   Positioned.fill(
                     child: coverUrl.isNotEmpty
-                        ? CachedNetworkImage(
+                        ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                             imageUrl: coverUrl, fit: BoxFit.cover,
                             useOldImageOnUrlChange: true,
                             placeholder: (_, __) => _placeholder(cs),
@@ -573,13 +576,14 @@ Future<String?> showAudibleRegionPicker(BuildContext context, {required String c
   final cs = Theme.of(context).colorScheme;
   final tt = Theme.of(context).textTheme;
   final l = AppLocalizations.of(context)!;
-  return showModalBottomSheet<String>(
+  return showAdaptiveActionMenu<String>(
     context: context,
     backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     isScrollControlled: true,
+    desktopScrollWrap: false,
     constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
     builder: (ctx) => SafeArea(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -636,7 +640,7 @@ void showAudibleBookMenu(BuildContext context, {
   final isFutureRelease =
       releaseDateTime != null && releaseDateTime.isAfter(DateTime.now());
 
-  showModalBottomSheet(
+  showAdaptiveActionMenu(
     context: context,
     backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor,
     shape: const RoundedRectangleBorder(
@@ -720,7 +724,7 @@ Future<void> _addToCalendar(BuildContext context, String title, String seriesNam
   final eventTitle = '$title - $seriesName';
   final description = l.audibleSeriesCalendarDescription(seriesName);
 
-  if (Platform.isAndroid) {
+  if (AppPlatform.isAndroid) {
     final begin = DateTime(date.year, date.month, date.day).millisecondsSinceEpoch;
     final end = DateTime(date.year, date.month, date.day, 23, 59).millisecondsSinceEpoch;
     final uri = Uri.parse(

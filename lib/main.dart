@@ -29,11 +29,6 @@ import 'services/equalizer_service.dart';
 import 'services/sleep_timer_service.dart';
 import 'services/settings_sync_service.dart';
 import 'services/scoped_prefs.dart';
-import 'services/log_service.dart';
-import 'services/ebook_preferences.dart';
-import 'services/cover_cache_manager.dart';
-import 'services/cover_palette_cache.dart';
-import 'services/cover_blur_cache.dart';
 import 'services/user_account_service.dart';
 import 'services/android_auto_service.dart';
 import 'services/carplay_service.dart';
@@ -43,9 +38,12 @@ import 'services/home_widget_service.dart';
 import 'services/siri_service.dart';
 import 'services/narrated_books.dart';
 import 'services/read_listen_sync.dart';
+import 'services/windows_media_controls.dart';
+import 'services/log_service.dart';
 import 'services/quick_actions_service.dart';
 import 'services/setup_link_service.dart';
 import 'services/wording.dart';
+import 'utils/app_platform.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/auth_loading_screen.dart';
@@ -199,6 +197,7 @@ Future<void> applyAppearanceFromPrefs() async {
 /// pinned to portrait; otherwise all orientations are allowed (the default).
 /// Safe to call any time the setting changes.
 Future<void> applyOrientationLock() async {
+  if (AppPlatform.lacksPhonePlugins) return;
   final lock = await PlayerSettings.getLockPortrait();
   await SystemChrome.setPreferredOrientations(lock
       ? const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]
@@ -211,43 +210,27 @@ Future<void> applyOrientationLock() async {
 }
 
 void main() async {
-  HttpOverrides.global = _CertOverrides();
+  if (!AppPlatform.isWeb) HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-
-  // Capture uncaught Flutter/framework errors and async errors to a dedicated
-  // crash file so post-mortem diagnosis is possible even when the user hasn't
-  // enabled verbose logging. Never blocks or throws.
-  FlutterError.onError = (FlutterErrorDetails details) {
-    LogService().logCrash(details.exception, details.stack ?? StackTrace.empty,
-        context: details.library ?? 'FlutterError');
-    FlutterError.presentError(details);
-  };
-  PlatformDispatcher.instance.onError = (error, stack) {
-    LogService().logCrash(error, stack, context: 'PlatformDispatcher');
-    return true;
-  };
-
-  // Give every cached network image real connect/read timeouts instead of the
-  // package default (which has none, so stalled cover downloads keep their
-  // sockets alive indefinitely on a slow link).
-  CoverCacheManager.install();
-
   ReadListenSync.instance.start();
+  WindowsMediaControls.instance.start();
   BookOrbitApiService.placeReadingSpot = NarrationService.readingSpotSeconds;
   BookOrbitApiService.keptNarration = NarrationService.instance.localOverlay;
   ApiService.pageReadElsewhere = NarrationService.pageReadElsewhere;
   try {
     await NarratedBooks.load().timeout(const Duration(seconds: 2));
   } catch (_) {}
-  final appLinks = AppLinks();
+  final setupLinkStream = AppPlatform.lacksPhonePlugins ? null : AppLinks().uriLinkStream;
 
   // These calls use platform channels that require an Activity. When Android
   // Auto cold-starts the app for the MediaBrowserService, no Activity exists
   // and these calls can hang forever - blocking runApp() and freezing on the
   // splash screen. Wrap in try-catch with a timeout so we always reach runApp().
-  try {
-    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  } catch (_) {}
+  if (!AppPlatform.lacksPhonePlugins) {
+    try {
+      FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    } catch (_) {}
+  }
 
   try {
     await applyOrientationLock().timeout(const Duration(seconds: 2));
@@ -297,19 +280,6 @@ void main() async {
     trustAllCerts = await PlayerSettings.getTrustAllCerts();
   } catch (_) {}
 
-  // 封面配色/亮度的落盘缓存：只是让卡片第一帧更快，读取失败/超时都不影响启动。
-  try {
-    await CoverPaletteCache.instance.load().timeout(const Duration(seconds: 1));
-  } catch (_) {}
-  // 模糊封面是冷启动首帧的关键背景。这里在 runApp 前短暂等它从磁盘进内存，
-  // 保证卡片第一帧就能同步拿到模糊图；超时/失败只影响首帧，不阻塞应用。
-  // 封面不会频繁变化，正常情况下只是读一个小 PNG，耗时很短。
-  try {
-    await CoverBlurCache.instance
-        .preloadLatest()
-        .timeout(const Duration(milliseconds: 800));
-  } catch (_) {}
-
   // Capture Flutter framework errors (widget build failures, etc.)
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
@@ -323,9 +293,11 @@ void main() async {
   };
 
   // Remove native splash — Flutter will render the AuthGate splash immediately
-  try {
-    FlutterNativeSplash.remove();
-  } catch (_) {}
+  if (!AppPlatform.lacksPhonePlugins) {
+    try {
+      FlutterNativeSplash.remove();
+    } catch (_) {}
+  }
 
   runApp(
     MultiProvider(
@@ -336,7 +308,7 @@ void main() async {
           update: (_, auth, lib) => lib!..updateAuth(auth),
         ),
       ],
-      child: AbsorbApp(setupLinkStream: appLinks.uriLinkStream),
+      child: AbsorbApp(setupLinkStream: setupLinkStream),
     ),
   );
 }
@@ -494,6 +466,8 @@ class AbsorbApp extends StatelessWidget {
               navigatorKey: rootNavigatorKey,
               title: 'Absorb',
               debugShowCheckedModeBanner: false,
+              scrollBehavior:
+                  AppPlatform.lacksPhonePlugins ? const _AppScrollBehavior() : null,
               locale: overrideLocale,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
@@ -530,13 +504,11 @@ class AbsorbApp extends StatelessWidget {
                 ),
                 navigationBarTheme: NavigationBarThemeData(
                   backgroundColor: lightScheme.surface,
-                  // E-ink: a solid black pill with a white icon beats a tint
-                  // that dithers away. On light/dark schemes use a slightly
-                  // stronger tint so the pill appears fully formed instead of
-                  // looking like it's slowly bleeding outward from the icon.
+                  // E-ink: a solid black pill with a white icon beats a 15%
+                  // tint that dithers away.
                   indicatorColor: isEink
                       ? Colors.black
-                      : lightScheme.primary.withValues(alpha: 0.25),
+                      : lightScheme.primary.withValues(alpha: 0.15),
                   iconTheme: isEink
                       ? WidgetStateProperty.resolveWith(
                           (states) => IconThemeData(
@@ -575,6 +547,9 @@ class AbsorbApp extends StatelessWidget {
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                   ),
+                  constraints: AppPlatform.lacksPhonePlugins
+                      ? const BoxConstraints(maxWidth: 640)
+                      : null,
                 ),
                 snackBarTheme: SnackBarThemeData(
                   backgroundColor: lightScheme.inverseSurface,
@@ -584,27 +559,6 @@ class AbsorbApp extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                scrollbarTheme: ScrollbarThemeData(
-                  thumbColor: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.pressed)) {
-                      return lightScheme.onSurface.withValues(alpha: 0.45);
-                    }
-                    if (states.contains(WidgetState.hovered)) {
-                      return lightScheme.onSurface.withValues(alpha: 0.36);
-                    }
-                    return lightScheme.onSurface.withValues(alpha: 0.28);
-                  }),
-                  trackColor: WidgetStatePropertyAll(
-                      lightScheme.onSurface.withValues(alpha: 0.06)),
-                  trackBorderColor:
-                      const WidgetStatePropertyAll(Colors.transparent),
-                  radius: const Radius.circular(8),
-                  thickness: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.pressed)) return 9.0;
-                    if (states.contains(WidgetState.hovered)) return 7.0;
-                    return 5.0;
-                  }),
                 ),
                 pageTransitionsTheme: pageTransition,
               ),
@@ -622,7 +576,7 @@ class AbsorbApp extends StatelessWidget {
                 ),
                 navigationBarTheme: NavigationBarThemeData(
                   backgroundColor: isFlat ? Colors.black : const Color(0xFF0E0E0E),
-                  indicatorColor: darkScheme.primary.withValues(alpha: 0.25),
+                  indicatorColor: darkScheme.primary.withValues(alpha: 0.15),
                   labelTextStyle: WidgetStatePropertyAll(
                     TextStyle(
                       fontSize: 11,
@@ -652,6 +606,9 @@ class AbsorbApp extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                   ),
+                  constraints: AppPlatform.lacksPhonePlugins
+                      ? const BoxConstraints(maxWidth: 640)
+                      : null,
                 ),
                 snackBarTheme: SnackBarThemeData(
                   backgroundColor: darkScheme.surfaceContainerHighest,
@@ -661,27 +618,6 @@ class AbsorbApp extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                scrollbarTheme: ScrollbarThemeData(
-                  thumbColor: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.pressed)) {
-                      return darkScheme.onSurface.withValues(alpha: 0.5);
-                    }
-                    if (states.contains(WidgetState.hovered)) {
-                      return darkScheme.onSurface.withValues(alpha: 0.4);
-                    }
-                    return darkScheme.onSurface.withValues(alpha: 0.32);
-                  }),
-                  trackColor: WidgetStatePropertyAll(
-                      darkScheme.onSurface.withValues(alpha: 0.08)),
-                  trackBorderColor:
-                      const WidgetStatePropertyAll(Colors.transparent),
-                  radius: const Radius.circular(8),
-                  thickness: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.pressed)) return 9.0;
-                    if (states.contains(WidgetState.hovered)) return 7.0;
-                    return 5.0;
-                  }),
                 ),
                 pageTransitionsTheme: pageTransition,
               ),
@@ -762,12 +698,12 @@ class _AuthGateState extends State<AuthGate> {
     // app version and device model instead of fallback values.
     await ApiService.initVersion();
     try {
-      if (Platform.isAndroid) {
+      if (AppPlatform.isAndroid) {
         final info = await DeviceInfoPlugin().androidInfo;
         ApiService.deviceManufacturer = info.manufacturer;
         ApiService.deviceModel = info.model;
         ApiService.deviceSdkInt = info.version.sdkInt;
-      } else if (Platform.isIOS) {
+      } else if (AppPlatform.isIOS) {
         final info = await DeviceInfoPlugin().iosInfo;
         ApiService.deviceManufacturer = 'Apple';
         ApiService.deviceModel = info.utsname.machine;
@@ -782,12 +718,6 @@ class _AuthGateState extends State<AuthGate> {
     try {
       final loggingEnabled = await PlayerSettings.getLoggingEnabled();
       await LogService().init(loggingEnabled);
-      // Surface any crash from the previous run into the current log session
-      // so it shows up when the user exports logs.
-      final lastCrash = await LogService().consumeLastCrash();
-      if (lastCrash != null) {
-        LogService().log('Previous run crash dump:\n$lastCrash');
-      }
     } catch (_) {}
 
     final sw = Stopwatch()..start();
@@ -801,10 +731,6 @@ class _AuthGateState extends State<AuthGate> {
     // One-time migration: copy any settings that were written under unscoped
     // keys (before scope was active) to the current user's scoped keys.
     await ScopedPrefs.migrateToScope();
-
-    // Warm the per-book preferred ebook versions so the synchronous
-    // resolveEbookFile() can honor a local default.
-    await EbookPreferences.load();
 
     // Reload settings that were read in main() before scope was active
     var scopedTheme = await PlayerSettings.getThemeMode();
@@ -837,8 +763,10 @@ class _AuthGateState extends State<AuthGate> {
     } catch (_) {}
     // Background new-episode notifications: re-register the periodic job
     // (self-healing after OEM kills) and wire up notification taps.
-    EpisodeNotificationService.syncRegistration();
-    EpisodeNotificationService.initTapHandling();
+    if (!AppPlatform.lacksPhonePlugins) {
+      EpisodeNotificationService.syncRegistration();
+      EpisodeNotificationService.initTapHandling();
+    }
     // Restore cover seed color
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();
@@ -869,13 +797,15 @@ class _AuthGateState extends State<AuthGate> {
 
     // Downloads must be loaded before the audio handler so getChildren()
     // can serve the Android Auto browse tree immediately.
-    debugPrint('[Init] DownloadService... (${sw.elapsedMilliseconds}ms)');
-    try {
-      await DownloadService().init().timeout(const Duration(seconds: 8));
-    } catch (e) {
-      debugPrint('[Init] DownloadService.init timed out or failed: $e');
+    if (!AppPlatform.lacksPhonePlugins) {
+      debugPrint('[Init] DownloadService... (${sw.elapsedMilliseconds}ms)');
+      try {
+        await DownloadService().init().timeout(const Duration(seconds: 8));
+      } catch (e) {
+        debugPrint('[Init] DownloadService.init timed out or failed: $e');
+      }
+      debugPrint('[Init] DownloadService done (${sw.elapsedMilliseconds}ms)');
     }
-    debugPrint('[Init] DownloadService done (${sw.elapsedMilliseconds}ms)');
 
     // Timeout guards against AudioService.init() hanging when Android killed
     // the app process but kept the MediaBrowserService alive.
@@ -889,22 +819,26 @@ class _AuthGateState extends State<AuthGate> {
     // the UI has bootstrapped the current item) through the existing
     // home-widget restore path. Registered as a static callback to avoid a
     // circular import between AudioPlayerService and HomeWidgetService.
-    AudioPlayerService.onColdStartPlayRequested =
-        HomeWidgetService().resumeLastPlayedIfAvailable;
-    // A headset press may have cold-launched this process into the background
-    // with the native core already playing - adopt that audio now rather than
-    // leaving the lock screen blank until the next press.
-    unawaited(AudioPlayerService().adoptBackgroundEngineIfRunning());
+    if (!AppPlatform.lacksPhonePlugins) {
+      AudioPlayerService.onColdStartPlayRequested =
+          HomeWidgetService().resumeLastPlayedIfAvailable;
+      // A headset press may have cold-launched this process into the background
+      // with the native core already playing - adopt that audio now rather than
+      // leaving the lock screen blank until the next press.
+      unawaited(AudioPlayerService().adoptBackgroundEngineIfRunning());
+    }
     debugPrint('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
 
-    try {
-      await Permission.notification.request();
-    } catch (e) {
-      debugPrint('[Init] Permission request failed: $e');
+    if (!AppPlatform.lacksPhonePlugins) {
+      try {
+        await Permission.notification.request();
+      } catch (e) {
+        debugPrint('[Init] Permission request failed: $e');
+      }
     }
 
     // Initialize Chromecast (Android only)
-    if (Platform.isAndroid) {
+    if (AppPlatform.isAndroid) {
       try {
         await ChromecastService().init();
       } catch (e) {
@@ -920,24 +854,24 @@ class _AuthGateState extends State<AuthGate> {
       // fold it into the offline ledger so the normal flush ships it.
       await ProgressSyncService().migrateOrphanStreamingTime();
       await LocalSessionService().init();
-      await EqualizerService().init();
+      if (!AppPlatform.lacksPhonePlugins) await EqualizerService().init();
       await SleepTimerService().loadAutoSleepSettings();
       // Watch for settings changes and pull the synced copy on the way in.
       await SettingsSyncService().startIfEnabled();
       unawaited(SettingsSyncService().onAppForegrounded());
-      if (Platform.isAndroid) {
+      if (AppPlatform.isAndroid) {
         // Pre-populate Android Auto browse tree in background.
         Future.microtask(() => AndroidAutoService().refresh());
       }
-      if (Platform.isIOS) {
+      if (AppPlatform.isIOS) {
         // Initialize CarPlay browse tree.
         CarPlayService().init();
       }
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (AppPlatform.isMobile) {
         // Initialize homescreen widget
         await HomeWidgetService().init();
       }
-      if (Platform.isIOS) {
+      if (AppPlatform.isIOS) {
         // Siri requests wait on this; a Siri launch reaches it headless.
         await SiriService().init();
       }
@@ -947,7 +881,7 @@ class _AuthGateState extends State<AuthGate> {
       // (so we get real UIKit system icon types like `.play`, `.search`).
       // Depends on AudioPlayerService + HomeWidgetService so they're ready
       // when the shortcut handler fires.
-      await QuickActionsService().init();
+      if (!AppPlatform.lacksPhonePlugins) await QuickActionsService().init();
     } catch (e) {
       debugPrint('[Init] Service init failed: $e');
     }
@@ -976,4 +910,18 @@ class _AuthGateState extends State<AuthGate> {
 
     return const LoginScreen();
   }
+}
+
+/// Web ships without mouse in the default drag devices, which leaves every
+/// horizontal list unscrollable with a mouse.
+class _AppScrollBehavior extends MaterialScrollBehavior {
+  const _AppScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
 }

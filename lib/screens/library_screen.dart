@@ -36,7 +36,11 @@ import 'app_shell.dart';
 import 'book_requests_screen.dart';
 import 'upcoming_releases_screen.dart';
 import '../widgets/audible_series_sheet.dart' show showAudibleRegionPicker;
-import '../widgets/books_sheet_shared.dart' show coverGridCount, CoverGridScope;
+import 'package:flutter/rendering.dart'
+    show SliverConstraints, SliverGridLayout, SliverGridRegularTileLayout, axisDirectionIsReversed;
+import '../utils/desktop_workspace.dart';
+import '../widgets/books_sheet_shared.dart'
+    show coverGridCount, coverGridTextScale, CoverGridScope;
 import '../widgets/offline_status_icon.dart';
 import '../widgets/rmab_config_sheet.dart'
     show kRmabBaseUrlKey, kRmabApiTokenKey;
@@ -59,7 +63,111 @@ int responsiveGridCount(BuildContext context) => coverGridCount(context);
 /// hide-on-scroll then snap back, the viewport shrinks but the scroll offset
 /// stays put, so the bottom items end up closer to the pill than steady-state
 /// math would suggest. This value keeps a comfortable gap even in that case.
-const double libraryGridBottomPadding = 180;
+/// Room under the grid for the playing pill and the nav bar, which the
+/// desktop workspace does not have.
+double libraryGridBottomPadding(BuildContext context) =>
+    isDesktopWorkspace(context) ? 80 : 180;
+
+const double kDesktopLibraryTileMaxExtent = 220;
+
+/// [crossAxisCount] is the phone column count from the cover size setting;
+/// without it the count falls back to the width. [mainAxisExtent] sizes the
+/// cell outright (subtitled tiles), on every layout.
+SliverGridDelegate libraryGridDelegateForWidth(
+  double width, {
+  required bool desktopWorkspace,
+  required double childAspectRatio,
+  double desktopMaxCrossAxisExtent = kDesktopLibraryTileMaxExtent,
+  int? crossAxisCount,
+  double? mainAxisExtent,
+}) {
+  if (desktopWorkspace) {
+    return SliverGridDelegateWithMaxCrossAxisExtent(
+      maxCrossAxisExtent: desktopMaxCrossAxisExtent,
+      childAspectRatio: childAspectRatio,
+      mainAxisExtent: mainAxisExtent,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+    );
+  }
+  return SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: crossAxisCount ?? (width / 130).floor().clamp(3, 10),
+    childAspectRatio: childAspectRatio,
+    mainAxisExtent: mainAxisExtent,
+    crossAxisSpacing: 10,
+    mainAxisSpacing: 10,
+  );
+}
+
+/// Desktop cover grid whose cells are exactly cover plus labels. A fixed
+/// aspect ratio only fits one tile size; the desktop zoom makes tiles as wide
+/// as 200+ px, where the ratio left a tall blank strip under every title.
+class CoverTileGridDelegate extends SliverGridDelegate {
+  const CoverTileGridDelegate({
+    required this.maxCrossAxisExtent,
+    required this.coverAspectRatio,
+    required this.labelHeight,
+    this.spacing = 10,
+  });
+
+  final double maxCrossAxisExtent;
+  final double coverAspectRatio;
+  final double labelHeight;
+  final double spacing;
+
+  @override
+  SliverGridLayout getLayout(SliverConstraints constraints) {
+    final width = constraints.crossAxisExtent;
+    // Same column rule as SliverGridDelegateWithMaxCrossAxisExtent.
+    final count = max(1, (width / (maxCrossAxisExtent + spacing)).ceil());
+    final tileWidth = max(0.0, (width - spacing * (count - 1)) / count);
+    final tileHeight = tileWidth / coverAspectRatio + labelHeight;
+    return SliverGridRegularTileLayout(
+      crossAxisCount: count,
+      mainAxisStride: tileHeight + spacing,
+      crossAxisStride: tileWidth + spacing,
+      childMainAxisExtent: tileHeight,
+      childCrossAxisExtent: tileWidth,
+      reverseCrossAxis: axisDirectionIsReversed(constraints.crossAxisDirection),
+    );
+  }
+
+  @override
+  bool shouldRelayout(CoverTileGridDelegate oldDelegate) =>
+      oldDelegate.maxCrossAxisExtent != maxCrossAxisExtent ||
+      oldDelegate.coverAspectRatio != coverAspectRatio ||
+      oldDelegate.labelHeight != labelHeight ||
+      oldDelegate.spacing != spacing;
+}
+
+/// Height of a book tile's labels under the cover: the gap, a title line and
+/// an author line, plus a subtitle line when shown. Line heights follow
+/// labelSmall's 1.45 at the tile's text scale.
+double coverTileLabelHeight(BuildContext context, {required bool subtitle}) {
+  final scale = coverGridTextScale(context);
+  final scaler = MediaQuery.textScalerOf(context);
+  final title = scaler.scale(11 * scale) * 1.45;
+  final line = scaler.scale(10 * scale) * 1.45;
+  return 5 + title + line + (subtitle ? line : 0) + 4;
+}
+
+SliverGridDelegate libraryGridDelegate(
+  BuildContext context, {
+  required double childAspectRatio,
+  double desktopMaxCrossAxisExtent = kDesktopLibraryTileMaxExtent,
+  int? crossAxisCount,
+  double? mainAxisExtent,
+}) {
+  return libraryGridDelegateForWidth(
+    MediaQuery.sizeOf(context).width,
+    desktopWorkspace: isDesktopWorkspace(context),
+    childAspectRatio: childAspectRatio,
+    desktopMaxCrossAxisExtent: desktopMaxCrossAxisExtent,
+    crossAxisCount: crossAxisCount,
+    mainAxisExtent: mainAxisExtent,
+  );
+}
+
 
 // ─── Sort modes ──────────────────────────────────────────────
 enum LibrarySort {

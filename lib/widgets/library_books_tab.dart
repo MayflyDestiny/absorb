@@ -215,7 +215,7 @@ class LibraryBooksTab extends StatelessWidget {
       if (listView) {
         content = SliverPadding(
           padding:
-              const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
+              EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding(context)),
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               maybeLoadAhead(index);
@@ -263,7 +263,7 @@ class LibraryBooksTab extends StatelessWidget {
       } else {
         content = SliverPadding(
           padding:
-              const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
+              EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding(context)),
           sliver: SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: cols,

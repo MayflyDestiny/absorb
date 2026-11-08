@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../services/inflight_temp_writes.dart';
 import '../services/notes_service.dart';
+import 'adaptive_modal.dart';
 import '../utils/share_origin.dart';
 
 /// Bottom sheet displaying notes for a library item.
@@ -29,23 +30,20 @@ class NotesSheet extends StatefulWidget {
     required String itemTitle,
     required Color accent,
   }) {
-    showModalBottomSheet(
+    showAdaptiveSheetDialog(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        minChildSize: 0.05,
-        snap: true,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => NotesSheet(
-          itemId: itemId,
-          itemTitle: itemTitle,
-          accent: accent,
-          scrollController: scrollController,
-        ),
+      initialChildSize: 0.75,
+      minChildSize: 0.05,
+      snap: true,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollController) => NotesSheet(
+        itemId: itemId,
+        itemTitle: itemTitle,
+        accent: accent,
+        scrollController: scrollController,
       ),
     );
   }
@@ -106,7 +104,7 @@ class _NotesSheetState extends State<NotesSheet> {
   Future<void> _exportNotes(BuildContext context) async {
     final cs = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
-    final format = await showModalBottomSheet<String>(
+    final format = await showAdaptiveActionMenu<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
@@ -175,7 +173,7 @@ class _NotesSheetState extends State<NotesSheet> {
   }
 
   Future<_NoteEditResult?> _showEditor(BuildContext context, {String title = '', String body = ''}) {
-    return showModalBottomSheet<_NoteEditResult>(
+    return showAdaptiveActionMenu<_NoteEditResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

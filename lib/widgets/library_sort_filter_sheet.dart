@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../screens/library_screen.dart';
+import '../utils/app_platform.dart';
 import '../utils/read_status.dart';
 import '../services/server_backend.dart';
+import 'adaptive_modal.dart';
 
 /// Which library tab the sort/filter sheet is being shown for.
 enum LibraryTab { library, series, authors, narrators, lists }
@@ -188,12 +190,19 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
               child: Text(l.sort, style: TextStyle(
                 fontSize: 16, fontWeight: FontWeight.w600, color: cs.primary)),
             ),
-          SizedBox(
-            height: _calcHeight(),
-            child: _tabCtrl.length > 1
-                ? TabBarView(controller: _tabCtrl, children: _buildViews(cs, l))
-                : _buildSortTab(cs, l),
-          ),
+          if (ModalSurface.isDesktopOf(context))
+            Flexible(
+              child: _tabCtrl.length > 1
+                  ? TabBarView(controller: _tabCtrl, children: _buildViews(cs, l))
+                  : _buildSortTab(cs, l),
+            )
+          else
+            SizedBox(
+              height: _calcHeight(),
+              child: _tabCtrl.length > 1
+                  ? TabBarView(controller: _tabCtrl, children: _buildViews(cs, l))
+                  : _buildSortTab(cs, l),
+            ),
           SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 8),
         ],
       ),
@@ -499,7 +508,8 @@ class _SortFilterSheetState extends State<SortFilterSheet> with SingleTickerProv
       (LibraryFilter.inProgress, l.inProgress, Icons.play_circle_outline_rounded),
       (LibraryFilter.finished, l.filterFinished, Icons.check_circle_outline_rounded),
       (LibraryFilter.notStarted, l.notStarted, Icons.circle_outlined),
-      (LibraryFilter.downloaded, l.downloaded, Icons.download_done_rounded),
+      if (!AppPlatform.lacksPhonePlugins)
+        (LibraryFilter.downloaded, l.downloaded, Icons.download_done_rounded),
       (LibraryFilter.hasEbook, l.hasEbook, Icons.menu_book_rounded),
       (LibraryFilter.noEbook, l.noEbook, Icons.menu_book_outlined),
       (

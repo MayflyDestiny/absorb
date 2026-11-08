@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/text_file_download.dart';
 import '../build_info.dart';
 import 'api_service.dart';
 
@@ -20,51 +22,31 @@ class LogService {
   static const _rotateCheckInterval = 500; // check every N writes
   static const _createdAtKey = 'log_created_at';
 
-  // Compiled once: every logged line runs these, and building a RegExp per
-  // call is pure overhead on the hottest path in the app.
-  static final _reUrl = RegExp(r'(?:https?|wss?)://[^\s\]"]+');
-  static final _reBearer = RegExp(r'Bearer [A-Za-z0-9_\-.]{12,}', caseSensitive: false);
-  // Bare key=value credentials outside URLs. Explicit credential names only, so
-  // non-secret keys like cacheKey/storageKey stay readable for debugging.
-  static final _reKeyValue = RegExp(
-      r'((?:access|refresh|id|auth)[_-]?token|code[_-]?verifier|client[_-]?secret|api[_-]?key|secret[_-]?key|token|secret|password|passwd|authorization|bearer|session[_-]?id|cookie)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+',
-      caseSensitive: false);
-  static final _reJwt = RegExp(r'(?:(?<=Bearer\s)|\b)([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{6,})\.([A-Za-z0-9_-]{8,})');
-  // Whole Cookie / Set-Cookie header lines: the value (session/refresh token) is
-  // the secret, the name alone is not, so redact the whole line.
-  static final _reCookie = RegExp(r'(?:Set-Cookie|Cookie)\s*:\s*[^\n\r]+', caseSensitive: false);
-  // JSON string fields carrying tokens/secrets, e.g. `"accessToken":"..."` in a
-  // logged response body. Keeps the field name, masks only the value.
-  static final _reJsonSecret = RegExp(
-      r'"((?:accessToken|refreshToken|idToken|access_token|refresh_token|id_token|token|secret|password|apiKey|api_key))"\s*:\s*"[^"]*"',
-      caseSensitive: false);
-  static final _reLocalPath = RegExp(r'(?<![A-Za-z0-9])(?:/data|/storage|/home|/var|/private|/Users|[A-Za-z]:)(?:[/\\][^,\s\]\)"<>]+)+');
-
   File? _logFile;
+  final List<String> _webLogEntries = [];
+  int _webLogSizeBytes = 0;
   bool _enabled = false;
   DebugPrintCallback? _originalDebugPrint;
   int _writeCount = 0;
 
   bool get enabled => _enabled;
 
-  /// Call once at startup. Always overrides [debugPrint] so every line reaching
-  /// logcat is sanitized (no debug/release filtering). If [loggingEnabled] is
-  /// true it additionally captures all sanitized output to a rotating log file
-  /// for sharing.
+  /// Call once at startup. If [loggingEnabled] is true, sets up the log file
+  /// and overrides [debugPrint] to capture all output.
   Future<void> init(bool loggingEnabled) async {
-    // Override debugPrint globally no matter what: it must run before any
-    // other service logs, so URLs/tokens are sanitized before reaching logcat.
-    //
-    // Idempotence guard: re-entering here would capture our own interceptor as
-    // [_originalDebugPrint] and every later log line would recurse until the
-    // stack blew.
-    if (!identical(debugPrint, _interceptedDebugPrint)) {
-      _originalDebugPrint = debugPrint;
-      debugPrint = _interceptedDebugPrint;
-    }
-
     _enabled = loggingEnabled;
     if (!_enabled) return;
+
+    if (kIsWeb) {
+      _resetWebLogs();
+      final now = DateTime.now().toIso8601String();
+      _appendWebLog(
+        '\n=== Session started $now (App Version: ${ApiService.appVersionFull}) ===\n',
+      );
+      _originalDebugPrint = debugPrint;
+      debugPrint = _interceptedDebugPrint;
+      return;
+    }
 
     final dir = await getApplicationDocumentsDirectory();
     _logFile = File('${dir.path}/absorb_logs.txt');
@@ -78,7 +60,9 @@ class LogService {
       try {
         final createdMs = int.tryParse(createdAtFile.readAsStringSync().trim());
         if (createdMs != null) {
-          final age = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(createdMs));
+          final age = DateTime.now().difference(
+            DateTime.fromMillisecondsSinceEpoch(createdMs),
+          );
           if (age.inHours >= 24) shouldClear = true;
         }
       } catch (_) {
@@ -97,7 +81,9 @@ class LogService {
         ..writeln('==================')
         ..writeln();
       await _logFile!.writeAsString(header.toString());
-      createdAtFile.writeAsStringSync(DateTime.now().millisecondsSinceEpoch.toString());
+      createdAtFile.writeAsStringSync(
+        DateTime.now().millisecondsSinceEpoch.toString(),
+      );
     }
 
     // Rotate on startup if needed
@@ -111,72 +97,81 @@ class LogService {
       '\n=== Session started $now (App Version: ${versionWithBeta(ApiService.appVersionFull)}) ===\n',
       mode: FileMode.append,
     );
+
+    // Override debugPrint globally
+    _originalDebugPrint = debugPrint;
+    debugPrint = _interceptedDebugPrint;
   }
 
   void _interceptedDebugPrint(String? message, {int? wrapWidth}) {
-    // Forward every line in full (no debug/release filtering); sanitize once
-    // before it reaches logcat so raw URLs/tokens never leak. When a log file
-    // is active, the same sanitized copy is appended to it.
-    final sanitized = message == null ? null : _sanitize(message);
-    _originalDebugPrint?.call(sanitized, wrapWidth: wrapWidth);
-    if (_logFile != null && message != null) {
-      final ts = DateTime.now().toIso8601String();
-      _logFile!.writeAsStringSync(
-        '[$ts] $sanitized\n',
-        mode: FileMode.append,
-      );
+    _originalDebugPrint?.call(message, wrapWidth: wrapWidth);
+    if (message == null) return;
+    final ts = DateTime.now().toIso8601String();
+    final sanitized = _sanitize(message);
+    final entry = '[$ts] $sanitized\n';
+    if (kIsWeb) {
+      _appendWebLog(entry);
+    } else if (_logFile != null) {
+      _logFile!.writeAsStringSync(entry, mode: FileMode.append);
       _maybeRotate();
     }
   }
 
   /// Write a log entry directly (for error handlers that bypass debugPrint).
   void log(String message) {
-    if (_logFile != null) {
-      final ts = DateTime.now().toIso8601String();
-      final sanitized = _sanitize(message);
-      _logFile!.writeAsStringSync(
-        '[$ts] $sanitized\n',
-        mode: FileMode.append,
-      );
+    final ts = DateTime.now().toIso8601String();
+    final sanitized = _sanitize(message);
+    final entry = '[$ts] $sanitized\n';
+    if (kIsWeb) {
+      if (_enabled) _appendWebLog(entry);
+    } else if (_logFile != null) {
+      _logFile!.writeAsStringSync(entry, mode: FileMode.append);
       _maybeRotate();
     }
   }
 
-  /// Write an uncaught exception to a dedicated crash file. Works even when
-  /// the regular log capture is disabled - crash dumps must always land so
-  /// post-mortem diagnosis is possible.
-  Future<void> logCrash(Object error, StackTrace stack, {String context = ''}) async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final f = File('${dir.path}/absorb_crash.log');
-      final ts = DateTime.now().toIso8601String();
-      final buf = StringBuffer()
-        ..writeln('========================================')
-        ..writeln('[$ts] CRASH${context.isNotEmpty ? " ($context)" : ""}')
-        ..writeln('App: ${versionWithBeta(ApiService.appVersionFull)}')
-        ..writeln('Error: $error')
-        ..writeln('--- Stack ---')
-        ..writeln(stack.toString())
-        ..writeln();
-      await f.writeAsString(buf.toString(), mode: FileMode.append);
-    } catch (_) {
-      // Last-resort logging must never throw.
+  void _appendWebLog(String entry) {
+    var storedEntry = entry;
+    var entryBytes = utf8.encode(storedEntry);
+    if (entryBytes.length > _keepSize) {
+      storedEntry = utf8.decode(
+        entryBytes.sublist(entryBytes.length - _keepSize),
+        allowMalformed: true,
+      );
+      entryBytes = utf8.encode(storedEntry);
+    }
+
+    _webLogEntries.add(storedEntry);
+    _webLogSizeBytes += entryBytes.length;
+    if (_webLogSizeBytes <= _maxSize) return;
+
+    while (_webLogEntries.length > 1 && _webLogSizeBytes > _keepSize) {
+      final removed = _webLogEntries.removeAt(0);
+      _webLogSizeBytes -= utf8.encode(removed).length;
     }
   }
 
-  /// Read the most recent crash dump (if any) and clear it. Returns null when
-  /// no crash was recorded since the last read.
-  Future<String?> consumeLastCrash() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final f = File('${dir.path}/absorb_crash.log');
-      if (!await f.exists()) return null;
-      final content = await f.readAsString();
-      await f.delete();
-      return content.trim().isEmpty ? null : content;
-    } catch (_) {
-      return null;
-    }
+  String _logHeader() {
+    final os = kIsWeb
+        ? 'Web browser'
+        : '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+    return (StringBuffer()
+          ..writeln('=== Absorb Log ===')
+          ..writeln('App Version: ${ApiService.appVersionFull}')
+          ..writeln(
+            'Device: ${ApiService.deviceManufacturer} ${ApiService.deviceModel}',
+          )
+          ..writeln('OS: $os')
+          ..writeln('Created: ${DateTime.now().toIso8601String()}')
+          ..writeln('==================')
+          ..writeln())
+        .toString();
+  }
+
+  void _resetWebLogs() {
+    _webLogEntries.clear();
+    _webLogSizeBytes = 0;
+    _appendWebLog(_logHeader());
   }
 
   /// Periodic runtime rotation - check file size every [_rotateCheckInterval]
@@ -213,6 +208,10 @@ class LogService {
   }
 
   Future<void> clearLogs() async {
+    if (kIsWeb) {
+      _resetWebLogs();
+      return;
+    }
     if (_logFile != null && await _logFile!.exists()) {
       // Write a fresh header immediately so logs shared in the same session
       // still have device info (don't wait for next init/restart).
@@ -230,7 +229,8 @@ class LogService {
         final dir = _logFile!.parent;
         final createdAtFile = File('${dir.path}/$_createdAtKey');
         createdAtFile.writeAsStringSync(
-            DateTime.now().millisecondsSinceEpoch.toString());
+          DateTime.now().millisecondsSinceEpoch.toString(),
+        );
       } catch (_) {}
     }
   }
@@ -250,36 +250,24 @@ class LogService {
 
   /// Params whose values should be masked in logged URLs.
   static final _sensitiveParamPattern = RegExp(
-    r'token|code|code_verifier|secret|client_secret|password|key|verifier|challenge|state|cookie|auth|bearer|nonce|refresh_token|access_token|id_token',
+    r'token|code|secret|password|key|verifier|challenge|state|cookie|auth|bearer',
     caseSensitive: false,
   );
 
-  /// Sanitize a single log message: mask URLs, sensitive query params,
-  /// tokens (JWT / header / ref, incl. "Bearer xxx"), and bare key=value
-  /// pairs that look like credentials.
+  /// Sanitize a single log message: mask URLs, sensitive query params, and
+  /// bare key=value pairs that look like credentials.
   static String _sanitize(String message) {
-    // Whole Cookie / Set-Cookie lines first, before URL/key scans, so the
-    // session/refresh value inside is removed regardless of its format.
-    var result = message.replaceAllMapped(_reCookie, (_) => '[cookie-redacted]');
-    result = _sanitizeUrls(result);
-    // JSON token fields in a logged response body.
-    result = result.replaceAllMapped(_reJsonSecret, (m) => '"${m.group(1)}":"***"');
-    // Standalone key=value credentials outside a URL, e.g. "token=abc123".
-    result = result.replaceAllMapped(_reKeyValue, (m) => '${m.group(1)}=***');
-    // Opaque tokens in prose: three dot-separated base64url segments, plus
-    // "Bearer xxx".
-    result = result.replaceAllMapped(_reJwt, (_) => '[token-redacted]');
-    result = result.replaceAllMapped(_reBearer, (_) => '[bearer-redacted]');
-    // Absolute local paths, keeping the basename for debuggability. Anchored
-    // so an `http://` host's `p:` can't be mistaken for a drive.
-    return result.replaceAllMapped(_reLocalPath, (m) {
-      // Basename without split(): the pattern guarantees a separator, so
-      // scanning back avoids allocating every segment just to keep the tail.
-      final p = m.group(0)!;
-      final fwd = p.lastIndexOf('/');
-      final cut = fwd > p.lastIndexOf('\\') ? fwd : p.lastIndexOf('\\');
-      return '[local-path ${p.substring(cut + 1)}]';
-    });
+    var result = _sanitizeUrls(message);
+    // Mask standalone sensitive key=value pairs not inside URLs
+    // (e.g. "token=abc123" in non-URL context)
+    result = result.replaceAllMapped(
+      RegExp(
+        r'(token|secret|password|authorization|bearer|\w*key)\s*[=:]\s*(?!null\b|\*\*\*|true\b|false\b)\S+',
+        caseSensitive: false,
+      ),
+      (m) => '${m.group(1)}=***',
+    );
+    return result;
   }
 
   /// Sanitize URLs in log content, replacing server hosts with a connection
@@ -289,7 +277,8 @@ class LogService {
     // Collect unique hostnames found in URLs so we can scrub bare references too
     final foundHosts = <String>{};
 
-    var result = content.replaceAllMapped(_reUrl, (match) {
+    final urlPattern = RegExp(r'https?://[^\s\]"]+');
+    var result = content.replaceAllMapped(urlPattern, (match) {
       final url = match.group(0)!;
       try {
         final uri = Uri.parse(url);
@@ -302,7 +291,7 @@ class LogService {
           label = '[tailscale]';
         } else if (_isPrivateIp(host)) {
           label = '[local-ip]';
-        } else if (uri.scheme == 'https' || uri.scheme == 'wss') {
+        } else if (uri.scheme == 'https') {
           label = '[reverse-proxy]';
         } else {
           label = '[remote-http]';
@@ -327,12 +316,14 @@ class LogService {
   /// Keep query param names but mask values of sensitive ones.
   static String _maskQuery(Uri uri) {
     if (uri.queryParameters.isEmpty) return '';
-    final masked = uri.queryParameters.entries.map((e) {
-      if (_sensitiveParamPattern.hasMatch(e.key)) {
-        return '${e.key}=***';
-      }
-      return '${e.key}=${e.value}';
-    }).join('&');
+    final masked = uri.queryParameters.entries
+        .map((e) {
+          if (_sensitiveParamPattern.hasMatch(e.key)) {
+            return '${e.key}=***';
+          }
+          return '${e.key}=${e.value}';
+        })
+        .join('&');
     return '?$masked';
   }
 
@@ -342,24 +333,51 @@ class LogService {
     final a = int.tryParse(parts[0]);
     final b = int.tryParse(parts[1]);
     if (a == null || b == null) return false;
-    return a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168);
+    return a == 10 ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 192 && b == 168);
   }
 
   /// Share log file as attachment via share sheet with device info.
   ///
   /// [sharePositionOrigin] is required on iPad for the share popover anchor.
-  Future<void> shareLogs({String? serverVersion, Rect? sharePositionOrigin}) async {
+  Future<void> shareLogs({
+    String? serverVersion,
+    Rect? sharePositionOrigin,
+  }) async {
     final info = _deviceInfo(serverVersion: serverVersion);
 
+    if (kIsWeb) {
+      final logs = _webLogEntries.join();
+      final content = logs.isNotEmpty
+          ? '${_sanitizeUrls(logs)}\n=== Report Info ===\n$info'
+          : '=== Absorb Log Report ===\n$info\n(No log data found — is logging enabled?)\n';
+      await downloadTextFile(fileName: 'absorb_logs.txt', content: content);
+      return;
+    }
+
+    // Windows' share flyout has no "save to file", so desktop saves instead.
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      final logFile = _logFile;
+      final logs = logFile != null && await logFile.exists()
+          ? await logFile.readAsString()
+          : '';
+      final content = logs.isNotEmpty
+          ? '${_sanitizeUrls(logs)}\n=== Report Info ===\n$info'
+          : '=== Absorb Log Report ===\n$info\n(No log data found - is logging enabled?)\n';
+      await downloadTextFile(fileName: 'absorb_logs.txt', content: content);
+      return;
+    }
+
     final hasFile =
-        _logFile != null && await _logFile!.exists() && await _logFile!.length() > 0;
+        _logFile != null &&
+        await _logFile!.exists() &&
+        await _logFile!.length() > 0;
 
     if (hasFile) {
-      // Write sanitized copy to share instead of raw logs. Run the full
-      // sanitizer (URLs, query params, Bearer/JWT, key=value, local paths),
-      // not just URL scrubbing, so no credential leaks into the shared file.
+      // Write sanitized copy to share instead of raw logs
       final raw = await _logFile!.readAsString();
-      final sanitized = _sanitize(raw);
+      final sanitized = _sanitizeUrls(raw);
       final dir = _logFile!.parent;
       final sanitizedFile = File('${dir.path}/absorb_logs_share.txt');
       await sanitizedFile.writeAsString(sanitized);
@@ -385,10 +403,7 @@ class LogService {
     final uri = Uri(
       scheme: 'mailto',
       path: supportEmail,
-      query: _encodeMailtoQuery({
-        'subject': 'Absorb Feedback',
-        'body': info,
-      }),
+      query: _encodeMailtoQuery({'subject': 'Absorb Feedback', 'body': info}),
     );
     await launchUrl(uri);
   }

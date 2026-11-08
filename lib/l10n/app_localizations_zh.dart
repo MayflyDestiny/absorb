@@ -746,6 +746,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get absorbingManageQueue => '收听列表';
 
   @override
+  String get desktopAbsorbingQueueHint => '在书籍或单集上使用「添加到收听中」即可加入这里，按此顺序播放。';
+
+  @override
   String get absorbingDone => '完成';
 
   @override
@@ -1816,6 +1819,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get currentLibrarySkipOverrideOffSubtitle => '关闭 - 此媒体库使用全局跳转时间';
 
   @override
+  String get currentLibrarySpeedOverride => '自定义默认速度';
+
+  @override
+  String get currentLibrarySpeedOverrideOnSubtitle =>
+      '开启 - 该媒体库中的新项目以各自的默认速度开始';
+
+  @override
+  String get currentLibrarySpeedOverrideOffSubtitle => '关闭 - 该媒体库中的新项目使用全局默认速度';
+
+  @override
+  String get currentLibrarySpeed => '默认速度';
+
+  @override
   String get currentLibrarySkipBack => '快退';
 
   @override
@@ -1835,6 +1851,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chapterProgressOnSubtitleIos => '开启 - 锁屏和 CarPlay 显示章节进度';
+
+  @override
+  String get chapterProgressInNowPlayingBar => '底栏显示章节进度';
+
+  @override
+  String get chapterProgressInNowPlayingBarOnSubtitle => '开启 - 底部播放器显示当前章节进度';
+
+  @override
+  String get chapterProgressInNowPlayingBarOffSubtitle => '关闭 - 底部播放器显示整本书进度';
 
   @override
   String get nowPlayingText => '正在播放文本';
@@ -3329,6 +3354,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hideEbookOnlyOffSubtitle => '关 - 显示所有媒体库项目';
 
   @override
+  String get audibleRatings => 'Audible 评分';
+
+  @override
+  String get audibleRatingsOnSubtitle => '开启 - 书籍详情显示 Audible 评分';
+
+  @override
+  String get audibleRatingsOffSubtitle => '关闭 - 不查询 Audible，也不显示星级';
+
+  @override
   String get homeCardsOpenDetails => '在主页打开详情';
 
   @override
@@ -4527,6 +4561,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get failedToUpdateCheckConnection => '更新失败 - 请检查您的网络连接';
 
   @override
+  String get markedFinishedWillSync => '已标记为读完 - 联网后将自动同步';
+
+  @override
   String get markAsNotFinishedQuestion => '标记为未完成？';
 
   @override
@@ -4932,6 +4969,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loudness => '响度';
 
   @override
+  String get pitch => '音调';
+
+  @override
   String get monoAudio => '单声道音频';
 
   @override
@@ -5160,6 +5200,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get refreshTooltip => '刷新';
+
+  @override
+  String get openNowPlayingTooltip => '打开正在播放';
+
+  @override
+  String get previousChapterTooltip => '上一章';
+
+  @override
+  String get nextChapterTooltip => '下一章';
 
   @override
   String get noBooksFound => '未找到书籍';
@@ -7412,6 +7461,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get upcomingReleasesBadgeNew => '新';
+
+  @override
+  String get upcomingReleasesOpenSeries => '在 Audible 上打开系列';
 
   @override
   String get upcomingReleasesOpenLibrarySeries => '在媒体库中打开系列';
@@ -14850,4 +14902,172 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get boEmailNoCopy => '无法生成去掉朗读音频的副本。';
+
+  @override
+  String get boForgotLink => '忘记密码？';
+
+  @override
+  String get boForgotTitle => '重置你的密码';
+
+  @override
+  String get boForgotBody => '输入账号邮箱，服务器会发送一条用于设置新密码的链接。';
+
+  @override
+  String get boForgotSend => '发送链接';
+
+  @override
+  String get boForgotSent => '如果该邮箱属于某个账号，链接已在路上。打开链接设置新密码后在此登录。';
+
+  @override
+  String get boForgotNotSetUp => '此服务器未配置邮件发送，请向管理者索取密码链接。';
+
+  @override
+  String get boForgotTooMany => '尝试次数过多，请稍后再试。';
+
+  @override
+  String get boActivityTitle => '阅读活动';
+
+  @override
+  String get boActivityPrivate => '将其阅读活动设为私密';
+
+  @override
+  String get boActivitySharesSummary => '共享摘要。对方可以看到你查看过。';
+
+  @override
+  String get boActivitySharesDetails => '共享详细信息，包括书籍。对方可以看到你查看过。';
+
+  @override
+  String get boActivityNotice => '对方可以看到你查看过此项。';
+
+  @override
+  String get boActivityNowPrivate => '对方已不再共享阅读活动。';
+
+  @override
+  String get boActivityLoadFailed => '无法加载阅读活动。';
+
+  @override
+  String get boActivityEmpty => '此时间段没有阅读记录';
+
+  @override
+  String get boActivityReadingTime => '阅读时长';
+
+  @override
+  String get boActivitySessions => '会话';
+
+  @override
+  String get boActivityActiveDays => '活跃天数';
+
+  @override
+  String get boActivityStarted => '开始阅读的书';
+
+  @override
+  String get boActivityFinished => '读完的书';
+
+  @override
+  String get boActivityTrend => '每日阅读';
+
+  @override
+  String get boActivitySources => '阅读设备';
+
+  @override
+  String get boActivityFormats => '格式';
+
+  @override
+  String get boActivityGenres => '分类';
+
+  @override
+  String get boActivityTopBooks => '阅读最多';
+
+  @override
+  String get boActivityRecentBooks => '最近阅读';
+
+  @override
+  String get boActivityTopAuthors => '热门作者';
+
+  @override
+  String get boActivityTopGenres => '热门分类';
+
+  @override
+  String get boActivityTopSeries => '热门系列';
+
+  @override
+  String get boActivityTopNarrators => '热门朗读者';
+
+  @override
+  String get boActivityUntitled => '无标题书籍';
+
+  @override
+  String get boActivitySourceWeb => '网页阅读器';
+
+  @override
+  String get boActivitySourceIos => 'iOS 应用';
+
+  @override
+  String get boActivitySourceWatch => 'Apple Watch';
+
+  @override
+  String get boActivitySourceAndroid => 'Android 应用';
+
+  @override
+  String get boActivitySourceManual => '手动';
+
+  @override
+  String get boActivitySourceUnknown => '未知';
+
+  @override
+  String get boActivityGenreSciFi => '科幻';
+
+  @override
+  String get boActivityGenreFantasy => '奇幻';
+
+  @override
+  String get boActivityGenreMystery => '悬疑与惊悚';
+
+  @override
+  String get boActivityGenreRomance => '言情';
+
+  @override
+  String get boActivityGenreHorror => '恐怖';
+
+  @override
+  String get boActivityGenreHistory => '历史与传记';
+
+  @override
+  String get boActivityGenreScience => '科学与技术';
+
+  @override
+  String get boActivityGenreBusiness => '商业与经济';
+
+  @override
+  String get boActivityGenreSelf => '自我成长';
+
+  @override
+  String get boActivityGenreSociety => '社会与文化';
+
+  @override
+  String get boActivityGenreChildren => '儿童与青少年';
+
+  @override
+  String get boActivityGenreComics => '漫画与图像小说';
+
+  @override
+  String get boActivityGenrePoetry => '诗歌';
+
+  @override
+  String get boActivityGenreOther => '其他';
+
+  @override
+  String boActivityDays(int count) {
+    return '$count 天';
+  }
+
+  @override
+  String boActivityMinutes(int count) {
+    return '$count 分钟';
+  }
+
+  @override
+  String boActivityHours(double count) {
+    return '$count 小时';
+  }
 }

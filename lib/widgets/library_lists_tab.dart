@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../screens/library_screen.dart';
 import '../services/server_backend.dart';
+import '../utils/desktop_workspace.dart';
 import 'library_grid_tiles.dart';
 
 /// Library "Lists" tab: a stacked-cover grid of all collections and playlists
@@ -11,6 +12,7 @@ class LibraryListsTab extends StatelessWidget {
   final List<Map<String, dynamic>> entries;
   final bool isLoading;
   final double coverAspectRatio;
+  final double desktopMaxCrossAxisExtent;
   final void Function(Map<String, dynamic>) onOpenCollection;
   final void Function(Map<String, dynamic>) onOpenPlaylist;
   final Future<void> Function() onRefresh;
@@ -25,6 +27,7 @@ class LibraryListsTab extends StatelessWidget {
     super.key,
     required this.entries,
     required this.coverAspectRatio,
+    this.desktopMaxCrossAxisExtent = kDesktopLibraryTileMaxExtent,
     required this.onOpenCollection,
     required this.onOpenPlaylist,
     required this.onRefresh,
@@ -133,46 +136,50 @@ class LibraryListsTab extends StatelessWidget {
         slivers: [
           ...headers,
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, libraryGridBottomPadding),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              libraryGridBottomPadding(context),
+            ),
             sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: responsiveGridCount(context),
+              gridDelegate: libraryGridDelegate(
+                context,
                 childAspectRatio: coverAspectRatio < 1 ? 0.48 : 0.68,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
+                desktopMaxCrossAxisExtent: desktopMaxCrossAxisExtent,
               ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final entry = entries[index];
-                  final isPlaylist = entry['_isPlaylist'] == true;
-                  final name = entry['name'] as String? ?? '';
-                  final ids = isPlaylist
-                      ? _playlistBookIds(entry)
-                      : _collectionBookIds(entry);
-                  final count = isPlaylist
-                      ? (entry['items'] as List<dynamic>?)?.length ?? ids.length
-                      : ((entry['bookOrbit'] as Map?)?['total'] as num?)?.toInt() ??
-                          (entry['books'] as List<dynamic>?)?.length ??
-                          ids.length;
-                  return GridListTile(
-                    name: name,
-                    bookIds: ids,
-                    count: count,
-                    isPlaylist: isPlaylist,
-                    isSmartScope: (entry['bookOrbit'] as Map?)?['smartScope'] == true,
-                    coverAspectRatio: coverAspectRatio,
-                    onTap: () =>
-                        isPlaylist ? onOpenPlaylist(entry) : onOpenCollection(entry),
-                  );
-                },
-                childCount: entries.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final entry = entries[index];
+                final isPlaylist = entry['_isPlaylist'] == true;
+                final name = entry['name'] as String? ?? '';
+                final ids = isPlaylist
+                    ? _playlistBookIds(entry)
+                    : _collectionBookIds(entry);
+                final count = isPlaylist
+                    ? (entry['items'] as List<dynamic>?)?.length ?? ids.length
+                    : ((entry['bookOrbit'] as Map?)?['total'] as num?)?.toInt() ??
+                        (entry['books'] as List<dynamic>?)?.length ??
+                        ids.length;
+                return GridListTile(
+                  name: name,
+                  bookIds: ids,
+                  count: count,
+                  isPlaylist: isPlaylist,
+                  isSmartScope: (entry['bookOrbit'] as Map?)?['smartScope'] == true,
+                  coverAspectRatio: coverAspectRatio,
+                  onTap: () => isPlaylist
+                      ? onOpenPlaylist(entry)
+                      : onOpenCollection(entry),
+                );
+              }, childCount: entries.length),
             ),
           ),
         ],
       );
     }
 
-    return RefreshIndicator(onRefresh: onRefresh, child: body);
+    return isDesktopWorkspace(context)
+        ? body
+        : RefreshIndicator(onRefresh: onRefresh, child: body);
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/desktop_page_body.dart';
 import '../widgets/edit_metadata_sheet.dart';
 
 /// Full-screen unified per-book editor. Thin wrapper that hosts
@@ -51,18 +52,21 @@ class BookEditScreen extends StatelessWidget {
           ],
         ),
       ),
-      body: MetadataEditView(
-        itemId: itemId,
-        bookTitle: bookTitle,
-        metadata: metadata,
-        tags: tags,
-        audioFiles: audioFiles,
-        libraryFiles: libraryFiles,
-        relPath: relPath,
-        isEbookOnly: isEbookOnly,
-        isAdmin: isAdmin,
-        libraryId: libraryId,
-        isBookDock: isBookDock,
+      body: DesktopPageBody(
+        maxWidth: 960,
+        child: MetadataEditView(
+          itemId: itemId,
+          bookTitle: bookTitle,
+          metadata: metadata,
+          tags: tags,
+          audioFiles: audioFiles,
+          libraryFiles: libraryFiles,
+          relPath: relPath,
+          isEbookOnly: isEbookOnly,
+          isAdmin: isAdmin,
+          libraryId: libraryId,
+          isBookDock: isBookDock,
+        ),
       ),
     );
   }

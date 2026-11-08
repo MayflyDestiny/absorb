@@ -4047,6 +4047,8 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> _audibleCatalogRating(String asin) async {
+    // Audible's API sends no CORS headers, so a browser always blocks it.
+    if (kIsWeb) return null;
     try {
       final response = await http.get(
         Uri.parse(
@@ -4207,6 +4209,7 @@ class ApiService {
   /// Get all book ASINs in an Audible series using the catalog relationships endpoint.
   /// Returns a list of { asin, sequence, sort } maps.
   static Future<List<Map<String, dynamic>>> getAudibleSeriesBooks(String seriesAsin, {String? region}) async {
+    if (kIsWeb) return [];
     try {
       final tld = region != null ? _audibleTldFor(region) : _audibleTld;
       final url = 'https://api.audible$tld/1.0/catalog/products/$seriesAsin'
@@ -4243,6 +4246,7 @@ class ApiService {
   /// Fetch details for a single book from the Audible catalog API.
   /// Returns title, authors, narrators, release_date, runtime, rating, cover, etc.
   static Future<Map<String, dynamic>?> getAudibleBookDetails(String asin, {String? region}) async {
+    if (kIsWeb) return null;
     try {
       final tld = region != null ? _audibleTldFor(region) : _audibleTld;
       final url = 'https://api.audible$tld/1.0/catalog/products/$asin'

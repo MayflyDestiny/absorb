@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +14,9 @@ import '../services/audio_player_service.dart';
 import '../services/device_time_zone.dart';
 import '../services/scoped_prefs.dart';
 import '../services/user_account_service.dart';
+import '../utils/desktop_workspace.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/adaptive_modal.dart';
 import '../widgets/finished_books_this_year_sheet.dart';
 import '../widgets/stats_charts.dart';
 import '../widgets/day_sessions_sheet.dart';
@@ -555,84 +559,56 @@ class _StatsScreenState extends State<StatsScreen>
       'activity': [
         _sectionTitle(tt, cs, l.statsActivity),
         const SizedBox(height: 10),
-        Row(children: [
-          Expanded(
-              child: _accentStatCard(
-                  tt,
-                  cs,
-                  Icons.local_fire_department_rounded,
-                  Colors.orange,
-                  l.statsScreenStreakDays(streak),
-                  l.statsCurrentStreak)),
-          const SizedBox(width: 8),
-          Expanded(
-              child: _accentStatCard(tt, cs, Icons.emoji_events_rounded,
-                  Colors.amber.shade600, l.statsScreenStreakDays(longestStreak), l.statsBestStreak)),
+        _responsiveStatsGrid([
+          _accentStatCard(
+              tt,
+              cs,
+              Icons.local_fire_department_rounded,
+              Colors.orange,
+              l.statsScreenStreakDays(streak),
+              l.statsCurrentStreak),
+          _accentStatCard(tt, cs, Icons.emoji_events_rounded,
+              Colors.amber.shade600, l.statsScreenStreakDays(longestStreak), l.statsBestStreak),
+          _accentStatCard(tt, cs, Icons.menu_book_rounded,
+              Colors.green, '$_booksFinished', l.statsBooksFinished),
+          if (_episodesFinished > 0)
+            _accentStatCard(tt, cs, Icons.podcasts_rounded,
+                Colors.purple, '$_episodesFinished', l.statsEpisodesFinished),
+          _accentStatCard(tt, cs, Icons.auto_stories_rounded,
+              Colors.teal, '$_booksFinishedThisYear', l.statsBooksThisYear,
+              onTap: _booksFinishedThisYear > 0
+                  ? () async {
+                      await showFinishedBooksThisYearSheet(context);
+                      if (mounted) {
+                        setState(() => _booksFinishedThisYear = context
+                            .read<LibraryProvider>()
+                            .finishedBooksThisYearCount);
+                      }
+                    }
+                  : null),
+          if (_episodesFinishedThisYear > 0)
+            _accentStatCard(tt, cs, Icons.graphic_eq_rounded,
+                Colors.deepPurple, '$_episodesFinishedThisYear',
+                l.statsEpisodesThisYear),
+          _accentStatCard(tt, cs, Icons.calendar_today_rounded,
+              cs.primary, '$activeDays', l.statsDaysActive),
+          _accentStatCard(tt, cs, Icons.speed_rounded, cs.tertiary,
+              _formatDuration(avgDaily), l.statsDailyAverage),
+          if (_timeSavedSeconds >= 60)
+            _accentStatCard(tt, cs, Icons.fast_forward_rounded,
+                Colors.cyan, _formatDuration(_timeSavedSeconds),
+                l.statsTimeSavedLabel,
+                subtitle: _timeSavedSince != null
+                    ? l.statsTimeSavedSince(
+                        MaterialLocalizations.of(context).formatMediumDate(_timeSavedSince!))
+                    : null,
+                trailing: IconButton(
+                  icon: Icon(Icons.restart_alt_rounded,
+                      size: 20, color: cs.onSurfaceVariant),
+                  tooltip: l.statsTimeSavedReset,
+                  onPressed: _confirmResetTimeSaved,
+                )),
         ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(
-              child: _accentStatCard(tt, cs, Icons.menu_book_rounded,
-                  Colors.green, '$_booksFinished', l.statsBooksFinished)),
-          if (_episodesFinished > 0) ...[
-            const SizedBox(width: 8),
-            Expanded(
-                child: _accentStatCard(tt, cs, Icons.podcasts_rounded,
-                    Colors.purple, '$_episodesFinished', l.statsEpisodesFinished)),
-          ],
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(
-              child: _accentStatCard(tt, cs, Icons.auto_stories_rounded,
-                  Colors.teal, '$_booksFinishedThisYear', l.statsBooksThisYear,
-                  onTap: _booksFinishedThisYear > 0
-                      ? () async {
-                          await showFinishedBooksThisYearSheet(context);
-                          if (mounted) {
-                            setState(() => _booksFinishedThisYear = context
-                                .read<LibraryProvider>()
-                                .finishedBooksThisYearCount);
-                          }
-                        }
-                      : null)),
-          if (_episodesFinishedThisYear > 0) ...[
-            const SizedBox(width: 8),
-            Expanded(
-                child: _accentStatCard(tt, cs, Icons.graphic_eq_rounded,
-                    Colors.deepPurple, '$_episodesFinishedThisYear',
-                    l.statsEpisodesThisYear)),
-          ],
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(
-              child: _accentStatCard(tt, cs, Icons.calendar_today_rounded,
-                  cs.primary, '$activeDays', l.statsDaysActive)),
-          const SizedBox(width: 8),
-          Expanded(
-              child: _accentStatCard(tt, cs, Icons.speed_rounded, cs.tertiary,
-                  _formatDuration(avgDaily), l.statsDailyAverage)),
-        ]),
-        if (_timeSavedSeconds >= 60) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-                child: _accentStatCard(tt, cs, Icons.fast_forward_rounded,
-                    Colors.cyan, _formatDuration(_timeSavedSeconds),
-                    l.statsTimeSavedLabel,
-                    subtitle: _timeSavedSince != null
-                        ? l.statsTimeSavedSince(
-                            MaterialLocalizations.of(context).formatMediumDate(_timeSavedSince!))
-                        : null,
-                    trailing: IconButton(
-                      icon: Icon(Icons.restart_alt_rounded,
-                          size: 20, color: cs.onSurfaceVariant),
-                      tooltip: l.statsTimeSavedReset,
-                      onPressed: _confirmResetTimeSaved,
-                    ))),
-          ]),
-        ],
         const SizedBox(height: 28),
       ],
       'chart': [
@@ -669,7 +645,9 @@ class _StatsScreenState extends State<StatsScreen>
           // BookOrbit's per-book totals take in reading as well.
           _sectionTitle(tt, cs, bo != null ? l.statsTopBooks : l.statsMostListened),
           const SizedBox(height: 10),
-          ...topItems.map((item) => _topItemCard(tt, cs, l, item)),
+          _responsiveTwoColumnList(
+            topItems.map((item) => _topItemCard(tt, cs, l, item)).toList(),
+          ),
           SizedBox(height: genres.isEmpty ? 28 : 14),
         ],
         if (genres.isNotEmpty) ...[
@@ -713,37 +691,100 @@ class _StatsScreenState extends State<StatsScreen>
       ..._defaultSectionOrder.where((id) => !_statsOrder.contains(id)),
     ];
 
-    return ListView(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-      children: [
-        AbsorbPageHeader(
-          title: l.statsTitle,
-          padding: const EdgeInsets.only(top: 12),
-        ),
-        const SizedBox(height: 24),
-        if (bo != null) _mediaPicker(cs, tt, l, bo),
-        for (final id in order)
-          if (!_statsHidden.contains(id)) ...sections[id]!,
-        if (_sessions.isNotEmpty) ...[
-          _sectionTitle(tt, cs, l.statsRecentSessions),
-          const SizedBox(height: 10),
-          ..._buildSessions(),
-          if (_isLoadingMoreSessions)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: cs.onSurface.withValues(alpha: 0.24)),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 900;
+        final desktopWorkspace = isDesktopWorkspace(context);
+        final horizontalPadding = isWide ? 32.0 : 20.0;
+        return ListView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+              horizontalPadding, 0, horizontalPadding, 32),
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1180),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AbsorbPageHeader(
+                      title: l.statsTitle,
+                      showBranding: !desktopWorkspace,
+                      padding: EdgeInsets.only(top: isWide ? 24 : 12),
+                    ),
+                    const SizedBox(height: 24),
+                    if (bo != null) _mediaPicker(cs, tt, l, bo),
+                    for (final id in order)
+                      if (!_statsHidden.contains(id)) ...sections[id]!,
+                    if (_sessions.isNotEmpty) ...[
+                      _sectionTitle(tt, cs, l.statsRecentSessions),
+                      const SizedBox(height: 10),
+                      _responsiveTwoColumnList(_buildSessions()),
+                      if (_isLoadingMoreSessions)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: cs.onSurface.withValues(alpha: 0.24)),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
                 ),
               ),
             ),
-        ],
-      ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _responsiveStatsGrid(List<Widget> cards) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 1080
+            ? 4
+            : constraints.maxWidth >= 900
+                ? 3
+                : 2;
+        const spacing = 12.0;
+        final cardWidth =
+            (constraints.maxWidth - (spacing * (columns - 1))) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final card in cards)
+              SizedBox(width: cardWidth, child: card),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _responsiveTwoColumnList(List<Widget> cards) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 900) {
+          return Column(children: cards);
+        }
+        const spacing = 12.0;
+        final cardWidth = (constraints.maxWidth - spacing) / 2;
+        return Wrap(
+          spacing: spacing,
+          children: [
+            for (final card in cards)
+              SizedBox(width: cardWidth, child: card),
+          ],
+        );
+      },
     );
   }
 
@@ -1306,7 +1347,7 @@ class _StatsScreenState extends State<StatsScreen>
             separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (_, i) => ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: CachedNetworkImage(
+              child: CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                 imageUrl: api.getCoverUrl(coverIds[i], width: 120),
                 useOldImageOnUrlChange: true,
                 width: 64,
@@ -2177,10 +2218,12 @@ class _StatsScreenState extends State<StatsScreen>
   }
 
   Future<void> _showDaySessions(DateTime day) async {
-    final changed = await showModalBottomSheet<bool>(
+    final changed = await showAdaptiveActionMenu<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      desktopWidth: 520,
+      desktopScrollWrap: false,
       builder: (_) => DaySessionsSheet(
         initialDate: day,
         loadSessions: _loadSessionsForDay,
@@ -2200,10 +2243,12 @@ class _StatsScreenState extends State<StatsScreen>
     Map<String, dynamic> s, {
     bool refreshStats = true,
   }) async {
-    final changed = await showModalBottomSheet<bool>(
+    final changed = await showAdaptiveActionMenu<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      desktopWidth: 520,
+      desktopScrollWrap: false,
       builder: (_) => SessionDetailsSheet(session: s),
     );
     if (changed == true && mounted && refreshStats) {
@@ -2947,6 +2992,7 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
+    final desktopMode = ModalSurface.isDesktopOf(context);
     final s = widget.session;
 
     final meta = s['mediaMetadata'] as Map<String, dynamic>? ?? {};
@@ -2988,7 +3034,7 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
     final lib = context.read<LibraryProvider>();
     final coverUrl = itemId != null ? lib.getCoverUrl(itemId) : null;
 
-    return DraggableScrollableSheet(
+    return AdaptiveDraggableScrollableSheet(
       initialChildSize: 0.7,
       minChildSize: 0.4,
       maxChildSize: 0.95,
@@ -2997,20 +3043,37 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
         return Container(
           decoration: BoxDecoration(
             color: cs.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: desktopMode
+                ? BorderRadius.zero
+                : const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 4),
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
+            if (desktopMode)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                  child: IconButton(
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 4),
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
             Expanded(
               child: ListView(
                 controller: scrollController,
@@ -3024,7 +3087,7 @@ class SessionDetailsSheetState extends State<SessionDetailsSheet> {
                         height: 88,
                         color: cs.onSurface.withValues(alpha: 0.06),
                         child: coverUrl != null
-                            ? CachedNetworkImage(
+                            ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                                 imageUrl: coverUrl,
                                 useOldImageOnUrlChange: true,
                                 fit: BoxFit.cover,

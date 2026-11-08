@@ -771,6 +771,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get absorbingManageQueue => 'Manage Queue';
 
   @override
+  String get desktopAbsorbingQueueHint =>
+      'Use Add to Absorbing on a book or episode to put it here. Items play in this order.';
+
+  @override
   String get absorbingDone => 'Done';
 
   @override
@@ -1559,7 +1563,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get fullBookScrubberOffSubtitle => 'Off - progress bar only';
 
   @override
-  String get cardScrubbers => 'Card scrubbers';
+  String get cardScrubbers => 'Progress bars';
 
   @override
   String get cardScrubbersBoth => 'Both';
@@ -1617,22 +1621,22 @@ class AppLocalizationsIt extends AppLocalizations {
   String get whenAbsorbedAutoRelease => 'Auto-release';
 
   @override
-  String get mergeLibraries => 'Unified Absorbing page';
+  String get mergeLibraries => 'Unified Absorbing';
 
   @override
-  String get mergeLibrariesInfoTitle => 'Unified Absorbing Page';
+  String get mergeLibrariesInfoTitle => 'Unified Absorbing';
 
   @override
   String get mergeLibrariesInfoContent =>
-      'When enabled, the Absorbing screen shows all your in-progress books and podcasts from every library in a single view. When disabled, only items from the library you currently have selected are shown.';
+      'When enabled, Absorbing shows and queues books and podcast episodes from every library together. When disabled, the page and Manual queue stay within the current library or media type.';
 
   @override
   String get mergeLibrariesOnSubtitle =>
-      'Absorbing page shows items from all libraries';
+      'Show and queue items from all libraries together';
 
   @override
   String get mergeLibrariesOffSubtitle =>
-      'Absorbing page shows current library only';
+      'Keep the page and Manual queue in the current library';
 
   @override
   String get queueMode => 'Queue mode';
@@ -1652,7 +1656,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get queueModeInfoManualDesc =>
-      'Your absorbing cards act as a playlist. When one finishes, the next non-finished card auto-plays. Add items with the \"Add to Absorbing\" button on a book or episode and reorder from the absorbing screen.';
+      'Items in Absorbing are your manual queue. When one finishes, the next unfinished item plays. Use Add to Absorbing on a book or episode, then reorder it in the Queue panel.';
 
   @override
   String get queueModeOff => 'Off';
@@ -1877,6 +1881,20 @@ class AppLocalizationsIt extends AppLocalizations {
       'Off - this library uses the global skip amounts';
 
   @override
+  String get currentLibrarySpeedOverride => 'Custom default speed';
+
+  @override
+  String get currentLibrarySpeedOverrideOnSubtitle =>
+      'On - new items in this library start at their own speed';
+
+  @override
+  String get currentLibrarySpeedOverrideOffSubtitle =>
+      'Off - new items in this library start at the global default speed';
+
+  @override
+  String get currentLibrarySpeed => 'Default speed';
+
+  @override
   String get currentLibrarySkipBack => 'Skip back';
 
   @override
@@ -1900,6 +1918,18 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get chapterProgressOnSubtitleIos =>
       'On - lock screen & CarPlay show chapter progress';
+
+  @override
+  String get chapterProgressInNowPlayingBar =>
+      'Chapter progress in now playing bar';
+
+  @override
+  String get chapterProgressInNowPlayingBarOnSubtitle =>
+      'On - the bottom player shows current chapter progress';
+
+  @override
+  String get chapterProgressInNowPlayingBarOffSubtitle =>
+      'Off - the bottom player shows full book progress';
 
   @override
   String get nowPlayingText => 'Now playing text';
@@ -3444,6 +3474,16 @@ class AppLocalizationsIt extends AppLocalizations {
   String get hideEbookOnlyOffSubtitle => 'Off - all library items shown';
 
   @override
+  String get audibleRatings => 'Audible ratings';
+
+  @override
+  String get audibleRatingsOnSubtitle =>
+      'On - book details show the Audible rating';
+
+  @override
+  String get audibleRatingsOffSubtitle => 'Off - no Audible lookup or stars';
+
+  @override
   String get homeCardsOpenDetails => 'Open details from Home';
 
   @override
@@ -3521,7 +3561,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get enableLoggingOnSubtitle =>
-      'On - logs saved to file (restart to apply)';
+      'On - logs are being captured (restart to apply)';
 
   @override
   String get enableLoggingOffSubtitle => 'Off - no logs captured';
@@ -3535,14 +3575,14 @@ class AppLocalizationsIt extends AppLocalizations {
       'Logging disabled - restart app to stop capturing';
 
   @override
-  String get sendLogs => 'Send logs';
+  String get sendLogs => 'Export logs';
 
   @override
-  String get sendLogsSubtitle => 'Share log file as attachment';
+  String get sendLogsSubtitle => 'Download or share the .txt log file';
 
   @override
   String failedToShare(String error) {
-    return 'Failed to share: $error';
+    return 'Failed to export: $error';
   }
 
   @override
@@ -4689,6 +4729,10 @@ class AppLocalizationsIt extends AppLocalizations {
       'Failed to update - check your connection';
 
   @override
+  String get markedFinishedWillSync =>
+      'Marked as finished - will sync when you\'re back online';
+
+  @override
   String get markAsNotFinishedQuestion => 'Mark as Not Finished?';
 
   @override
@@ -5113,6 +5157,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get loudness => 'Loudness';
 
   @override
+  String get pitch => 'Pitch';
+
+  @override
   String get monoAudio => 'Mono Audio';
 
   @override
@@ -5354,6 +5401,15 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get refreshTooltip => 'Refresh';
+
+  @override
+  String get openNowPlayingTooltip => 'Open Now Playing';
+
+  @override
+  String get previousChapterTooltip => 'Previous chapter';
+
+  @override
+  String get nextChapterTooltip => 'Next chapter';
 
   @override
   String get noBooksFound => 'No books found';
@@ -7654,6 +7710,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get upcomingReleasesBadgeNew => 'NEW';
+
+  @override
+  String get upcomingReleasesOpenSeries => 'Open series on Audible';
 
   @override
   String get upcomingReleasesOpenLibrarySeries => 'Open series in library';
@@ -15371,4 +15430,178 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get boEmailNoCopy => 'Couldn\'t make a copy without the narration.';
+
+  @override
+  String get boForgotLink => 'Forgot password?';
+
+  @override
+  String get boForgotTitle => 'Reset your password';
+
+  @override
+  String get boForgotBody =>
+      'Enter the email on your account and the server will send you a link to choose a new password.';
+
+  @override
+  String get boForgotSend => 'Send link';
+
+  @override
+  String get boForgotSent =>
+      'If that email is on an account, a link is on its way. Open it to choose a new password, then sign in here.';
+
+  @override
+  String get boForgotNotSetUp =>
+      'This server isn\'t set up to send email. Ask whoever runs it for a password link.';
+
+  @override
+  String get boForgotTooMany => 'Too many tries. Wait a while and try again.';
+
+  @override
+  String get boActivityTitle => 'Reading activity';
+
+  @override
+  String get boActivityPrivate => 'Keeps their reading activity private';
+
+  @override
+  String get boActivitySharesSummary =>
+      'Shares a summary. They can see when you view it.';
+
+  @override
+  String get boActivitySharesDetails =>
+      'Shares details, including books. They can see when you view it.';
+
+  @override
+  String get boActivityNotice => 'This person can see that you viewed this.';
+
+  @override
+  String get boActivityNowPrivate =>
+      'This person isn\'t sharing their reading activity anymore.';
+
+  @override
+  String get boActivityLoadFailed => 'Couldn\'t load reading activity.';
+
+  @override
+  String get boActivityEmpty => 'No reading in this period';
+
+  @override
+  String get boActivityReadingTime => 'Reading time';
+
+  @override
+  String get boActivitySessions => 'Sessions';
+
+  @override
+  String get boActivityActiveDays => 'Active days';
+
+  @override
+  String get boActivityStarted => 'Books started';
+
+  @override
+  String get boActivityFinished => 'Books finished';
+
+  @override
+  String get boActivityTrend => 'Daily reading';
+
+  @override
+  String get boActivitySources => 'Read on';
+
+  @override
+  String get boActivityFormats => 'Formats';
+
+  @override
+  String get boActivityGenres => 'Genres';
+
+  @override
+  String get boActivityTopBooks => 'Most read';
+
+  @override
+  String get boActivityRecentBooks => 'Recently read';
+
+  @override
+  String get boActivityTopAuthors => 'Top authors';
+
+  @override
+  String get boActivityTopGenres => 'Top genres';
+
+  @override
+  String get boActivityTopSeries => 'Top series';
+
+  @override
+  String get boActivityTopNarrators => 'Top narrators';
+
+  @override
+  String get boActivityUntitled => 'Untitled book';
+
+  @override
+  String get boActivitySourceWeb => 'Web reader';
+
+  @override
+  String get boActivitySourceIos => 'iOS app';
+
+  @override
+  String get boActivitySourceWatch => 'Apple Watch';
+
+  @override
+  String get boActivitySourceAndroid => 'Android app';
+
+  @override
+  String get boActivitySourceManual => 'Manual';
+
+  @override
+  String get boActivitySourceUnknown => 'Unknown';
+
+  @override
+  String get boActivityGenreSciFi => 'Science fiction';
+
+  @override
+  String get boActivityGenreFantasy => 'Fantasy';
+
+  @override
+  String get boActivityGenreMystery => 'Mystery and thriller';
+
+  @override
+  String get boActivityGenreRomance => 'Romance';
+
+  @override
+  String get boActivityGenreHorror => 'Horror';
+
+  @override
+  String get boActivityGenreHistory => 'History and biography';
+
+  @override
+  String get boActivityGenreScience => 'Science and technology';
+
+  @override
+  String get boActivityGenreBusiness => 'Business and economics';
+
+  @override
+  String get boActivityGenreSelf => 'Self-development';
+
+  @override
+  String get boActivityGenreSociety => 'Society and culture';
+
+  @override
+  String get boActivityGenreChildren => 'Children and young adult';
+
+  @override
+  String get boActivityGenreComics => 'Comics and graphic novels';
+
+  @override
+  String get boActivityGenrePoetry => 'Poetry';
+
+  @override
+  String get boActivityGenreOther => 'Other';
+
+  @override
+  String boActivityDays(int count) {
+    return '$count days';
+  }
+
+  @override
+  String boActivityMinutes(int count) {
+    return '$count min';
+  }
+
+  @override
+  String boActivityHours(double count) {
+    return '$count h';
+  }
 }

@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import '../l10n/app_localizations.dart';
 import 'cover_badges.dart';
 import '../services/wording.dart';
@@ -343,7 +345,7 @@ class _SectionDetailSheetState extends State<SectionDetailSheet> {
       return Image.file(File(coverUrl), fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _placeholder(cs));
     }
-    return CachedNetworkImage(
+    return CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
       imageUrl: coverUrl, fit: BoxFit.cover,
       useOldImageOnUrlChange: true,
       httpHeaders: lib.mediaHeaders,

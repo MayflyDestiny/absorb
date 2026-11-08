@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import 'cover_badges.dart';
@@ -88,7 +90,7 @@ class BookResultTile extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     coverUrl != null
-                        ? CachedNetworkImage(
+                        ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                             imageUrl: coverUrl,
                             useOldImageOnUrlChange: true,
                             fit: BoxFit.cover,
@@ -331,7 +333,7 @@ class EpisodeResultTile extends StatelessWidget {
                 width: 56,
                 height: 56,
                 child: coverUrl != null
-                    ? CachedNetworkImage(
+                    ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                         imageUrl: coverUrl,
                         useOldImageOnUrlChange: true,
                         fit: BoxFit.cover,
@@ -444,7 +446,7 @@ class AuthorResultTile extends StatelessWidget {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: imageUrl != null
-                      ? CachedNetworkImage(
+                      ? CachedNetworkImage(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, 
                           imageUrl: imageUrl,
                           useOldImageOnUrlChange: true,
                           fit: BoxFit.cover,
