@@ -39,6 +39,12 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
   double? _bookDragValue;
   double _bookDragStartDy = 0;
   double _chapterDragStartDy = 0;
+  // Chapter span captured when the chapter pill drag begins. The card can
+  // rebuild mid-gesture with a different chapter (a slow start resolving its
+  // real position), and mapping the release fraction against the NEW span
+  // moved the seek a whole chapter forward.
+  double? _chapterDragStartSec;
+  double? _chapterDragDurSec;
   double _bookScrubSpeed = 1.0;
   double _chapterScrubSpeed = 1.0;
   CardScrubberMode _scrubberMode = CardScrubberMode.chapter;
@@ -294,9 +300,20 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
         String? resolvedChapterName;
         int resolvedChapterIdx = -1;
 
-        // Always resolve chapter from posS so boundaries, fill, and name
-        // all use the same position. Using player.currentChapter can
-        // disagree with _smoothPos in multi-track books (track index race).
+        // While dragging, resolve the chapter at the finger's position and
+        // keep the span captured at drag start for the release target. A start
+        // that finishes resolving mid-gesture could otherwise relabel the pill
+        // (and re-map the drag) to the chapter the start happens to point at.
+        final chapterResolvePos =
+            _chapterDragValue != null && _chapterDragStartSec != null
+            ? _chapterDragStartSec! +
+                  _chapterDragValue! * (_chapterDragDurSec ?? 0)
+            : posS;
+
+        // Resolve the chapter from the drag position (or posS when idle) so
+        // boundaries, fill, and name all use the same position. Using
+        // player.currentChapter can disagree with _smoothPos in multi-track
+        // books (track index race).
         List<dynamic> chapterSource;
         if (_isCastMode) {
           chapterSource = cast.castingChapters;
@@ -311,7 +328,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
             final m = chapterSource[ci] as Map<String, dynamic>;
             final s = (m['start'] as num?)?.toDouble() ?? 0;
             final e = (m['end'] as num?)?.toDouble() ?? 0;
-            if (posS >= s && posS < e) {
+            if (chapterResolvePos >= s && chapterResolvePos < e) {
               chapterStart = s;
               chapterEnd = e;
               resolvedChapterName = m['title'] as String?;
@@ -323,10 +340,10 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
           // chapter. Grossly past means the chapters don't cover the item's
           // timeline (e.g. duplicate audio files, GH #345) - keep the
           // whole-book span so the pill stays honest and keeps moving.
-          if (resolvedChapterIdx < 0 && posS > 0) {
+          if (resolvedChapterIdx < 0 && chapterResolvePos > 0) {
             final last = chapterSource.last as Map<String, dynamic>;
             final lastEnd = (last['end'] as num?)?.toDouble() ?? totalDur;
-            if (posS <= lastEnd + ChapterLookup.graceSeconds) {
+            if (chapterResolvePos <= lastEnd + ChapterLookup.graceSeconds) {
               chapterStart = (last['start'] as num?)?.toDouble() ?? 0;
               chapterEnd = lastEnd;
               resolvedChapterName = last['title'] as String?;
@@ -341,7 +358,7 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
         // also covers the window BEFORE the async park lands (engine just
         // ended / scrub cleared the flag) — otherwise the title flashes the
         // undownloaded chapter for a beat and then snaps back.
-        if (!_isCastMode && widget.isActive) {
+        if (!_isCastMode && widget.isActive && _chapterDragValue == null) {
           final boundaryIdx = player.boundaryChapterOverride(posS);
           if (boundaryIdx != null && boundaryIdx < chapterSource.length) {
             final m = chapterSource[boundaryIdx] as Map<String, dynamic>;
@@ -352,10 +369,17 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
           }
         }
         final chapterUnresolved =
-            chapterSource.isNotEmpty && resolvedChapterIdx < 0 && posS > 0;
+            chapterSource.isNotEmpty &&
+            resolvedChapterIdx < 0 &&
+            chapterResolvePos > 0;
         final chapterDur = chapterEnd - chapterStart;
         final chapterPos = (posS - chapterStart).clamp(0.0, chapterDur);
         final chapterProgress = chapterDur > 0 ? chapterPos / chapterDur : 0.0;
+        // The drag keeps the span it started in for its time labels and
+        // release target, even when the finger crosses a chapter boundary.
+        final dragChapterDur = _chapterDragValue != null
+            ? (_chapterDragDurSec ?? chapterDur)
+            : chapterDur;
         // When inactive, fall back to the per-item saved speed (or default)
         // so the book time row on the expanded card still reflects the
         // user's speed-adjusted-time setting. Matches absorbing_card's
@@ -465,9 +489,10 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
 
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onHorizontalDragStart: chapterInteractive ? (d) { _chapterDragStartDy = d.localPosition.dy; _chapterScrubSpeed = 1.0; setState(() => _chapterDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
+                onHorizontalDragStart: chapterInteractive ? (d) { _chapterDragStartDy = d.localPosition.dy; _chapterScrubSpeed = 1.0; _chapterDragStartSec = chapterStart; _chapterDragDurSec = chapterDur; setState(() => _chapterDragValue = (d.localPosition.dx / w).clamp(0.0, 1.0)); } : null,
                 onHorizontalDragUpdate: chapterInteractive ? (d) { _chapterScrubSpeed = _scrubScale((d.localPosition.dy - _chapterDragStartDy).abs()); setState(() => _chapterDragValue = ((_chapterDragValue ?? chapterProgress) + d.delta.dx / w * _chapterScrubSpeed).clamp(0.0, 1.0)); } : null,
-                onHorizontalDragEnd: chapterInteractive ? (_) { if (_chapterDragValue != null) { final seekMs = ((chapterStart + _chapterDragValue! * chapterDur) * 1000).round(); _doSeek(seekMs); } setState(() => _chapterDragValue = null); } : null,
+                onHorizontalDragEnd: chapterInteractive ? (_) { if (_chapterDragValue != null) { final start = _chapterDragStartSec ?? chapterStart; final dur = _chapterDragDurSec ?? chapterDur; final seekMs = ((start + _chapterDragValue! * dur) * 1000).round(); _doSeek(seekMs); } setState(() { _chapterDragValue = null; _chapterDragStartSec = null; _chapterDragDurSec = null; }); } : null,
+                onHorizontalDragCancel: chapterInteractive ? () { setState(() { _chapterDragValue = null; _chapterDragStartSec = null; _chapterDragDurSec = null; }); } : null,
                 onTapUp: chapterInteractive ? (d) { final v = (d.localPosition.dx / w).clamp(0.0, 1.0); final seekMs = ((chapterStart + v * chapterDur) * 1000).round(); _doSeek(seekMs); } : null,
                 child: CustomPaint(
                   size: Size(w, 30),
@@ -502,14 +527,14 @@ class _CardDualProgressBarState extends State<CardDualProgressBar> with WidgetsB
             Padding(padding: EdgeInsets.only(top: widget.compact ? 1 : 3), child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_fmt(_chapterDragValue != null ? (_chapterDragValue! * chapterDur) / speedDiv : chapterElapsed),
+                Text(_fmt(_chapterDragValue != null ? (_chapterDragValue! * dragChapterDur) / speedDiv : chapterElapsed),
                   style: tt.labelSmall?.copyWith(
                     color: _chapterDragValue != null ? widget.accent : cs.onSurface.withValues(alpha: 0.54),
                     fontSize: 11 * _progressTextScale, fontWeight: FontWeight.w600,
                     fontFeatures: const [FontFeature.tabularFigures()],
                     shadows: [Shadow(color: Theme.of(context).brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5), blurRadius: 3)])),
                 if (_chapterDragValue != null && _chapterScrubSpeed < 1.0) Text(_scrubSpeedLabel(l, _chapterScrubSpeed), style: tt.labelSmall?.copyWith(color: widget.accent, fontSize: 11, fontWeight: FontWeight.w500)),
-                Text('-${_fmt(_chapterDragValue != null ? ((1.0 - _chapterDragValue!) * chapterDur) / speedDiv : chapterRemaining)}',
+                Text('-${_fmt(_chapterDragValue != null ? ((1.0 - _chapterDragValue!) * dragChapterDur) / speedDiv : chapterRemaining)}',
                   style: tt.labelSmall?.copyWith(
                     color: _chapterDragValue != null ? widget.accent : cs.onSurface.withValues(alpha: 0.5),
                     fontSize: 11 * _progressTextScale, fontWeight: FontWeight.w500,
