@@ -3,12 +3,26 @@
 本文件记录 [pounat/absorb](https://github.com/pounat/absorb) Fork 之后由 AI 生成的全部变更，按发布版本倒序排列，仅涉及 Android 平台。
 
 - Fork 基线：`v1.11.2+280`（上游 `284e16c`）
-- 最新版本：`v1.24.3+447`
+- 最新版本：`v1.24.4+448`
 - 摘要版见 [README.md](README.md#更新日志)
 
 > 版本号以 `pubspec.yaml` 为准。少数提交信息里写的版本号与实际 `pubspec.yaml` 不一致（例如 `a709776` 写 1.21.8+380、实际 1.21.8+381；`6b09bfe` 写 1.21.9+385、实际 1.21.10+386），本文件采用 `pubspec.yaml` 的值。
 
 ---
+
+## v1.24.4+448 — 修复加载中拖动/选章节被起播覆盖，并合并上游进度校验
+
+合并自上游 `ef88e17a` · 2026-11-11
+
+- **修复加载中拖动进度条被起播位置覆盖**：拖动、章节列表、上一/下一章、快进/快退在 `isLoadingNewItem` 期间统一排队，最新意图优先。原先 just_audio 在 `ProcessingState.loading` 时会静默忽略 seek，起播随后又按自己的 `startTime` 落位，导致选中的章节丢失、甚至从第 1 集开始；现在起播目标直接用于初始落位，加载结束后再执行完整章节语义（边界吸附、intro skip、章节 pin）
+- **修复加载中选章节后标题跳回第一章/下一章**：加载期章节解析优先使用 seek 目标；起播的 seek target 不再在发出后立刻清掉；本地/直连起播改用 `initialIndex/initialPosition`，不再先加载 track 0 再 seek
+- **加载中播放/暂停保护**：加载中按播放只记录请求，load-only 结束后再播；加载中暂停优先于起播的 `play()`；章节跳转的自动播放延后到加载完成，避免二次起播、重复 session 与 `_setupSync`
+- **提前取消旧监听**：旧 item 的 sync/completion/index 监听在改 itemId 之前取消，避免新 item 起播阶段被旧的 5 秒进度 tick 用 0 覆盖
+- **进度保存兜底**：5 秒 tick、暂停、停止与后台保存统一使用“未落地的 seek target 优先、暂停态非用户回退不覆盖”的位置；换源/慢 seek 的瞬时 0 不再覆盖真实进度（这也是“下次从第一集开始”的根因之一）
+- **合并上游 `ef88e17a`**：本地/下载起播也会在出音前校验 `/me/progress`（App 界面最多 2s，耳机/小组件/Android Auto/冷启动 700ms）；只采用时间戳更新的服务器位置并写回本地缓存；恢复期检查同样覆盖非 UI 触发。fork 仍对“其他账号下载”跳过同 id 的服务器进度，避免串书
+- **合并说明**：本次上游只改 `audio_player_service.dart`，无依赖/锁文件变更；冲突处按“保留本轮修复 + 上游语义”手工融合
+- **验证**：`flutter analyze` 对改动文件 0 issue，全项目 0 error（220 条原有 info/warning）；本机 `flutter test` 仍因 `pdfium_dart` 原生资源钩子需要 MSVC 而无法运行
+- **版本号**：`1.24.4+448`
 
 ## v1.24.3+447 — 同步上游 1.12.1+304（播放引擎重写、离线同步与 BookOrbit 阅读活动）
 

@@ -130,7 +130,15 @@ Absorb 支持 Android Auto 车载浏览和收听。使用 GitHub 版本需要启
 > 详细变更请查看 [CHANGELOG_FULL.md](CHANGELOG_FULL.md)
 
 <details>
-<summary><b>展开查看更新日志（精简版，v1.11.2+280 → v1.24.3+447）</b></summary>
+<summary><b>展开查看更新日志（精简版，v1.11.2+280 → v1.24.4+448）</b></summary>
+
+### v1.24.4+448 — 修复加载中拖动/选章节被起播覆盖，并合并上游进度校验
+
+- 加载中拖动进度条、选章节、上一/下一章、快进快退统一排队，最新意图优先；起播直接按目标落位，不再因为 just_audio 在加载态忽略 seek 而丢失章节或从第 1 集开始
+- 加载中按播放/暂停、load-only 自动播放与“选章节后自动播”统一延后处理；本地/直连起播改用 `initialIndex/initialPosition`，不再先加载 track 0 再 seek
+- 进度保存优先采用未落地的 seek target，换源/慢 seek 的瞬时 0 不再覆盖真实进度
+- 合并上游 `ef88e17a`：本地/下载起播与恢复前也校验服务器进度（App 界面最多 2s、耳机/车机/小组件 700ms），采用时要求时间戳更新并写回本地；其他账号下载仍跳过同 id 的服务器进度
+- `flutter analyze` 0 error；本机 `flutter test` 仍因 `pdfium_dart` 原生资源钩子缺 MSVC 无法运行
 
 ### v1.24.3+447 — 同步上游 1.12.1+304（播放引擎重写、离线同步与 BookOrbit 阅读活动）
 
