@@ -3532,6 +3532,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get trustAllCertificatesInfoTitle => '自签名证书';
 
   @override
+  String get alignChaptersTracks => '对齐章节与音轨';
+
+  @override
+  String get alignChaptersTracksInfoTitle => '对齐章节与音轨';
+
+  @override
+  String get alignChaptersTracksInfoContent =>
+      '服务器更新音轨后不会自动更新章节：例如删除了一集音频，章节里仍会保留那一集，播放时就显示它的标题但播的是下一集的内容。开启后，播放这本书时或服务器更新它的音轨时，若发现章节数与音轨数不一致，会按「每条音轨一章」在服务器上重建章节（标题取音轨标题，缺失时用文件名；起止按当前音轨时长累计），并立即生效。只检查正在播放的这本书，不会批量扫描书库。单个整文件内自动识别的章节（起止与本轨时间线一致）永远不会被扁平化或覆盖。';
+
+  @override
+  String get alignChaptersTracksOnSubtitle => '开启 - 章节数与音轨数不一致时自动重建';
+
+  @override
+  String get alignChaptersTracksOffSubtitle => '关闭 - 不自动修改服务器章节';
+
+  @override
   String get mp3IndexSeeking => 'MP3 索引定位';
 
   @override

@@ -57,9 +57,19 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     useProxyForRequestHeaders: false,
     audioLoadConfiguration: const AudioLoadConfiguration(
       androidLoadControl: AndroidLoadControl(
-        bufferForPlaybackDuration: Duration(seconds: 2),
+        // Start playing after only 1s of buffered audio: playback bitrate is
+        // a fraction of typical link throughput, so this shaves the startup
+        // and post-seek wait without meaningfully raising rebuffer risk
+        // (rebuffer recovery keeps its own, larger 5s threshold).
+        bufferForPlaybackDuration: Duration(seconds: 1),
         bufferForPlaybackAfterRebufferDuration: Duration(seconds: 5),
         targetBufferBytes: 5 * 1024 * 1024, // 5 MB buffer
+        // Keep played audio buffered: a backward seek inside the current
+        // file (rewind button, chapter-start snap) then lands INSTANTLY on
+        // already-buffered samples instead of re-fetching the byte range
+        // over the network ("rewind stalls a few seconds pulling data").
+        // ~2 minutes of audio is 2-4 MB of samples.
+        backBufferDuration: Duration(minutes: 2),
       ),
       // iOS: disable AVPlayer's "wait for sustained playback guarantee" mode.
       // Default true makes AVPlayer set _player.rate = speed and only actually
@@ -292,10 +302,19 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       },
       onError: (Object e, StackTrace st) {
         if (PlaybackErrorPolicy.isSourceError(e)) {
-          debugPrint(
-            '[Player] playbackEvent source error - restarting stream: $e',
-          );
-          AudioPlayerService()._attemptStreamRetry(e);
+          // Paused: there is no audible stream to rescue, and a rebuild here
+          // would start audio the user had paused (see the pause-intent guard
+          // in playItem/_attemptStreamRetry).
+          if (_player.playing) {
+            debugPrint(
+              '[Player] playbackEvent source error - restarting stream: $e',
+            );
+            AudioPlayerService()._attemptStreamRetry(e);
+          } else {
+            debugPrint(
+              '[Player] playbackEvent source error while paused - ignoring: $e',
+            );
+          }
           return;
         }
 
@@ -666,8 +685,9 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     if (_service != null) {
       await _service!.skipForward(skipAmount);
     } else {
-      final adjusted = (skipAmount * _player.speed).round();
-      await _player.seek(_player.position + Duration(seconds: adjusted));
+      // Content seconds: skip the configured amount of audio regardless of
+      // playback speed, matching AudioPlayerService.skipForward.
+      await _player.seek(_player.position + Duration(seconds: skipAmount));
     }
   }
 
@@ -683,8 +703,8 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     if (_service != null) {
       await _service!.skipBackward(skipAmount);
     } else {
-      final adjusted = (skipAmount * _player.speed).round();
-      var pos = _player.position - Duration(seconds: adjusted);
+      // Content seconds, matching AudioPlayerService.skipBackward.
+      var pos = _player.position - Duration(seconds: skipAmount);
       if (pos < Duration.zero) pos = Duration.zero;
       await _player.seek(pos);
     }
@@ -2159,7 +2179,8 @@ class AudioPlayerService extends ChangeNotifier {
     debugPrint(
       '[Service] Seek to ${targetSec.toStringAsFixed(1)}s queued — the item '
       'is still loading and would overwrite it'
-      '${apply != null ? ' (chapter action)' : ''}',
+      '${apply != null ? ' (chapter action)' : ''}\n'
+      'Caller:\n${StackTrace.current}',
     );
     notifyListeners();
   }
@@ -2198,6 +2219,20 @@ class AudioPlayerService extends ChangeNotifier {
   /// Used to suppress chapter intro/outro auto-skip so it doesn't immediately
   /// override a deliberate user navigation (e.g. rewinding to chapter start).
   DateTime _lastUserSeekTime = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// When the current playback started (a user play/resume, or the engine
+  /// play a load path ends with). The chapter intro/outro auto-skip holds off
+  /// briefly after it so a super-short chapter isn't jumped the instant audio
+  /// begins — that read as "the app started episode 2 by itself" on books
+  /// whose first chapter is a few-second stub.
+  DateTime? _playStartAt;
+
+  /// The engine-level play a load path ends with. Stamps the play start so
+  /// the intro/outro skip suppression window runs from here too.
+  void _enginePlayAfterLoad() {
+    _playStartAt = DateTime.now();
+    _player!.play();
+  }
 
   /// The chapter index of the current skip "entry". When playback crosses into
   /// a different chapter (prev/next nav, or re-entering an already-played
@@ -3284,10 +3319,19 @@ class AudioPlayerService extends ChangeNotifier {
   /// [absoluteStarts], when supplied and length-matched, gives each track's
   /// offset in the full book timeline (used for partial downloads, where the
   /// present files are not contiguous). Otherwise offsets are cumulative from 0.
+  ///
+  /// Durations deliberately come from the SERVER's per-track values and are
+  /// never reconciled against the engine's estimates: Audiobookshelf derives
+  /// the chapter starts from the SAME per-track durations, so this timeline
+  /// is self-consistent with the chapter metadata. Mixing in the engine's
+  /// bitrate-based estimates (VBR MP3 without a Xing header) moved chapter
+  /// boundaries relative to the real audio — "the last seconds of episode 59
+  /// played episode 60's opening".
   void _buildTrackOffsets(
     List<dynamic> audioTracks, {
     List<double>? absoluteStarts,
   }) {
+    _lastSourceTracks = audioTracks;
     _trackDurations = [
       for (final t in audioTracks)
         ((t as Map<String, dynamic>)['duration'] as num?)?.toDouble() ?? 0,
@@ -3349,6 +3393,32 @@ class AudioPlayerService extends ChangeNotifier {
       if ((absoluteSeconds - s).abs() <= 1.0) return true;
     }
     return false;
+  }
+
+  /// Whether mapping chapter i to track i is SAFE for this book: the chapter
+  /// starts sit at (or, allowing cumulative metadata/file drift, near) their
+  /// track's start. Equal COUNTS alone are not proof — a book can hold N
+  /// files and N chapters with two chapters inside one file and a
+  /// chapter-less file elsewhere, where index mapping would seek to the
+  /// wrong file entirely. The grace accepts the drift that makes index
+  /// mapping NECESSARY; it must stay well below a typical track length so a
+  /// genuinely misplaced chapter fails the check.
+  bool _chapterIndexMappingSafe() {
+    final n = _trackStartOffsets.length - 1;
+    if (n <= 0 || _chapters.length != n) return false;
+    var total = 0.0;
+    for (var i = 0; i < n; i++) {
+      total += _trackDurationAt(i);
+    }
+    final grace = math.min(30.0, total / n * 0.25);
+    var ok = 0;
+    for (var i = 0; i < n; i++) {
+      final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+      final lo = _trackStartOffsets[i] - grace;
+      final hi = i + 1 < n ? _trackStartOffsets[i + 1] + grace : double.infinity;
+      if (s >= lo && s < hi) ok++;
+    }
+    return ok * 4 >= n * 3;
   }
 
   /// Whether [absoluteSeconds] falls inside a downloaded track's playback
@@ -3471,7 +3541,21 @@ class AudioPlayerService extends ChangeNotifier {
               unawaited(_autoAdvanceIntroSkip(mappedChapter));
             }
           }
-          _currentTrackIndex = clamped;
+          // A seek that is still settling must not have its anchor regressed:
+          // before the engine applies a cross-file seek, the index stream can
+          // re-report the PRE-seek track here. Adopting it would recompose the
+          // absolute position as "old track's tail" — the previous chapter's
+          // title with a full bar flashing over the pinned jump target while
+          // the new file buffers. The seek already pre-set the intended index;
+          // the stream re-fires with the landed track once it applies.
+          if (_lastSeekTargetSeconds != null) {
+            debugPrint(
+              '[Player] Seek settling - holding track index '
+              '$_currentTrackIndex (stream reported $clamped)',
+            );
+          } else {
+            _currentTrackIndex = clamped;
+          }
         }
       },
       onError: (Object e, StackTrace st) {
@@ -3517,20 +3601,64 @@ class AudioPlayerService extends ChangeNotifier {
     // book (track count ≈ chapter count, ~1.5x allowance for intro/credits
     // files) snaps freely.
     if (chapterJump &&
-        target + 1 < nTracks &&
         _isChapterStartWithin(absoluteSeconds) &&
         _chapters.isNotEmpty &&
         nTracks * 2 <= _chapters.length * 3) {
-      final distNext = _trackStartOffsets[target + 1] - absoluteSeconds;
-      final distCurrent = absoluteSeconds - _trackStartOffsets[target];
-      if (distNext > 0 && distNext < distCurrent) {
-        debugPrint(
-          '[Player] Chapter-start snap ${absoluteSeconds.toStringAsFixed(1)}s '
-          '(next boundary ${distNext.toStringAsFixed(2)}s away, containing '
-          'start ${distCurrent.toStringAsFixed(2)}s ago) -> index '
-          '${target + 1} at 0',
-        );
-        return (index: target + 1, localOffset: 0.0);
+      // Exactly one chapter per file: the chapter's audio IS its file's first
+      // frame, so map by INDEX. This is immune to metadata/file timeline
+      // drift, which the containment pick above is not — a drifted target can
+      // sit deep inside the PREVIOUS file's estimated range when per-file
+      // durations are inflated (VBR without a seek index), and the seek then
+      // clamps to that file's real end, reporting the PREVIOUS chapter's
+      // title ("rewind snapped to the chapter start but showed the previous
+      // chapter" report).
+      if (nTracks == _chapters.length && _chapterIndexMappingSafe()) {
+        var chapterIdx = 0;
+        var bestDelta = double.infinity;
+        for (var i = 0; i < _chapters.length; i++) {
+          final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
+          final delta = (s - absoluteSeconds).abs();
+          if (delta < bestDelta) {
+            bestDelta = delta;
+            chapterIdx = i;
+          }
+        }
+        if (chapterIdx < nTracks && bestDelta <= 1.0) {
+          debugPrint(
+            '[Player] Chapter-start index snap ${absoluteSeconds.toStringAsFixed(1)}s '
+            '-> chapter $chapterIdx (1 file per chapter) at 0',
+          );
+          return (index: chapterIdx, localOffset: 0.0);
+        }
+      }
+      if (target + 1 < nTracks) {
+        final distNext = _trackStartOffsets[target + 1] - absoluteSeconds;
+        final distCurrent = absoluteSeconds - _trackStartOffsets[target];
+        if (distNext > 0 && distNext < distCurrent) {
+          debugPrint(
+            '[Player] Chapter-start snap ${absoluteSeconds.toStringAsFixed(1)}s '
+            '(next boundary ${distNext.toStringAsFixed(2)}s away, containing '
+            'start ${distCurrent.toStringAsFixed(2)}s ago) -> index '
+            '${target + 1} at 0',
+          );
+          return (index: target + 1, localOffset: 0.0);
+        }
+        // Tail guard (same drift, opposite miss): a target can resolve into
+        // the tail of the previous file without being closer to that boundary
+        // than to the file's start. Landing there clamps to the previous
+        // file's real end — the previous chapter's tail with its title. When
+        // the resolved offset sits within ~2s of this file's estimated end,
+        // the next file's first frame is the intended chapter's audio.
+        if (_trackDurationAt(target) > 0 &&
+            _trackDurationAt(target) - localOffset < 2.0) {
+          debugPrint(
+            '[Player] Chapter-start tail snap ${absoluteSeconds.toStringAsFixed(1)}s '
+            '(resolved ${localOffset.toStringAsFixed(1)}s into track $target, '
+            'estimated length ${_trackDurationAt(target).toStringAsFixed(1)}s) '
+            '-> index ${target + 1} at 0',
+          );
+          return (index: target + 1, localOffset: 0.0);
+        }
       }
     }
     return (index: target, localOffset: localOffset);
@@ -4587,8 +4715,15 @@ class AudioPlayerService extends ChangeNotifier {
     // deciding for the user that audio starts now. Downloaded items only -
     // a streamed item plays normally.
     bool loadOnly = false,
+    // Automatic recoveries (stream retry, stall rebuild) pass false so a
+    // start issued while the user had PAUSED keeps that intent: playItem
+    // would otherwise clear [_pauseRequested] at this line and every load
+    // path's `if (!_pauseRequested) play()` would start audio the user never
+    // asked for. User-initiated starts (play/playNow, UI taps) keep the
+    // default true.
+    bool clearPauseRequest = true,
   }) async {
-    _pauseRequested = false;
+    if (clearPauseRequest) _pauseRequested = false;
     _finishedHeld = false;
     _playFromUi = fromUi;
     if (_handler == null) {
@@ -4746,6 +4881,18 @@ class AudioPlayerService extends ChangeNotifier {
     // Always prefer the local position when it's further ahead - the
     // caller's startTime may be stale (e.g. Android Auto browse tree
     // entry cached before the user listened further).
+    if (forceStartTime && startTime <= 0) {
+      // A forced start at zero legitimately means "begin at the top" (a
+      // chapter-sheet tap on chapter 1, a book restart) — but an internal
+      // recovery passing a LOST position here is exactly how a resume
+      // silently became "playing episode 1". Recovery callers must pass
+      // forceStartTime only when they hold a real position (see
+      // _attemptStreamRetry); this log pairs with the [PlayItemEntry] stack
+      // above to make any regression traceable.
+      debugPrint(
+        '[PlayItemEntry] Forced start at 0s — restart intent or lost position?',
+      );
+    }
     final localProgressAtStart = await _progressSync.getLocal(progressKey);
     final localPos =
         (localProgressAtStart?['currentTime'] as num?)?.toDouble() ?? 0;
@@ -5084,6 +5231,12 @@ class AudioPlayerService extends ChangeNotifier {
       // Auto-navigate to Absorbing tab when an episode starts playing.
       if (episodeId != null) _onEpisodePlayStartedCallback?.call();
       if (fromUi && episodeId == null) onAppPlay?.call(itemId);
+      // Advanced chapter-track alignment: fires only when this book's chapter
+      // count differs from its track count (server updated tracks without
+      // rebuilding chapters); see alignChaptersWithTracksIfStale for the
+      // fetch budget — zero requests in the common case, a POST only on a
+      // real mismatch.
+      unawaited(alignChaptersWithTracksIfStale());
     }
     return result;
   }
@@ -5859,7 +6012,7 @@ class AudioPlayerService extends ChangeNotifier {
       if (_startSuperseded(gen)) {
         return _abandonStart(null, null, 'local, before play');
       }
-      if (!_pauseRequested) _player!.play();
+      if (!_pauseRequested) _enginePlayAfterLoad();
       // A long background / overnight pause can leave the playing event
       // throttled in Doze, so push state immediately from the live player flags
       // and again after load settles instead of waiting for a late event; the
@@ -6197,7 +6350,7 @@ class AudioPlayerService extends ChangeNotifier {
         return _abandonStart(null, null, 'cached start, before play');
       }
       _cachedStartReconcileGeneration = playbackGeneration;
-      if (!_pauseRequested) _player!.play();
+      if (!_pauseRequested) _enginePlayAfterLoad();
       _scheduleAudioDiagnostics('cached-session');
       notifyListeners();
       _setupSync();
@@ -6749,7 +6902,14 @@ class AudioPlayerService extends ChangeNotifier {
     // Usually the furthest position wins, but if local is ahead we also
     // check timestamps to catch stale local saves.
     // Skip all of this when startTime was forced (bookmark/chapter jump).
-    final serverPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
+    // Both candidates are absolute values on whatever timeline the session
+    // was saved on — when the server's tracks were changed without rebuilding
+    // the chapters, both must be re-anchored onto THIS session's timeline
+    // before they are compared against each other.
+    startTime = await _remapStartAcrossTrackChange(startTime, audioTracks);
+    final rawServerPos = (sessionData['currentTime'] as num?)?.toDouble() ?? 0;
+    final serverPos =
+        await _remapStartAcrossTrackChange(rawServerPos, audioTracks);
     final pKey = episodeId != null ? '$itemId-$episodeId' : itemId;
     final localTs = await _progressSync.getSavedTimestamp(pKey);
     if (forceStartTime) {
@@ -6928,7 +7088,7 @@ class AudioPlayerService extends ChangeNotifier {
       if (_startSuperseded(gen)) {
         return _abandonStart(api, ownSessionId, 'before play');
       }
-      if (!_pauseRequested) _player!.play();
+      if (!_pauseRequested) _enginePlayAfterLoad();
       _scheduleAudioDiagnostics('stream');
       notifyListeners();
       _setupSync();
@@ -7209,7 +7369,7 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         (await AudioSession.instance).setActive(true);
       } catch (_) {}
-      if (!_pauseRequested) _player!.play();
+      if (!_pauseRequested) _enginePlayAfterLoad();
       _scheduleAudioDiagnostics('direct-file');
       notifyListeners();
       _setupSync();
@@ -7410,7 +7570,7 @@ class AudioPlayerService extends ChangeNotifier {
         _abandonStart(api, ownSessionId, 'transcode retry, before play');
         return;
       }
-      if (!_pauseRequested) _player!.play();
+      if (!_pauseRequested) _enginePlayAfterLoad();
       _scheduleAudioDiagnostics('transcoded');
       notifyListeners();
       _setupSync();
@@ -8001,9 +8161,14 @@ class AudioPlayerService extends ChangeNotifier {
     var sourceReplaced = false;
     try {
       final api = _api!;
-      final target = (seekToSeconds ?? position.inMilliseconds / 1000.0)
+      var target = (seekToSeconds ?? position.inMilliseconds / 1000.0)
           .clamp(0.0, double.infinity)
           .toDouble();
+      // Chapter-track misalignment remap: this swap moves the player from the
+      // OLD session's timeline (which the current position belongs to) onto
+      // the refreshed one — when the server changed the track set, the
+      // position must be re-anchored or it lands shifted by the change.
+      target = await _remapStartAcrossTrackChange(target, tracks);
       final audioHeaders = api.playbackSessionHeaders;
       final trackSources = <AudioSource>[];
       var tokenless = true;
@@ -8160,6 +8325,20 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     debugPrint('[Player] Retrying playback at ${retryPos.toStringAsFixed(1)}s');
+    // An automatic retry must honour the pause the user made before the
+    // stream died: without this, playItem's clearing of [_pauseRequested]
+    // let every load path start audio on its own (the "paused, then it
+    // started playing by itself" report).
+    final wasPaused = _player?.playing != true;
+    // A zero/negative position is "unknown", not "the top": forcing it would
+    // restart the book at chapter 1. Leave startTime unforced so playItem
+    // resolves the saved local/server progress instead.
+    final hasKnownPos = retryPos > 0;
+    if (!hasKnownPos) {
+      debugPrint(
+        '[Player] Retry has no known position - resolving from saved progress',
+      );
+    }
     final ok = await playItem(
       api: api,
       itemId: itemId,
@@ -8169,7 +8348,8 @@ class AudioPlayerService extends ChangeNotifier {
       totalDuration: totalDuration,
       chapters: chapters,
       startTime: retryPos,
-      forceStartTime: true,
+      forceStartTime: hasKnownPos,
+      clearPauseRequest: !wasPaused,
       episodeId: episodeId,
       episodeTitle: episodeTitle,
       libraryId: libraryId,
@@ -8301,6 +8481,8 @@ class AudioPlayerService extends ChangeNotifier {
       },
       onError: (Object e, StackTrace st) {
         debugPrint('[Player] processingState stream error: $e');
+        // Paused: no audible stream to rescue (see the position-stream guard).
+        if (_player?.playing != true) return;
         _attemptStreamRetry(e);
       },
     );
@@ -8722,6 +8904,16 @@ class AudioPlayerService extends ChangeNotifier {
       },
       onError: (Object e, StackTrace st) {
         debugPrint('[Player] Position stream error: $e');
+        // A paused player has no audible stream to rescue: rebuilding here
+        // would only churn a fresh session (and, before the pause-intent
+        // guard, start audio the user had paused). The next play() sees the
+        // broken source and takes the rebuild paths itself.
+        if (_player?.playing != true) {
+          debugPrint(
+            '[Player] Paused - not retrying on the position stream error',
+          );
+          return;
+        }
         _attemptStreamRetry(e);
       },
     );
@@ -8871,6 +9063,237 @@ class AudioPlayerService extends ChangeNotifier {
   bool _isCompletingBook = false;
 
   String? _overrunLoggedFor;
+
+  // ─── Chapter-track alignment (advanced setting) ─────────────────────────
+
+  /// Per-item cooldown for the alignment, so a book the server refuses to
+  /// fix doesn't get retried on every single playback start.
+  static final Map<String, DateTime> _alignAttemptAt = {};
+
+  /// The session tracks the current timeline was built from — the alignment
+  /// rebuilds chapters from them (durations AND titles), so the written
+  /// chapters are consistent with what the player is actually playing.
+  List<dynamic>? _lastSourceTracks;
+
+  /// Audiobookshelf updates the audio tracks when files change on disk but
+  /// does NOT rebuild the chapters: a deleted episode file leaves its chapter
+  /// entry behind, and playback shows the removed episode's title over the
+  /// NEXT episode's audio. When the advanced toggle is on, a playback start
+  /// whose chapter count differs from the track count rebuilds the chapters
+  /// "one per track" from the in-memory session tracks (title = track title,
+  /// start / end = the timeline's own durations) and PATCHes them back to the
+  /// server via the same manual-edit endpoint the ABS web UI uses, then
+  /// adopts the fixed list live. Detection is free (both lists are in
+  /// memory); the common case needs NO fetch at all — a single GET for the
+  /// disk filenames happens only when some track titles are missing, and a
+  /// POST only when the count mismatch is being fixed. One POST per fix:
+  /// after it lands, the next playback start's detection passes and nothing
+  /// more is written.
+  /// Public entry for the alignment — called after a successful playback
+  /// start AND when a server item_updated lands for the currently playing
+  /// book (the track change reaches an active listener immediately instead
+  /// of waiting for the next playback start).
+  Future<void> alignChaptersWithTracksIfStale() async {
+    try {
+      if (!(await PlayerSettings.getAlignChaptersTracks())) return;
+      final api = _api;
+      if (api == null || _offline) return;
+      // Books only: a podcast episode's chapters live inside its own file and
+      // its library item's audioFiles cover every episode — rebuilding there
+      // would flatten the show into one chapter per EPISODE.
+      if (_currentItemId == null || _currentEpisodeId != null) return;
+      // A PARTIAL local play's timeline ends at the last downloaded file, not
+      // the book — the span check below would read the missing tail as stale
+      // chapters and flatten them.
+      if (_isPartialLocalPlay) return;
+      final trackCount = _trackDurations.length;
+      if (trackCount <= 0 || _chapters.isEmpty) return;
+      // A single whole-file book can never be rebuilt meaningfully: "one
+      // chapter per track" would collapse to a single chapter, and its
+      // embedded/auto-detected chapters are time MARKERS on that file, not
+      // file boundaries. Never touch them here (the chapter editor is the
+      // right tool for a replaced single file).
+      if (trackCount == 1) return;
+      if (_chapters.length == trackCount) return; // already aligned
+      // A count mismatch alone is NOT proof of staleness: embedded chapters
+      // legitimately sit on the current timeline, and their last end can sit
+      // BEFORE it (trailing silence trimmed, credits gap). The DIRECTIONS
+      // differ, though:
+      //  - a span poking PAST the audio's end is almost certainly a stale
+      //    leftover — chapters pointing into files that no longer exist.
+      //    Chapter markers are frame-accurate, so a few seconds of overshoot
+      //    already means staleness (a deleted 10s intro file is caught);
+      //  - a span ending early is ambiguous with hand-tuned chapters, so that
+      //    direction keeps a wide tolerance (only a missing episode file —
+      //    minutes of uncovered audio — counts as stale).
+      final timelineEnd =
+          _trackStartOffsets.isNotEmpty ? _trackStartOffsets.last : 0.0;
+      final existingLastEnd =
+          (_chapters.last['end'] as num?)?.toDouble() ?? timelineEnd;
+      final stale = existingLastEnd - timelineEnd > 5.0 ||
+          timelineEnd - existingLastEnd > 30.0;
+      if (!stale) {
+        return; // chapters live on the current timeline — leave them alone
+      }
+      final itemId = _currentItemId!;
+      final now = DateTime.now();
+      final last = _alignAttemptAt[itemId];
+      if (last != null && now.difference(last) < const Duration(minutes: 30)) {
+        return;
+      }
+      if (_alignAttemptAt.length > 64) _alignAttemptAt.clear();
+      _alignAttemptAt[itemId] = now;
+
+      // Build from the session tracks the timeline was built from. Durations
+      // come from [_trackDurations] (the SAME values that define the current
+      // timeline, so the written chapters can never disagree with playback).
+      final sourceTracks = _lastSourceTracks;
+      final titles = <String>[];
+      var titlesUsable = sourceTracks != null &&
+          sourceTracks.length == trackCount;
+      if (titlesUsable) {
+        for (final t in sourceTracks) {
+          final title =
+              ((t as Map<String, dynamic>)['title'] as String?)?.trim() ?? '';
+          if (title.isEmpty) {
+            titlesUsable = false;
+            break;
+          }
+          titles.add(title);
+        }
+      }
+      var built = <Map<String, dynamic>>[];
+      if (titlesUsable) {
+        double cursor = 0;
+        for (var i = 0; i < trackCount; i++) {
+          final dur = _trackDurations[i];
+          built.add({
+            'title': titles[i],
+            'start': double.parse(cursor.toStringAsFixed(3)),
+            'end': double.parse((cursor + dur).toStringAsFixed(3)),
+          });
+          cursor += dur;
+        }
+      } else {
+        // Track titles missing (some sessions omit them): fall back to ONE
+        // light GET for the disk filenames. The file count must still match
+        // the session tracks — a scan mid-flight would produce a chapter list
+        // for a file set the player is not even playing.
+        final item = await api.getLibraryItemLite(itemId);
+        final media = item?['media'];
+        if (media is! Map<String, dynamic>) return;
+        final files = media['audioFiles'];
+        if (files is! List || files.isEmpty) return;
+        double cursor = 0;
+        var order = 0;
+        for (final f in files) {
+          if (f is! Map<String, dynamic>) continue;
+          order++;
+          final meta = (f['metadata'] as Map<String, dynamic>? ?? {});
+          final name = ((meta['filename'] ?? meta['path'] ?? '') as String);
+          final stem = name.contains('.')
+              ? name.substring(0, name.lastIndexOf('.'))
+              : name;
+          final dur = (f['duration'] as num?)?.toDouble() ?? 0;
+          built.add({
+            'title': stem.trim().isEmpty ? 'Chapter $order' : stem.trim(),
+            'start': double.parse(cursor.toStringAsFixed(3)),
+            'end': double.parse((cursor + dur).toStringAsFixed(3)),
+          });
+          cursor += dur;
+        }
+        if (built.length != trackCount) {
+          debugPrint(
+            '[AlignChapters] $itemId: audioFiles ${built.length} != session '
+            'tracks $trackCount - server scan still settling, skipping',
+          );
+          return;
+        }
+      }
+      final ok = await api.updateItemChapters(itemId, built);
+      if (!ok) return;
+      debugPrint(
+        '[AlignChapters] $itemId: rebuilt ${built.length} chapters (had '
+        '${_chapters.length}) - POSTed to the server and adopted live',
+      );
+      adoptServerChapters(built);
+    } catch (e) {
+      debugPrint('[AlignChapters] failed: $e');
+    }
+  }
+
+  /// Remap a saved absolute position from the STALE chapter/track timeline
+  /// onto the current session's track timeline.
+  ///
+  /// When the server's tracks were updated without rebuilding the chapters (a
+  /// deleted episode file is the classic case), every saved position is an
+  /// absolute value on the OLD track timeline and lands shifted on the new
+  /// one — resuming after a deleted front file skips ahead by that file's
+  /// duration. The position's stale chapter is matched to a current track by
+  /// TITLE (the same titles the alignment writes) and the intra-chapter
+  /// offset is re-anchored onto that track's start on the new timeline.
+  /// Guards mirror the alignment (advanced toggle, books, multi-track, count
+  /// mismatch); an unmatched title returns the position untouched — never
+  /// guess.
+  Future<double> _remapStartAcrossTrackChange(
+    double startSec,
+    List<dynamic> tracks,
+  ) async {
+    try {
+      if (tracks.length <= 1) return startSec;
+      if (!(await PlayerSettings.getAlignChaptersTracks())) return startSec;
+      if (_currentEpisodeId != null) return startSec;
+      final chapters = _chapters;
+      if (chapters.isEmpty || chapters.length == tracks.length) {
+        return startSec;
+      }
+      // Which stale chapter holds the position?
+      int? k;
+      for (var i = 0; i < chapters.length; i++) {
+        final c = chapters[i] as Map<String, dynamic>;
+        final s = (c['start'] as num?)?.toDouble() ?? 0;
+        final e = (c['end'] as num?)?.toDouble() ?? double.infinity;
+        if (startSec >= s && startSec < e) {
+          k = i;
+          break;
+        }
+      }
+      if (k == null) return startSec;
+      final ch = chapters[k] as Map<String, dynamic>;
+      final chStart = (ch['start'] as num?)?.toDouble() ?? 0;
+      final title = (ch['title'] as String? ?? '').trim();
+      if (title.isEmpty) return startSec;
+      // The same titles the alignment writes: match the stale chapter to the
+      // current track and re-anchor the intra-chapter offset onto that
+      // track's start on the NEW timeline.
+      int? j;
+      double cursor = 0;
+      final starts = List<double>.filled(tracks.length, 0);
+      for (var i = 0; i < tracks.length; i++) {
+        starts[i] = cursor;
+        final t = tracks[i] as Map<String, dynamic>;
+        cursor += (t['duration'] as num?)?.toDouble() ?? 0;
+        if (j == null && (t['title'] as String? ?? '').trim() == title) {
+          j = i;
+        }
+      }
+      if (j == null) return startSec;
+      final trackDur =
+          ((tracks[j] as Map<String, dynamic>)['duration'] as num?)
+              ?.toDouble() ??
+          0;
+      final intra = (startSec - chStart).clamp(0.0, trackDur);
+      final remapped = (starts[j] + intra).clamp(0.0, cursor);
+      debugPrint(
+        '[AlignChapters] resume remap: ${startSec.toStringAsFixed(1)}s -> '
+        '${remapped.toStringAsFixed(1)}s (stale chapter "$title" -> track $j)',
+      );
+      return remapped;
+    } catch (e) {
+      debugPrint('[AlignChapters] resume remap failed: $e');
+      return startSec;
+    }
+  }
 
   /// Whether the player itself is at the end of the last file, rather than
   /// only past the length the server indexed.
@@ -9646,6 +10069,7 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
     _playInFlightSince = DateTime.now();
+    _playStartAt = DateTime.now();
     try {
       await _playNow(logDetail: logDetail, fromUi: fromUi);
     } finally {
@@ -10751,37 +11175,51 @@ class AudioPlayerService extends ChangeNotifier {
     if (_offlineRemoteTransportBlocked('skipForward')) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
-    // Multiply by speed so the skip feels like the configured amount of real time
-    final adjusted = (seconds * speed).round();
+    // Skip amounts are CONTENT seconds: the position moves exactly the
+    // configured amount of audio, regardless of playback speed.
+    final adjusted = seconds;
     _lastUserSeekTime = DateTime.now();
     debugPrint(
-      '[Service] skipForward(${seconds}s × ${speed}x = ${adjusted}s) — playing=${_player!.playing}',
+      '[Service] skipForward(${adjusted}s) — playing=${_player!.playing}',
     );
     final newPos = position + Duration(seconds: adjusted);
     final posS = position.inMilliseconds / 1000.0;
     var newPosS = newPos.inMilliseconds / 1000.0;
     // Mirror of skipBackward's chapter barrier: a forward skip that would
     // cross into the next chapter stops at this chapter's end (the boundary
-    // itself) instead of skipping over it.
-    if (await PlayerSettings.getSkipChapterBarrier() && _chapters.isNotEmpty) {
-      double? chapterEnd;
+    // itself) instead of skipping over it. The next boundary is looked up
+    // regardless of the setting: with the barrier ON it also bounds the
+    // landing-repair below, so a within-chapter skip can't spill past it.
+    final forwardBarrier = await PlayerSettings.getSkipChapterBarrier();
+    double? nextChapterStart;
+    if (_chapters.isNotEmpty) {
       for (var i = 0; i < _chapters.length; i++) {
         final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
         if (s > posS + 0.5) {
-          chapterEnd = s;
+          nextChapterStart = s;
           break;
         }
       }
-      if (chapterEnd != null && newPosS > chapterEnd) {
+    }
+    if (forwardBarrier && _chapters.isNotEmpty) {
+      if (nextChapterStart != null && newPosS > nextChapterStart) {
         // Crossing the boundary lands where a chapter jump would: the next
         // chapter's start, with its intro skip applied by the normal
         // chapter-entry logic. Snapping to the last frame instead left the
-        // player sitting on a completed chapter.
+        // player sitting on a completed chapter. PAUSED, the jump must
+        // reposition only — the auto-play wrapper here is what made a
+        // paused forward skip with less remaining than the skip amount
+        // start playing by itself ("剩余时间小于快进时间就自动播放"). The
+        // chapter BUTTONS keep the auto-resume; a skip press does not.
         _logEvent(
           PlaybackEventType.skipForward,
           detail: 'cross to next chapter (intro skip applies)',
         );
-        await skipToNextChapter();
+        if (_player!.playing) {
+          await skipToNextChapter();
+        } else {
+          await _skipToNextChapterImpl();
+        }
         return;
       }
     }
@@ -10794,7 +11232,7 @@ class AudioPlayerService extends ChangeNotifier {
         apply: () => seekTo(
           Duration(milliseconds: (newPosS * 1000).round()),
           logAs: PlaybackEventType.skipForward,
-          logDetail: '+${seconds}s (${adjusted}s @ ${speed}x)',
+          logDetail: '+${adjusted}s',
         ),
       );
       return;
@@ -10812,11 +11250,26 @@ class AudioPlayerService extends ChangeNotifier {
       await _parkAtPartialBoundary();
       return;
     }
-    await _seekAbsolute(newPosS);
-    _logEvent(
-      PlaybackEventType.skipForward,
-      detail: '+${seconds}s (${adjusted}s @ ${speed}x)',
-    );
+    // VBR sources without a seek index coarse-seek SHORT of the target (a
+    // 10s skip landing 4s in). Measure the landing and re-request the
+    // shortfall, bounded so a repair can never run far past the target. At
+    // the book's tail the clamp makes every request land short — repairing
+    // there would just re-seek the clamped end twice, so skip the loop.
+    // With the barrier ON the bound also stops just short of the next
+    // chapter, so an undershoot-repair can't spill a within-chapter skip
+    // past the boundary.
+    var repairClamp = newPosS + 30.0;
+    if (forwardBarrier &&
+        nextChapterStart != null &&
+        nextChapterStart - 1.0 < repairClamp) {
+      repairClamp = nextChapterStart - 1.0;
+    }
+    if (_totalDuration <= 0 || newPosS < _totalDuration - 1.0) {
+      await _seekAbsoluteAlignedRepair(newPosS, clampMaxSec: repairClamp);
+    } else {
+      await _seekAbsolute(newPosS);
+    }
+    _logEvent(PlaybackEventType.skipForward, detail: '+${adjusted}s');
     debugPrint('[Service] skipForward done — playing=${_player!.playing}');
   }
 
@@ -10825,17 +11278,18 @@ class AudioPlayerService extends ChangeNotifier {
     if (_offlineRemoteTransportBlocked('skipBackward')) return;
     _resetStuckDetection();
     if (!_player!.playing) _seekedWhilePaused = true;
-    // Multiply by speed so the skip feels like the configured amount of real time
-    final adjusted = (seconds * speed).round();
+    // Skip amounts are CONTENT seconds: the position moves exactly the
+    // configured amount of audio, regardless of playback speed.
+    final adjusted = seconds;
     _lastUserSeekTime = DateTime.now();
     final posS = position.inMilliseconds / 1000.0;
     final targetS = posS - adjusted;
 
-    // Find current chapter start (gated by setting)
-    final chapterBarrier = await PlayerSettings.getSkipChapterBarrier();
-    if (chapterBarrier && _chapters.isNotEmpty) {
-      double chapterStart = 0;
-      int? chapterIdx;
+    // Find current chapter start (used by the barrier below AND as the floor
+    // the plain-path seek may never retreat past).
+    double chapterStart = 0;
+    int? chapterIdx;
+    if (_chapters.isNotEmpty) {
       for (int i = _chapters.length - 1; i >= 0; i--) {
         final s = (_chapters[i]['start'] as num?)?.toDouble() ?? 0;
         if (s <= posS + 0.5) {
@@ -10844,7 +11298,101 @@ class AudioPlayerService extends ChangeNotifier {
           break;
         }
       }
-
+    }
+    final chapterBarrier = await PlayerSettings.getSkipChapterBarrier();
+    // ENGINE-ANCHORED barrier rewind (multi-file books).
+    //
+    // Resolving the chapter's METADATA start through the absolute timeline
+    // re-derives it from the per-file duration estimates, whose error
+    // compounds across files: a heavily drifted book resolves "the current
+    // chapter's start" into an EARLIER file entirely, and even the barrier
+    // snap then lands in the previous chapter's tail. Anchor to the ENGINE's
+    // current file instead: the chapter being rewound inside is playing there
+    // NOW, so the rewind must simply never retreat past that file's start.
+    // Where the chapter begins inside the file:
+    //  - chapter index == file index (chapter-per-file structure): the file
+    //    start IS the chapter start — floor 0, drift-immune;
+    //  - otherwise (chapters inside files): best-effort from the metadata
+    //    delta (posS - chapterStart), clamped at the file start.
+    // The anchor index is the ENGINE's LIVE value: a stale [_currentTrackIndex]
+    // (a seek whose answer never came back) would anchor the rewind one file
+    // early — the "rewind jumps to the previous chapter, stalls loading it,
+    // then sits at its 0s" report.
+    var anchorIdx = _currentTrackIndex;
+    final liveIdx = _player?.currentIndex;
+    if (liveIdx != null && liveIdx != anchorIdx) {
+      debugPrint(
+        '[Service] Rewind anchor: stale track index $anchorIdx -> '
+        'engine live $liveIdx',
+      );
+      anchorIdx = liveIdx;
+      _currentTrackIndex = liveIdx;
+    }
+    if (chapterBarrier &&
+        !_isLoadingNewItem &&
+        chapterIdx != null &&
+        anchorIdx >= 0 &&
+        anchorIdx < _trackStartOffsets.length - 1) {
+      final trackStartOff = _trackStartOffsets[anchorIdx];
+      final engineLocal = _player!.position.inMilliseconds / 1000.0;
+      final double floorLocal;
+      if (chapterIdx == anchorIdx) {
+        floorLocal = 0; // chapter-per-file: file start == chapter start
+      } else {
+        floorLocal = (engineLocal - (posS - chapterStart))
+            .clamp(0.0, double.infinity);
+      }
+      var localTarget = engineLocal - adjusted;
+      var snapped = localTarget < floorLocal;
+      if (snapped) localTarget = floorLocal;
+      final absTarget = trackStartOff + localTarget;
+      final floorAbs = trackStartOff + floorLocal;
+      if (snapped) _disarmIntroForSameChapterRewind(posS, chapterStart);
+      debugPrint(
+        '[Service] Rewind anchored: engineLocal=${engineLocal.toStringAsFixed(1)}s '
+        'adjusted=${adjusted}s target=${absTarget.toStringAsFixed(1)}s '
+        '(track $anchorIdx, floor ${floorAbs.toStringAsFixed(1)}s, '
+        'snap=$snapped)',
+      );
+      // Same barrier rules for the landing repair: the floor is the
+      // chapter's file-local start, so a large coarse-seek error can't dig
+      // the re-request into the previous chapter.
+      await _seekAbsoluteAlignedRepair(
+        absTarget,
+        clampMaxSec: (absTarget - 30.0).clamp(floorAbs, double.infinity),
+        backward: true,
+      );
+      // The repair's inner seeks run without chapter semantics; re-assert the
+      // snapped chapter so the notification/UI show it while the position
+      // settles (the landing re-snap below re-pins via its own jump path).
+      if (snapped) _pinChapterLatch(chapterIdx);
+      final landedIdx = _player?.currentIndex;
+      final crossedToEarlierFile =
+          landedIdx != null && landedIdx < anchorIdx;
+      if (_player?.processingState == ProcessingState.ready) {
+        final landed = position.inMilliseconds / 1000.0;
+        if (landed < floorAbs - 0.5 || crossedToEarlierFile) {
+          debugPrint(
+            '[Service] Rewind landing ${landed.toStringAsFixed(1)}s '
+            '(track $landedIdx) crossed the chapter barrier at '
+            '${floorAbs.toStringAsFixed(1)}s - re-snapping',
+          );
+          await _seekAbsolute(
+            floorAbs,
+            chapterJump: snapped || floorLocal <= 0,
+            pinChapterIndex: chapterIdx,
+          );
+        }
+      }
+      _logEvent(
+        PlaybackEventType.skipBackward,
+        detail: snapped
+            ? 'snap to chapter start (engine-anchored)'
+            : '-${adjusted}s (engine-anchored)',
+      );
+      return;
+    }
+    if (chapterBarrier && _chapters.isNotEmpty) {
       // Rewind would cross the chapter boundary - always snap to the current
       // chapter's start. The old "double-tap within 2s breaks through" escape
       // was removed: rapid rewind presses (tap-tap-tap to go back 20-30s)
@@ -10895,16 +11443,49 @@ class AudioPlayerService extends ChangeNotifier {
         apply: () => seekTo(
           Duration(milliseconds: (n * 1000).round()),
           logAs: PlaybackEventType.skipBackward,
-          logDetail: '-${seconds}s (${adjusted}s @ ${speed}x)',
+          logDetail: '-${adjusted}s',
         ),
       );
       return;
     }
-    await _seekAbsolute(n);
-    _logEvent(
-      PlaybackEventType.skipBackward,
-      detail: '-${seconds}s (${adjusted}s @ ${speed}x)',
-    );
+    if (n > 0.5) {
+      // VBR coarse seeks can stop short of the target (closer to where the
+      // rewind started than asked). Measure the landing and re-request the
+      // shortfall. Two barrier rules apply even though the target itself
+      // stays inside the chapter:
+      //  - the repair's floor is the current chapter's start, so a large
+      //    first-seek error can't dig the re-request ACROSS the boundary
+      //    (this was the "rewind no longer respects the chapter barrier"
+      //    regression);
+      //  - the FIRST landing can overshoot across it too — re-snap with the
+      //    barrier semantics when it does.
+      final floorSec =
+          chapterBarrier && _chapters.isNotEmpty ? chapterStart : 0.0;
+      await _seekAbsoluteAlignedRepair(
+        n,
+        clampMaxSec: (n - 30.0).clamp(floorSec, double.infinity),
+        backward: true,
+      );
+      if (floorSec > 0 && _player?.processingState == ProcessingState.ready) {
+        final landed = position.inMilliseconds / 1000.0;
+        if (landed < floorSec - 0.5) {
+          debugPrint(
+            '[Service] Rewind landing ${landed.toStringAsFixed(1)}s crossed '
+            'the chapter barrier at ${floorSec.toStringAsFixed(1)}s - '
+            're-snapping to the chapter start',
+          );
+          _disarmIntroForSameChapterRewind(posS, floorSec);
+          await _seekAbsolute(
+            floorSec,
+            chapterJump: true,
+            pinChapterIndex: chapterIdx,
+          );
+        }
+      }
+    } else {
+      await _seekAbsolute(n);
+    }
+    _logEvent(PlaybackEventType.skipBackward, detail: '-${adjusted}s');
   }
 
   Future<void> skipToNextChapter() =>
@@ -11845,6 +12426,11 @@ class AudioPlayerService extends ChangeNotifier {
     int maxPasses = 2,
     bool chapterJump = false,
     int? pinChapterIndex,
+    // Repair direction. Forward (default) chases a seek that landed SHORT of
+    // the target (VBR coarse-TOC seeking undershoots); backward chases one
+    // that stopped before retreating the full amount. [clampMaxSec] bounds the
+    // corrected request: an upper bound forward, a lower bound backward.
+    bool backward = false,
   }) async {
     var request = absoluteSeconds;
     for (var pass = 0; pass <= maxPasses; pass++) {
@@ -11859,6 +12445,21 @@ class AudioPlayerService extends ChangeNotifier {
       if (_player?.processingState != ProcessingState.ready) break;
       final landed = position.inMilliseconds / 1000.0;
       if ((landed - absoluteSeconds).abs() > 30.0) break;
+      if (backward) {
+        final deviation = landed - absoluteSeconds;
+        // Landed at-or-before the target (or within tolerance): good.
+        if (deviation <= tolerance) break;
+        final next = absoluteSeconds - deviation - 1.0;
+        if (next <= clampMaxSec) break;
+        debugPrint(
+          '[SkipDebug] Backward seek repair: intended '
+          '${absoluteSeconds.toStringAsFixed(1)}s landed '
+          '${landed.toStringAsFixed(1)}s (over by ${deviation.toStringAsFixed(1)}s) '
+          '-> re-request ${next.toStringAsFixed(1)}s',
+        );
+        request = next;
+        continue;
+      }
       // A fresh source/session swap reports its new track's file start (in-file
       // 0) as the current position until the first seek is applied to a
       // buffered frame. Reading that as a landed sample turns every intro-skip
@@ -11937,6 +12538,9 @@ class AudioPlayerService extends ChangeNotifier {
     // arrive - suppress auto-skip briefly so it doesn't immediately override
     // a deliberate user navigation (e.g. rewinding to a chapter start).
     if (now.difference(_lastUserSeekTime).inMilliseconds < 3000) return;
+    // A play START hold applies to the OUTRO skip only (checked below):
+    // holding the intro skip too would delay the deliberate "skip the intro
+    // of the chapter I just started" feature by the same window.
 
     final metaIdx = ChapterLookup.indexAtWithGrace(
       _chapters,
@@ -12056,9 +12660,17 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     // Skip outro (once per entry): within the outro window and not yet handled
-    // for the current entry of this chapter.
+    // for the current entry of this chapter. Held off briefly after a play
+    // START: the first seconds of audio belong to the user pressing play, not
+    // to the skip logic deciding the chapter they just started is already
+    // over — a super-short first chapter used to be jumped the instant audio
+    // began, reading as "the app started episode 2 by itself".
+    final startedAt = _playStartAt;
+    final recentPlayStart = startedAt != null &&
+        now.difference(startedAt).inMilliseconds < 3000;
     if (outroSkip > 0 &&
         !_outroSkippedThisEntry &&
+        !recentPlayStart &&
         posSec < chapterEnd &&
         chapterEnd - posSec < outroSkip) {
       _outroSkippedThisEntry = true;
@@ -12240,6 +12852,13 @@ class AudioPlayerService extends ChangeNotifier {
           (_chapters[_chapterJumpLatchIndex]['end'] as num?)?.toDouble() ??
           _totalDuration;
       if (posSec < lEnd) return _chapterJumpLatchIndex;
+      // A seek that is still settling composes its position from the OLD
+      // track's tail plus the NEW track's offset — a value that can overshoot
+      // the latched chapter's metadata end without the audio having moved.
+      // Dropping the latch on that transient re-flashes the previous
+      // chapter's title over the pinned jump target for the whole buffering
+      // window. Hold the latch until the seek settles.
+      if (_lastSeekTargetSeconds != null) return _chapterJumpLatchIndex;
       _chapterJumpLatchIndex = -1;
     }
     final plain = ChapterLookup.indexAt(_chapters, posSec, _totalDuration);

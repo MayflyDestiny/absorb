@@ -316,7 +316,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
   Widget _coverMissingPlaceholder(ColorScheme cs) {
     final current = _blurLease;
     final placeholder = _placeholderBlurLease;
-    // 固定占位色：不随平均色/scheme 变化，避免加载中间换色。
+    // 无封面书的占位：标题色渐变 + 标题首字（头像风格），一眼能认出是哪本书。
+    final initial = _title.isNotEmpty
+        ? _title.characters.first.toUpperCase()
+        : '';
     final soft = DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -326,10 +329,26 @@ class AbsorbingCardState extends State<AbsorbingCard>
         ),
       ),
       child: Center(
-        child: Icon(
-          Icons.auto_stories_rounded,
-          size: 36,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.35),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (initial.isNotEmpty)
+              Text(
+                initial,
+                style: TextStyle(
+                  fontSize: 44,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1,
+                  color: cs.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            const SizedBox(height: 6),
+            Icon(
+              Icons.auto_stories_rounded,
+              size: 22,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+          ],
         ),
       ),
     );
@@ -365,11 +384,49 @@ class AbsorbingCardState extends State<AbsorbingCard>
     );
   }
 
-  Color get _placeholderStart =>
-      _placeholderColor ?? Theme.of(context).colorScheme.surfaceContainerHigh;
+  /// Deterministic two-tone pair for books with NO cover at all: each item
+  /// gets its own hue, stable across restarts (derived from the item id —
+  /// String.hashCode is not stable across runs/platforms). Muted saturation
+  /// so the gradient reads as a designed placeholder, not a random sticker.
+  List<Color> _titleFallbackPair() {
+    var h = 0;
+    for (final c in _itemId.codeUnits) {
+      h = (h * 31 + c) & 0x7fffffff;
+    }
+    final hue = (h % 360).toDouble();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final start = HSLColor.fromAHSL(
+      1.0,
+      hue,
+      dark ? 0.34 : 0.52,
+      dark ? 0.45 : 0.80,
+    ).toColor();
+    final end = HSLColor.fromAHSL(
+      1.0,
+      (hue + 28) % 360,
+      dark ? 0.32 : 0.48,
+      dark ? 0.32 : 0.70,
+    ).toColor();
+    return [start, end];
+  }
+
+  /// A book with genuinely no cover (no blur lease, no cached blur, no URL):
+  /// both the card background and the cover placeholder then show the
+  /// title-colored pair instead of near-black grey.
+  bool get _placeholderIsCoverless {
+    return _blurLease == null &&
+        _placeholderBlurLease == null &&
+        _resolveCoverUrl() == null;
+  }
+
+  Color get _placeholderStart {
+    if (_placeholderIsCoverless) return _titleFallbackPair()[0];
+    return _placeholderColor ?? Theme.of(context).colorScheme.surfaceContainerHigh;
+  }
 
   Color get _placeholderEnd {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    if (_placeholderIsCoverless) return _titleFallbackPair()[1];
     return Color.lerp(
       _placeholderStart,
       dark ? Colors.black : Colors.white,
@@ -1458,8 +1515,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                           final coverLoading =
                               _isStarting ||
                               (_isActive &&
-                                  widget.player.isLoadingOrBuffering &&
-                                  !widget.player.isPlaying);
+                                  widget.player.isLoadingOrBuffering);
                           return Column(
                             mainAxisSize: MainAxisSize.max,
                             children: [

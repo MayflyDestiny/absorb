@@ -234,14 +234,13 @@ class _DesktopNowPlayingBarState extends State<DesktopNowPlayingBar> {
                             Tooltip(
                               message: player.isPlaying ? 'Pause' : 'Play',
                               child: IconButton.filled(
-                                onPressed:
-                                    player.isLoadingOrBuffering &&
-                                        !player.isPlaying
+                                // Buffering with playing=true still means no
+                                // audio yet — spinner then too, not a pause
+                                // icon that implies sound.
+                                onPressed: player.isLoadingOrBuffering
                                     ? null
                                     : () => player.togglePlayPause(fromUi: true),
-                                icon:
-                                    player.isLoadingOrBuffering &&
-                                        !player.isPlaying
+                                icon: player.isLoadingOrBuffering
                                     ? SizedBox(
                                         width: 20,
                                         height: 20,

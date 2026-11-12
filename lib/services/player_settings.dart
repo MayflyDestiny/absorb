@@ -30,7 +30,11 @@ class AutoRewindSettings {
     this.minRewind = 1.0,
     this.maxRewind = 30.0,
     this.activationDelay = 0.0, // 0 = always rewind on resume
-    this.chapterBarrier = false,
+    // Default ON: an auto-rewind that pulls the resume point back past the
+    // chapter boundary re-presents the PREVIOUS chapter's tail — the same
+    // wrong-chapter family as the rewind-button barrier. Opting out remains
+    // one toggle away in settings.
+    this.chapterBarrier = true,
     this.sessionStartRewind = false,
   });
 
@@ -40,7 +44,7 @@ class AutoRewindSettings {
       minRewind: await ScopedPrefs.getDouble('autoRewind_min') ?? 1.0,
       maxRewind: await ScopedPrefs.getDouble('autoRewind_max') ?? 30.0,
       activationDelay: await ScopedPrefs.getDouble('autoRewind_delay') ?? 0.0,
-      chapterBarrier: await ScopedPrefs.getBool('autoRewind_chapterBarrier') ?? false,
+      chapterBarrier: await ScopedPrefs.getBool('autoRewind_chapterBarrier') ?? true,
       sessionStartRewind: await ScopedPrefs.getBool('autoRewind_sessionStart') ?? false,
     );
   }
@@ -940,6 +944,19 @@ class PlayerSettings {
     mp3IndexSeeking = value;
     await _set('mp3IndexSeeking', value);
   }
+
+  /// Advanced: align chapters with tracks. Audiobookshelf updates the audio
+  /// tracks when files change on disk but does NOT rebuild the chapters, so a
+  /// deleted episode file leaves its chapter entry behind — playback then
+  /// shows the removed episode's title over the NEXT episode's audio. When
+  /// this is on, a playback start whose chapter count differs from the track
+  /// count rebuilds the chapters "one per track" from the disk audioFiles and
+  /// PATCHes them back to the server (the same manual-edit endpoint the ABS
+  /// web UI uses). Only the PLAYING item, never a batch.
+  static Future<bool> getAlignChaptersTracks() =>
+      _get('alignChaptersTracks', false);
+  static Future<void> setAlignChaptersTracks(bool value) =>
+      _set('alignChaptersTracks', value);
 
   static Future<bool> getNotificationChapterProgress() => _get('notificationChapterProgress', true);
   static Future<void> setNotificationChapterProgress(bool value) => _set('notificationChapterProgress', value, notify: true);

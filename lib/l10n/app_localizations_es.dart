@@ -3670,6 +3670,24 @@ class AppLocalizationsEs extends AppLocalizations {
   String get trustAllCertificatesInfoTitle => 'Self-signed Certificates';
 
   @override
+  String get alignChaptersTracks => 'Align chapters with tracks';
+
+  @override
+  String get alignChaptersTracksInfoTitle => 'Chapter-Track Alignment';
+
+  @override
+  String get alignChaptersTracksInfoContent =>
+      'Audiobookshelf updates the audio tracks when files change on the server but does not rebuild the chapters - a deleted episode leaves its chapter behind, so playback shows that title over the next episode\'s audio. When on, a playback start - or a server track update arriving while the book is playing - whose chapter count differs from the track count rebuilds the chapters one-per-track on the server (titles from the track titles, file names as fallback; times from the current track durations) and applies them immediately. Only the book currently playing is ever checked - no batch pass, no library scan. Auto-detected chapters inside a single whole-file book always sit on the current timeline and are never flattened or overwritten.';
+
+  @override
+  String get alignChaptersTracksOnSubtitle =>
+      'On - rebuilds server chapters when the counts differ';
+
+  @override
+  String get alignChaptersTracksOffSubtitle =>
+      'Off - chapters are never changed automatically';
+
+  @override
   String get mp3IndexSeeking => 'MP3 index seeking';
 
   @override

@@ -6478,6 +6478,36 @@ abstract class AppLocalizations {
   /// **'Self-signed Certificates'**
   String get trustAllCertificatesInfoTitle;
 
+  /// No description provided for @alignChaptersTracks.
+  ///
+  /// In en, this message translates to:
+  /// **'Align chapters with tracks'**
+  String get alignChaptersTracks;
+
+  /// No description provided for @alignChaptersTracksInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter-Track Alignment'**
+  String get alignChaptersTracksInfoTitle;
+
+  /// No description provided for @alignChaptersTracksInfoContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Audiobookshelf updates the audio tracks when files change on the server but does not rebuild the chapters - a deleted episode leaves its chapter behind, so playback shows that title over the next episode\'s audio. When on, a playback start - or a server track update arriving while the book is playing - whose chapter count differs from the track count rebuilds the chapters one-per-track on the server (titles from the track titles, file names as fallback; times from the current track durations) and applies them immediately. Only the book currently playing is ever checked - no batch pass, no library scan. Auto-detected chapters inside a single whole-file book always sit on the current timeline and are never flattened or overwritten.'**
+  String get alignChaptersTracksInfoContent;
+
+  /// No description provided for @alignChaptersTracksOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On - rebuilds server chapters when the counts differ'**
+  String get alignChaptersTracksOnSubtitle;
+
+  /// No description provided for @alignChaptersTracksOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Off - chapters are never changed automatically'**
+  String get alignChaptersTracksOffSubtitle;
+
   /// No description provided for @mp3IndexSeeking.
   ///
   /// In en, this message translates to:

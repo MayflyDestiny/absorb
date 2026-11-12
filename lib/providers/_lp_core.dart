@@ -2232,6 +2232,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   void _onRemoteItemUpdated(Map<String, dynamic> data) {
     // Update cover cache buster timestamp
     final id = data['id'] as String?;
+    // Snapshot the PRE-update media facts before the caches below are
+    // evicted: the finished-state re-evaluation compares old vs new
+    // duration/episode count to tell a real media change from a metadata
+    // touch.
+    final oldItemSnapshot = id != null
+        ? JsonFileCache.readMap('library_item|$id')
+        : Future<Map<String, dynamic>?>.value(null);
+    final oldChaptersSnapshot = id != null
+        ? ChapterCache.read(id)
+        : Future<List<dynamic>?>.value(null);
     final ts = data['updatedAt'] as num?;
     if (id != null && ts != null) {
       registerUpdatedAt(id, ts.toInt());
@@ -2257,6 +2267,151 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     _invalidateLibraryScreenCaches();
     loadPersonalizedView(force: true);
     _checkSubscribedPodcastUpdate(data);
+    if (id != null) {
+      unawaited(_reevaluateFinishedAfterItemUpdate(
+        id,
+        oldItemSnapshot,
+        oldChaptersSnapshot,
+      ));
+      // The server just touched THIS item's media — if it is the book playing
+      // right now, run the chapter-track alignment immediately instead of
+      // waiting for the next playback start. All guards (toggle, offline,
+      // count mismatch, span direction, cooldown) live inside the call.
+      if (id == AudioPlayerService().currentItemId) {
+        unawaited(AudioPlayerService().alignChaptersWithTracksIfStale());
+      }
+    }
+  }
+
+  /// A server-side media update landed for an item this device marks
+  /// FINISHED. Audiobookshelf keeps `mediaProgress.isFinished = true` when
+  /// the media itself changes (episodes appended, a file re-encoded longer),
+  /// so the cover keeps its finished badge over brand-new unlistened content
+  /// (user report). Re-evaluate: a REAL media change - the duration grew or
+  /// the episode list got longer, measured against the pre-update snapshot -
+  /// clears the finished state here and on the server. Metadata-only touches
+  /// (cover, description, a same-length re-encode) leave the state alone,
+  /// and so does an item with no pre-update snapshot to compare against.
+  /// Per-item cooldown for finished re-evaluation, so a bulk scanner touching
+  /// many finished books doesn't fire a detail fetch per event per item.
+  static final Map<String, DateTime> _finishedReevalAt = {};
+
+  Future<void> _reevaluateFinishedAfterItemUpdate(
+    String itemId,
+    Future<Map<String, dynamic>?> oldItemFuture,
+    Future<List<dynamic>?> oldChaptersFuture,
+  ) async {
+    final api = _api;
+    if (api == null) return;
+    final finished = _locallyFinishedItems.contains(itemId) ||
+        _progressMap[itemId]?['isFinished'] == true ||
+        ((_localProgressOverrides[itemId] ?? 0) >= 0.999);
+    if (!finished) return;
+    final nowRe = DateTime.now();
+    final lastRe = _finishedReevalAt[itemId];
+    if (lastRe != null && nowRe.difference(lastRe).inMinutes < 1) return;
+    if (_finishedReevalAt.length > 128) _finishedReevalAt.clear();
+    _finishedReevalAt[itemId] = nowRe;
+
+    // Never fight the player: an update for the item loaded right now is a
+    // re-listen in progress, not a finished book.
+    final player = AudioPlayerService();
+    if (player.currentItemId == itemId && player.hasBook) return;
+
+    double? oldDuration;
+    int? oldEpisodes;
+    try {
+      final oldItem = await oldItemFuture;
+      final oldMedia = oldItem?['media'];
+      if (oldMedia is Map<String, dynamic>) {
+        oldDuration = (oldMedia['duration'] as num?)?.toDouble();
+        final oe = oldMedia['numEpisodes'];
+        if (oe is num) oldEpisodes = oe.toInt();
+      }
+      if (oldDuration == null || oldDuration <= 0) {
+        // Chapters carry their own end times; the last one is the old length.
+        final oldChapters = await oldChaptersFuture;
+        if (oldChapters != null && oldChapters.isNotEmpty) {
+          final last = oldChapters.last;
+          if (last is Map<String, dynamic>) {
+            oldDuration = (last['end'] as num?)?.toDouble();
+          }
+        }
+      }
+    } catch (_) {}
+    if ((oldDuration == null || oldDuration <= 0) && oldEpisodes == null) {
+      debugPrint(
+        '[FinishedReeval] $itemId: no pre-update media snapshot - keeping '
+        'finished state',
+      );
+      return;
+    }
+
+    // The eviction above ran fire-and-forget; re-await it so the fetch below
+    // cannot read the stale pre-update snapshot back out of the cache.
+    try {
+      await JsonFileCache.invalidate('library_item|$itemId');
+      await ChapterCache.invalidate(itemId);
+    } catch (_) {}
+    Map<String, dynamic>? newItem;
+    try {
+      newItem =
+          await api.getLibraryItem(itemId).timeout(const Duration(seconds: 10));
+    } catch (_) {}
+    final newMedia = newItem?['media'];
+    if (newMedia is! Map<String, dynamic>) return;
+    final newDuration = (newMedia['duration'] as num?)?.toDouble();
+    final neRaw = newMedia['numEpisodes'];
+    final newEpisodes = neRaw is num ? neRaw.toInt() : null;
+
+    final grewDuration = newDuration != null &&
+        oldDuration != null &&
+        newDuration - oldDuration > 60.0;
+    final grewEpisodes =
+        newEpisodes != null && oldEpisodes != null && newEpisodes > oldEpisodes;
+    if (!grewDuration && !grewEpisodes) {
+      debugPrint(
+        '[FinishedReeval] $itemId: media size unchanged '
+        '(duration ${oldDuration?.toStringAsFixed(0)}s -> '
+        '${newDuration?.toStringAsFixed(0)}s, episodes $oldEpisodes -> '
+        '$newEpisodes) - keeping finished',
+      );
+      return;
+    }
+
+    // Only clear when there really is unlistened content past the saved spot
+    // (a re-encode that grew a few seconds still counts as "heard").
+    final mp = _progressMap[itemId];
+    final currentTime = (mp?['currentTime'] as num?)?.toDouble() ?? 0;
+    if (newDuration != null &&
+        newDuration > 0 &&
+        currentTime > 0 &&
+        currentTime >= newDuration - 60.0) {
+      debugPrint(
+        '[FinishedReeval] $itemId: media grew but the saved position '
+        '${currentTime.toStringAsFixed(0)}s still covers it - keeping finished',
+      );
+      return;
+    }
+
+    debugPrint(
+      '[FinishedReeval] $itemId: media grew '
+      '(duration ${oldDuration?.toStringAsFixed(0)}s -> '
+      '${newDuration?.toStringAsFixed(0)}s, episodes $oldEpisodes -> '
+      '$newEpisodes) - clearing finished state',
+    );
+    try {
+      await api.markNotFinished(
+        itemId,
+        currentTime: currentTime,
+        duration: newDuration ?? 0,
+      );
+    } catch (e) {
+      debugPrint('[FinishedReeval] server unfinish failed: $e');
+    }
+    await markNotFinishedLocally(itemId);
+    _invalidatePayloadCaches();
+    refreshProgressShelves(reason: 'item-update-unfinished');
   }
 
   void _onRemoteItemRemoved(Map<String, dynamic> data) {

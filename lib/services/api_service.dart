@@ -3630,6 +3630,50 @@ class ApiService {
   Future<Map<String, dynamic>?> getCachedLibraryItem(String itemId) =>
       JsonFileCache.readMap('library_item|$itemId');
 
+  /// Light item fetch for the chapter alignment check: GET /api/items/{id}
+  /// WITHOUT the expanded flag. The base response already carries
+  /// media.audioFiles (the disk truth the alignment rebuilds from) while
+  /// skipping the expanded payload's progress/metadata extras — a chapter
+  /// rebuild costs one small GET plus (only on mismatch) one POST.
+  Future<Map<String, dynamic>?> getLibraryItemLite(String itemId) async {
+    try {
+      final response = await _authGetRetrying(
+        Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
+        timeout: const Duration(seconds: 20),
+        attempts: 2,
+        totalDeadline: const Duration(seconds: 30),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      debugPrint(
+          '[API] getLibraryItemLite $itemId: HTTP ${response.statusCode}');
+    } catch (e) {
+      debugPrint('[API] getLibraryItemLite $itemId failed: $e');
+    }
+    return null;
+  }
+
+  /// Replace an item's chapters on the server — the same manual-edit endpoint
+  /// the ABS web UI's chapter editor uses. Used by the chapter-track
+  /// alignment (server updates tracks without rebuilding chapters).
+  Future<bool> updateItemChapters(String itemId, List<dynamic> chapters) async {
+    try {
+      final response = await _authPost(
+        Uri.parse('$_cleanBaseUrl/api/items/$itemId/chapters'),
+        body: jsonEncode({'chapters': chapters}),
+        timeout: const Duration(seconds: 20),
+      );
+      debugPrint(
+          '[API] updateItemChapters $itemId: HTTP ${response.statusCode} '
+          '(${chapters.length} chapters)');
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('[API] updateItemChapters $itemId failed: $e');
+      return false;
+    }
+  }
+
   /// [getLibraryItem] for a caller that owns the connection and may abort it
   /// mid-flight (by closing [client]) when a faster path wins a race. Same
   /// request shape and disk cache as [getLibraryItem], but a single attempt on

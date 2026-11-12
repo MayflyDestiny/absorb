@@ -40,6 +40,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # 与 windows-build/all-release 一致：锁定项目实际开发所用的 Flutter
+          # 版本。不锁的话新的 Flutter stable 会浮动进来——已出现要求
+          # Gradle >= 9.3.1 的插件校验，而本项目的 wrapper 仍是 8.14.0。
+          flutter-version: 3.47.0
           cache: true
 
       - name: Read pubspec version

@@ -135,6 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _siriStatus = 'notDetermined';
   bool _lockSeekBar = false;
   bool _mp3IndexSeeking = false;
+  bool _alignChaptersTracks = false;
   bool _speedAdjustedTime = false;
   int _forwardSkip = 15;
   int _backSkip = 15;
@@ -1170,6 +1171,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
+    // Loaded outside the positional Future.wait list below so its long-standing
+    // index comments stay stable.
+    _alignChaptersTracks = await PlayerSettings.getAlignChaptersTracks();
     final results = await Future.wait([
       AutoRewindSettings.load(),                              // 0
       PlayerSettings.getDefaultSpeed(),                       // 1
@@ -5896,6 +5900,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           } : null,
                               ),
                             ],
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            SwitchListTile(
+                        title: Row(children: [
+                                  Flexible(child: Text(l.alignChaptersTracks)),
+                          _infoIcon(l.alignChaptersTracksInfoTitle,
+                              l.alignChaptersTracksInfoContent),
+                        ]),
+                              subtitle: Text(
+                                _alignChaptersTracks
+                                    ? l.alignChaptersTracksOnSubtitle
+                                    : l.alignChaptersTracksOffSubtitle,
+                          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _alignChaptersTracks,
+                        onChanged: _loaded ? (v) {
+                                      setState(() => _alignChaptersTracks = v);
+                                      PlayerSettings.setAlignChaptersTracks(v);
+                        } : null,
+                            ),
                             if (_bookRequestsOn) ...[
                               const Divider(height: 1, indent: 16, endIndent: 16),
                               ListTile(

@@ -591,10 +591,19 @@ class LibraryProvider extends ChangeNotifier
     final pendingSyncs =
         (await ScopedPrefs.getStringList('pending_syncs')).toSet();
     _lastFinishedItemId = null;
-    await Future.wait([
-      loadPersonalizedView(force: true),
-      _refreshProgress(),
-    ]);
+    await loadPersonalizedView(force: true);
+    // The whole-progress pull (/api/me/progress — the full mediaProgress list)
+    // is the heaviest cold-start request. It must not compete with a playback
+    // start for the pipe: while a start is loading or buffering, hold it back
+    // (capped) so the audio's requests get the bandwidth first — otherwise
+    // cold-start traffic (progress + shelves + covers) delays the first audio
+    // by megabytes. The UI paints from the disk-cached progress meanwhile.
+    final gate = Stopwatch()..start();
+    final player = AudioPlayerService();
+    while (gate.elapsedMilliseconds < 10000 && player.isLoadingOrBuffering) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    await _refreshProgress();
     _localProgressOverrides
         .removeWhere((itemId, _) => !pendingSyncs.contains(itemId));
     _locallyFinishedItems
