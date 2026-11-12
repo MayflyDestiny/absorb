@@ -60,6 +60,12 @@ jobs:
           # Gradle >= 9.3.1 的插件校验，而本项目的 wrapper 仍是 8.14.0。
           flutter-version: 3.47.0
           cache: true
+      - name: Quality gate - analyze
+        run: flutter pub get && flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Quality gate - test
+        run: flutter test
+        # macOS/Windows 的 pdfium 原生钩子待首次 CI 观测：先软门禁，验证通过后转硬
+        continue-on-error: true
 
       - name: Read pubspec version
         id: version

@@ -92,3 +92,6 @@ packages/whisper_ggml_plus/pubspec.lock
 
 # Kotlin build session caches
 **/android/.kotlin/
+
+# ZCode 会话工作区（计划/临时文件，不入库）
+.zcode/
