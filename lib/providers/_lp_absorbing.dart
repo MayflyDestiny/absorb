@@ -2,6 +2,7 @@ part of 'library_provider.dart';
 
 mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
   int _staleSourceCleanupGeneration = 0;
+  String? _lastStaleSourceCheckedKey;
 
   bool _dedupeAbsorbingIds() {
     final seen = <String>{};
@@ -1477,7 +1478,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final pl = await _getPlaylistById(playlistId);
     if (pl == null) return null;
     final items = pl['items'];
-    if (items is! List) return null;
+    if (items is! List || items.isEmpty) return null;
     final target =
         episodeId != null ? '$libraryItemId-$episodeId' : libraryItemId;
     for (final m in items) {
@@ -1511,8 +1512,10 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     }
     final pl = await _getPlaylistById(playlistId);
     if (pl == null) {
-      debugPrint('[AutoAdvance] Playlist $playlistId missing; exiting playlist queue mode');
-      await PlayerSettings.clearQueueModePlaylistIfActive(playlistId);
+      // A timeout or a server hiccup at the moment a book finishes looks the
+      // same as a deleted playlist from here; deleting one clears the mode
+      // on its own, so this only loses the advance, not the queue.
+      debugPrint('[AutoAdvance] Playlist $playlistId could not be read; keeping playlist queue mode');
       return;
     }
     final items = (pl['items'] as List<dynamic>?) ?? const [];
@@ -1856,7 +1859,9 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final c = await _getCollectionById(collectionId);
     if (c == null) return null;
     final books = c['books'];
-    if (books is! List) return null;
+    // No books means the list did not load (a smart scope whose books call
+    // failed comes back empty too), not that this book is outside it.
+    if (books is! List || books.isEmpty) return null;
     final target =
         episodeId != null ? '$libraryItemId-$episodeId' : libraryItemId;
     for (final book in books) {
@@ -1880,12 +1885,59 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     return membership ?? false;
   }
 
-  Future<void> _clearStaleSourceQueueModeForCurrentPlayback() async {
+  /// The playing item changed to one inside a playlist or collection that
+  /// was left by playing something else: pick that queue back up.
+  Future<void> _resumeRememberedQueueSource(
+    String libraryItemId,
+    String? episodeId,
+    bool Function() playerStillMatches,
+  ) async {
+    if (!await PlayerSettings.isQueueSourceSuspended()) return;
+    final playlistId = await PlayerSettings.getQueuePlaylistId();
+    if (playlistId != null) {
+      final inside = await _isInQueuePlaylist(
+        playlistId,
+        libraryItemId,
+        episodeId: episodeId,
+      );
+      if (!playerStillMatches()) return;
+      if (inside == true &&
+          await PlayerSettings.getQueuePlaylistId() == playlistId) {
+        await PlayerSettings.setQueueModePlaylist(playlistId);
+        debugPrint('[Queue] Back inside playlist $playlistId - playlist mode resumed');
+        unawaited(_catchUpQueueAutoDownloads());
+        return;
+      }
+    }
+    if (episodeId != null) return;
+    final collectionId = await PlayerSettings.getQueueCollectionId();
+    if (collectionId == null) return;
+    final inside = await _isInQueueCollection(collectionId, libraryItemId);
+    if (!playerStillMatches() || inside != true) return;
+    if (await PlayerSettings.getQueueCollectionId() != collectionId) return;
+    final name = await PlayerSettings.getQueueCollectionName() ?? '';
+    await PlayerSettings.setQueueModeCollection(collectionId, name);
+    debugPrint('[Queue] Back inside collection $collectionId - collection mode resumed');
+    unawaited(_catchUpQueueAutoDownloads());
+  }
+
+  /// Keeps the playlist or collection queue in step with what plays: an item
+  /// from outside it suspends the queue, an item from inside it brings a
+  /// suspended one back.
+  Future<void> _reconcileSourceQueueModeForCurrentPlayback() async {
     final cleanupGeneration = ++_staleSourceCleanupGeneration;
     final player = AudioPlayerService();
     final libraryItemId = player.currentItemId;
     if (libraryItemId == null) return;
     final episodeId = player.currentEpisodeId;
+    // Only a change of item can mean the listener left the playlist or
+    // collection. A resume of the same book proves nothing new, and when
+    // the source failed to load on one of those resumes the queue mode was
+    // dropped for no reason.
+    final playingKey =
+        queueItemKey(libraryItemId: libraryItemId, episodeId: episodeId);
+    if (playingKey == _lastStaleSourceCheckedKey) return;
+    _lastStaleSourceCheckedKey = playingKey;
 
     bool playerStillMatches() =>
         cleanupGeneration == _staleSourceCleanupGeneration &&
@@ -1897,6 +1949,15 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final podcastMode = await PlayerSettings.getPodcastQueueMode();
     if (!playerStillMatches()) return;
     final activeMode = episodeId == null ? bookMode : podcastMode;
+
+    if (activeMode != 'playlist' && activeMode != 'collection') {
+      await _resumeRememberedQueueSource(
+        libraryItemId,
+        episodeId,
+        playerStillMatches,
+      );
+      return;
+    }
 
     if (activeMode == 'playlist') {
       if (bookMode != 'playlist' || podcastMode != 'playlist') return;
@@ -1921,12 +1982,12 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
         return;
       }
 
-      final cleared =
-          await PlayerSettings.clearQueueModePlaylistIfActive(playlistId);
-      if (!cleared) return;
+      final suspended =
+          await PlayerSettings.suspendQueueModePlaylistIfActive(playlistId);
+      if (!suspended) return;
       if (!playerStillMatches()) return;
       debugPrint(
-        '[Queue] Cleared playlist mode because $libraryItemId is outside $playlistId',
+        '[Queue] Playlist mode suspended because $libraryItemId is outside $playlistId',
       );
       unawaited(_catchUpQueueAutoDownloads());
       return;
@@ -1950,12 +2011,12 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
       return;
     }
 
-    final cleared =
-        await PlayerSettings.clearQueueModeCollectionIfActive(collectionId);
-    if (!cleared) return;
+    final suspended =
+        await PlayerSettings.suspendQueueModeCollectionIfActive(collectionId);
+    if (!suspended) return;
     if (!playerStillMatches()) return;
     debugPrint(
-      '[Queue] Cleared collection mode because $libraryItemId is outside $collectionId',
+      '[Queue] Collection mode suspended because $libraryItemId is outside $collectionId',
     );
     unawaited(_catchUpQueueAutoDownloads());
   }
@@ -1965,7 +2026,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     if (collectionId == null) return;
     final c = await _getCollectionById(collectionId);
     if (c == null) {
-      await PlayerSettings.clearQueueModeCollectionIfActive(collectionId);
+      debugPrint('[AutoAdvance] Collection $collectionId could not be read; keeping collection queue mode');
       return;
     }
     final items = _collectionItems(c);

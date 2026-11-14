@@ -11,6 +11,7 @@ import 'author_card.dart';
 import 'series_card.dart';
 import 'episode_list_sheet.dart';
 import 'books_sheet_shared.dart' show coverSizeScale;
+import '../utils/up_next.dart';
 
 class HomeSection extends StatelessWidget {
   final String title;
@@ -103,6 +104,26 @@ class HomeSection extends StatelessWidget {
                 ? 170
                 : cardWidth / coverAspectRatio + textBlock;
 
+    // A collection or playlist row starts on the last book finished, with
+    // the one after it beside it, rather than back at the first.
+    var startIndex = 0;
+    if (isPlaylistSection || isCollectionSection) {
+      final lib = context.read<LibraryProvider>();
+      final keys = <String>[];
+      for (final e in entities) {
+        if (e is! Map<String, dynamic>) {
+          keys.add('');
+          continue;
+        }
+        final inner = e['libraryItem'] as Map<String, dynamic>?;
+        final id = (e['libraryItemId'] ?? inner?['id'] ?? e['id']) as String? ?? '';
+        final episodeId = e['episodeId'] as String?;
+        keys.add(episodeId != null ? '$id-$episodeId' : id);
+      }
+      final up = upNextIndex(lib, keys);
+      if (up != null) startIndex = up - 1;
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 24),
       child: Column(
@@ -150,6 +171,7 @@ class HomeSection extends StatelessWidget {
             child: _SnapScrollList(
               cardWidth: cardWidth,
               itemCount: entities.length,
+              initialIndex: startIndex,
               itemBuilder: (context, index) {
                 var entity = entities[index];
                 String? sourcePlaylistEpisodeId;
@@ -256,11 +278,14 @@ class HomeSection extends StatelessWidget {
 class _SnapScrollList extends StatefulWidget {
   final double cardWidth;
   final int itemCount;
+  /// The card the list starts on, so a shelf can open part way along.
+  final int initialIndex;
   final Widget Function(BuildContext, int) itemBuilder;
 
   const _SnapScrollList({
     required this.cardWidth,
     required this.itemCount,
+    this.initialIndex = 0,
     required this.itemBuilder,
   });
 
@@ -271,16 +296,59 @@ class _SnapScrollList extends StatefulWidget {
 class _SnapScrollListState extends State<_SnapScrollList> {
   late final ScrollController _controller;
 
+  /// Where the list was last put for its starting card. While it still
+  /// rests there, a new starting card moves it again; once a finger has
+  /// scrolled it, it stays where the finger left it.
+  double _restOffset = 0;
+
+  double get _itemExtent => widget.cardWidth + 12;
+
   @override
   void initState() {
     super.initState();
     _controller = ScrollController();
+    _goToStart();
+  }
+
+  /// Puts the starting card at the left edge once the list has laid out.
+  /// Progress often lands after the first rows are built, so this also runs
+  /// when the starting card changes.
+  void _goToStart() {
+    if (widget.initialIndex <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      if ((_controller.offset - _restOffset).abs() > 1) return;
+      final maxExtent = _controller.position.maxScrollExtent;
+      var offset = widget.initialIndex * _itemExtent;
+      if (offset > maxExtent - _itemExtent) offset = maxExtent;
+      _restOffset = offset.clamp(0.0, maxExtent);
+      _controller.jumpTo(_restOffset);
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SnapScrollList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialIndex != widget.initialIndex) _goToStart();
+    if (oldWidget.cardWidth == widget.cardWidth || !_controller.hasClients) {
+      return;
+    }
+    final oldExtent = oldWidget.cardWidth + 12;
+    final itemIndex = oldExtent <= 0 ? 0.0 : _controller.offset / oldExtent;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final nextOffset = (itemIndex * _itemExtent).clamp(
+        0.0,
+        _controller.position.maxScrollExtent,
+      );
+      _controller.jumpTo(nextOffset);
+    });
   }
 
   @override

@@ -28,7 +28,10 @@ import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
 
 class StatsScreen extends StatefulWidget {
-  const StatsScreen({super.key});
+  /// Opened as a page of its own, with no tab to come back through, so the
+  /// header carries a back arrow.
+  final bool pushed;
+  const StatsScreen({super.key, this.pushed = false});
   @override
   State<StatsScreen> createState() => _StatsScreenState();
 }
@@ -595,19 +598,21 @@ class _StatsScreenState extends State<StatsScreen>
           _accentStatCard(tt, cs, Icons.speed_rounded, cs.tertiary,
               _formatDuration(avgDaily), l.statsDailyAverage),
           if (_timeSavedSeconds >= 60)
-            _accentStatCard(tt, cs, Icons.fast_forward_rounded,
-                Colors.cyan, _formatDuration(_timeSavedSeconds),
-                l.statsTimeSavedLabel,
-                subtitle: _timeSavedSince != null
-                    ? l.statsTimeSavedSince(
-                        MaterialLocalizations.of(context).formatMediumDate(_timeSavedSince!))
-                    : null,
-                trailing: IconButton(
-                  icon: Icon(Icons.restart_alt_rounded,
-                      size: 20, color: cs.onSurfaceVariant),
-                  tooltip: l.statsTimeSavedReset,
-                  onPressed: _confirmResetTimeSaved,
-                )),
+            _WideStat(
+              child: _accentStatCard(tt, cs, Icons.fast_forward_rounded,
+                  Colors.cyan, _formatDuration(_timeSavedSeconds),
+                  l.statsTimeSavedLabel,
+                  subtitle: _timeSavedSince != null
+                      ? l.statsTimeSavedSince(
+                          MaterialLocalizations.of(context).formatMediumDate(_timeSavedSince!))
+                      : null,
+                  trailing: IconButton(
+                    icon: Icon(Icons.restart_alt_rounded,
+                        size: 20, color: cs.onSurfaceVariant),
+                    tooltip: l.statsTimeSavedReset,
+                    onPressed: _confirmResetTimeSaved,
+                  )),
+            ),
         ]),
         const SizedBox(height: 28),
       ],
@@ -709,6 +714,14 @@ class _StatsScreenState extends State<StatsScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (widget.pushed)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Transform.translate(
+                          offset: const Offset(-12, 0),
+                          child: const BackButton(),
+                        ),
+                      ),
                     AbsorbPageHeader(
                       title: l.statsTitle,
                       showBranding: !desktopWorkspace,
@@ -757,12 +770,15 @@ class _StatsScreenState extends State<StatsScreen>
         const spacing = 12.0;
         final cardWidth =
             (constraints.maxWidth - (spacing * (columns - 1))) / columns;
+        // A card with more to say than a number and a label takes two
+        // columns, which on a phone is the whole row.
+        final wideWidth = columns > 2 ? cardWidth * 2 + spacing : constraints.maxWidth;
         return Wrap(
           spacing: spacing,
           runSpacing: spacing,
           children: [
             for (final card in cards)
-              SizedBox(width: cardWidth, child: card),
+              SizedBox(width: card is _WideStat ? wideWidth : cardWidth, child: card),
           ],
         );
       },
@@ -2479,6 +2495,15 @@ class _DayData {
   final double seconds;
   const _DayData(
       {required this.label, required this.fullLabel, required this.seconds});
+}
+
+/// A stat card the grid lays out two columns wide.
+class _WideStat extends StatelessWidget {
+  final Widget child;
+  const _WideStat({required this.child});
+
+  @override
+  Widget build(BuildContext context) => child;
 }
 
 class _TopItem {

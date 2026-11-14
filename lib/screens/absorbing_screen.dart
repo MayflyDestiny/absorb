@@ -1428,6 +1428,10 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
   List<Map<String, dynamic>>? _collectionBooks;
   String? _collectionId;
   String? _collectionName;
+  // Set while a playlist / collection is the queue or is remembered after
+  // playing something outside it, so its chip stays on offer.
+  String? _rememberedPlaylistId;
+  String? _rememberedCollectionName;
   String? _activeQueueSourceId;
   int _modeContentGeneration = 0;
   // Podcast auto_next: the current show's episodes (unsorted - the list sorts
@@ -1613,14 +1617,24 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     } else {
       mode = _currentIsPodcast ? pm : bm;
     }
+    final rememberedPlaylistId = await PlayerSettings.getQueuePlaylistId();
+    final rememberedCollectionName =
+        await PlayerSettings.getQueueCollectionName();
     final sourceId = mode == 'playlist'
-        ? await PlayerSettings.getQueuePlaylistId()
+        ? rememberedPlaylistId
         : mode == 'collection'
             ? await PlayerSettings.getQueueCollectionId()
             : null;
     if (!mounted) return;
     final modeChanged = mode != _queueMode;
     final sourceChanged = sourceId != _activeQueueSourceId;
+    if (rememberedPlaylistId != _rememberedPlaylistId ||
+        rememberedCollectionName != _rememberedCollectionName) {
+      setState(() {
+        _rememberedPlaylistId = rememberedPlaylistId;
+        _rememberedCollectionName = rememberedCollectionName;
+      });
+    }
     if (modeChanged || sourceChanged) {
       setState(() {
         _queueMode = mode;

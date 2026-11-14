@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'stats_screen.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -42,6 +43,7 @@ import '../widgets/nav_hold_options.dart';
 import '../widgets/now_playing_text_sheet.dart';
 import '../screens/admin_screen.dart';
 import '../screens/bookorbit_admin_screen.dart';
+import '../screens/bookorbit_api_keys_screen.dart';
 import '../screens/bookorbit_email_screen.dart';
 import '../screens/book_requests_screen.dart';
 import '../screens/achievements_screen.dart';
@@ -178,6 +180,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _mergeAbsorbingLibraries = false;
   bool _podcastTabEnabled = false;
   String _podcastTabLibraryId = '';
+  bool _statsTabShown = true;
   int _episodeNotifMinutes = 0;
   int _maxConcurrentDownloads = 1;
   bool _hideEbookOnly = false;
@@ -268,8 +271,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool? _boAchievementsOn;
   AchievementCatalogue? _boAchievements;
 
+  static const _kBoNotificationsTile = 'bo_tile_notifications';
+  static const _kBoAchievementsTile = 'bo_tile_achievements';
+  bool _boTilesRemembered = false;
+
   /// BookOrbit's notification badge and achievement count for the tiles under
-  /// the account card.
+  /// the account card. The tiles themselves come up straight away from what
+  /// the server said last time; the server's answer and the numbers follow.
   Future<void> _loadBookOrbitInbox() async {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
@@ -285,7 +293,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
+    if (!_boTilesRemembered) {
+      _boTilesRemembered = true;
+      final (rememberedNotifications, rememberedAchievements) =
+          await (ScopedPrefs.getBool(_kBoNotificationsTile), ScopedPrefs.getBool(_kBoAchievementsTile)).wait;
+      if (!mounted || _inboxApi != api) return;
+      if (rememberedNotifications != null || rememberedAchievements != null) {
+        setState(() {
+          _boNotificationsOn = rememberedNotifications ?? false;
+          _boAchievementsOn = rememberedAchievements;
+        });
+      }
+    }
     final (notificationsOn, achievementsOn) = await (api.hasServerNotifications(), api.achievementsEnabled()).wait;
+    if (!mounted || _inboxApi != api) return;
+    setState(() {
+      _boNotificationsOn = notificationsOn;
+      _boAchievementsOn = achievementsOn;
+    });
+    unawaited(ScopedPrefs.setBool(_kBoNotificationsTile, notificationsOn));
+    if (achievementsOn != null) unawaited(ScopedPrefs.setBool(_kBoAchievementsTile, achievementsOn));
     final (unread, catalogue) = await (
       notificationsOn ? api.unreadNotificationCount() : Future<int?>.value(),
       achievementsOn == true ? api.achievements() : Future<AchievementCatalogue?>.value(),
@@ -293,9 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted || _inboxApi != api) return;
     if (unread != null) BookOrbitNotificationSocket.instance.unread.value = (api: api, count: unread);
     setState(() {
-      _boNotificationsOn = notificationsOn;
       _boUnread = unread;
-      _boAchievementsOn = achievementsOn;
       _boAchievements = catalogue;
     });
   }
@@ -1323,6 +1348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final longBack = await PlayerSettings.getLongBackSkip();
     final podcastTabEnabled = await PlayerSettings.getPodcastTabEnabled();
     final podcastTabLibraryId = await PlayerSettings.getPodcastTabLibraryId();
+    final statsTabShown = await PlayerSettings.getStatsTabShown();
     final episodeNotifMinutes = await PlayerSettings.getEpisodeNotifIntervalMinutes();
     final duckBriefInterruptions = await PlayerSettings.getDuckBriefInterruptions();
     final autoplayOnCarConnect = await PlayerSettings.getAutoplayOnCarConnect();
@@ -1367,6 +1393,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Chapter skip settings
     if (mounted) setState(() {
         _podcastTabEnabled = podcastTabEnabled;
+        _statsTabShown = statsTabShown;
         _podcastTabLibraryId = podcastTabLibraryId;
         _episodeNotifMinutes = episodeNotifMinutes;
         _sleepRewindSeconds = sleepRewind;
@@ -2550,7 +2577,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       });
     }
     final serverVersion = auth.serverVersion?.trim();
-    if (auth.isAdmin && serverVersion != null && serverVersion.isNotEmpty &&
+    final serverAdmin = auth.isAdmin || auth.bookOrbitAdmin?.any == true;
+    if (serverAdmin && serverVersion != null && serverVersion.isNotEmpty &&
         !_serverUpdateCheckRunning && _serverUpdateCheckedFor != serverVersion) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _loadServerUpdate(serverVersion);
@@ -4012,9 +4040,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ButtonSegment(value: 0, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenHome, maxLines: 1))),
                                   ButtonSegment(value: 1, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenLibrary, maxLines: 1))),
                                   ButtonSegment(value: 2, label: FittedBox(fit: BoxFit.scaleDown, child: Text(Wording.of(context).startScreenAbsorb, maxLines: 1))),
-                                  ButtonSegment(value: 3, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenStats, maxLines: 1))),
+                                  if (_statsTabShown)
+                                    ButtonSegment(value: 3, label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.startScreenStats, maxLines: 1))),
                                       ],
-                                      selected: {_startScreen},
+                                      selected: {_statsTabShown || _startScreen != 3 ? _startScreen : 0},
                                 onSelectionChanged: _loaded ? (selected) {
                                               final idx = selected.first;
                                               setState(() => _startScreen = idx);
@@ -4253,6 +4282,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isExpanded: _expandedSection == 'Customize Stats',
                     onExpansionChanged: (v) => _onSectionExpanded('Customize Stats', v),
                           children: [
+                            SwitchListTile(
+                              title: Text(l.settingsStatsTab),
+                              subtitle: Text(l.settingsStatsTabDesc,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              value: _statsTabShown,
+                              onChanged: _loaded ? (v) async {
+                                setState(() => _statsTabShown = v);
+                                await PlayerSettings.setStatsTabShown(v);
+                                // A hidden tab cannot be the start screen.
+                                if (!v && _startScreen == 3) {
+                                  setState(() => _startScreen = 0);
+                                  await PlayerSettings.setStartScreen(0);
+                                }
+                              } : null,
+                            ),
+                            if (!_statsTabShown)
+                              ListTile(
+                                leading: const Icon(Icons.bar_chart_rounded),
+                                title: Text(l.settingsOpenStats),
+                                trailing: const Icon(Icons.chevron_right_rounded),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const StatsScreen(pushed: true)),
+                                ),
+                              ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                               child: Column(
@@ -7320,10 +7375,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 12),
           Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
-              if (!auth.isBookOrbit || auth.canChangeBookOrbitPassword) ...[
-              InkWell(
-                onTap: () {
-                  Navigator.pop(ctx);
+          if (auth.bookOrbitSignedInWithKey)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: Row(children: [
+                Icon(Icons.vpn_key_rounded, size: 20, color: cs.onSurfaceVariant),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(l.boAccountKeySession, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(BookOrbitApiService.keyIsReadOnly ? l.boAccountKeyReadOnly : l.boAccountKeySessionSubtitle,
+                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+                ])),
+              ]),
+            ),
+          if ((!auth.isBookOrbit || auth.canChangeBookOrbitPassword) && !auth.bookOrbitSignedInWithKey) ...[
+          InkWell(
+            onTap: () {
+              Navigator.pop(ctx);
               Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => const ChangePasswordScreen(),
               ));
@@ -7365,6 +7433,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               ],
           Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
+              if (auth.bookOrbitCanMakeApiKeys) ...[
+                InkWell(
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const BookOrbitApiKeysScreen(),
+                    ));
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    child: Row(children: [
+                      Icon(Icons.vpn_key_rounded, size: 20, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 14),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(l.boApiKeysTitle, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                        Text(l.boAccountApiKeysSubtitle, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant)),
+                      ])),
+                      Icon(Icons.chevron_right_rounded, size: 18, color: cs.onSurfaceVariant),
+                    ]),
+                  ),
+                ),
+                Divider(height: 1, indent: 20, endIndent: 20, color: cs.onSurface.withValues(alpha: 0.06)),
+              ],
               if (auth.bookOrbitAdmin?.email == true) ...[
                 InkWell(
                   onTap: () {

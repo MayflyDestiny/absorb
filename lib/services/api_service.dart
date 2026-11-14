@@ -14,10 +14,12 @@ import 'json_file_cache.dart';
 import 'book_dock.dart';
 import 'book_requests.dart';
 import 'bookorbit_admin.dart';
+import 'bookorbit_api_keys.dart';
 import 'bookorbit_email.dart';
 import 'bookorbit_match.dart';
 import 'bookorbit_mapper.dart';
 import 'media_overlay.dart';
+import 'narration_service.dart';
 import 'narrated_books.dart';
 import 'narration_stream.dart';
 import 'bookorbit_media_proxy_stub.dart'
@@ -35,6 +37,7 @@ import '../utils/percent_escapes.dart';
 
 part 'bookorbit_api_service.dart';
 part 'bookorbit_admin_api.dart';
+part 'bookorbit_api_key_api.dart';
 part 'bookorbit_email_api.dart';
 
 /// Why a login request failed, classified from the HTTP status code / response
@@ -967,14 +970,15 @@ class ApiService {
   static bool _apiKeyCheckRunning = false;
 
   void _checkRevokedApiKey() {
-    if (isBookOrbit || _apiKeyCheckRunning) return;
+    if (_apiKeyCheckRunning) return;
     final last = _apiKeyCheckedAt;
     if (last != null && DateTime.now().difference(last) < const Duration(minutes: 1)) return;
     _apiKeyCheckedAt = DateTime.now();
     _apiKeyCheckRunning = true;
     () async {
       try {
-        final r = await _get(Uri.parse('$_cleanBaseUrl/api/me'), headers: _headers)
+        final me = isBookOrbit ? '/api/v1/auth/me' : '/api/me';
+        final r = await _get(Uri.parse('$_cleanBaseUrl$me'), headers: _headers)
             .timeout(const Duration(seconds: 15));
         if (r.statusCode == 401) {
           debugPrint('[API] The server no longer accepts this API key');
@@ -1504,9 +1508,8 @@ class ApiService {
     Map<String, String> customHeaders = const {},
     ServerBackend backend = ServerBackend.audiobookshelf,
   }) async {
-    if (backend.isBookOrbit) return (data: null, statusCode: 0, failure: null);
     final base = serverUrl.endsWith('/') ? serverUrl : '$serverUrl/';
-    final url = '${base}api/me';
+    final url = backend.isBookOrbit ? '${base}api/v1/auth/me' : '${base}api/me';
 
     try {
       final response = await http.get(
@@ -1515,8 +1518,9 @@ class ApiService {
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
+        final me = jsonDecode(response.body) as Map<String, dynamic>;
         return (
-          data: jsonDecode(response.body) as Map<String, dynamic>,
+          data: backend.isBookOrbit ? BookOrbitMapper.user(me) : me,
           statusCode: 200,
           failure: null,
         );
@@ -3742,13 +3746,31 @@ class ApiService {
 
   /// Create a bookmark on the server.
   /// POST /api/me/item/:id/bookmark  body: { time, title }
+  /// The HTTP status of the last [createBookmark], null when it never got
+  /// an answer. A 404 means the server has no place for this book's
+  /// bookmarks at all, which is not worth retrying.
+  int? lastBookmarkCreateStatus;
+
+  /// Where the server put the last bookmark [createBookmark] made, when it
+  /// said: a narrated EPUB on BookOrbit keeps it at the start of the
+  /// sentence being read, not the exact second.
+  double? lastBookmarkCreatedTime;
+
   Future<bool> createBookmark(String itemId, {required double time, required String title}) async {
+    lastBookmarkCreateStatus = null;
+    lastBookmarkCreatedTime = null;
     try {
       final r = await _authPost(
         Uri.parse('$_cleanBaseUrl/api/me/item/$itemId/bookmark'),
         body: jsonEncode({'time': time, 'title': title}),
       );
-      return r.statusCode == 200;
+      lastBookmarkCreateStatus = r.statusCode;
+      if (r.statusCode == 200) {
+        try {
+          lastBookmarkCreatedTime = ((jsonDecode(r.body) as Map)['time'] as num?)?.toDouble();
+        } catch (_) {}
+        return true;
+      }
     } catch (e) { debugPrint('createBookmark error: $e'); }
     return false;
   }

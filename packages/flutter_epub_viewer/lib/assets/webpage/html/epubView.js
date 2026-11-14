@@ -212,6 +212,9 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
   rendition.hooks.content.register(function (contents) {
     attachTurnDrag(contents.document);
   });
+  // iOS hands a touch on the page to this document, not the page's own, so
+  // the drag is watched from here too. The two share one drag.
+  attachTurnDrag(document);
   rendition.hooks.content.register(markParagraphs);
 
   // Absorb patch: scroll mode only moves up and down, down to each chapter's
@@ -2328,53 +2331,53 @@ function playSlide(m, from, to, ms) {
 // A sideways drag turns the page: in "slide" the page follows the finger and
 // settles on whichever page it was pulled toward; in "none" it turns once the
 // finger lifts. Selecting text, auto scroll and scroll mode keep their touches.
+var turnDrag = null;
 function attachTurnDrag(doc) {
   if (!doc || doc.__absorbTurnDrag) return;
   doc.__absorbTurnDrag = true;
-  var d = null;
   doc.addEventListener("touchstart", function (e) {
-    d = null;
+    turnDrag = null;
     if (turnStyle === "curl" || scrolledFlow() || blindRendition || glideActive) return;
     if (!e.touches || e.touches.length !== 1 || !rendition || !rendition.manager) return;
     var t = e.touches[0];
-    d = { x0: t.screenX, y0: t.screenY, at: e.timeStamp, moving: false, track: [] };
+    turnDrag = { x0: t.screenX, y0: t.screenY, at: e.timeStamp, moving: false, track: [] };
   }, { capture: true, passive: true });
   doc.addEventListener("touchmove", function (e) {
-    if (!d) return;
+    if (!turnDrag) return;
     if (!e.touches || e.touches.length !== 1) {
       release(null, true);
       return;
     }
     var t = e.touches[0];
-    if (!d.moving) {
-      var dx = t.screenX - d.x0;
-      var dy = t.screenY - d.y0;
+    if (!turnDrag.moving) {
+      var dx = t.screenX - turnDrag.x0;
+      var dy = t.screenY - turnDrag.y0;
       if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
       // A finger that rested before moving was pressing to select text.
-      if (Math.abs(dx) <= Math.abs(dy) * 1.2 || isSelecting || hasActiveSelection() || e.timeStamp - d.at > 400) {
-        d = null;
+      if (Math.abs(dx) <= Math.abs(dy) * 1.2 || isSelecting || hasActiveSelection() || e.timeStamp - turnDrag.at > 400) {
+        turnDrag = null;
         return;
       }
       finishTurnSlide();
       var m = rendition.manager;
-      d.moving = true;
-      d.m = m;
-      d.x = t.screenX; // the page moves from here, without a jump
-      d.base = m.container.scrollLeft;
-      d.page = (m.layout && m.layout.delta) || m.container.clientWidth || 1;
+      turnDrag.moving = true;
+      turnDrag.m = m;
+      turnDrag.x = t.screenX; // the page moves from here, without a jump
+      turnDrag.base = m.container.scrollLeft;
+      turnDrag.page = (m.layout && m.layout.delta) || m.container.clientWidth || 1;
       turnDragActive = turnStyle === "slide";
     }
-    d.track.push({ x: t.screenX, at: e.timeStamp });
-    if (d.track.length > 5) d.track.shift();
+    turnDrag.track.push({ x: t.screenX, at: e.timeStamp });
+    if (turnDrag.track.length > 5) turnDrag.track.shift();
     if (turnStyle === "slide") {
-      var off = Math.max(-d.page, Math.min(d.page, t.screenX - d.x));
-      d.m.ignore = true;
-      d.m.container.scrollLeft = d.base - off;
+      var off = Math.max(-turnDrag.page, Math.min(turnDrag.page, t.screenX - turnDrag.x));
+      turnDrag.m.ignore = true;
+      turnDrag.m.container.scrollLeft = turnDrag.base - off;
     }
   }, { capture: true, passive: true });
   function release(e, cancelled) {
-    var g = d;
-    d = null;
+    var g = turnDrag;
+    turnDrag = null;
     turnDragActive = false;
     if (!g || !g.moving) return;
     var m = g.m;
@@ -2731,7 +2734,9 @@ function setManager(manager) {
 
 var blindRendition = null;
 var blindY = 0;              // how far down the blind has come, px
-var blindSpeed = 40;         // px per second
+var blindSpeed = 40;         // px per second, worked out from the pace below
+var blindWpm = 250;          // words per minute the reader asked for
+var blindDensity = 0;        // words per px of travel in the chapter being read
 var blindRaf = null;
 var blindLastTs = 0;
 var blindSwapping = false;
@@ -2742,6 +2747,7 @@ var blindTouchHold = false; // finger is down, transient
 var glideActive = false;
 var glideCarry = 0;      // sub-pixel distance owed to the next frame
 var glideStuckFor = 0;   // seconds the page has refused to move
+var glideMeasuredAt = 0; // frame time of the last pace measurement
 
 function blindHeight() {
   var host = document.getElementById("viewerNext");
@@ -2764,6 +2770,54 @@ function blindColumns() {
 
 function blindTravel() {
   return blindHeight() * blindColumns();
+}
+
+function blindWordsIn(v) {
+  try {
+    var doc = (v.contents && v.contents.document) || v.document;
+    var text = doc && doc.body ? doc.body.textContent : "";
+    return (text.match(/\S+/g) || []).length;
+  } catch (e) { return 0; }
+}
+
+// Words per px of travel in the chapter being read, so a words per minute
+// pace can be turned into px per second. The chapter's average rather than
+// the page's own count, so the pace holds steady from page to page instead
+// of jumping at every heading or picture.
+function blindMeasureDensity() {
+  try {
+    var m = rendition.manager;
+    var c = m.container.getBoundingClientRect();
+    var scrolled = scrolledFlow();
+    var rtl = m.settings && m.settings.direction === "rtl";
+    var probeX = rtl ? c.right - 1 : c.left + 1;
+    var probeY = c.top + 1;
+    var views = m.views.all();
+    for (var i = 0; i < views.length; i++) {
+      var v = views[i];
+      if (!v || !v.element || !v.section) continue;
+      var b = v.element.getBoundingClientRect();
+      var hit = scrolled ? b.top <= probeY && b.bottom > probeY
+                         : b.left <= probeX && b.right > probeX;
+      if (!hit) continue;
+      var words = blindWordsIn(v);
+      var px = b.height;
+      if (!scrolled) {
+        var delta = m.layout.delta || b.width || 1;
+        px = Math.max(1, Math.ceil(b.width / delta)) * blindTravel();
+      }
+      // A chapter that is nearly all pictures keeps the last chapter's pace.
+      if (words >= 40 && px > 0) blindDensity = words / px;
+      return;
+    }
+  } catch (e) {}
+}
+
+// px per second for the asked-for pace. Before anything is measured, a phone
+// page of ordinary text: about a word every three px.
+function blindPace() {
+  var density = blindDensity || 0.36;
+  blindSpeed = Math.max(3, Math.min(400, blindWpm / 60 / density));
 }
 
 function blindIsRtl() {
@@ -2808,6 +2862,7 @@ function blindMatchViewerBox() {
 // the page's own text colour - whatever contrasts with that theme's background
 // by definition - rather than a fixed grey that washes out on the light ones.
 var blindLineRgb = null;
+var blindEink = false;
 
 function blindResolveLineColor() {
   blindLineRgb = null;
@@ -2822,9 +2877,14 @@ function blindResolveLineColor() {
   } catch (e) {}
 }
 
-function blindLineColor(paused) {
+// A solid edge with a soft shadow falling onto the page under it, the way a
+// sheet sliding down over another would cast one. The shadow is what keeps
+// the edge findable in the middle of a page of text.
+function blindLineStyle(paused) {
   var rgb = blindLineRgb || "150, 150, 150";
-  return "rgba(" + rgb + ", " + (paused ? 0.95 : 0.45) + ")";
+  var a = paused ? 0.95 : 0.8;
+  return "linear-gradient(to bottom, rgba(" + rgb + ", " + a + ") 0px, rgba(" + rgb + ", " + a + ") 3px, " +
+    "rgba(" + rgb + ", 0.28) 3px, rgba(" + rgb + ", 0) 100%)";
 }
 
 function blindApply() {
@@ -2853,9 +2913,11 @@ function blindApply() {
       line.style.left = (onLeft ? box.left : box.left + colW) + "px";
       line.style.width = colW + "px";
       line.style.top = (box.top + colY) + "px";
-      // Frozen white while paused, so the stopped edge is unmistakable.
-      line.style.height = blindPaused ? "3px" : "2px";
-      line.style.background = blindLineColor(blindPaused);
+      line.style.background = blindLineStyle(blindPaused);
+      line.style.setProperty("--blindBg", lastTheme.bg && lastTheme.bg !== "null" ? lastTheme.bg : "#fff");
+      // The glint stops while paused, so the stopped edge is unmistakable,
+      // and never runs on e-ink.
+      line.className = blindPaused || blindEink ? "still" : "";
     }
   }
 }
@@ -2898,15 +2960,15 @@ function blindThemeApply(r) {
 
 var blindTouchY = 0;
 var blindTouchStartAt = 0;
-var blindSpeedAtTouch = 0;
+var blindWpmAtTouch = 0;
 var blindTouchMoved = 0;
 var BLIND_DRAG_SLOP = 12;      // px before a touch counts as a speed drag
 var BLIND_LONG_PRESS_MS = 550; // hold this long to stop instead of pause
-// A 200px drag moves the speed about a fifth of its range. It used to be two
-// thirds, which made 5% to 12% a flick of the thumb.
-var BLIND_DRAG_GAIN = 45;
+// Words per minute a 200px drag adds, about a fifth of the range, so a
+// flick of the thumb is a nudge rather than a jump.
+var BLIND_DRAG_GAIN = 150;
 // Android's gesture nav lives along the bottom edge. A swipe up from there is
-// the system's, not ours - claiming it sent the speed to 100% and resumed.
+// the system's, not ours - claiming it sent the speed to the top and resumed.
 var BLIND_SYS_GESTURE_PX = 56;
 var blindLongPressTimer = null;
 var blindTouchIgnored = false;
@@ -2996,7 +3058,7 @@ function blindTouchStart(e) {
   blindTouchHold = true;
   blindTouchY = t.clientY;
   blindTouchStartAt = Date.now();
-  blindSpeedAtTouch = blindSpeed;
+  blindWpmAtTouch = blindWpm;
   blindTouchMoved = 0;
   blindLongPressFired = false;
   if (blindLongPressTimer) clearTimeout(blindLongPressTimer);
@@ -3025,10 +3087,11 @@ function blindTouchMove(e) {
     e.preventDefault();
     return;
   }
-  // up = faster, and 200px of travel covers most of the range
-  var next = blindSpeedAtTouch + (dy / 200) * BLIND_DRAG_GAIN;
-  next = Math.max(6, Math.min(220, next));
-  blindSpeed = next;
+  // up = faster
+  var next = blindWpmAtTouch + (dy / 200) * BLIND_DRAG_GAIN;
+  next = Math.round(Math.max(50, Math.min(800, next)));
+  blindWpm = next;
+  blindPace();
   blindNotify("absorbAutoScrollSpeed", next);
   blindNotify("absorbAutoScrollDragging", true);
   e.preventDefault();
@@ -3070,8 +3133,9 @@ function blindTouchCancel(e) {
   blindLongPressFired = false;
   blindTouchIgnored = false;
   if (blindTouchMoved >= BLIND_DRAG_SLOP) {
-    blindSpeed = blindSpeedAtTouch;
-    blindNotify("absorbAutoScrollSpeed", blindSpeed);
+    blindWpm = blindWpmAtTouch;
+    blindPace();
+    blindNotify("absorbAutoScrollSpeed", blindWpm);
   }
   blindNotify("absorbAutoScrollDragEnd", true);
   blindTouchHold = false;
@@ -3281,6 +3345,12 @@ function scrolledFlow() {
 function glideTick(ts) {
   if (!glideActive) return;
   if (!blindLastTs) blindLastTs = ts;
+  // The chapter under the top of the screen changes as the page glides.
+  if (ts - glideMeasuredAt > 2000) {
+    glideMeasuredAt = ts;
+    blindMeasureDensity();
+    blindPace();
+  }
   var dt = (ts - blindLastTs) / 1000;
   blindLastTs = ts;
   // rAF stops while the app is away; the first frame back carries the whole gap
@@ -3309,13 +3379,17 @@ function glideTick(ts) {
   blindRaf = requestAnimationFrame(glideTick);
 }
 
-function autoScrollStart(speed) {
+function autoScrollStart(wpm, eink) {
   if (!rendition || blindRendition || glideActive) return false;
-  if (typeof speed === "number" && speed > 0) blindSpeed = speed;
+  if (typeof wpm === "number" && wpm > 0) blindWpm = wpm;
+  blindEink = !!eink;
+  blindMeasureDensity();
+  blindPace();
   if (scrolledFlow()) {
     try { clearSelection(); } catch (e) {}
     glideActive = true;
     glideCarry = 0;
+    glideMeasuredAt = 0;
     glideStuckFor = 0;
     blindPaused = false;
     blindLastTs = 0;
@@ -3403,6 +3477,8 @@ function blindSwap() {
     .then(function () {
       blindLog("swap live after " + blindLocSummary(rendition) + " | " + blindLayoutSummary(rendition) +
         " | " + blindImageSummary(rendition));
+      blindMeasureDensity();
+      blindPace();
       blindY = 0;
       blindApply();
       return blindAdvancePastLive(0);
@@ -3421,8 +3497,9 @@ window.addEventListener("resize", function () {
   }
 });
 
-function autoScrollSpeed(speed) {
-  if (typeof speed === "number" && speed >= 0) blindSpeed = speed;
+function autoScrollSpeed(wpm) {
+  if (typeof wpm === "number" && wpm > 0) blindWpm = wpm;
+  blindPace();
 }
 
 function autoScrollPause(paused) {
@@ -3443,7 +3520,11 @@ function autoScrollResync() {
   blindLog("resync display=" + cfi + " live " + blindLocSummary(rendition));
   Promise.resolve(cfi ? blindRendition.display(cfi) : blindRendition.display())
     .then(function () { return blindAdvancePastLive(0); })
-    .then(function () { blindSwapping = false; })
+    .then(function () {
+      blindMeasureDensity();
+      blindPace();
+      blindSwapping = false;
+    })
     .catch(function () { autoScrollStop("error"); });
 }
 
@@ -4873,3 +4954,376 @@ function detectSwipe(el, func) {
     swipe_det.touchStartTime = null;
   }, { capture: true, passive: false }); // Use options object with passive: false
 }
+
+
+// Absorb patch: sentence mode. Splits one section's text into sentences,
+// each with the CFI of its words, on a separate Book so the live rendition's
+// sections are left alone (the same trick search uses). [atCfi] picks the
+// sentence the page is on; a spineIndex below zero means "the section that
+// CFI is in".
+window.absorbSentences = async function (spineIndex, atCfi) {
+  var sb = window.__absorbSearchBook;
+  if (!sb) {
+    sb = ePub();
+    sb.spine.unpack(book.packaging, book.resolve.bind(book), book.canonical.bind(book));
+    window.__absorbSearchBook = sb;
+  }
+  var items = (sb.spine && sb.spine.spineItems) ? sb.spine.spineItems : [];
+  if (spineIndex < 0 && atCfi) {
+    try { spineIndex = new ePub.CFI(atCfi).spinePos; } catch (e) { spineIndex = 0; }
+  }
+  var item = items[spineIndex];
+  var result = { count: items.length, section: spineIndex, href: item ? (item.href || '') : '', sentences: [], at: 0 };
+  if (!item) return JSON.stringify(result);
+  var out = [];
+  try {
+    await item.load(book.load.bind(book));
+    var doc = item.document;
+    var body = doc && doc.body;
+    if (body) {
+      var BLOCK = { P: 1, DIV: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1, LI: 1, BLOCKQUOTE: 1, TD: 1, TH: 1,
+        DD: 1, DT: 1, PRE: 1, FIGCAPTION: 1, CAPTION: 1, SECTION: 1, ARTICLE: 1, ASIDE: 1, HEADER: 1,
+        FOOTER: 1, BODY: 1, TR: 1, UL: 1, OL: 1, TABLE: 1, NAV: 1, HR: 1 };
+      var SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, SVG: 1, TITLE: 1, HEAD: 1, MATH: 1 };
+      function blockOf(node) {
+        var el = node.parentNode;
+        while (el && el !== body) {
+          if (BLOCK[String(el.nodeName).toUpperCase()]) return el;
+          el = el.parentNode;
+        }
+        return body;
+      }
+      function idOf(node, block) {
+        var el = node.parentNode;
+        while (el) {
+          if (el.id) return el.id;
+          if (el === block) break;
+          el = el.parentNode;
+        }
+        return null;
+      }
+      // A picture takes its place among the sentences: an <img>, or an
+      // <image> inside an <svg> the way cover pages are often done. Ones
+      // sized down to an ornament or a spacer are left out.
+      var PICTURE = { IMG: 1, IMAGE: 1 };
+      var NOT_SHOWN = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TITLE: 1, HEAD: 1 };
+      function under(node, table) {
+        for (var e = node.parentNode; e && e !== body; e = e.parentNode) {
+          if (table[String(e.nodeName).toUpperCase()]) return true;
+        }
+        return false;
+      }
+      function ornament(el) {
+        var w = parseFloat(el.getAttribute('width')), h = parseFloat(el.getAttribute('height'));
+        return (w > 0 && w < 32) || (h > 0 && h < 32);
+      }
+      function pictureUrl(src) {
+        var base = /^[a-z][a-z0-9+.-]*:/i.test(item.url || '') ? item.url : 'http://absorb.book' + (item.url || '/');
+        var abs;
+        try { abs = new URL(src, base); } catch (e) { return Promise.resolve(''); }
+        var archive = book.archive;
+        if (!archive) return Promise.resolve(abs.href);
+        var path = abs.pathname;
+        if (!archive.zip || !archive.zip.file(decodeURIComponent(path.substr(1)))) return Promise.resolve('');
+        return archive.createUrl(path, { base64: false });
+      }
+      var runs = [];
+      var walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null, false);
+      var n, cur = null;
+      while ((n = walker.nextNode())) {
+        if (n.nodeType === 1) {
+          if (!PICTURE[String(n.nodeName).toUpperCase()] || under(n, NOT_SHOWN) || ornament(n)) continue;
+          var src = n.getAttribute('src') || n.getAttribute('href') ||
+            n.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+          if (!src) continue;
+          runs.push({ picture: n, src: src, alt: (n.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() });
+          cur = null;
+          continue;
+        }
+        if (!n.nodeValue || !n.nodeValue.trim()) continue;
+        if (under(n, SKIP)) continue;
+        var b = blockOf(n);
+        if (!cur || cur.block !== b) { cur = { block: b, nodes: [], text: '' }; runs.push(cur); }
+        var start = cur.text.length;
+        cur.text += n.nodeValue;
+        cur.nodes.push({ node: n, start: start, end: cur.text.length });
+      }
+      // Ends a sentence at . ! ? or an ellipsis, closing quotes included, when
+      // what follows does not read as the same sentence carrying on.
+      var ABBR = /(?:^|[\s(\[])(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|Lt|Col|Gen|Capt|Sgt|Rev|Hon|vs|etc|No|Vol|Fig|[A-Z])\.$/;
+      function splitSentences(text) {
+        var ends = [];
+        var len = text.length;
+        var i = 0;
+        while (i < len) {
+          var c = text[i];
+          if (c === '.' || c === '!' || c === '?' || c === '\u2026') {
+            var j = i + 1;
+            while (j < len && /[.!?\u2026]/.test(text[j])) j++;
+            while (j < len && /["'\u201D\u2019)\]\u00BB]/.test(text[j])) j++;
+            if (j >= len) { ends.push(len); i = len; break; }
+            if (/\s/.test(text[j])) {
+              var k = j;
+              while (k < len && /\s/.test(text[k])) k++;
+              var abbr = c === '.' && ABBR.test(text.slice(Math.max(0, i - 8), i + 1));
+              var carriesOn = k < len && /[a-z\u00DF-\u00FF,;:]/.test(text[k]);
+              if (!abbr && !carriesOn) { ends.push(j); i = k; continue; }
+            }
+            i = j;
+            continue;
+          }
+          i++;
+        }
+        if (!ends.length || ends[ends.length - 1] < len) ends.push(len);
+        var parts = [];
+        var s = 0;
+        for (var q = 0; q < ends.length; q++) { parts.push([s, ends[q]]); s = ends[q]; }
+        return parts;
+      }
+      function locate(run, pos) {
+        for (var q = 0; q < run.nodes.length; q++) {
+          var nd = run.nodes[q];
+          if (pos < nd.end || q === run.nodes.length - 1) {
+            var off = Math.max(0, pos - nd.start);
+            return { node: nd.node, offset: Math.min(off, nd.node.nodeValue.length) };
+          }
+        }
+        var last = run.nodes[run.nodes.length - 1];
+        return { node: last.node, offset: last.node.nodeValue.length };
+      }
+      for (var ri = 0; ri < runs.length; ri++) {
+        var run = runs[ri];
+        if (run.picture) {
+          var pcfi = '';
+          try { pcfi = item.cfiFromElement(run.picture); } catch (err) {}
+          var purl = '';
+          try { purl = await pictureUrl(run.src); } catch (err2) {}
+          if (pcfi && purl) out.push({ cfi: pcfi, text: run.alt, image: purl, id: run.picture.id || idOf(run.picture, body) });
+          continue;
+        }
+        splitSentences(run.text).forEach(function (pe) {
+          var s = pe[0], e = pe[1];
+          while (s < e && /\s/.test(run.text[s])) s++;
+          while (e > s && /\s/.test(run.text[e - 1])) e--;
+          if (e <= s) return;
+          var t = run.text.slice(s, e).replace(/\s+/g, ' ');
+          var a = locate(run, s), z = locate(run, e);
+          var cfi = '';
+          try {
+            var r = doc.createRange();
+            r.setStart(a.node, a.offset);
+            r.setEnd(z.node, z.offset);
+            cfi = item.cfiFromRange(r);
+          } catch (err) {}
+          if (cfi) out.push({ cfi: cfi, text: t, id: idOf(a.node, run.block) });
+        });
+      }
+    }
+  } catch (e) {
+  } finally {
+    try { item.unload(); } catch (e2) {}
+  }
+  var at = 0;
+  if (atCfi) {
+    try {
+      var C = new ePub.CFI();
+      for (var x = 0; x < out.length; x++) {
+        if (C.compare(out[x].cfi, atCfi) <= 0) at = x; else break;
+      }
+    } catch (e3) {}
+  }
+  result.sentences = out;
+  result.at = at;
+  return JSON.stringify(result);
+};
+
+
+// Absorb patch: sentence mode draws the sentence inside the page, over the
+// book, so it gets the reader's font (a downloaded one lives only in here as
+// an @font-face) exactly as the page does. The app keeps the gestures and
+// the chrome; this only paints.
+window.absorbSentenceView = (function () {
+  var box = null, inner = null, cur = null, shownKey = null;
+  function ensure(o) {
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'absorbSentence';
+      box.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483647;' +
+        'display:flex;align-items:center;justify-content:center;overflow:hidden;' +
+        'box-sizing:border-box;padding:56px 28px;';
+      inner = document.createElement('div');
+      inner.style.cssText = 'position:relative;width:100%;max-height:100%;overflow:auto;';
+      box.appendChild(inner);
+      document.body.appendChild(box);
+      // A desktop scrollbar takes width, so one flashing up while a
+      // sentence swaps or the book scrolls underneath would nudge the words
+      // sideways. None show while the box is up.
+      var css = document.createElement('style');
+      css.id = 'absorbSentenceCss';
+      css.textContent = '#absorbSentence, #absorbSentence * { scrollbar-width: none !important; }' +
+        '#absorbSentence ::-webkit-scrollbar { display: none !important; }' +
+        'html.absorb-sentence, html.absorb-sentence body { overflow: hidden !important; scrollbar-width: none !important; }' +
+        'html.absorb-sentence::-webkit-scrollbar, html.absorb-sentence body::-webkit-scrollbar { display: none !important; }';
+      document.head.appendChild(css);
+      document.documentElement.classList.add('absorb-sentence');
+    }
+    // The page sheet makes every background transparent with !important so
+    // the app's own colour shows through; on Windows the web view paints
+    // white behind it instead, so the box must insist on its own.
+    box.style.setProperty('background-color', o.bg || '#fff', 'important');
+    // The book stays laid out underneath (its position still moves with the
+    // sentence) but must not show through.
+    // epub.js sets visibility:visible on each page frame itself, which beats
+    // a hidden parent; opacity on the parent cannot be overridden below it.
+    var viewer = document.getElementById('viewer');
+    if (viewer) { viewer.style.opacity = '0'; viewer.style.visibility = 'hidden'; }
+    if (window.__absorbApplyFontToDoc) { try { __absorbApplyFontToDoc(document); } catch (e) {} }
+    return box;
+  }
+  function styled(el, o) {
+    el.style.cssText = 'font-family:' + (o.family || 'inherit') + ';font-size:' + (o.size || 22) + 'px;' +
+      'line-height:' + (o.lineHeight || 1.5) + ';color:' + (o.color || '#000') + ';' +
+      'text-align:' + (o.align || 'center') + ';margin:0;' +
+      'transition:opacity 220ms ease, transform 220ms ease;will-change:opacity,transform;';
+  }
+  // A picture fills what the box has room for, its alt text small beneath.
+  function picture(el, o, caption) {
+    var img = document.createElement('img');
+    img.src = o.image;
+    img.alt = caption || '';
+    img.style.cssText = 'display:block;max-width:100%;max-height:calc(100vh - ' + (caption ? 180 : 120) + 'px);' +
+      'width:auto;height:auto;margin:0 auto;object-fit:contain;';
+    el.appendChild(img);
+    if (caption) {
+      var cap = document.createElement('div');
+      cap.textContent = caption;
+      cap.style.cssText = 'margin-top:12px;font-size:' + Math.round((o.size || 22) * 0.7) + 'px;' +
+        'color:' + (o.dim || o.color || '#000') + ';';
+      el.appendChild(cap);
+    }
+  }
+  // The leaving sentence bursts: pinned where it was, each word flies out
+  // from the sentence's centre a little way, turning as it fades. Spaces
+  // stay real spaces so the lines keep their wrap.
+  function burst(old) {
+    var r = old.getBoundingClientRect();
+    old.style.position = 'fixed';
+    old.style.left = r.left + 'px';
+    old.style.top = r.top + 'px';
+    old.style.width = r.width + 'px';
+    old.style.margin = '0';
+    old.style.pointerEvents = 'none';
+    old.style.transition = 'none';
+    box.appendChild(old);
+    var text = old.textContent;
+    old.textContent = '';
+    var words = text.split(' ');
+    var seed = 11;
+    function rnd() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 - 0.5; }
+    var spans = [];
+    for (var i = 0; i < words.length; i++) {
+      if (i > 0) old.appendChild(document.createTextNode(' '));
+      var w = document.createElement('span');
+      w.textContent = words[i];
+      w.style.display = 'inline-block';
+      w.style.transition = 'opacity 300ms ease-out, transform 360ms cubic-bezier(.2,.6,.3,1)';
+      old.appendChild(w);
+      spans.push(w);
+    }
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var moves = [];
+    for (var k = 0; k < spans.length; k++) {
+      var b = spans[k].getBoundingClientRect();
+      var dx = b.left + b.width / 2 - cx, dy = b.top + b.height / 2 - cy;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var push = 36 + Math.abs(rnd()) * 30;
+      moves.push({
+        x: Math.round(dx / len * push + rnd() * 16),
+        y: Math.round(dy / len * push + rnd() * 16 - 6),
+        rot: Math.round(rnd() * 16),
+        delay: Math.min(Math.round(len / 14), 90)
+      });
+    }
+    void old.offsetWidth;
+    for (var j = 0; j < spans.length; j++) {
+      var m = moves[j];
+      spans[j].style.transitionDelay = m.delay + 'ms';
+      spans[j].style.opacity = '0';
+      spans[j].style.transform = 'translate(' + m.x + 'px,' + m.y + 'px) rotate(' + m.rot + 'deg) scale(0.92)';
+    }
+    setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); }, 500);
+  }
+  // The leaving sentence is pinned where it was on screen, out of the flow,
+  // so the new one's height cannot shift it, then faded.
+  function leave(old, transformTo, ms) {
+    var r = old.getBoundingClientRect();
+    old.style.position = 'fixed';
+    old.style.left = r.left + 'px';
+    old.style.top = r.top + 'px';
+    old.style.width = r.width + 'px';
+    old.style.margin = '0';
+    old.style.pointerEvents = 'none';
+    old.style.transition = 'opacity ' + ms + 'ms ease, transform ' + ms + 'ms ease';
+    box.appendChild(old);
+    void old.offsetWidth;
+    old.style.opacity = '0';
+    old.style.transform = transformTo;
+    setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); }, ms + 40);
+  }
+  return {
+    set: function (text, key, dir, o) {
+      ensure(o);
+      if (cur && key === shownKey) {
+        if (!o.image) cur.textContent = text;
+        styled(cur, o);
+        return true;
+      }
+      var el = document.createElement('div');
+      if (o.image) picture(el, o, text); else el.textContent = text;
+      styled(el, o);
+      var style = o.transition || 'none';
+      var old = cur;
+      cur = el;
+      shownKey = key;
+      if (style === 'none' || !old) {
+        inner.innerHTML = '';
+        inner.appendChild(el);
+        return true;
+      }
+      if (style === 'burst') {
+        // A picture has no words to scatter, so it fades out instead.
+        if (old.querySelector('img')) leave(old, 'scale(0.96)', 220); else burst(old);
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 260ms ease 120ms';
+        inner.appendChild(el);
+        void el.offsetWidth;
+        el.style.opacity = '1';
+        return true;
+      }
+      var shift = style === 'slide' ? (12 * (dir || 1)) : 0;
+      leave(old, 'translateX(' + (-shift) + '%)', 200);
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(' + shift + '%)';
+      inner.appendChild(el);
+      void el.offsetWidth;
+      el.style.opacity = '1';
+      el.style.transform = 'translateX(0)';
+      return true;
+    },
+    hide: function () {
+      if (box && box.parentNode) box.parentNode.removeChild(box);
+      box = null; inner = null; cur = null; shownKey = null;
+      var css = document.getElementById('absorbSentenceCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      document.documentElement.classList.remove('absorb-sentence');
+      var viewer = document.getElementById('viewer');
+      if (viewer) { viewer.style.opacity = ''; viewer.style.visibility = ''; }
+    },
+    describe: function () {
+      var viewer = document.getElementById('viewer');
+      return 'box=' + (box ? 'yes z=' + box.style.zIndex + ' bg=' + getComputedStyle(box).backgroundColor : 'none') +
+        ' viewer=' + (viewer ? 'opacity ' + getComputedStyle(viewer).opacity + ' vis ' + getComputedStyle(viewer).visibility : 'none') +
+        ' frames=' + document.querySelectorAll('#viewer iframe').length;
+    }
+  };
+})();

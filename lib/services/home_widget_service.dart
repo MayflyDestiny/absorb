@@ -909,6 +909,8 @@ class HomeWidgetService {
       SleepTimerMode.off => null,
     };
     WearPlayerService.instance.publishChapters(hasBook ? player.currentItemId : null, chapters);
+    WearPlayerService.instance.publishBookmarks(
+        hasBook && player.currentEpisodeId == null ? player.currentItemId : null);
     WearPlayerService.instance.publish(
       hasBook: hasBook,
       itemId: hasBook ? player.currentItemId : null,
@@ -1464,8 +1466,8 @@ class HomeWidgetService {
 
   void _startProgressTimer() {
     if (_progressTimer?.isActive == true) return;
-    _progressTimer = Timer.periodic(const Duration(seconds: 120), (_) {
-      if (_backgrounded) {
+    _progressTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (_backgrounded && !Platform.isAndroid) {
         // Off-screen, widget reloads are budgeted by iOS and pointless, but
         // the np_* stash must keep tracking background playback: it is what
         // the cold-launch Now Playing primer and the post-kill resume read.
@@ -1477,6 +1479,13 @@ class HomeWidgetService {
           return;
         }
         _stashPlaybackStateForNativeCore(player);
+        return;
+      }
+      // On Android the home screen is in view exactly while the app is in
+      // the background, and a widget update is cheap, so the text that moves
+      // (time left, percent, chapter) keeps up by the minute there.
+      if (_backgrounded && !AudioPlayerService().isPlaying) {
+        _stopProgressTimer();
         return;
       }
       _scheduleUpdate();

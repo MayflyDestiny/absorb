@@ -37,6 +37,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
       SettingSearchEntry('Appearance', l.sectionAppearance, l.rotationLockTitle, [l.rotationLockOnSubtitle, l.rotationLockOffSubtitle]),
 
     // ── Customize Stats ──
+    SettingSearchEntry('Customize Stats', l.settingsCustomizeStats, l.settingsStatsTab, [l.settingsStatsTabDesc, l.settingsOpenStats]),
     SettingSearchEntry('Customize Stats', l.settingsCustomizeStats, l.statsGoalTitle, [l.statsGoalDaily, l.statsGoalWeekly, l.statsGoalMonthly, l.statsGoalOff]),
     SettingSearchEntry('Customize Stats', l.settingsCustomizeStats, l.statsWeekStartsOn, [l.absorbingSharedSunday, l.absorbingSharedMonday, l.absorbingSharedSaturday]),
     SettingSearchEntry('Customize Stats', l.settingsCustomizeStats, l.statsBookChallengeTitle, [l.statsBookChallengeDesc]),

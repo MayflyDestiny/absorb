@@ -423,6 +423,12 @@ class PlayerSettings {
   static Future<String> getPodcastTabLibraryId() => _get('podcastTabLibraryId', '');
   static Future<void> setPodcastTabLibraryId(String value) => _set('podcastTabLibraryId', value, notify: true);
 
+  // The Stats tab can leave the bottom bar to make room on a small phone;
+  // the page stays reachable from Settings and the hold menu.
+  static Future<bool> getStatsTabShown() => _get('statsTabShown', true);
+  static Future<void> setStatsTabShown(bool value) =>
+      _set('statsTabShown', value, notify: true);
+
   // Background new-episode notification checks, in minutes (0 = off).
   // WorkManager's floor for periodic jobs is 15 minutes.
   static Future<int> getEpisodeNotifIntervalMinutes() => _get('episodeNotifIntervalMinutes', 0);
@@ -589,9 +595,22 @@ class PlayerSettings {
   }
   static Future<void> setBookQueueMode(String value) {
     debugPrint('[Queue] Book queue mode -> $value');
-    return _serializeQueueModeMutation(
-      () => _set('bookQueueMode', value, notify: true),
-    );
+    return _serializeQueueModeMutation(() async {
+      await _set('bookQueueMode', value, notify: true);
+      await _endQueueSourceSuspension(value);
+    });
+  }
+
+  /// Set while a playlist or collection queue was turned off by playing
+  /// something outside it. Only then does playing one of its items bring
+  /// the queue back; a mode picked by hand ends that, while the playlist or
+  /// collection stays remembered for the queue manager's chip.
+  static Future<bool> isQueueSourceSuspended() =>
+      _get('queueSourceSuspended', false);
+
+  static Future<void> _endQueueSourceSuspension(String value) async {
+    if (value == 'playlist' || value == 'collection') return;
+    await ScopedPrefs.remove('queueSourceSuspended');
   }
 
   static Future<bool> getShowUpNextLabel() => _get('showUpNextLabel', true);
@@ -604,9 +623,10 @@ class PlayerSettings {
   }
   static Future<void> setPodcastQueueMode(String value) {
     debugPrint('[Queue] Podcast queue mode -> $value');
-    return _serializeQueueModeMutation(
-      () => _set('podcastQueueMode', value, notify: true),
-    );
+    return _serializeQueueModeMutation(() async {
+      await _set('podcastQueueMode', value, notify: true);
+      await _endQueueSourceSuspension(value);
+    });
   }
 
   /// Per-show podcast auto-advance direction: 'oldest_first' (default) or
@@ -658,7 +678,28 @@ class PlayerSettings {
         await ScopedPrefs.setString('bookQueueMode', 'playlist');
         await ScopedPrefs.setString('podcastQueueMode', 'playlist');
         await ScopedPrefs.setString('queuePlaylistId', playlistId);
+        // Playlist mode replaces any collection queue, remembered or active.
+        await ScopedPrefs.remove('queueCollectionId');
+        await ScopedPrefs.remove('queueCollectionName');
+        await ScopedPrefs.remove('queueSourceSuspended');
         _notify();
+      });
+
+  /// Playing something outside the active playlist turns the queue off for
+  /// it but keeps the playlist remembered, so playing one of its items
+  /// again picks the queue back up and the queue manager still offers it.
+  static Future<bool> suspendQueueModePlaylistIfActive(String playlistId) =>
+      _serializeQueueModeMutation(() async {
+        if (await getBookQueueMode() != 'playlist' ||
+            await getPodcastQueueMode() != 'playlist' ||
+            await getQueuePlaylistId() != playlistId) {
+          return false;
+        }
+        await ScopedPrefs.setString('bookQueueMode', 'off');
+        await ScopedPrefs.setString('podcastQueueMode', 'off');
+        await ScopedPrefs.setBool('queueSourceSuspended', true);
+        _notify();
+        return true;
       });
 
   /// Exit playlist queue mode: both modes back to 'off' and active playlist cleared.
@@ -697,18 +738,21 @@ class PlayerSettings {
   static Future<String?> getQueueCollectionName() =>
       ScopedPrefs.getString('queueCollectionName');
 
-  static Future<void> setQueueModeCollection(String collectionId, String name) =>
-      _serializeQueueModeMutation(() async {
-        await ScopedPrefs.setString('bookQueueMode', 'collection');
-        await ScopedPrefs.setString('queueCollectionId', collectionId);
-        await ScopedPrefs.setString('queueCollectionName', name);
-        // Collection mode replaces any active playlist queue.
-        await ScopedPrefs.remove('queuePlaylistId');
-        if ((await ScopedPrefs.getString('podcastQueueMode')) == 'playlist') {
-          await ScopedPrefs.setString('podcastQueueMode', 'off');
-        }
-        _notify();
-      });
+  static Future<void> setQueueModeCollection(
+    String collectionId,
+    String name,
+  ) => _serializeQueueModeMutation(() async {
+    await ScopedPrefs.setString('bookQueueMode', 'collection');
+    await ScopedPrefs.setString('queueCollectionId', collectionId);
+    await ScopedPrefs.setString('queueCollectionName', name);
+    // Collection mode replaces any active playlist queue.
+    await ScopedPrefs.remove('queuePlaylistId');
+    if ((await ScopedPrefs.getString('podcastQueueMode')) == 'playlist') {
+      await ScopedPrefs.setString('podcastQueueMode', 'off');
+    }
+    await ScopedPrefs.remove('queueSourceSuspended');
+    _notify();
+  });
 
   static Future<void> clearQueueModeCollection() =>
       _serializeQueueModeMutation(() async {
@@ -716,6 +760,19 @@ class PlayerSettings {
         await ScopedPrefs.remove('queueCollectionId');
         await ScopedPrefs.remove('queueCollectionName');
         _notify();
+      });
+
+  /// Like [suspendQueueModePlaylistIfActive], for a collection queue.
+  static Future<bool> suspendQueueModeCollectionIfActive(String collectionId) =>
+      _serializeQueueModeMutation(() async {
+        if (await getBookQueueMode() != 'collection' ||
+            await getQueueCollectionId() != collectionId) {
+          return false;
+        }
+        await ScopedPrefs.setString('bookQueueMode', 'off');
+        await ScopedPrefs.setBool('queueSourceSuspended', true);
+        _notify();
+        return true;
       });
 
   static Future<bool> clearQueueModeCollectionIfActive(String collectionId) =>
@@ -1262,8 +1319,8 @@ class PlayerSettings {
   static Future<String> getEreaderTranslateWith() => _get('ereaderTranslateWith', '');
   static Future<void> setEreaderTranslateWith(String value) => _set('ereaderTranslateWith', value);
 
-  static Future<double> getEreaderAutoScrollSpeed() => _get('ereaderAutoScrollSpeed', 40.0);
-  static Future<void> setEreaderAutoScrollSpeed(double value) => _set('ereaderAutoScrollSpeed', value);
+  static Future<double> getEreaderAutoScrollWpm() => _get('ereaderAutoScrollWpm', 250.0);
+  static Future<void> setEreaderAutoScrollWpm(double value) => _set('ereaderAutoScrollWpm', value);
   static Future<int> getEreaderAutoScrollSleepMinutes() => _get('ereaderAutoScrollSleepMinutes', 30);
   static Future<void> setEreaderAutoScrollSleepMinutes(int value) => _set('ereaderAutoScrollSleepMinutes', value);
 

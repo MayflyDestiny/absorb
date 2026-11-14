@@ -16,7 +16,6 @@ import '../services/home_widget_service.dart';
 import '../services/sleep_timer_service.dart';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:palette_generator/palette_generator.dart';
 import '../utils/cover_accent.dart';
 import '../services/cover_blur_cache.dart';
 import '../services/cover_palette_cache.dart';
@@ -54,6 +53,7 @@ import 'admin_stats_screen.dart';
 import 'admin_upload_screen.dart';
 import 'admin_users_screen.dart';
 import 'bookorbit_admin_screen.dart';
+import 'bookorbit_api_key_settings_screen.dart';
 import 'bookorbit_email_screen.dart';
 import 'bookorbit_libraries_screen.dart';
 import 'bookorbit_users_screen.dart';
@@ -198,6 +198,7 @@ class _AppShellState extends State<AppShell>
   // and which one is highlighted is derived from the selected library.
   bool _podcastTabEnabled = false;
   String _podcastTabLibraryId = '';
+  bool _statsTabShown = true;
   final _homeKey = GlobalKey<HomeScreenState>();
   final _libraryKey = GlobalKey<LibraryScreenState>();
   final _player = AudioPlayerService();
@@ -387,6 +388,7 @@ class _AppShellState extends State<AppShell>
 
   void _loadStartScreen() {
     PlayerSettings.getStartScreen().then((idx) {
+      if (idx == 3 && !_statsTabShown) return;
       if (mounted && idx != _currentIndex && idx >= 0 && idx <= 4) {
         setState(() => _currentIndex = idx);
         _syncPlayerOnScreen();
@@ -474,11 +476,15 @@ class _AppShellState extends State<AppShell>
   Future<void> _loadPodcastTabPrefs() async {
     final enabled = await PlayerSettings.getPodcastTabEnabled();
     final libId = await PlayerSettings.getPodcastTabLibraryId();
+    final statsShown = await PlayerSettings.getStatsTabShown();
     if (!mounted) return;
-    if (enabled != _podcastTabEnabled || libId != _podcastTabLibraryId) {
+    if (enabled != _podcastTabEnabled ||
+        libId != _podcastTabLibraryId ||
+        statsShown != _statsTabShown) {
       setState(() {
         _podcastTabEnabled = enabled;
         _podcastTabLibraryId = libId;
+        _statsTabShown = statsShown;
       });
     }
     _restoreBookLibraryForCurrentTab(restoreLibraryPage: true);
@@ -503,22 +509,43 @@ class _AppShellState extends State<AppShell>
     }
   }
 
-  // Display-destination index <-> stack page mapping when the Podcasts tab
-  // is shown (it sits at display slot 2 and shares stack page 1).
+  /// The bar's slots in order, by stable tab key. Podcasts only sits there
+  /// when enabled and Stats can be hidden, so slot numbers are never fixed.
+  List<String> _destTabs(bool podcastsShown) => [
+        'home',
+        'library',
+        if (podcastsShown) 'podcasts',
+        'absorbing',
+        if (_statsTabShown) 'stats',
+        'settings',
+      ];
+
+  static int _pageForTab(String tab) => switch (tab) {
+        'home' => 0,
+        'library' || 'podcasts' => 1,
+        'absorbing' => 2,
+        'stats' => 3,
+        _ => 4,
+      };
+
+  // Display-destination index <-> stack page mapping. The Podcasts tab
+  // shares stack page 1 with Library.
   int _pageForDest(int dest, bool podcastsShown) {
-    if (!podcastsShown) return dest;
-    if (dest <= 1) return dest;
-    if (dest == 2) return 1;
-    return dest - 1;
+    final tabs = _destTabs(podcastsShown);
+    return _pageForTab(tabs[dest.clamp(0, tabs.length - 1)]);
   }
 
   int _selectedDest(LibraryProvider lib, bool podcastsShown) {
-    if (!podcastsShown) return _currentIndex;
-    if (_currentIndex == 0) return 0;
-    if (_currentIndex == 1) {
-      return lib.selectedLibraryId == _podcastTabLibraryId ? 2 : 1;
+    final tabs = _destTabs(podcastsShown);
+    if (_currentIndex == 1 &&
+        podcastsShown &&
+        lib.selectedLibraryId == _podcastTabLibraryId) {
+      return tabs.indexOf('podcasts');
     }
-    return _currentIndex + 1;
+    final dest = tabs.indexWhere((t) => _pageForTab(t) == _currentIndex);
+    // A page with no slot, like Stats opened while its tab is hidden, leaves
+    // the bar on Settings, where the way to it lives.
+    return dest >= 0 ? dest : tabs.indexOf('settings');
   }
 
   /// Keep the selected library in step with the destination being entered:
@@ -810,9 +837,8 @@ class _AppShellState extends State<AppShell>
       );
     }
 
-    PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
-        .then((palette) {
-          final seedColor = accentFromCoverPalette(palette);
+    CoverAccents.seed(coverUrl, provider)
+        .then((seedColor) {
           if (seedColor == null) {
             _lastCoverItemId = null;
             _lastCoverIdentity = null;
@@ -1304,19 +1330,26 @@ class _AppShellState extends State<AppShell>
     unawaited(_runNavHold(_tabForSlot(slot, destCount)));
   }
 
-  /// Slot index to stable tab key. The Podcasts tab only exists sometimes, so
-  /// everything after it shifts by one without this.
+  /// Slot index to stable tab key, from the same list the bar was built from.
   String _tabForSlot(int slot, int destCount) {
-    final hasPodcasts = destCount >= 6;
-    if (slot == 0) return 'home';
-    if (slot == 1) return 'library';
-    if (hasPodcasts && slot == 2) return 'podcasts';
-    final rest = hasPodcasts ? slot - 3 : slot - 2;
-    return switch (rest) {
-      0 => 'absorbing',
-      1 => 'stats',
-      _ => 'settings',
-    };
+    final tabs = _destTabs(_podcastsShown(context.read<LibraryProvider>()));
+    return tabs[slot.clamp(0, tabs.length - 1)];
+  }
+
+  /// Stats by its tab when it has one, otherwise as a page of its own.
+  void _openStats() {
+    final podcastsShown = _podcastsShown(context.read<LibraryProvider>());
+    final index = _destTabs(podcastsShown).indexOf('stats');
+    if (_statsTabShown && index >= 0) {
+      setState(() => _currentIndex = index);
+      _syncPlayerOnScreen();
+      _ensurePageBuilt(index);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const StatsScreen(pushed: true)),
+    );
   }
 
   bool _rmabConfigured = false;
@@ -1696,6 +1729,8 @@ class _AppShellState extends State<AppShell>
           context,
           MaterialPageRoute(builder: (_) => const DownloadsScreen()),
         );
+      case 'stats':
+        _openStats();
       case 'admin':
         unawaited(_openAdminPage('home'));
       case 'sleep':
@@ -1792,6 +1827,7 @@ class _AppShellState extends State<AppShell>
         'users' => const BookOrbitUsersScreen(),
         'libraries' => const BookOrbitLibrariesScreen(),
         'email' => const BookOrbitEmailScreen(initialTab: BoEmailTab.servers),
+        'apikeys' => const BookOrbitApiKeySettingsScreen(),
         _ => const BookOrbitAdminScreen(),
       };
       await Navigator.push(context, MaterialPageRoute(builder: (_) => screen!));
@@ -2042,12 +2078,13 @@ class _AppShellState extends State<AppShell>
         label: Wording.of(context).appShellAbsorbingTab,
         tooltip: '',
       ),
-      NavigationDestination(
-        icon: const Icon(Icons.bar_chart_rounded),
-        selectedIcon: const Icon(Icons.bar_chart_rounded),
-        label: l.appShellStatsTab,
-        tooltip: '',
-      ),
+      if (_statsTabShown)
+        NavigationDestination(
+          icon: const Icon(Icons.bar_chart_rounded),
+          selectedIcon: const Icon(Icons.bar_chart_rounded),
+          label: l.appShellStatsTab,
+          tooltip: '',
+        ),
       NavigationDestination(
         icon: const Icon(Icons.settings_outlined),
         selectedIcon: const Icon(Icons.settings_rounded),

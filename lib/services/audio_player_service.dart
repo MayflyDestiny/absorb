@@ -2420,19 +2420,32 @@ class AudioPlayerService extends ChangeNotifier {
     return (title: ch, subtitle: subtitle);
   }
 
-  /// Chapter-aware primary line for the current item (GH #298).
-  String get nowPlayingTitle => nowPlayingLabels(
-    _currentTitle ?? '',
-    _currentAuthor ?? '',
-    currentChapter?['title'] as String?,
-  ).title;
+  /// Both lines of the media controls for the current item at its current
+  /// position, in the layout the user picked, so the home screen widgets
+  /// read the same as the lock screen, Android Auto and CarPlay.
+  ({String title, String subtitle}) get nowPlayingLines {
+    final posSec = position.inMilliseconds / 1000.0;
+    final chapterIndex = _chapterIndexAt(_chapters, posSec);
+    return _nowPlayingLines(
+      title: _currentTitle ?? '',
+      author: _currentAuthor ?? '',
+      chapter: chapterIndex >= 0
+          ? (_chapters[chapterIndex] as Map<String, dynamic>)['title'] as String?
+          : null,
+      chapterIndex: chapterIndex,
+      chapterCount: _chapters.length,
+      posSec: posSec,
+      totalDuration: totalDuration,
+      narrator: _currentNarrator,
+      series: _currentSeries,
+    );
+  }
 
-  /// Chapter-aware secondary line ("Author · Book") for the current item.
-  String get nowPlayingSubtitle => nowPlayingLabels(
-    _currentTitle ?? '',
-    _currentAuthor ?? '',
-    currentChapter?['title'] as String?,
-  ).subtitle;
+  /// The top line of the media controls for the current item.
+  String get nowPlayingTitle => nowPlayingLines.title;
+
+  /// The second line of the media controls for the current item.
+  String get nowPlayingSubtitle => nowPlayingLines.subtitle;
 
   /// Adopts a chapter list for the item being played, ignoring one that matches
   /// what is already loaded.
@@ -4093,6 +4106,10 @@ class AudioPlayerService extends ChangeNotifier {
   // Set true when BT/headphones disconnect so the interruption handler
   // won't auto-resume playback onto the phone speaker.
   static bool _noisyPause = false;
+
+  /// The volume to put back once a route-removed check has decided; set
+  /// while the player is muted for it.
+  static double? _routeMutedVolume;
   // Whether BT audio was connected when the current interruption began.
   static bool _wasOnBluetooth = false;
   static bool _duckBriefInterruptions = false;
@@ -4394,15 +4411,33 @@ class AudioPlayerService extends ChangeNotifier {
               '[AudioSession] Output route removed: '
               '${lost.map((d) => '${d.type.name} "${d.name}"').join(', ')}',
             );
-            // Settle re-check: some devices drop and re-add a route when
-            // playback starts or the link hiccups. Only pause if it stays gone.
+            // Android moves the sound to the phone speaker the moment the
+            // route goes, so mute right away: two seconds of the book out
+            // loud in a quiet car was the whole complaint (GH #480). The
+            // settle re-check below then decides between pausing and
+            // carrying on: some devices drop and re-add a route when
+            // playback starts or the link hiccups.
+            if (_routeMutedVolume == null) {
+              _routeMutedVolume = service._player?.volume ?? 1.0;
+              await service._player?.setVolume(0);
+            }
+            Future<void> unmute() async {
+              final v = _routeMutedVolume;
+              if (v == null) return;
+              _routeMutedVolume = null;
+              await service._player?.setVolume(v);
+            }
             await Future.delayed(const Duration(seconds: 2));
-            if (!service.isPlaying) return;
+            if (!service.isPlaying) {
+              await unmute();
+              return;
+            }
             final current = await session.getDevices(includeInputs: false);
             if (!lost.any((d) => !current.contains(d))) {
               debugPrint(
                 '[AudioSession] Output route came back - keeping playback',
               );
+              await unmute();
               return;
             }
             // Android Auto carries the audio itself, over USB or WiFi. The
@@ -4415,6 +4450,7 @@ class AudioPlayerService extends ChangeNotifier {
               debugPrint(
                 '[AudioSession] Output route removed while playing - car client seen, keeping playback',
               );
+              await unmute();
               return;
             }
             debugPrint(
@@ -4427,7 +4463,9 @@ class AudioPlayerService extends ChangeNotifier {
             // those away and Play looked dead (#369).
             _handler?.cancelPendingClick(guardMs: 1500);
             if (service.isPlaying) await service.pause();
+            await unmute();
           } catch (e) {
+            _routeMutedVolume = null;
             debugPrint('[AudioSession] Device-change handler error: $e');
           }
         },
@@ -5612,11 +5650,14 @@ class AudioPlayerService extends ChangeNotifier {
     // so build the key from the raw parts to avoid double-appending the episode.
     final pKey = episodeId != null ? '$rawItemId-$episodeId' : rawItemId;
     // Reconcile the start position against the server's saved progress before
-    // audio begins. App-screen starts wait up to [_serverPositionCheckCap]
-    // (2s); headphone / widget / Android Auto / cold-start plays use the
-    // shorter [_sessionRaceWindow] (700ms) so an unreachable server falls back
-    // to local files sub-second without overwriting newer server progress
-    // when online (GH #321, GH #430).
+    // audio begins, capped at [_serverPositionCheckCap]. A play from the app
+    // screen always asks. Headphone / widget / Android Auto / cold-start
+    // plays of a download skip it while this phone's own save is fresh, so a
+    // quick re-press needs nothing from the network (GH #321); once the save
+    // is old enough for another device to have carried the book on, they ask
+    // too, since starting stale then pushed the old spot over the newer one
+    // on the server (GH #430). Whatever position we start with, we keep - no
+    // seeking after.
     if (forceStartTime) {
       debugPrint(
         '[Player] Forced start time: ${startTime}s — skipping server/local position comparison',
@@ -5625,10 +5666,13 @@ class AudioPlayerService extends ChangeNotifier {
       // The server signed in now doesn't hold this book's place, and could
       // hold a different book's under the same id.
       debugPrint('[Player] Another account\'s download - playing its spot on this phone, ${startTime.toStringAsFixed(1)}s');
+    } else if (!_playFromUi && startTime > 0 && await _localPositionIsFresh(pKey)) {
+      debugPrint(
+        '[Player] Skipping progress reconcile - not started from the app screen and the local position is fresh, playing ${startTime.toStringAsFixed(1)}s now',
+      );
     } else if (_api != null && !manualOffline && !_knownOffline) {
       try {
-        final checkCap =
-            _playFromUi ? _serverPositionCheckCap : _sessionRaceWindow;
+        const checkCap = _serverPositionCheckCap;
         final serverProgress = await _api!
             .getItemProgress(pKey)
             .timeout(checkCap, onTimeout: () => null);
@@ -7444,6 +7488,18 @@ class AudioPlayerService extends ChangeNotifier {
     try {
       final api = _api;
       if (api == null || _currentItemId == null) return;
+      // Android takes the decoder away from a paused app when the headphones
+      // connect or disconnect, which surfaces as a renderer error with
+      // nothing playing. Starting a new stream here would play a book
+      // nobody asked for; the next play rebuilds the player where it was.
+      if (!(_player?.playing ?? false)) {
+        debugPrint(
+          '[Player] Decoder failed while paused at '
+          '${(position.inMilliseconds / 1000.0).toStringAsFixed(1)}s - rebuilding on the next play',
+        );
+        _playerBroken = true;
+        return;
+      }
       debugPrint(
         '[Player] Playback error in stream - retrying with server transcoding',
       );
@@ -10030,11 +10086,12 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// [fromUi] marks a play started from the app's own screen. App-screen
-  /// resumes wait up to [_serverPositionCheckCap] (2s) for a server position
+  /// resumes wait up to [_serverPositionCheckCap] for a server position
   /// another device may have advanced; headphone, notification, widget, lock
-  /// screen and Android Auto resumes use the shorter [_sessionRaceWindow]
-  /// (700ms) before audio starts so an unreachable server falls back right
-  /// away without clobbering newer server progress when online (GH #430).
+  /// screen and Android Auto resumes only do so after a pause long enough
+  /// for that to be likely ([_localPositionStaleAfter]), so a quick re-press
+  /// starts right away and a stale one no longer clobbers newer server
+  /// progress (GH #430).
   Future<void> play({String? logDetail, bool fromUi = false}) async {
     _pauseRequested = false;
     // Parked on a finished book: both hold and replay reload on play — hold
@@ -10296,8 +10353,9 @@ class AudioPlayerService extends ChangeNotifier {
         ? null
         : DateTime.now().difference(_lastPauseTime!);
     final longPause = pausedFor != null && pausedFor >= _pauseStopTimeout;
+    // A failed decoder can leave the player idle; it is rebuilt all the same.
     bool canRebuild() =>
-        _player?.processingState != ProcessingState.idle &&
+        (_playerBroken || _player?.processingState != ProcessingState.idle) &&
         _currentItemId != null &&
         _api != null;
     String? rebuildWhy = _playerBroken
@@ -10579,6 +10637,19 @@ class AudioPlayerService extends ChangeNotifier {
   /// meanwhile. Shorter pauses resume instantly with no server round trip.
   static const _serverPositionCheckMinPause = Duration(minutes: 2);
 
+  /// How old this phone's own save of a position gets before a headphone,
+  /// widget or car start asks the server whether another device moved on.
+  static const _localPositionStaleAfter = Duration(minutes: 5);
+
+  /// Whether this phone saved the item's position within
+  /// [_localPositionStaleAfter].
+  Future<bool> _localPositionIsFresh(String progressKey) async {
+    final ts = await _progressSync.getSavedTimestamp(progressKey);
+    if (ts <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch - ts <
+        _localPositionStaleAfter.inMilliseconds;
+  }
+
   /// Longest an app-screen resume waits on the server before starting where
   /// the phone left off. A late answer is dropped, never seeked to.
   static const _serverPositionCheckCap = Duration(seconds: 2);
@@ -10616,8 +10687,9 @@ class AudioPlayerService extends ChangeNotifier {
   /// Before a resume after a long pause, look at the server's saved progress
   /// and, if another device genuinely moved it ahead, return that position for
   /// the resume to start at; null keeps the phone's. Runs only before audio,
-  /// capped (2s for app-screen resumes, 700ms for headphone / car / widget),
-  /// and only after a pause long enough to matter; anything slower starts local.
+  /// capped, and only after a pause long enough to matter (a few minutes from
+  /// the app screen, [_localPositionStaleAfter] from headphones, car or
+  /// widget); anything slower starts local.
   Future<double?> _serverPositionBeforeResume({bool fromUi = true}) async {
     if (_api == null || _currentItemId == null || _player == null) return null;
     // An idle player is about to be re-initialised through playItem, which
@@ -10636,9 +10708,11 @@ class AudioPlayerService extends ChangeNotifier {
     final lastPause = _lastPauseTime;
     // BookOrbit has no live progress push to cover a short pause, so check
     // after any pause long enough for someone to have listened elsewhere.
-    final minPause = _api!.isBookOrbit
-        ? const Duration(seconds: 10)
-        : _serverPositionCheckMinPause;
+    final minPause = !fromUi
+        ? _localPositionStaleAfter
+        : _api!.isBookOrbit
+            ? const Duration(seconds: 10)
+            : _serverPositionCheckMinPause;
     if (lastPause == null || DateTime.now().difference(lastPause) < minPause) {
       return null;
     }
@@ -10653,8 +10727,7 @@ class AudioPlayerService extends ChangeNotifier {
         : _currentItemId!;
     try {
       final localTs = await _progressSync.getSavedTimestamp(pKey);
-      final checkCap =
-          fromUi ? _serverPositionCheckCap : _sessionRaceWindow;
+      const checkCap = _serverPositionCheckCap;
       final serverProgress = await _api!
           .getItemProgress(pKey)
           .timeout(checkCap, onTimeout: () => null);
@@ -10848,6 +10921,17 @@ class AudioPlayerService extends ChangeNotifier {
     unawaited(_persistLastUserPlaying(false));
 
     notifyListeners();
+    // A pause while the item is still loading has nothing to save: the
+    // player sits at zero until its start seek lands, and saving that sent
+    // 0:00 to the server (GH #479). The start keeps the saved position.
+    final state = _player?.processingState;
+    if (_isLoadingNewItem &&
+        (state == null ||
+            state == ProcessingState.idle ||
+            state == ProcessingState.loading)) {
+      debugPrint('[Player] Paused while the item is still loading - keeping the saved position');
+      return;
+    }
     final pos = _positionForProgressSave;
     debugPrint(
       '[Player] Saving on pause: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s',

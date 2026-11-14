@@ -7,7 +7,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart' show CompressFormat, ScreenshotConfiguration;
+import 'package:flutter_inappwebview/flutter_inappwebview.dart'
+    show CompressFormat, InAppWebViewController, ScreenshotConfiguration;
 import 'package:url_launcher/url_launcher.dart';
 import 'dictionary_sheet.dart';
 import '../services/dictionary_service.dart';
@@ -285,6 +286,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   bool _readAlongLocating = false;
   bool _readAlongAllowBack = false;
   DateTime? _readAlongTurnPending;
+  /// True while the whole sentence is lit rather than word by word.
+  bool _readAlongSentenceLit = false;
+  int _readAlongHeardIndex = -1;
   DateTime? _readAlongMissSince;
   bool _readAlongStepped = false;
   DateTime? _readAlongSeekAt;
@@ -295,6 +299,36 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   // tap Back to narration or the narration reaches the page you are on.
   bool _readAlongBrowsing = false;
   DateTime _readAlongBrowseAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Sentence mode: the book a sentence (or a few) at a time in a view over
+  // the page. The page underneath follows each move, so progress, bookmarks
+  // and read along keep working as they do.
+  bool _sentenceMode = false;
+  int _sentencesAtATime = 1;
+  int _sentenceWpm = 250;
+  bool _sentenceAuto = false;
+  Timer? _sentenceAutoTimer;
+  Timer? _sentenceSyncTimer;
+  final Map<int, List<_Sentence>> _sentenceCache = {};
+  final Map<int, String> _sentenceHrefs = {};
+  final Set<int> _sentenceLoads = {};
+  int _sentenceSection = -1;
+  int _sentenceIndex = 0;
+  int _spineCount = 0;
+  bool _sentencesLoading = false;
+  bool _sentenceAtEnd = false;
+  int _sentenceMoveRun = 0;
+  int _settingsTab = 0;
+  int _settingsTabDir = 1;
+  double _settingsSwipe = 0;
+  String? _sentencePaintedKey;
+  // Which way the last move went, for the slide transition.
+  int _sentenceDir = 1;
+  String _sentenceTransition = 'none';
+  static const _kSentenceTransition = 'ereader_sentence_transition';
+  static const _kSentenceMode = 'ereader_sentence_mode';
+  static const _kSentencesAtATime = 'ereader_sentences_at_a_time';
+  static const _kSentenceWpm = 'ereader_sentence_wpm';
   DateTime? _readAlongSeenSince;
   DateTime _readAlongOffPageLog = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -305,6 +339,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   OverlayClip? _narrationWentTo;
   DateTime _narrationTurnAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _narrationTickBusy = false;
+  int _narrationRouteTick = 0;
+  double _narrationLastPos = -1;
   // Where the lit sentence was on the last tick: on, low, before, after.
   String? _narrationWhere;
 
@@ -347,10 +383,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   List<Translator> _translators = const [];
   String _translateWith = '';
 
-  // Auto scroll (rolling blind). Speed is px/sec of blind descent; the text
-  // itself never moves, so this is how fast the next page paints over this one.
+  // Auto scroll (rolling blind). The pace is words per minute; the page
+  // script turns that into how fast the next page paints over this one from
+  // the chapter's words per page.
   bool _autoScroll = false;
-  double _autoScrollSpeed = 40;
+  double _autoScrollWpm = 250;
   bool _autoScrollPaused = false;
   LiveOverlayToast? _speedToast;
   int _marginV = 16; // top + bottom
@@ -461,6 +498,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ReadListenSync.instance.readerOpened(widget.itemId);
+    unawaited(LyricsService.instance.reloadDisplayPrefs());
     _readingApi = context.read<AuthProvider>().apiService;
     // BookOrbit keeps reading time as reading, the way its own reader logs
     // it, so it's always counted there. Audiobookshelf has only listening
@@ -498,11 +536,19 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   late final EreaderVolumeNav _volumeNav = EreaderVolumeNav(
     onPrev: () {
       if (_autoScroll) return;
+      if (_sentenceMode) {
+        _sentenceStep(false);
+        return;
+      }
       _userMoved('volume key');
       _turnPage(false);
     },
     onNext: () {
       if (_autoScroll) return;
+      if (_sentenceMode) {
+        _sentenceStep(true);
+        return;
+      }
       _userMoved('volume key');
       _turnPage(true);
     },
@@ -512,8 +558,419 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// along knows the reader moved on purpose and doesn't pull the page back.
   void _keyTurn(bool forward) {
     if (_autoScroll) return;
+    if (_sentenceMode) {
+      _sentenceStep(forward);
+      return;
+    }
     _userMoved('keyboard');
     _turnByUser(forward);
+  }
+
+  List<_Sentence> get _sentences => _sentenceCache[_sentenceSection] ?? const [];
+
+  /// The sentences on screen together: up to the chosen number, though a
+  /// picture always stands alone.
+  List<_Sentence> get _shownSentences => _groupFrom(_sentences, _sentenceIndex);
+
+  List<_Sentence> _groupFrom(List<_Sentence> list, int start) {
+    if (start < 0 || start >= list.length) return const [];
+    if (list[start].image != null) return [list[start]];
+    final out = <_Sentence>[];
+    for (var i = start; i < list.length && out.length < _sentencesAtATime; i++) {
+      if (list[i].image != null) break;
+      out.add(list[i]);
+    }
+    return out;
+  }
+
+  /// Where the group shown just before [end] starts.
+  int _groupStartBefore(List<_Sentence> list, int end) {
+    if (end <= 0) return 0;
+    if (list[end - 1].image != null) return end - 1;
+    var start = end;
+    while (start > 0 && end - start < _sentencesAtATime && list[start - 1].image == null) {
+      start--;
+    }
+    return start;
+  }
+
+  _Sentence? get _currentSentence => _shownSentences.firstOrNull;
+
+  Future<void> _updateSentenceMode(bool on) async {
+    if (on == _sentenceMode) return;
+    if (on && _autoScroll) await _toggleAutoScroll();
+    if (!mounted) return;
+    setState(() {
+      _sentenceMode = on;
+      _sentenceAtEnd = false;
+    });
+    await ScopedPrefs.setBool(_kSentenceMode, on);
+    if (on) {
+      await _startSentenceMode();
+      return;
+    }
+    _stopSentenceAuto();
+    _sentenceSyncTimer?.cancel();
+    _sentenceSyncTimer = null;
+    unawaited(_epubController?.webViewController?.evaluateJavascript(
+        source: 'window.absorbSentenceView && absorbSentenceView.hide()'));
+    // Leave the page on the sentence that was showing.
+    final s = _currentSentence;
+    if (s != null) unawaited(_epubController?.display(cfi: s.cfi));
+    _sentenceSection = -1;
+    _sentenceCache.clear();
+    _sentenceHrefs.clear();
+  }
+
+  Future<void> _updateSentencesAtATime(int n) async {
+    setState(() => _sentencesAtATime = n.clamp(1, 5));
+    await ScopedPrefs.setInt(_kSentencesAtATime, _sentencesAtATime);
+    _armSentenceAuto();
+  }
+
+  Future<void> _updateSentenceTransition(String style) async {
+    setState(() => _sentenceTransition = style);
+    await ScopedPrefs.setString(_kSentenceTransition, style);
+  }
+
+  void _setSentenceAuto(bool on) {
+    if (on == _sentenceAuto) return;
+    _toggleSentenceAuto();
+  }
+
+  Future<void> _updateSentenceWpm(int wpm) async {
+    setState(() => _sentenceWpm = wpm.clamp(100, 600));
+    await ScopedPrefs.setInt(_kSentenceWpm, _sentenceWpm);
+    _armSentenceAuto();
+  }
+
+  /// Picks up at the sentence the page is on. Waits for a first location
+  /// when the mode was on as the book opened.
+  Future<void> _startSentenceMode() async {
+    final cfi = _currentCfi;
+    if (cfi == null || _sentencesLoading) return;
+    setState(() => _sentencesLoading = true);
+    final loaded = await _loadSentences(-1, atCfi: cfi);
+    if (!mounted) return;
+    setState(() {
+      _sentencesLoading = false;
+      if (loaded != null && _sentenceMode) {
+        _sentenceSection = loaded.section;
+        _sentenceIndex = loaded.at;
+      }
+    });
+    if (loaded != null && _sentenceMode) {
+      debugPrint('[Sentence] on at section ${loaded.section} sentence ${loaded.at} '
+          'of ${_sentences.length} item=${widget.itemId}');
+      _prefetchSentences();
+    }
+  }
+
+  Future<({int section, int at})?> _loadSentences(int section, {String? atCfi}) async {
+    final wc = _epubController?.webViewController;
+    if (wc == null) return null;
+    _sentenceLoads.add(section);
+    try {
+      final res = await wc
+          .callAsyncJavaScript(
+            functionBody: 'return await window.absorbSentences(section, atCfi);',
+            arguments: {'section': section, 'atCfi': atCfi ?? ''},
+          )
+          .timeout(const Duration(seconds: 30), onTimeout: () => null);
+      final raw = res?.value;
+      if (raw is! String || raw.isEmpty) return null;
+      final d = jsonDecode(raw) as Map<String, dynamic>;
+      final sec = (d['section'] as num?)?.toInt() ?? section;
+      _spineCount = (d['count'] as num?)?.toInt() ?? _spineCount;
+      final list = <_Sentence>[];
+      for (final e in d['sentences'] as List<dynamic>? ?? const []) {
+        final m = e as Map<String, dynamic>;
+        final cfi = m['cfi'] as String? ?? '';
+        final text = (m['text'] as String? ?? '').trim();
+        final image = m['image'] as String?;
+        final picture = image != null && image.isNotEmpty;
+        if (cfi.isEmpty || (text.isEmpty && !picture)) continue;
+        list.add(_Sentence(cfi: cfi, text: text, id: m['id'] as String?, image: picture ? image : null));
+      }
+      _sentenceCache[sec] = list;
+      _sentenceHrefs[sec] = d['href'] as String? ?? '';
+      return (section: sec, at: ((d['at'] as num?)?.toInt() ?? 0).clamp(0, max(0, list.length - 1)).toInt());
+    } catch (e) {
+      debugPrint('[Sentence] could not split section $section: $e');
+      return null;
+    } finally {
+      _sentenceLoads.remove(section);
+    }
+  }
+
+  /// The next section's sentences, ready before they are needed.
+  void _prefetchSentences() {
+    final next = _sentenceSection + 1;
+    if (_sentenceSection < 0 || next >= _spineCount) return;
+    if (_sentenceCache.containsKey(next) || _sentenceLoads.contains(next)) return;
+    unawaited(_loadSentences(next));
+  }
+
+  void _sentenceStep(bool forward) {
+    if (!_sentenceMode || _sentenceSection < 0 || _sentencesLoading) return;
+    final list = _sentences;
+    _sentenceDir = forward ? 1 : -1;
+    if (forward) {
+      final n = _shownSentences.length;
+      if (_sentenceIndex + n >= list.length) {
+        unawaited(_sentenceMoveSection(1));
+        return;
+      }
+      setState(() => _sentenceIndex += n);
+    } else {
+      if (_sentenceIndex <= 0) {
+        unawaited(_sentenceMoveSection(-1));
+        return;
+      }
+      setState(() => _sentenceIndex = _groupStartBefore(list, _sentenceIndex));
+    }
+    _afterSentenceMove();
+  }
+
+  /// Carries on into the next (or previous) section that has any text.
+  Future<void> _sentenceMoveSection(int dir) async {
+    final run = ++_sentenceMoveRun;
+    _sentenceDir = dir;
+    var sec = _sentenceSection + dir;
+    while (sec >= 0 && (_spineCount == 0 || sec < _spineCount)) {
+      if (!_sentenceCache.containsKey(sec)) {
+        setState(() => _sentencesLoading = true);
+        await _loadSentences(sec);
+        if (!mounted || run != _sentenceMoveRun) return;
+      }
+      final list = _sentenceCache[sec] ?? const [];
+      if (list.isNotEmpty) {
+        setState(() {
+          _sentencesLoading = false;
+          _sentenceAtEnd = false;
+          _sentenceSection = sec;
+          _sentenceIndex = dir > 0 ? 0 : _groupStartBefore(list, list.length);
+        });
+        _afterSentenceMove();
+        _prefetchSentences();
+        return;
+      }
+      sec += dir;
+    }
+    if (!mounted) return;
+    setState(() {
+      _sentencesLoading = false;
+      _sentenceAtEnd = dir > 0;
+    });
+    _stopSentenceAuto();
+  }
+
+  /// After a move: the page below follows a moment later, read along is told
+  /// when the reader did it, and auto advance restarts its clock.
+  void _afterSentenceMove({bool byUser = true}) {
+    if (byUser) _userMoved('sentence');
+    _sentenceSyncTimer?.cancel();
+    _sentenceSyncTimer = Timer(const Duration(milliseconds: 350), () {
+      final s = _currentSentence;
+      if (mounted && _sentenceMode && s != null) {
+        unawaited(_epubController?.display(cfi: s.cfi));
+      }
+    });
+    _armSentenceAuto();
+  }
+
+  void _toggleSentenceAuto() {
+    setState(() => _sentenceAuto = !_sentenceAuto);
+    if (_sentenceAuto) {
+      _sentenceAtEnd = false;
+      _armSentenceAuto();
+    } else {
+      _stopSentenceAuto();
+    }
+  }
+
+  void _armSentenceAuto() {
+    _sentenceAutoTimer?.cancel();
+    if (!_sentenceAuto || !_sentenceMode) return;
+    final shown = _shownSentences;
+    final words = shown.fold<int>(
+        0, (n, s) => n + s.text.split(RegExp(r'\s+')).length);
+    // A picture gets a few seconds to look at; words go by the chosen pace.
+    final ms = shown.any((s) => s.image != null)
+        ? 3000
+        : max(900, (words / _sentenceWpm * 60000).round());
+    _sentenceAutoTimer = Timer(Duration(milliseconds: ms), () {
+      if (mounted && _sentenceAuto && _sentenceMode) _sentenceStep(true);
+    });
+  }
+
+  void _stopSentenceAuto() {
+    _sentenceAutoTimer?.cancel();
+    _sentenceAutoTimer = null;
+    if (_sentenceAuto && mounted) setState(() => _sentenceAuto = false);
+  }
+
+  /// Narration drives the sentences: the one being read is the one shown,
+  /// unless the reader has moved off on their own, in which case following
+  /// resumes once the narration reaches what they are looking at.
+  void _sentenceFollowClip(OverlayClip clip) {
+    final id = clip.fragment;
+    if (id == null || !_sentenceMode) return;
+    final sec = clip.section;
+    final list = _sentenceCache[sec];
+    if (list == null) {
+      if (!_sentenceLoads.contains(sec)) {
+        unawaited(_loadSentences(sec).then((_) {
+          if (mounted) setState(() {});
+        }));
+      }
+      return;
+    }
+    final i = list.indexWhere((s) => s.id == id);
+    if (i < 0) return;
+    final shown = sec == _sentenceSection &&
+        i >= _sentenceIndex &&
+        i < _sentenceIndex + _sentencesAtATime;
+    if (_readAlongBrowsing) {
+      if (shown) setState(() => _readAlongBrowsing = false);
+      return;
+    }
+    if (shown) return;
+    _sentenceDir = sec > _sentenceSection || (sec == _sentenceSection && i > _sentenceIndex) ? 1 : -1;
+    setState(() {
+      _sentenceSection = sec;
+      _sentenceIndex = i;
+      _sentenceAtEnd = false;
+    });
+    _afterSentenceMove(byUser: false);
+    _prefetchSentences();
+  }
+
+  /// Paints the shown sentence inside the page, in the reader's own font.
+  /// Called from build so font, theme and transition changes repaint too.
+  void _paintSentence(Color fg, Color fgDim) {
+    final wc = _epubController?.webViewController;
+    if (wc == null || !_sentenceMode) return;
+    final l = AppLocalizations.of(context)!;
+    final waiting = _sentencesLoading || (_sentenceSection < 0 && !_sentenceAtEnd);
+    final shown = _shownSentences;
+    final picture = waiting || _sentenceAtEnd ? null : shown.firstOrNull?.image;
+    final text = waiting
+        ? ''
+        : _sentenceAtEnd
+            ? l.readerSentenceEnd
+            : shown.map((s) => s.text).join('  ');
+    final key = waiting ? 'wait' : _sentenceAtEnd ? 'end' : '$_sentenceSection:$_sentenceIndex';
+    final palette = _resolvePalette(context);
+    final family = _font.family.isEmpty ? 'inherit' : _font.family;
+    String css(Color c) => 'rgba(${(c.r * 255).round()},${(c.g * 255).round()},'
+        '${(c.b * 255).round()},${c.a.toStringAsFixed(2)})';
+    final opts = {
+      'bg': palette.bg,
+      'color': css(_sentenceAtEnd ? fgDim : fg),
+      'family': family,
+      'size': (_fontSize * 1.35).round(),
+      'lineHeight': _lineHeight + 0.1,
+      'align': _alignLeft ? 'left' : 'center',
+      'transition': PlayerSettings.einkMode ? 'none' : _sentenceTransition,
+      'dim': css(fgDim),
+      if (picture != null) 'image': picture,
+    };
+    unawaited(wc.evaluateJavascript(
+        source: 'window.absorbSentenceView && absorbSentenceView.set('
+            '${jsonEncode(text)}, ${jsonEncode(key)}, $_sentenceDir, ${jsonEncode(opts)})'));
+    if (key != _sentencePaintedKey) {
+      _sentencePaintedKey = key;
+      unawaited(wc
+          .evaluateJavascript(source: 'window.absorbSentenceView ? absorbSentenceView.describe() : "no view"')
+          .then((r) => debugPrint('[Sentence] painted $key: $r')));
+    }
+  }
+
+  Widget _buildSentenceView(Color bg, Color fg, Color fgDim, Color accent) {
+    final l = AppLocalizations.of(context)!;
+    final list = _sentences;
+    final href = _sentenceHrefs[_sentenceSection] ?? '';
+    final chapter = (href.isEmpty ? null : _chapterForHref(href)) ?? widget.title;
+    final pad = _frozenViewerPadding();
+    final waiting = _sentencesLoading || (_sentenceSection < 0 && !_sentenceAtEnd);
+    _paintSentence(fg, fgDim);
+    return LayoutBuilder(
+      builder: (ctx, cons) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (d) {
+          final frac = cons.maxWidth > 0 ? d.localPosition.dx / cons.maxWidth : 0.5;
+          final fy = cons.maxHeight > 0 ? d.localPosition.dy / cons.maxHeight : 0.5;
+          switch (_tapZones.actionAt(frac, fy)) {
+            case 'prev':
+              _sentenceStep(false);
+            case 'next':
+              _sentenceStep(true);
+            case 'menu':
+              _toggleControls();
+          }
+        },
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v < -200) _sentenceStep(true);
+          if (v > 200) _sentenceStep(false);
+        },
+        child: Padding(
+          padding: EdgeInsets.only(top: pad.top, bottom: pad.bottom),
+          child: Column(
+            children: [
+              Container(
+                color: bg,
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(28, 18, 28, 6),
+                child: Text(chapter,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: fgDim, fontSize: 13)),
+              ),
+              // The sentence itself is painted by the page underneath.
+              Expanded(
+                child: waiting
+                    ? Center(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: accent)),
+                          const SizedBox(height: 14),
+                          Text(l.readerSentencePreparing, style: TextStyle(color: fgDim)),
+                        ]),
+                      )
+                    : const SizedBox.expand(),
+              ),
+              Container(
+                color: bg,
+                padding: const EdgeInsets.fromLTRB(28, 0, 16, 10),
+                child: Row(
+                  children: [
+                    Text(
+                      list.isEmpty ? '' : '${min(_sentenceIndex + 1, list.length)} / ${list.length}',
+                      style: TextStyle(color: fgDim, fontSize: 12),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: l.readerSentenceAutoAdvance,
+                      onPressed: _toggleSentenceAuto,
+                      icon: Icon(
+                        _sentenceAuto ? Icons.pause_circle_rounded : Icons.play_circle_outline_rounded,
+                        color: _sentenceAuto ? accent : fg,
+                        size: 30,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// A turn asked for by tap or key. With no selection toolbar up, any
@@ -720,6 +1177,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _themeId = await ScopedPrefs.getString(_kTheme) ?? '';
     _fontId = await ScopedPrefs.getString(_kFont) ?? 'original';
     _pinTop = await ScopedPrefs.getBool(_kPinTop) ?? false;
+    _sentenceMode = await ScopedPrefs.getBool(_kSentenceMode) ?? false;
+    _sentencesAtATime = (await ScopedPrefs.getInt(_kSentencesAtATime) ?? 1).clamp(1, 5);
+    _sentenceWpm = (await ScopedPrefs.getInt(_kSentenceWpm) ?? 250).clamp(100, 600);
+    final transition = await ScopedPrefs.getString(_kSentenceTransition);
+    if (transition == 'fade' || transition == 'slide' || transition == 'burst') {
+      _sentenceTransition = transition!;
+    }
     final barProgress = await ScopedPrefs.getString(_kTopBarProgress);
     if (barProgress == 'chapter' || barProgress == 'both') _topBarProgress = barProgress!;
     _keepAwake = await ScopedPrefs.getBool(_kKeepAwake) ?? true;
@@ -729,7 +1193,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _volumeNavWhilePlaying = await PlayerSettings.getEreaderVolumeNavWhilePlaying();
     _translateWith = await PlayerSettings.getEreaderTranslateWith();
     _translators = await TranslateService.available();
-    _autoScrollSpeed = (await PlayerSettings.getEreaderAutoScrollSpeed())
+    _autoScrollWpm = (await PlayerSettings.getEreaderAutoScrollWpm())
         .clamp(_autoScrollMin, _autoScrollMax)
         .toDouble();
     if (mounted) setState(() {});
@@ -1135,6 +1599,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
   @override
   void dispose() {
+    _sentenceAutoTimer?.cancel();
+    _sentenceSyncTimer?.cancel();
     _narrationSpotTimer?.cancel();
     unawaited(_narrationCarryReadingSpot());
     ReadListenSync.instance.readerClosed(widget.itemId, _currentCfi, moved: !_holdOpenSpot);
@@ -1200,8 +1666,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     _wakeScreenAgain();
     // While auto scroll runs, the in-WebView pad owns taps: pause, resume and
     // press-and-hold to stop. This Listener sees raw pointers regardless of the
-    // platform view, so without this it turned pages under the blind.
-    if (_autoScroll) return;
+    // platform view, so without this it turned pages under the blind. The tap
+    // zone editor covers the page the same way, and a press on its card has
+    // turned the page beneath it on e-ink readers.
+    if (_autoScroll || _editingTapZones) return;
     final now = DateTime.now();
     final sinceMs = now.difference(_lastReaderTap).inMilliseconds;
     if (sinceMs < 350) {
@@ -1682,7 +2150,13 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         debugPrint('[EbookReader] server position check timed out item=${widget.itemId}');
         return null;
       });
-      if (!mounted || server == null) return;
+      if (!mounted) return;
+      final phone = lib.getProgressData(widget.itemId);
+      debugPrint('[EbookReader] server spot item=${widget.itemId}: '
+          '${server == null ? 'none' : '${server['ebookLocation']} pct=${server['ebookProgress']} updated=${server['ebookUpdatedAt']}'}'
+          ' | phone: ${phone?['ebookLocation']} pct=${phone?['ebookProgress']}'
+          '${pending == null ? '' : ' | queued: ${pending['loc']} ts=${pending['ts']}'}');
+      if (server == null) return;
       if (pending != null) {
         final serverAt = (server['ebookUpdatedAt'] as num?)?.toInt();
         final pendingAt = (pending['ts'] as num?)?.toInt();
@@ -2532,7 +3006,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
             initialChildSize: 0.85,
             minChildSize: 0.4,
             maxChildSize: 0.95,
-            builder: (ctx, scrollCtrl) => SingleChildScrollView(
+            // A sideways swipe anywhere in the sheet flips to the next tab,
+            // like turning a page. Outside the scroll view so the blank
+            // space under a short tab counts too.
+            builder: (ctx, scrollCtrl) => GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: (_) => _settingsSwipe = 0,
+            onHorizontalDragUpdate: (d) => _settingsSwipe += d.delta.dx,
+            onHorizontalDragEnd: (d) => _settingsSwiped(d, setSheetState),
+            child: SingleChildScrollView(
             controller: scrollCtrl,
             child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
@@ -2551,9 +3033,29 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 ),
                 const SizedBox(height: 16),
                 Text(l.readerSettings, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<int>(
+                    segments: [
+                      ButtonSegment(value: 0, label: Text(l.readerSectionText)),
+                      ButtonSegment(value: 1, label: Text(l.readerSectionPage)),
+                      ButtonSegment(value: 2, label: Text(l.readerSectionReading)),
+                      ButtonSegment(value: 3, label: Text(l.readerSectionScreen)),
+                    ],
+                    selected: {_settingsTab},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => _showSettingsTab(s.first, setSheetState),
+                  ),
+                ),
                 const SizedBox(height: 4),
+                _settingsTabSwitcher(
+                  Column(
+                    key: ValueKey(_settingsTab),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
 
-                section(l.readerSectionText),
+                if (_settingsTab == 0) ...[
                 // Font — opens a picker with built-in + downloadable fonts.
                 InkWell(
                   borderRadius: BorderRadius.circular(8),
@@ -2683,8 +3185,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   ],
                 ),
                 const SizedBox(height: 16),
+                ],
 
-                section(l.readerSectionPage),
+                if (_settingsTab == 1) ...[
+                const SizedBox(height: 8),
                 // Side margins (left + right)
                 Row(children: [
                   Icon(Icons.padding_rounded, size: 20, color: cs.onSurfaceVariant),
@@ -2734,6 +3238,105 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     _updateScroll(v);
                   },
                 ),
+                ],
+
+                if (_settingsTab == 2) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l.readerSentenceMode, style: tt.bodyMedium),
+                  subtitle: Text(l.readerSentenceModeHint,
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  value: _sentenceMode,
+                  onChanged: (v) {
+                    setSheetState(() {});
+                    _updateSentenceMode(v);
+                  },
+                ),
+                if (_sentenceMode) ...[
+                  Row(children: [
+                    Icon(Icons.short_text_rounded, size: 20, color: cs.onSurfaceVariant),
+                    const SizedBox(width: 12),
+                    Text(l.readerSentencesAtATime, style: tt.bodyMedium),
+                  ]),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 1, label: Text('1')),
+                        ButtonSegment(value: 2, label: Text('2')),
+                        ButtonSegment(value: 3, label: Text('3')),
+                        ButtonSegment(value: 5, label: Text('5')),
+                      ],
+                      selected: {_sentencesAtATime},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (s) {
+                        setSheetState(() {});
+                        _updateSentencesAtATime(s.first);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Icon(Icons.animation_rounded, size: 20, color: cs.onSurfaceVariant),
+                    const SizedBox(width: 12),
+                    Text(l.readerSentenceTransition, style: tt.bodyMedium),
+                  ]),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final style in const ['none', 'fade', 'slide', 'burst'])
+                        ChoiceChip(
+                          label: Text(switch (style) {
+                            'fade' => l.readerSentenceTransitionFade,
+                            'slide' => l.readerPageTurnSlide,
+                            'burst' => l.readerSentenceTransitionBurst,
+                            _ => l.readerPageTurnNone,
+                          }),
+                          selected: _sentenceTransition == style,
+                          onSelected: (_) {
+                            setSheetState(() {});
+                            _updateSentenceTransition(style);
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l.readerSentenceAutoAdvance, style: tt.bodyMedium),
+                    value: _sentenceAuto,
+                    onChanged: (v) {
+                      setSheetState(() {});
+                      _setSentenceAuto(v);
+                    },
+                  ),
+                  Row(children: [
+                    Icon(Icons.speed_rounded, size: 20, color: cs.onSurfaceVariant),
+                    const SizedBox(width: 12),
+                    Text(l.readerSentenceSpeed, style: tt.bodyMedium),
+                    const Spacer(),
+                    Text(l.readerSentenceWpmValue(_sentenceWpm),
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  ]),
+                  Slider(
+                    value: _sentenceWpm.toDouble(),
+                    min: 100,
+                    max: 600,
+                    divisions: 20,
+                    onChanged: (v) {
+                      setSheetState(() {});
+                      _updateSentenceWpm(v.round());
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                ],
+
+                if (_settingsTab == 1) ...[
                 // Page layout — Auto shows two pages on wide screens (tablets).
                 Row(children: [
                   Icon(Icons.auto_stories_rounded, size: 20, color: cs.onSurfaceVariant),
@@ -2810,6 +3413,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   ),
                 ),
 
+                ],
+
+                if (_settingsTab == 3) ...[
                 section(l.readerSectionTopBar),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -2948,9 +3554,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     ),
                   ),
 
+                ],
+
                 // Read along, mirrored from the transcription settings so the
                 // reader can change them without leaving the book.
-                if (_transcriptionOn || _useNarration) ...[
+                if (_settingsTab == 2 && (_transcriptionOn || _useNarration)) ...[
                   section(l.readAlong),
                   // E-ink always follows by sentence, and an EPUB's own
                   // narration is timed by the sentence, so the choice is hidden.
@@ -2998,7 +3606,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   const SizedBox(height: 16),
                 ],
 
-                if (_readingApi?.isBookOrbit != true) ...[
+                if (_settingsTab == 3 && _readingApi?.isBookOrbit != true) ...[
                   section(l.readerSectionStats),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -3012,9 +3620,12 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                     },
                   ),
                 ],
-
+                    ],
+                  ),
+                ),
               ],
             ),
+          ),
           ),
           ),
           ),
@@ -3024,13 +3635,55 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     ).whenComplete(_refreshCurlShot);
   }
 
-  static const double _autoScrollMin = 6;
-  static const double _autoScrollMax = 220;
+  /// A drag of a few dozen px counts, as does a quick flick that covered
+  /// less. Left goes to the next tab, right to the one before.
+  void _settingsSwiped(DragEndDetails d, void Function(void Function()) setSheetState) {
+    final dx = _settingsSwipe;
+    final v = d.primaryVelocity ?? 0;
+    final dir = dx.abs() >= 48
+        ? (dx < 0 ? 1 : -1)
+        : v.abs() >= 150
+            ? (v < 0 ? 1 : -1)
+            : 0;
+    if (dir == 0) return;
+    _showSettingsTab((_settingsTab + dir).clamp(0, 3), setSheetState);
+  }
 
-  int get _autoScrollPercent =>
-      (((_autoScrollSpeed - _autoScrollMin) / (_autoScrollMax - _autoScrollMin)) * 100)
-          .round()
-          .clamp(1, 100);
+  void _showSettingsTab(int tab, void Function(void Function()) setSheetState) {
+    if (tab == _settingsTab) return;
+    setSheetState(() {
+      _settingsTabDir = tab > _settingsTab ? 1 : -1;
+      _settingsTab = tab;
+    });
+  }
+
+  /// The chosen tab's settings sliding in from the side the swipe came from.
+  Widget _settingsTabSwitcher(Widget child) {
+    if (PlayerSettings.einkMode) return child;
+    final dir = _settingsTabDir.toDouble();
+    final current = child.key;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.topCenter,
+        children: [...previousChildren, if (currentChild != null) currentChild],
+      ),
+      transitionBuilder: (w, animation) {
+        final incoming = w.key == current;
+        final from = Offset((incoming ? 0.12 : -0.12) * dir, 0);
+        return SlideTransition(
+          position: Tween(begin: from, end: Offset.zero).animate(animation),
+          child: FadeTransition(opacity: animation, child: w),
+        );
+      },
+      child: child,
+    );
+  }
+
+  static const double _autoScrollMin = 50;
+  static const double _autoScrollMax = 800;
 
   void _setupAutoScrollHandlers() {
     _epubController?.webViewController?.addJavaScriptHandler(
@@ -3038,15 +3691,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       callback: (args) {
         final v = args.isNotEmpty ? (args[0] as num?)?.toDouble() : null;
         if (v == null || !mounted) return;
-        setState(() => _autoScrollSpeed = v);
+        setState(() => _autoScrollWpm = v);
         final l = AppLocalizations.of(context)!;
         _speedToast ??= LiveOverlayToast.show(
           context,
-          l.readerAutoScrollSpeed(_autoScrollPercent),
+          l.readerSentenceWpmValue(_autoScrollWpm.round()),
           icon: Icons.speed_rounded,
         );
         _speedToast?.update(
-          l.readerAutoScrollSpeed(_autoScrollPercent),
+          l.readerSentenceWpmValue(_autoScrollWpm.round()),
           icon: Icons.speed_rounded,
         );
       },
@@ -3062,7 +3715,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       callback: (args) {
         _speedToast?.dismiss();
         _speedToast = null;
-        PlayerSettings.setEreaderAutoScrollSpeed(_autoScrollSpeed);
+        PlayerSettings.setEreaderAutoScrollWpm(_autoScrollWpm);
       },
     );
     // The blind stopping on its own: the last page of the book, or a page
@@ -3123,6 +3776,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   }
 
   Future<void> _toggleAutoScroll() async {
+    if (!_autoScroll && _sentenceMode) await _updateSentenceMode(false);
     if (_autoScroll) {
       await _epubController?.autoScrollStop();
       _cancelAutoScrollSleep();
@@ -3140,7 +3794,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     // scroll on regardless left the reader with its taps swallowed and no
     // bars to reach this button again.
     final started =
-        await _epubController?.autoScrollStart(speed: _autoScrollSpeed) ?? false;
+        await _epubController?.autoScrollStart(wpm: _autoScrollWpm, eink: PlayerSettings.einkMode) ?? false;
     if (!mounted || !started) return;
     _screenWakeHeldOff = false;
     ScreenWake.hold('reader', true);
@@ -4848,6 +5502,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         });
       }
     }
+    // The chosen color lives in the preferences; the narration path has no
+    // enable step of its own to read them, so it reads them here.
+    await LyricsService.instance.reloadDisplayPrefs();
     await _epubController?.webViewController
         ?.evaluateJavascript(source: _narrationBootstrapSource());
     _narrationWentTo = null;
@@ -4860,6 +5517,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       });
     }
     ScreenWake.hold('reader', true);
+    await LyricsService.instance.refreshRoute();
+    _narrationLastPos = -1;
     _readAlongTimer?.cancel();
     _readAlongTimer = Timer.periodic(
         const Duration(milliseconds: 150), (_) => _narrationTick());
@@ -4875,9 +5534,25 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _stopReadAlong();
       return;
     }
-    final clip = n.clipAt(player.position.inMilliseconds / 1000.0);
+    final svc = LyricsService.instance;
+    if (++_narrationRouteTick % 33 == 0) unawaited(svc.refreshRoute());
+    // The playhead runs ahead of what headphones are playing, so the clip is
+    // picked for the moment being heard, with the same offset the transcript
+    // uses. Sentence mode waits a beat more on top, so the last word is heard
+    // before the sentence goes, except right after a seek, where the new spot
+    // should show at once.
+    final pos = player.position.inMilliseconds / 1000.0;
+    final seeked = (pos - _narrationLastPos).abs() > 3;
+    _narrationLastPos = pos;
+    var heard = pos - svc.offsetSeconds;
+    if (_sentenceMode && !seeked) heard -= 0.15 * player.speed;
+    final clip = n.clipAt(heard);
     final id = clip?.fragment;
     if (clip == null || id == null) return;
+    if (_sentenceMode) {
+      _sentenceFollowClip(clip);
+      return;
+    }
     final wc = _epubController?.webViewController;
     if (wc == null) return;
     _narrationTickBusy = true;
@@ -4921,6 +5596,14 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         await wc.evaluateJavascript(
             source: 'window.__absorbMO && __absorbMO.go(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})');
       } else if (where == 'after' || where == 'before') {
+        // A sentence that starts on the page before is no reason to go back
+        // while the words being heard are on this page: the turn forward
+        // mid-sentence put them here, and going back only flipped the page
+        // to and fro until the sentence ended.
+        if (where == 'before' &&
+            (await _narrationHeardSpot(wc, clip, id, heard))?['visible'] == true) {
+          return;
+        }
         _narrationTurnAt = now;
         _readAlongTurnPending = now;
         unawaited(_turnPage(where == 'after', fresh: true));
@@ -4931,11 +5614,56 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         debugPrint('[ReadAlong] narration moved to ${clip.textHref}#$id');
         await wc.evaluateJavascript(
             source: 'window.__absorbMO && __absorbMO.go(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})');
+      } else if (where == 'on') {
+        // The sentence starts on this page but may run onto the next. The
+        // voice is placed in its text by time, so the page turns once the
+        // part being heard is over there, instead of waiting at the last
+        // line until the next sentence begins.
+        final d = await _narrationHeardSpot(wc, clip, id, heard);
+        if (d != null && d['visible'] == false && d['dir'] == 1) {
+          _narrationTurnAt = now;
+          _readAlongTurnPending = now;
+          debugPrint('[ReadAlong] the voice is on to the next page mid-sentence '
+              '(${d['frac']}% into ${clip.textHref}#$id)');
+          if (_scroll) {
+            await wc.evaluateJavascript(
+                source: 'window.__absorbMO && __absorbMO.reveal(${jsonEncode(clip.textHref)}, ${jsonEncode(id)})');
+          } else {
+            unawaited(_turnPage(true, fresh: true));
+          }
+        }
       }
     } catch (e) {
       debugPrint('[ReadAlong] narration tick failed: $e');
     } finally {
       _narrationTickBusy = false;
+    }
+  }
+
+  /// Where the words being heard sit inside the lit sentence, by time, and
+  /// whether that spot is on the page in view. Null for a sentence too short
+  /// to place anything in, or when the page script did not answer.
+  Future<Map<String, dynamic>?> _narrationHeardSpot(
+    InAppWebViewController wc,
+    OverlayClip clip,
+    String id,
+    double heard,
+  ) async {
+    final span = clip.end - clip.begin;
+    if (span <= 1.0) return null;
+    final frac = ((heard - clip.begin) / span).clamp(0.0, 1.0);
+    if (frac <= 0.05) return null;
+    final raw = await wc.evaluateJavascript(
+        source: 'window.__absorbMO ? __absorbMO.heard(${jsonEncode(clip.textHref)}, '
+            '${jsonEncode(id)}, ${frac.toStringAsFixed(3)}) : ""');
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      final d = jsonDecode(raw) as Map<String, dynamic>;
+      if (d['held'] != true) return null;
+      d['frac'] = (frac * 100).round();
+      return d;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -5281,7 +6009,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     return AnimatedBuilder(
       animation: svc,
       builder: (context, _) {
-        if (_readAlongLost) {
+        if (_readAlongLost && !_narrationReadAlong) {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -5307,7 +6035,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         }
         // After the gate, a seek can still land outside the transcript; the
         // next chunk takes a few seconds and until then nothing lights up.
-        final gate = svc.gateProgress ?? (svc.buffering ? 0.0 : null);
+        final gate = _narrationReadAlong
+            ? null
+            : (svc.gateProgress ?? (svc.buffering ? 0.0 : null));
         if (gate != null) {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -5619,12 +6349,24 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       }
       return;
     }
-    // Same sentence, later word: a cheap repaint from the cached offsets.
-    if (_readAlongLocating ||
-        _readAlongPageWords == 0 ||
-        !_readAlongWordMode) {
+    if (_readAlongLocating || _readAlongPageWords == 0) return;
+    // Following by sentence, the whole sentence stays lit, but the page still
+    // turns once the words being heard have run onto the next one; a long
+    // sentence ending a page used to leave you waiting on its last line. A
+    // line without word timing (a narrated book's clips) is paced evenly.
+    if (_readAlongSentenceLit) {
+      final at = heard + 0.15 * player.speed;
+      final span = line.end - line.start;
+      final idx = line.wordStarts.isNotEmpty
+          ? line.wordIndexAt(at)
+          : span <= 0
+              ? -1
+              : ((at - line.start) / span * _readAlongLineWords).floor();
+      await _readAlongHeardWord(idx);
       return;
     }
+    // Same sentence, later word: a cheap repaint from the cached offsets.
+    if (!_readAlongWordMode) return;
     final idx = line.wordIndexAt(heard + 0.15 * player.speed);
     if (idx < 0) return;
     // Whisper's word count and the page's can differ on a corrected line, so
@@ -5675,6 +6417,33 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _readAlongTurn(d['cfi'], d['dir'], why: 'word $wordIndex is off the page');
     } else if (d['seen'] == true) {
       _readAlongCaughtUp();
+    }
+  }
+
+  /// With the sentence lit whole, the word being heard is only placed, never
+  /// painted, to tell when the voice has left the page.
+  Future<void> _readAlongHeardWord(int lineIndex) async {
+    if (lineIndex < 0) return;
+    final scaled = _readAlongLineWords > 0
+        ? (lineIndex * _readAlongPageWords / _readAlongLineWords).floor()
+        : lineIndex;
+    final idx = scaled.clamp(0, _readAlongPageWords - 1);
+    if (idx == _readAlongHeardIndex) return;
+    _readAlongHeardIndex = idx;
+    final raw = await _epubController?.webViewController?.evaluateJavascript(
+        source: 'window.__absorbRA ? __absorbRA.heard($idx) : ""');
+    if (!mounted || !_readAlongOn) return;
+    Map<String, dynamic>? d;
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        d = jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+    if (d == null || d['held'] != true) return;
+    _readAlongLastMatch = DateTime.now();
+    if (d['visible'] == false) {
+      _readAlongTurn(d['cfi'], d['dir'],
+          why: 'the voice is on to the next page mid-sentence (word $idx)');
     }
   }
 
@@ -5849,6 +6618,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       }
       _readAlongPageWords = (d['words'] as num?)?.toInt() ?? 0;
       _readAlongWordIndex = wordMode && _readAlongPageWords > 0 ? 0 : -1;
+      _readAlongSentenceLit = !wordMode;
+      _readAlongHeardIndex = -1;
       _readAlongAt = (d['at'] as num?)?.toInt() ?? -1;
       // Logs the heard line against the page sentence it landed on, so a
       // mis-mapping shows up as two different sentences on one line.
@@ -7554,6 +8325,9 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 }
                 _currentCfi = value.startCfi;
                 _firstShownCfi ??= value.startCfi;
+                if (_sentenceMode && _sentenceSection < 0 && !_sentencesLoading) {
+                  unawaited(_startSentenceMode());
+                }
                 _queueCurlShot();
                 _updateBookmarkState();
                 _repaintHighlightMarks();
@@ -7607,6 +8381,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 _readerTapAt(x, y, 'touch');
               },
           ))),
+
+          // The tap zone editor lives in the viewer area, under this layer,
+          // so the layer steps aside while the zones are being edited.
+          if (_sentenceMode && !_editingTapZones)
+            Positioned.fill(child: _buildSentenceView(bg, fg, fgDim, accent)),
 
           // Top overlay: what you are reading and how far in. Controls live
           // at the bottom now, in thumb reach. Pinned, it sits above the page
@@ -7674,10 +8453,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                                 // view leaves nothing to go back to.
                                 child: _readAlongBrowsing && !(_narrationReadAlong && _narrationOnScreen)
                                     ? _backToNarrationButton(accent)
-                                    : _narrationReadAlong
-                                        // The book's own timings need no sync tuning.
-                                        ? const SizedBox.shrink()
-                                        : _readAlongSyncPill(fg),
+                                    : _readAlongSyncPill(fg),
                               ),
                             ),
                           Padding(
@@ -7809,6 +8585,18 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 }
 
 /// Payload returned from [_EbookSearchScreen]'s runSearch callback.
+/// One sentence of a section: where it starts in the book and what it says.
+/// [id] is the nearest element id, which is how a narrated book names the
+/// sentence its audio is reading.
+class _Sentence {
+  final String cfi;
+  final String text;
+  final String? id;
+  /// A picture standing among the sentences, with [text] as its caption.
+  final String? image;
+  const _Sentence({required this.cfi, required this.text, this.id, this.image});
+}
+
 class _SearchPayload {
   final String query;
   final List<EpubSearchResult> results;

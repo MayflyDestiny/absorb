@@ -18,7 +18,6 @@ import '../services/bookorbit_email.dart';
 import '../services/bookorbit_mapper.dart';
 import 'absorb_placement.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:palette_generator/palette_generator.dart';
 import '../utils/cover_accent.dart';
 import '../utils/series_id.dart';
 import 'package:path_provider/path_provider.dart';
@@ -847,25 +846,29 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           width: 240,
           height: 240);
     }
-    final t0 = DateTime.now();
-    debugPrint('[BookDetail] _deriveCoverScheme start url=$url');
-    PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16)
-        .then((palette) {
-      debugPrint('[BookDetail] PaletteGenerator ok in ${DateTime.now().difference(t0).inMilliseconds}ms');
-      final seedColor = accentFromCoverPalette(palette);
-      if (seedColor == null || !mounted || _dismissing) return;
-      final scheme = ColorScheme.fromSeed(
-          seedColor: seedColor, brightness: brightness);
-      _coverSchemeCache[cacheKey] = scheme;
-      _applyCoverScheme(scheme);
+    // A cover seen before colors the sheet in the same frame it opens.
+    final known = CoverAccents.known(url);
+    if (known != null) {
+      debugPrint('[BookDetail] cover accent known: ${known.toARGB32().toRadixString(16)}');
+      _rawCoverScheme = ColorScheme.fromSeed(seedColor: known, brightness: brightness);
+      if (mounted) setState(() {});
+      return;
+    }
+    CoverAccents.seed(url, provider).then((seedColor) {
+      debugPrint('[BookDetail] cover accent: ${seedColor?.toARGB32().toRadixString(16)}');
+      if (seedColor == null || !mounted) return;
+      setState(() => _rawCoverScheme = ColorScheme.fromSeed(
+        seedColor: seedColor, brightness: brightness));
     }).catchError((e) {
-      debugPrint('[BookDetail] PaletteGenerator error after ${DateTime.now().difference(t0).inMilliseconds}ms: $e');
-      if (!mounted || _dismissing) return;
-      setState(() => _coverSchemeUrl = null);
-      _applyCoverScheme(ColorScheme.fromSeed(
-        seedColor: Theme.of(context).colorScheme.primary,
-        brightness: brightness,
-      ));
+      debugPrint('[BookDetail] cover accent failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _coverSchemeUrl = null;
+        _rawCoverScheme = ColorScheme.fromSeed(
+          seedColor: Theme.of(context).colorScheme.primary,
+          brightness: brightness,
+        );
+      });
     });
     } catch (e) {
       debugPrint('[BookDetail] _deriveCoverScheme failed (non-fatal): $e');

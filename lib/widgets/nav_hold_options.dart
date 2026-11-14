@@ -24,6 +24,7 @@ const navHoldOptions = [
   NavHoldOption('switchLibrary', Icons.swap_horiz_rounded),
   NavHoldOption('bookmarks', Icons.bookmarks_rounded),
   NavHoldOption('downloads', Icons.download_rounded),
+  NavHoldOption('stats', Icons.bar_chart_rounded),
   NavHoldOption('sleep', Icons.bedtime_rounded),
   NavHoldOption('eink', Icons.contrast),
   NavHoldOption('playPause', Icons.play_arrow_rounded),
@@ -78,6 +79,7 @@ class NavHoldAdmin {
         if (bookOrbit.manageUsers) 'users',
         if (bookOrbit.manageLibraries) 'libraries',
         if (bookOrbit.manageEmail) 'email',
+        if (bookOrbit.manageAppSettings) 'apikeys',
       ],
       scans: bookOrbit.manageLibraries,
     );
@@ -136,6 +138,7 @@ String navHoldLabel(
     'switchLibrary' => l.switchLibraryTooltip,
     'bookmarks' => l.bookmarksTitle,
     'downloads' => l.downloads,
+    'stats' => l.appShellStatsTab,
     'admin' => l.admin,
     'scan' => l.navHoldServerScan,
     'sleep' => l.sleepTimer,

@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
     show ImageRenderMethodForWeb;
-import 'package:palette_generator/palette_generator.dart';
 import '../utils/cover_accent.dart';
 import 'overlay_toast.dart';
 import 'absorb_placement.dart';
@@ -21,6 +20,7 @@ import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
 import '../services/player_settings.dart';
 import '../services/download_service.dart';
+import '../services/narrated_books.dart';
 import 'book_detail_sheet.dart';
 import 'library_grid_tiles.dart';
 import 'episode_list_sheet.dart';
@@ -132,8 +132,13 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final ImageProvider provider = url.startsWith('/')
         ? FileImage(File(url))
         : CachedNetworkImageProvider(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, url, headers: context.read<LibraryProvider>().mediaHeaders);
-    PaletteGenerator.fromImageProvider(provider, maximumColorCount: 16).then((palette) {
-      final seed = accentFromCoverPalette(palette);
+    final known = CoverAccents.known(url);
+    if (known != null) {
+      _coverScheme = ColorScheme.fromSeed(seedColor: known, brightness: brightness);
+      if (mounted) setState(() {});
+      return;
+    }
+    CoverAccents.seed(url, provider).then((seed) {
       if (seed == null || !mounted) return;
       setState(() => _coverScheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness));
     }).catchError((e) {
@@ -844,11 +849,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       final bookId = book['id'] as String? ?? '';
       if (bookId.isEmpty) continue;
       if (lib.getProgressData(bookId)?['isFinished'] == true) continue;
-      final media = book['media'] as Map<String, dynamic>? ?? {};
-      final duration = (media['duration'] is num)
-          ? (media['duration'] as num).toDouble()
-          : 0.0;
-      await api.markFinished(bookId, duration);
+      await api.markFinished(bookId, _lengthOf(book));
       lib.markFinishedLocally(bookId, skipRefresh: true, skipAutoAdvance: true);
       lib.removeFromAbsorbing(bookId);
     }
@@ -871,11 +872,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
       final bookId = book['id'] as String? ?? '';
       if (bookId.isEmpty) continue;
       if (lib.getProgressData(bookId)?['isFinished'] != true) continue;
-      final media = book['media'] as Map<String, dynamic>? ?? {};
-      final duration = (media['duration'] is num)
-          ? (media['duration'] as num).toDouble()
-          : 0.0;
-      await api.markNotFinished(bookId, currentTime: 0, duration: duration);
+      await api.markNotFinished(bookId, currentTime: 0, duration: _lengthOf(book));
       await lib.markNotFinishedLocally(bookId);
       lib.clearAbsorbingBlock(bookId);
     }
@@ -1359,8 +1356,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     double listenedDuration = 0;
     for (final book in _books) {
       final bookId = book['id'] as String? ?? '';
-      final media = book['media'] as Map<String, dynamic>? ?? {};
-      final dur = (media['duration'] is num) ? (media['duration'] as num).toDouble() : 0.0;
+      final dur = _lengthOf(book);
       final prog = lib.getProgress(bookId);
       totalDuration += dur;
       listenedDuration += dur * prog;
@@ -1570,7 +1566,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
     final bookTitle = metadata['title'] as String? ?? l.unknown;
     final authorName = metadata['authorName'] as String? ?? '';
     final sequence = _getSequenceString(book);
-    final duration = (media['duration'] is num) ? (media['duration'] as num).toDouble() : 0.0;
+    final duration = _lengthOf(book);
 
     final isExplicit = PlayerSettings.showExplicitBadge && metadata['explicit'] == true;
     final progress = lib.getProgress(bookId);
@@ -1715,6 +1711,17 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         ),
       ),
     );
+  }
+
+  /// How long [book] plays for. An Audiobookshelf row says nothing about an
+  /// EPUB that reads itself aloud, so the length this phone found when it
+  /// looked inside the file stands in.
+  double _lengthOf(Map<String, dynamic> book) {
+    final media = book['media'] as Map<String, dynamic>? ?? const {};
+    final listed = (media['duration'] as num?)?.toDouble() ?? 0.0;
+    if (listed > 0) return listed;
+    final id = book['id'];
+    return id is String ? NarratedBooks.duration(id) ?? 0.0 : 0.0;
   }
 
   Widget _placeholder(ColorScheme cs) {
