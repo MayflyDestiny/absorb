@@ -116,8 +116,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (mounted && v != _mergeLibraries) setState(() => _mergeLibraries = v);
   }
 
-  /// 首帧/切 tab 动画结束后，只预热当前页 ±1/2 的邻居；滑动到第 5/6 张时
-  /// 它们已经在前一步的窗口里被预热过，而不是一次性预取前 6 张。
+  /// 首帧/切 tab 动画结束后，预热当前页 ±2 以及前方 +3..+6 的邻居；滑动到
+  /// 后面的卡片时模糊背景已经在前一步的窗口里做好，而不是滑到才生成。
   void _scheduleNeighborPrewarm(
     LibraryProvider lib,
     List<Map<String, dynamic>> books,
@@ -148,9 +148,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     // 当前页本身由 main/card 自己负责，不重复。
     // -2..+2：封面与模糊背景都提前就绪（1200px 封面解码后一张约 8 MB，
     // 只留邻近几张）。
-    // +3/+4：只提前做模糊背景与配色（200px，一张约 0.2 MB），封面到滑过去
+    // +3..+6：只提前做模糊背景与配色（200px，一张约 0.2 MB），封面到滑过去
     // 时再按正常渲染加载，避免一次挂太多大图。
-    for (final offset in [-2, -1, 1, 2, 3, 4]) {
+    for (final offset in [-2, -1, 1, 2, 3, 4, 5, 6]) {
       final i = page + offset;
       if (i < 0 || i >= books.length) continue;
       unawaited(_prewarmCoverForIndex(

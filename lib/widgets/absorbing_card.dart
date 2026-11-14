@@ -421,12 +421,17 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
   Color get _placeholderStart {
     if (_placeholderIsCoverless) return _titleFallbackPair()[0];
-    return _placeholderColor ?? Theme.of(context).colorScheme.surfaceContainerHigh;
+    // With no cached average colour (a card beyond the prewarm window) the
+    // neutral surface reads as black under the scrim in dark themes and on
+    // e-ink. Use the item's own muted hue until the blur arrives.
+    return _placeholderColor ?? _titleFallbackPair()[0];
   }
 
   Color get _placeholderEnd {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    if (_placeholderIsCoverless) return _titleFallbackPair()[1];
+    if (_placeholderIsCoverless || _placeholderColor == null) {
+      return _titleFallbackPair()[1];
+    }
     return Color.lerp(
       _placeholderStart,
       dark ? Colors.black : Colors.white,
@@ -863,11 +868,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
     // 冷启动先用落盘的封面配色，避免第一帧主题色再跳成封面色调。
     _adoptCachedCoverPalette();
     // 占位优先用 palette 里已缓存的封面平均色；没有（首次使用、封面
-    // 缺失、缓存失效）才退到中性 surface。这里固定一次，后续模糊图重算平均色
-    // 不会再改占位色，避免“淡黄占位 → 棕色平均色 → 封面”的二次闪动。
-    _placeholderColor ??=
-        _coverAverageColor ??
-        Theme.of(context).colorScheme.surfaceContainerHigh;
+    // 缺失、缓存失效、尚未预热到的后段卡片）就用按书名生成的柔和双色，避免
+    // 深色主题下出现近黑色占位。这里固定一次，后续模糊图重算平均色不会再改
+    // 占位色，避免“淡黄占位 → 棕色平均色 → 封面”的二次闪动。
+    _placeholderColor ??= _coverAverageColor;
     // 封面 URL 一确定就先起模糊图加载；磁盘缓存通常已有，不必等 1200px
     // 封面解码完成，冷启动时背景/占位能更早从模糊图开始。
     _primeBlurFromCache();
@@ -1180,6 +1184,12 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final hasCoverVisual = _blurLease != null ||
         _placeholderBlurLease != null ||
         _coverProvider != null;
+    // The heavy scrim belongs over a cover-derived photo. Until the blurred
+    // background exists, keep the lighter one so the tinted placeholder reads
+    // as a colour instead of near-black.
+    final hasBackgroundVisual = _cardBackground == 'blurred'
+        ? (_blurLease != null || _placeholderBlurLease != null)
+        : hasCoverVisual;
     _maybeRefetchOnServerChange(lib);
     // For podcast episodes, look up progress by compound key (itemId-episodeId)
     final progress = (_episodeId != null)
@@ -1308,11 +1318,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
                     ),
                   ),
               ],
-              // Layer 2: Scrim。加载占位先用同一层蒙版压暗（深色主题约 55%），
-              // 模糊图/封面出现后再升到 100%，避免平均色在深色主题里偏亮。
+              // Layer 2: Scrim。模糊底图出现前用更浅的一层，让占位色透出来；
+              // 模糊图就绪后再升到 100%，避免平均色在深色主题里偏亮。
               Positioned.fill(
                 child: AnimatedOpacity(
-                  opacity: hasCoverVisual ? 1 : (isDark ? 0.55 : 0.35),
+                  opacity: hasBackgroundVisual ? 1 : (isDark ? 0.40 : 0.25),
                   duration: _bgFadeDuration,
                   curve: Curves.easeOutCubic,
                   child: DecoratedBox(

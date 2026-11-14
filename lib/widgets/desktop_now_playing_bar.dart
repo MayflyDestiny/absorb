@@ -237,9 +237,12 @@ class _DesktopNowPlayingBarState extends State<DesktopNowPlayingBar> {
                                 // Buffering with playing=true still means no
                                 // audio yet — spinner then too, not a pause
                                 // icon that implies sound.
-                                onPressed: player.isLoadingOrBuffering
-                                    ? null
-                                    : () => player.togglePlayPause(fromUi: true),
+                                // Keep the button tappable while data is
+                                // loading: play() queues the request during a
+                                // load, so returning from a long background
+                                // pause must not leave Play looking dead.
+                                onPressed: () =>
+                                    player.togglePlayPause(fromUi: true),
                                 icon: player.isLoadingOrBuffering
                                     ? SizedBox(
                                         width: 20,

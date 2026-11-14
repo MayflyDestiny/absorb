@@ -1322,15 +1322,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPodcastTabLibrary => '播客标签页媒体库';
 
   @override
+  String get settingsStatsTab => '统计标签页';
+
+  @override
+  String get settingsStatsTabDesc => '在底部栏保留统计入口；关闭后可为小屏幕腾出更多空间';
+
+  @override
+  String get settingsOpenStats => '打开统计';
+
+  @override
   String get settingsMergeImpliedByPodcastTab => '启用播客标签页时始终开启';
-  String get settingsStatsTab => 'Stats tab';
-
-  @override
-  String get settingsStatsTabDesc =>
-      'Keep Stats in the bottom bar. Turn it off for more room on a small screen';
-
-  @override
-  String get settingsOpenStats => 'Open Stats';
 
   @override
   String get settingsEpisodeNotifs => '通知设置';
@@ -4873,10 +4874,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get seriesLabel => '系列';
 
   @override
-  String get addSeries => 'Add series';
+  String get addSeries => '添加系列';
 
   @override
-  String get removeSeries => 'Remove series';
+  String get removeSeries => '移除系列';
 
   @override
   String get descriptionLabel => '描述';
@@ -10696,10 +10697,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerTopBarProgressChapter => '章节';
-  String get readerSectionReading => 'Reading';
-
-  @override
-  String get readerSectionScreen => 'Screen';
 
   @override
   String get readerTopBarProgressBoth => '两者';
@@ -10712,22 +10709,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerSectionTopBar => '顶栏与页面';
-  String get readerTapZonesCardTop => 'Move to the top';
-
-  @override
-  String get readerTapZonesCardBottom => 'Move to the bottom';
-
-  @override
-  String get readerTapZonesCardHide => 'Shrink the card';
-
-  @override
-  String get readerTapZonesCardShow => 'Show the card';
 
   @override
   String get readerSectionControls => '控制项';
 
   @override
   String get readerSectionStats => '统计';
+
+  @override
+  String get readerSectionReading => '阅读';
+
+  @override
+  String get readerSectionScreen => '屏幕';
 
   @override
   String get readerParagraphSpacing => '段落间距';
@@ -10740,6 +10733,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerTapZonesHint => '拖动方块边框调整大小；点按方块可改变其功能，或从一套预设布局开始。';
+
+  @override
+  String get readerTapZonesCardTop => '移至顶部';
+
+  @override
+  String get readerTapZonesCardBottom => '移至底部';
+
+  @override
+  String get readerTapZonesCardHide => '收起卡片';
+
+  @override
+  String get readerTapZonesCardShow => '显示卡片';
 
   @override
   String get readerTapPrev => '上一页';
@@ -10793,41 +10798,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerScrollMode => '滚动模式';
 
   @override
-  String get readerScrollModeHint => '向下滚动阅读本书，而不是翻页。适用于所有图书。';
-  String get readerSentenceMode => 'Sentence mode';
+  String get readerSentenceMode => '句子模式';
 
   @override
-  String get readerSentenceModeHint =>
-      'One sentence at a time, tap or swipe to move on. Applies to every book.';
+  String get readerSentenceModeHint => '一次只显示一句，点按或滑动继续。适用于所有图书。';
 
   @override
-  String get readerSentencesAtATime => 'Sentences at a time';
+  String get readerSentencesAtATime => '每次显示句数';
 
   @override
-  String get readerSentenceTransition => 'Transition';
+  String get readerSentenceTransition => '过渡效果';
 
   @override
-  String get readerSentenceTransitionFade => 'Fade';
+  String get readerSentenceTransitionFade => '淡入淡出';
 
   @override
-  String get readerSentenceTransitionBurst => 'Burst';
+  String get readerSentenceTransitionBurst => '闪现';
 
   @override
-  String get readerSentenceSpeed => 'Speed';
+  String get readerSentenceSpeed => '速度';
 
   @override
-  String get readerSentenceAutoAdvance => 'Auto advance';
+  String get readerSentenceAutoAdvance => '自动推进';
 
   @override
   String readerSentenceWpmValue(int wpm) {
-    return '$wpm words per minute';
+    return '每分钟 $wpm 词';
   }
 
   @override
-  String get readerSentencePreparing => 'Preparing sentences';
+  String get readerSentencePreparing => '正在准备句子';
 
   @override
-  String get readerSentenceEnd => 'That\'s the end of the book';
+  String get readerSentenceEnd => '已读到本书结尾';
+
+  @override
+  String get readerScrollModeHint => '向下滚动阅读本书，而不是翻页。适用于所有图书。';
 
   @override
   String get readerKeepAwake => '保持屏幕常亮';
@@ -10882,10 +10888,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerAutoScrollEndOfBook => '书已读完 - 自动滚动已关闭';
-
-  String readerAutoScrollSpeed(int percent) {
-    return '速度 $percent%';
-  }
 
   @override
   String get readerMoreControls => '更多控件';
@@ -13770,8 +13772,8 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '今年到目前为止，你在 $count 个月里读过。',
-      one: '今年到目前为止，你只在 1 个月里读过。',
+      other: '$year 年至今，你在 $count 个月里读过。',
+      one: '$year 年至今，你只在 1 个月里读过。',
     );
     return '$_temp0';
   }
@@ -15144,352 +15146,331 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get loginBoKeyOrLink => 'API key or magic link';
+  String get loginBoKeyOrLink => 'API 密钥或魔法链接';
 
   @override
   String get loginBoKeyOrLinkDescription =>
-      'Sign in with an API key from BookOrbit, a magic link, or paste a password link to set your password.';
+      '使用 BookOrbit 的 API 密钥、魔法链接登录，或粘贴密码链接来设置密码。';
 
   @override
-  String get boPermLibraryMergeBooks => 'Merge and link books';
+  String get boPermLibraryMergeBooks => '合并与关联书籍';
 
   @override
-  String get boPermLibraryGenerateReadAloud => 'Generate read-aloud books';
+  String get boPermLibraryGenerateReadAloud => '生成伴读有声书';
 
   @override
-  String get boPermApiKeys => 'Create API keys';
+  String get boPermApiKeys => '创建 API 密钥';
 
   @override
-  String get boAdminApiKeysSubtitle =>
-      'Allow keys on this server and cap how long they last';
+  String get boAdminApiKeysSubtitle => '允许本服务器使用密钥，并限制其最长有效期';
 
   @override
-  String get boAccountApiKeysSubtitle =>
-      'Keys that sign in without your password';
+  String get boAccountApiKeysSubtitle => '无需密码即可登录的密钥';
 
   @override
-  String get boAccountKeySession => 'Signed in with an API key';
+  String get boAccountKeySession => '已使用 API 密钥登录';
 
   @override
-  String get boAccountKeySessionSubtitle =>
-      'Password, sessions and keys are managed from a password sign-in';
+  String get boAccountKeySessionSubtitle => '密码、会话和密钥需通过密码登录管理';
 
   @override
-  String get boAccountKeyReadOnly =>
-      'This key is read only, so nothing you do is saved to the server';
+  String get boAccountKeyReadOnly => '此密钥为只读，您的操作不会保存到服务器。';
 
   @override
-  String get boUserApiKeysSubtitle =>
-      'Issue a key that signs this person in to Absorb, or revoke theirs';
+  String get boUserApiKeysSubtitle => '签发给此人登录 Absorb 用的密钥，或撤销其密钥';
 
   @override
-  String get boApiKeysTitle => 'API keys';
+  String get boApiKeysTitle => 'API 密钥';
 
   @override
   String boApiKeysForUser(String name) {
-    return 'API keys for $name';
+    return '$name 的 API 密钥';
   }
 
   @override
   String get boApiKeysIntro =>
-      'A key signs in without your password, for a script or another Absorb. It can do no more than you can, and you can narrow it further.';
+      '密钥可用于脚本或另一个 Absorb，无需密码即可登录。它的权限不会超过您本人，还可以进一步收窄。';
 
   @override
   String boApiKeysIntroAdmin(String name) {
-    return 'A key signs $name in without their password. It can do no more than they can, and runs as them.';
+    return '密钥可让 $name 无需密码即可登录，权限不会超过其本人，并以其身份运行。';
   }
 
   @override
-  String get boApiKeysDisabled => 'API keys are turned off on this server';
+  String get boApiKeysDisabled => '此服务器已关闭 API 密钥功能';
 
   @override
-  String get boApiKeysNoPermission =>
-      'Your account is not allowed to create API keys. An administrator can grant that, or issue one for you.';
+  String get boApiKeysNoPermission => '您的账号无权创建 API 密钥。可由管理员授予权限，或由其代您签发。';
 
   @override
   String boApiKeysLimit(int count) {
-    return 'A person can have $count active keys at most. Revoke one to make room.';
+    return '每人最多可有 $count 个有效密钥。请先撤销一个。';
   }
 
   @override
-  String get boApiKeysEmpty => 'No API keys yet';
+  String get boApiKeysEmpty => '还没有 API 密钥';
 
   @override
-  String get boApiKeyCreate => 'New key';
+  String get boApiKeyCreate => '新建密钥';
 
   @override
-  String get boApiKeyIssue => 'Issue a key';
+  String get boApiKeyIssue => '签发密钥';
 
   @override
   String boApiKeyIssueFor(String name) {
-    return 'Issue a key for $name';
+    return '为 $name 签发密钥';
   }
 
   @override
-  String get boApiKeyCreateHint =>
-      'The key is shown once, right after it is made.';
+  String get boApiKeyCreateHint => '密钥仅在创建后显示一次。';
 
   @override
-  String get boApiKeyName => 'Name';
+  String get boApiKeyName => '名称';
 
   @override
-  String get boApiKeyNameHint => 'What is this key for?';
+  String get boApiKeyNameHint => '这个密钥用来做什么？';
 
   @override
-  String get boApiKeyAccess => 'Access';
+  String get boApiKeyAccess => '访问权限';
 
   @override
-  String get boApiKeyAccessRead => 'Read';
+  String get boApiKeyAccessRead => '只读';
 
   @override
-  String get boApiKeyAccessWrite => 'Read and write';
+  String get boApiKeyAccessWrite => '读写';
 
   @override
-  String get boApiKeyAccessReadHint =>
-      'Can look things up but change nothing. Absorb cannot save progress with a read key.';
+  String get boApiKeyAccessReadHint => '只能查询，不能修改。使用只读密钥时 Absorb 无法保存进度。';
 
   @override
-  String get boApiKeyAccessWriteHint =>
-      'What Absorb needs to save progress, bookmarks and settings.';
+  String get boApiKeyAccessWriteHint => 'Absorb 保存进度、书签和设置所需的权限。';
 
   @override
-  String get boApiKeyExpires => 'Expires';
+  String get boApiKeyExpires => '到期时间';
 
   @override
-  String get boApiKeyExpiryNever => 'Never';
+  String get boApiKeyExpiryNever => '永不';
 
   @override
   String boApiKeyExpiryDays(int count) {
-    return '$count days';
+    return '$count 天';
   }
 
   @override
   String boApiKeyExpiryCapped(int count) {
-    return 'This server caps keys at $count days.';
+    return '本服务器的密钥有效期上限为 $count 天。';
   }
 
   @override
-  String get boApiKeyAdmin => 'Administrator access';
+  String get boApiKeyAdmin => '管理员权限';
 
   @override
-  String get boApiKeyAdminHint =>
-      'The key can do everything an administrator can. It cannot be limited to libraries.';
+  String get boApiKeyAdminHint => '该密钥可完成管理员的全部操作，且不能限制到指定媒体库。';
 
   @override
-  String get boApiKeyPermissions => 'Permissions';
+  String get boApiKeyPermissions => '权限';
 
   @override
-  String get boApiKeyPermissionsHint =>
-      'Pick what the key may use. With none, it can still read the libraries and personal data.';
+  String get boApiKeyPermissionsHint => '选择密钥可用的权限。全部不选时，仍可读取媒体库和个人数据。';
 
   @override
-  String get boApiKeyAdminHasAll =>
-      'An administrator key has every permission.';
+  String get boApiKeyAdminHasAll => '管理员密钥拥有全部权限。';
 
   @override
-  String get boApiKeyNoGrantable =>
-      'The account has no permissions a key could carry.';
+  String get boApiKeyNoGrantable => '该账号没有可授予密钥的权限。';
 
   @override
-  String get boApiKeyLibraries => 'Libraries';
+  String get boApiKeyLibraries => '媒体库';
 
   @override
-  String get boApiKeyAllLibraries => 'All libraries';
+  String get boApiKeyAllLibraries => '所有媒体库';
 
   @override
-  String get boApiKeyRename => 'Rename';
+  String get boApiKeyRename => '重命名';
 
   @override
-  String get boApiKeyRegenerate => 'Regenerate';
+  String get boApiKeyRegenerate => '重新生成';
 
   @override
-  String get boApiKeyRegenerateTitle => 'Regenerate this key?';
+  String get boApiKeyRegenerateTitle => '重新生成此密钥？';
 
   @override
   String boApiKeyRegenerateBody(String name) {
-    return '\"$name\" gets a new secret and the old one stops working at once. Anything using the old one has to be updated.';
+    return '「$name」将获得新密钥，旧密钥立即失效。所有使用旧密钥的地方都需要更新。';
   }
 
   @override
-  String get boApiKeyRevoke => 'Revoke';
+  String get boApiKeyRevoke => '撤销';
 
   @override
-  String get boApiKeyRevokeTitle => 'Revoke this key?';
+  String get boApiKeyRevokeTitle => '撤销此密钥？';
 
   @override
   String boApiKeyRevokeBody(String name) {
-    return '\"$name\" stops working at once. Anything signed in with it is signed out.';
+    return '「$name」将立即失效，所有使用它的会话都会被登出。';
   }
 
   @override
-  String get boApiKeyRevoked => 'Key revoked';
+  String get boApiKeyRevoked => '密钥已撤销';
 
   @override
-  String get boApiKeyRevokeAll => 'Revoke all';
+  String get boApiKeyRevokeAll => '全部撤销';
 
   @override
-  String get boApiKeyRevokeAllTitle => 'Revoke every key?';
+  String get boApiKeyRevokeAllTitle => '撤销所有密钥？';
 
   @override
   String boApiKeyRevokeAllBody(int count) {
-    return '$count keys stop working at once. Anything signed in with them is signed out.';
+    return '$count 个密钥将立即失效，所有使用它们的会话都会被登出。';
   }
 
   @override
   String boApiKeyRevokedCount(int count) {
-    return '$count keys revoked';
+    return '已撤销 $count 个密钥';
   }
 
   @override
   String boApiKeyRevokedOn(String date) {
-    return 'Revoked $date';
+    return '撤销于 $date';
   }
 
   @override
   String boApiKeyExpiredOn(String date) {
-    return 'Expired $date';
+    return '已于 $date 过期';
   }
 
   @override
   String boApiKeyExpiresSoon(String date) {
-    return 'Expires soon, on $date';
+    return '即将于 $date 到期';
   }
 
   @override
   String boApiKeyExpiresOn(String date) {
-    return 'Expires $date';
+    return '将于 $date 到期';
   }
 
   @override
-  String get boApiKeyNeverExpires => 'Never expires';
+  String get boApiKeyNeverExpires => '永不过期';
 
   @override
-  String get boApiKeyNeverUsed => 'Never used';
+  String get boApiKeyNeverUsed => '从未使用';
 
   @override
   String boApiKeyLastUsed(String date) {
-    return 'Last used $date';
+    return '最后使用于 $date';
   }
 
   @override
   String boApiKeyLastUsedFrom(String date, String ip) {
-    return 'Last used $date from $ip';
+    return '最后于 $date 从 $ip 使用';
   }
 
   @override
   String boApiKeyLibrariesOnly(String names) {
-    return 'Only $names';
+    return '仅 $names';
   }
 
   @override
   String boApiKeyIssuedBy(String name) {
-    return 'Issued by $name';
+    return '由 $name 签发';
   }
 
   @override
-  String get boApiKeyAdminBadge => 'Admin';
+  String get boApiKeyAdminBadge => '管理员';
 
   @override
-  String get boApiKeyExpiringBadge => 'Expiring';
+  String get boApiKeyExpiringBadge => '即将到期';
 
   @override
-  String get boApiKeyExpiredBadge => 'Expired';
+  String get boApiKeyExpiredBadge => '已过期';
 
   @override
-  String get boApiKeyRevokedBadge => 'Revoked';
+  String get boApiKeyRevokedBadge => '已撤销';
 
   @override
-  String get boApiKeyRevealHint =>
-      'Copy it now or send it to the other device. It is not shown again.';
+  String get boApiKeyRevealHint => '请立即复制或发送到其他设备，之后将不再显示。';
 
   @override
-  String get boApiKeyCopy => 'Copy key';
+  String get boApiKeyCopy => '复制密钥';
 
   @override
-  String get boApiKeyCopied => 'Key copied';
+  String get boApiKeyCopied => '密钥已复制';
 
   @override
-  String get boApiKeySignInElsewhere => 'Sign in on another device';
+  String get boApiKeySignInElsewhere => '在其他设备登录';
 
   @override
-  String get boApiKeyRevealWarning =>
-      'This is the only time the key is shown. If it is lost, regenerate it.';
+  String get boApiKeyRevealWarning => '密钥仅显示这一次。如遗失，请重新生成。';
 
   @override
   String boApiKeyShareDescription(String username) {
-    return 'Open this link or scan the QR code on the other device to sign in to Absorb as $username with this key.';
+    return '在另一台设备上打开此链接或扫描二维码，即可使用此密钥以 $username 的身份登录 Absorb。';
   }
 
   @override
   String boApiKeyShareWarning(String name) {
-    return 'Anyone with this link can use the key \"$name\" until it is revoked.';
+    return '任何持有此链接的人都可以使用密钥「$name」，直到它被撤销。';
   }
 
   @override
-  String get boApiKeyErrorExpiryCap =>
-      'That lifetime is longer than this server allows';
+  String get boApiKeyErrorExpiryCap => '该有效期超出服务器允许的上限';
 
   @override
-  String get boApiKeyErrorOwner =>
-      'This account cannot hold keys right now: it is suspended or not allowed to create them';
+  String get boApiKeyErrorOwner => '此账号目前无法持有密钥：账号已被停用或没有创建权限';
 
   @override
-  String get boApiKeyErrorAdminLibraries =>
-      'An administrator key cannot be limited to libraries';
+  String get boApiKeyErrorAdminLibraries => '管理员密钥不能限制到指定媒体库';
 
   @override
-  String get boApiKeyErrorScope => 'The key asked for more than its owner has';
+  String get boApiKeyErrorScope => '该密钥申请的权限超出了其所属用户的权限';
 
   @override
-  String get boApiKeyErrorKeySession =>
-      'Keys cannot be managed from a session that signed in with a key';
+  String get boApiKeyErrorKeySession => '通过密钥登录的会话无法管理密钥';
 
   @override
-  String get boApiKeySettingsSaved => 'API key settings saved';
+  String get boApiKeySettingsSaved => 'API 密钥设置已保存';
 
   @override
-  String get boApiKeySettingsIntro => 'These apply to every key on the server.';
+  String get boApiKeySettingsIntro => '这些设置适用于服务器上的所有密钥。';
 
   @override
-  String get boApiKeySettingsEnabled => 'Allow API keys';
+  String get boApiKeySettingsEnabled => '允许 API 密钥';
 
   @override
-  String get boApiKeySettingsEnabledHint =>
-      'Off turns every key away without revoking any, and stops new ones being made';
+  String get boApiKeySettingsEnabledHint => '关闭后会拒绝所有密钥但不撤销任何一个，同时禁止新建';
 
   @override
-  String get boApiKeySettingsMaxLifetime => 'Longest lifetime';
+  String get boApiKeySettingsMaxLifetime => '最长有效期';
 
   @override
   String get boApiKeySettingsMaxLifetimeHint =>
-      'New and regenerated keys cannot last longer than this. Existing keys keep their expiry.';
+      '新建和重新生成的密钥不能超过此期限，已有密钥的到期时间保持不变。';
 
   @override
-  String get boApiKeySettingsNoLimit => 'No limit';
+  String get boApiKeySettingsNoLimit => '无限制';
 
   @override
-  String get boApiKeySettingsCustom => 'Other';
+  String get boApiKeySettingsCustom => '自定义';
 
   @override
-  String get boApiKeySettingsCustomDays => 'Days';
+  String get boApiKeySettingsCustomDays => '天';
 
   @override
   String boApiKeySettingsCustomRange(int max) {
-    return 'Between 1 and $max days';
+    return '介于 1 到 $max 天之间';
   }
 
   @override
-  String get boUserKeyLink => 'Sign-in link with an API key';
+  String get boUserKeyLink => '带 API 密钥的登录链接';
 
   @override
-  String get boUserKeyLinkSubtitle =>
-      'Makes a key with everything this person has and shows a QR code that signs them in to Absorb';
+  String get boUserKeyLinkSubtitle => '创建一个拥有此人全部权限的密钥，并显示可让其登录 Absorb 的二维码';
 
   @override
-  String get boApiKeyLinkName => 'Absorb sign-in';
+  String get boApiKeyLinkName => 'Absorb 登录';
 
   @override
   String boApiKeyLinkFor(String name) {
-    return 'Sign-in link for $name';
+    return '$name 的登录链接';
   }
 }

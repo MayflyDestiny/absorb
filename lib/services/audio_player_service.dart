@@ -2584,6 +2584,32 @@ class AudioPlayerService extends ChangeNotifier {
         'local=${localS.toStringAsFixed(1)}s server=${serverS.toStringAsFixed(1)}s '
         '-> start=${startS.toStringAsFixed(1)}s',
       );
+      // Pre-jump the next item's intro before any audio starts. The live skip
+      // only runs after the first position event (500-1000ms in background),
+      // so the opening words leaked out before it fired. Folding the same
+      // per-item intro setting into the pre-play start seek means the seek
+      // that already happens before play() lands past the intro, with no
+      // extra audio and no change to the outro behaviour.
+      final nextChapters = (next['chapters'] as List<dynamic>?) ?? const [];
+      if (nextChapters.isNotEmpty) {
+        final skip = await ChapterSkipSettings.loadForItem(progressKey);
+        if (skip.enabled && skip.introSkipSeconds > 0) {
+          final chapterStart = ChapterLookup.metaStart(nextChapters, 0);
+          final chapterEnd = nextChapters.length > 1
+              ? ChapterLookup.metaStart(nextChapters, 1)
+              : (next['duration'] as num?)?.toDouble() ?? 0.0;
+          final target = chapterStart + skip.introSkipSeconds.toDouble();
+          if (startS >= chapterStart &&
+              startS < target &&
+              chapterEnd - target >= 1.0) {
+            debugPrint(
+              '[ChapterSkip] Pre-jump next item intro: '
+              '${startS.toStringAsFixed(1)}s -> ${target.toStringAsFixed(1)}s',
+            );
+            startS = target;
+          }
+        }
+      }
       next['startS'] = startS;
 
       // Build audio source for the next item.
@@ -2739,6 +2765,11 @@ class AudioPlayerService extends ChangeNotifier {
     final next = _preloadedNextBook;
     if (next == null) return;
     if (_autoQueueAdvancing) return;
+    // A stream retry in flight is not a finished book. Advancing here is what
+    // made a stalled episode restart the queue from the next title. Only the
+    // retry flag is checked: iOS native auto-advance legitimately runs while
+    // the next item is loading, so blocking on the load flag would drop it.
+    if (_retryInProgress) return;
     // Book finished and the queue is advancing to the next title. Fire the
     // optional cue only when the user opted into reminding during auto-advance.
     unawaited(BookFinishReminder.instance.fire(onAutoAdvance: true));
@@ -4418,7 +4449,10 @@ class AudioPlayerService extends ChangeNotifier {
             // carrying on: some devices drop and re-add a route when
             // playback starts or the link hiccups.
             if (_routeMutedVolume == null) {
-              _routeMutedVolume = service._player?.volume ?? 1.0;
+              final current = service._player?.volume ?? 1.0;
+              // Never bank a zero volume: an earlier failed settle left the
+              // engine muted, and re-banking 0 would make unmute a no-op.
+              _routeMutedVolume = current > 0 ? current : 1.0;
               await service._player?.setVolume(0);
             }
             Future<void> unmute() async {
@@ -4465,7 +4499,16 @@ class AudioPlayerService extends ChangeNotifier {
             if (service.isPlaying) await service.pause();
             await unmute();
           } catch (e) {
+            // An error anywhere between the mute and the settle checks must
+            // still put the volume back. Clearing only the flag left the book
+            // "playing" at volume 0 with no way to recover - silent playback.
+            final v = _routeMutedVolume;
             _routeMutedVolume = null;
+            if (v != null) {
+              try {
+                await _instance._player?.setVolume(v);
+              } catch (_) {}
+            }
             debugPrint('[AudioSession] Device-change handler error: $e');
           }
         },
@@ -4638,6 +4681,20 @@ class AudioPlayerService extends ChangeNotifier {
       await service._iosReconcileEngineOnForeground();
     }
     if (!service.hasBook) return;
+    // A device-change handler interrupted while the route was muting (app is
+    // suspended mid-settle) can strand the engine at volume 0. Back in the
+    // foreground the short route-mute protection is no longer needed, so
+    // restore the volume and clear the stale flag before anything else.
+    final strandedVolume = _routeMutedVolume;
+    if (strandedVolume != null) {
+      _routeMutedVolume = null;
+      try {
+        await service._player?.setVolume(strandedVolume);
+        debugPrint(
+          '[AudioSession] Foreground: restored volume to $strandedVolume',
+        );
+      } catch (_) {}
+    }
     final sessionAlive = service._playbackSessionId != null;
     debugPrint(
       '[MediaSession] Foregrounded - refreshing (playing=${service.isPlaying}, session=$sessionAlive, item=${service._currentItemId})',
@@ -4688,8 +4745,10 @@ class AudioPlayerService extends ChangeNotifier {
     }
     // Re-push playback state so the system re-registers the MediaSession
     _handler?.refreshPlaybackState();
-    // Re-push media item so notification metadata is fresh
-    if (service._currentItemId != null && service._currentTitle != null) {
+    // Re-push media item so notification metadata is fresh. Keep this tied
+    // only to having a book: after a long background pause the title can be
+    // briefly unset, and dropping the re-push left the media controls gone.
+    if (service._currentItemId != null) {
       final chapterTitle =
           service._lastNotifiedChapterIndex >= 0 && service._chapters.isNotEmpty
           ? (service._chapters[service._lastNotifiedChapterIndex]
@@ -4698,7 +4757,7 @@ class AudioPlayerService extends ChangeNotifier {
           : null;
       service._pushMediaItem(
         service._mediaItemKey,
-        service._currentTitle!,
+        service._currentTitle ?? '',
         service._currentAuthor ?? '',
         service._currentCoverUrl,
         service._totalDuration,
@@ -4736,6 +4795,11 @@ class AudioPlayerService extends ChangeNotifier {
     required String? coverUrl,
     required double totalDuration,
     required List<dynamic> chapters,
+    // The caller's shelf/library-item payload for this book. When it carries
+    // per-file audio (media.audioFiles, or an episode's audioFile), playItem
+    // shapes a direct-file session from it and starts immediately instead of
+    // waiting on /play or an expanded item fetch.
+    Map<String, dynamic>? itemSnapshot,
     double startTime = 0,
     bool forceStartTime = false,
     String? episodeId,
@@ -4884,8 +4948,17 @@ class AudioPlayerService extends ChangeNotifier {
     // Cold-restart gap: minified shelf cards and chapterless session blobs
     // both arrive with no chapters, which leaves chapter switching dead until
     // the network copy of the item lands (tens of seconds on a weak link).
-    // The expanded item is usually already on disk from the last browse, so
-    // seed from it instantly. Disk-only; skipped when the caller had chapters.
+    // Prefer the caller's in-memory payload, then the expanded item usually
+    // already on disk from the last browse. Skipped when the caller had
+    // chapters.
+    if (chapters.isEmpty && itemSnapshot != null) {
+      final snapshotChapters = _chaptersFromItem(itemSnapshot, episodeId);
+      if (snapshotChapters.isNotEmpty) {
+        chapters = snapshotChapters;
+        _chapters = snapshotChapters;
+        _handler?.updateChaptersQueue(snapshotChapters);
+      }
+    }
     if (chapters.isEmpty) {
       try {
         final diskItem = await api.getCachedLibraryItem(itemId);
@@ -5173,32 +5246,82 @@ class AudioPlayerService extends ChangeNotifier {
           }
         }
       } else {
-        // Nothing cached to start from. Race the /play POST against a
-        // cancellable direct-file item fetch *from t=0* instead of idling on
-        // the adaptive leash first: on a weak link the expanded item fetch
-        // usually lands well inside the leash (and far faster than a
-        // many-chapter /play), so playback starts from files while the real
-        // session completes in the background for a tokenless upgrade. A fast
-        // server still wins the hedge outright and gets the fresh path, so the
-        // only cost of the parallel fetch is a cancelled client on LAN.
-        final pendingSession = episodeId != null
-            ? api.startEpisodePlaybackSession(itemId, episodeId)
-            : api.startPlaybackSession(itemId);
-        result = await _playFromHedgedItem(
-          api,
-          itemId,
-          title,
-          author,
-          coverUrl,
-          totalDuration,
-          chapters,
-          startTime,
-          progressKey,
-          localTimestampAtStart,
-          playbackGeneration,
-          pendingSession,
-          forceStartTime: forceStartTime,
-        );
+        // A cold continue-listening entry has no disk session or item. When
+        // the screen that started the play already holds the item (the card
+        // on screen does), shape the per-file tracks from it and start
+        // immediately. Waiting for /play or the expanded item fetch here is
+        // what made a first play take up to half a minute on a weak link.
+        final snapshotSession = itemSnapshot == null
+            ? null
+            : _sessionShapeFromItem(progressKey, itemSnapshot, api);
+        if (snapshotSession != null) {
+          final pendingSession = episodeId != null
+              ? api.startEpisodePlaybackSession(itemId, episodeId)
+              : api.startPlaybackSession(itemId);
+          result = await _playFromSessionCache(
+            api,
+            itemId,
+            title,
+            author,
+            coverUrl,
+            totalDuration,
+            chapters,
+            startTime,
+            snapshotSession,
+            localTimestampAtStart,
+            playbackGeneration,
+            forceStartTime,
+            pendingSession,
+          );
+          // Snapshot shaped but unusable (e.g. no playable URL): fall back to
+          // the normal server path, reusing the in-flight /play POST.
+          if (result == 'cache-miss') {
+            Map<String, dynamic>? lateSession;
+            try {
+              lateSession = await pendingSession;
+            } catch (_) {}
+            result = await _playFromServer(
+              api,
+              itemId,
+              title,
+              author,
+              coverUrl,
+              totalDuration,
+              chapters,
+              startTime,
+              forceStartTime: forceStartTime,
+              preFetchedSession: lateSession,
+              generation: playbackGeneration,
+            );
+          }
+        } else {
+          // Nothing cached to start from. Race the /play POST against a
+          // cancellable direct-file item fetch *from t=0* instead of idling on
+          // the adaptive leash first: on a weak link the expanded item fetch
+          // usually lands well inside the leash (and far faster than a
+          // many-chapter /play), so playback starts from files while the real
+          // session completes in the background for a tokenless upgrade. A fast
+          // server still wins the hedge outright and gets the fresh path, so the
+          // only cost of the parallel fetch is a cancelled client on LAN.
+          final pendingSession = episodeId != null
+              ? api.startEpisodePlaybackSession(itemId, episodeId)
+              : api.startPlaybackSession(itemId);
+          result = await _playFromHedgedItem(
+            api,
+            itemId,
+            title,
+            author,
+            coverUrl,
+            totalDuration,
+            chapters,
+            startTime,
+            progressKey,
+            localTimestampAtStart,
+            playbackGeneration,
+            pendingSession,
+            forceStartTime: forceStartTime,
+          );
+        }
       }
     }
 
@@ -8516,7 +8639,9 @@ class AudioPlayerService extends ChangeNotifier {
     // position-reset can confuse the position-based detection.
     _completionSub = _player?.processingStateStream.listen(
       (state) {
-        if (state == ProcessingState.completed && _currentItemId != null) {
+        if (state == ProcessingState.completed &&
+            _currentItemId != null &&
+            _endSignalIsTrustworthy) {
           if (_preloadedNextBook != null) {
             debugPrint(
               '[PreBuffer] processingState=completed with pre-buffer loaded — firing auto-queue advance',
@@ -8565,7 +8690,11 @@ class AudioPlayerService extends ChangeNotifier {
         if (_lastKnownPositionSec > 0 && _totalDuration > 0) {
           final wasNearEnd = _lastKnownPositionSec >= _totalDuration - 5.0;
           final nowNearStart = posSec < 2.0;
-          if (wasNearEnd && nowNearStart) {
+          // A rebuilt/buffering source also resets to 0 after a stall. Only a
+          // genuine completed engine may turn that reset into a book finish.
+          if (wasNearEnd && nowNearStart &&
+              _endSignalIsTrustworthy &&
+              _player?.processingState == ProcessingState.completed) {
             if (_preloadedNextBook != null) {
               debugPrint(
                 '[PreBuffer] Position jump near-end → 0 with pre-buffer loaded — firing auto-queue advance',
@@ -8792,7 +8921,9 @@ class AudioPlayerService extends ChangeNotifier {
               '(${_totalDuration.toStringAsFixed(0)}s) - playing on until the files end',
             );
           }
-        } else if (_totalDuration > 0 && posSec >= _totalDuration - 1.0) {
+        } else if (_totalDuration > 0 &&
+            posSec >= _totalDuration - 1.0 &&
+            _endSignalIsTrustworthy) {
           if (_preloadedNextBook != null && _isBackgrounded && Platform.isIOS) {
             debugPrint(
               '[PreBuffer] Position-fallback near end with pre-buffer loaded — firing auto-queue advance',
@@ -9351,20 +9482,42 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// A stall, a stream rebuild or a transient position reset can make the
+  /// engine look finished while the current book is still playing. Only a
+  /// settled engine may complete a book or advance the queue: a random buffer
+  /// hiccup must never jump to the next episode from the beginning.
+  bool get _endSignalIsTrustworthy {
+    final p = _player;
+    if (p == null) return false;
+    if (_retryInProgress || _isLoadingNewItem || _autoQueueAdvancing) return false;
+    final state = p.processingState;
+    return state != ProcessingState.loading &&
+        state != ProcessingState.buffering &&
+        state != ProcessingState.idle;
+  }
+
   /// Whether the player itself is at the end of the last file, rather than
-  /// only past the length the server indexed.
+  /// only past the length the server indexed. An unknown duration is NOT an
+  /// end: during buffering the engine cannot tell us where the last frame is,
+  /// so keep playing until it reports a real end (GH: random auto-advance).
   bool _engineAtEnd() {
     final p = _player;
-    if (p == null) return true;
+    if (p == null) return false;
     if (_trackStartOffsets.length > 1 &&
         _currentTrackIndex < _trackStartOffsets.length - 2)
       return false;
     final d = p.duration;
-    if (d == null || d <= Duration.zero) return true;
+    if (d == null || d <= Duration.zero) return false;
     return p.position >= d - const Duration(seconds: 2);
   }
 
   Future<void> _onPlaybackComplete({bool userRequested = false}) async {
+    // Last line of defence: a buffering/rebuilding engine is not at the end of
+    // the book, whatever the position or the processing-state event said.
+    if (!userRequested && !_endSignalIsTrustworthy) {
+      debugPrint('[Complete] ignored - engine is buffering or rebuilding');
+      return;
+    }
     // Alpha: captures completion path choice for GH #186 (book restart bug).
     // Re-entry attempts are logged too so we can see if completion fires
     // multiple times from different signals (processingState, position-jump,
@@ -10381,7 +10534,13 @@ class AudioPlayerService extends ChangeNotifier {
     // the server check below override it.
     final seekedWhilePaused = _seekedWhilePaused;
     _seekedWhilePaused = false;
-    final serverPos = !seekedWhilePaused
+    // A tap on Play must never wait for a network round trip. After a long
+    // background pause the server progress check (and the library catch-up
+    // running alongside it) used to hold play() until the fetch returned, so
+    // the button looked dead. Pressing Play means "resume here, now" - keep
+    // the phone's own position. Headphone / car / widget / lock-screen starts
+    // still reconcile with the server as before.
+    final serverPos = !seekedWhilePaused && !fromUi
         ? await _serverPositionBeforeResume(fromUi: fromUi)
         : null;
     final adoptedServerPos = serverPos != null;
@@ -12701,7 +12860,10 @@ class AudioPlayerService extends ChangeNotifier {
     // the whole entry so it doesn't drag the position on every tick.
     if (introSkip > 0 &&
         !_introSkippedThisEntry &&
-        posSec > chapterStart &&
+        // An exact landing on the chapter start (a fresh start, or the first
+        // tick after an automatic advance) must skip too: with a strict `>` the
+        // opening words played until the next position tick arrived.
+        posSec >= chapterStart &&
         posSec - chapterStart < introSkip) {
       final target = chapterStart + introSkip;
       // Mark handled regardless of whether we can jump, so the window is only

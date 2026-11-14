@@ -33,7 +33,7 @@ class CoverBlurCache {
   static final CoverBlurCache instance = CoverBlurCache._();
 
   /// How many blurred covers to keep. Sized to the prewarm window in
-  /// AbsorbingScreen (-2..+4 around the current page) so generating the
+  /// AbsorbingScreen (-2..+6 around the current page) so generating the
   /// upcoming cards never evicts the one on screen; a blur is only 200px wide,
   /// so a dozen of them costs a few MB.
   static const _capacity = 12;

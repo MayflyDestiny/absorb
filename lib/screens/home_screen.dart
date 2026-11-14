@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -356,15 +357,32 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     _lastKnownItemId = currentId;
     _lastKnownPlaying = playing;
     if (itemChanged || stopped) {
-      lib.refreshProgressShelves(
-        force: stopped,
-        reason: stopped ? 'player-stopped' : 'player-item-changed',
-      );
+      unawaited(_refreshProgressShelvesAfterStart(lib, stopped));
     }
 
     if (itemChanged || stopped) {
       setState(() {});
     }
+  }
+
+  /// The progress-shelf refresh pulls the whole progress list plus every
+  /// shelf (megabytes on a large library). Firing it the instant a new book
+  /// starts competes with the first audio bytes, so let the player get a
+  /// usable source first. Capped, and the shelves' own in-flight/cooldown
+  /// gating still applies, so a refresh is never lost.
+  Future<void> _refreshProgressShelvesAfterStart(
+    LibraryProvider lib,
+    bool stopped,
+  ) async {
+    final sw = Stopwatch()..start();
+    while (sw.elapsedMilliseconds < 10000 && _player.isLoadingOrBuffering) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    if (!mounted) return;
+    await lib.refreshProgressShelves(
+      force: stopped,
+      reason: stopped ? 'player-stopped' : 'player-item-changed',
+    );
   }
 
   /// A heading that opens the whole shelf, over a row of big cover cards.
@@ -935,6 +953,7 @@ class _ContinueListeningCard extends StatefulWidget {
 
 class _ContinueListeningCardState extends State<_ContinueListeningCard> {
   bool _isLoading = false;
+  bool _itemPrewarmStarted = false;
   Color? _accent;
   String? _derivedCoverKey;
 
@@ -1027,6 +1046,52 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           });
         })
         .catchError((_) {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _prewarmFullItem();
+  }
+
+  /// Continue Listening carries minified shelf items: no chapters and no
+  /// audioFiles. A cold tap would then wait for /play or the expanded item
+  /// fetch before any audio. Pull the full item while the card sits on screen
+  /// so the tap starts from the disk cache and playItem can shape a direct
+  /// file session without a network wait.
+  void _prewarmFullItem() {
+    if (_itemPrewarmStarted || widget.reading) return;
+    final id = widget.item['id'] as String?;
+    if (id == null || id.isEmpty) return;
+    // Podcast episodes already carry audioFile + chapters in recentEpisode,
+    // and a downloaded book needs nothing from the server.
+    if (widget.item['recentEpisode'] != null ||
+        DownloadService().isDownloaded(id)) {
+      _itemPrewarmStarted = true;
+      return;
+    }
+    if (widget.lib.isOffline) {
+      _itemPrewarmStarted = true;
+      return;
+    }
+    final api = context.read<AuthProvider>().apiService;
+    if (api == null) return; // auth still restoring; retry on the next change
+    _itemPrewarmStarted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(() async {
+        try {
+          // Already warm on disk (the item was opened before): no network.
+          final cached = await api.getCachedLibraryItem(id);
+          final media = cached?['media'] as Map<String, dynamic>?;
+          if (media != null && media['audioFiles'] is List) return;
+          final item = await api.getLibraryItem(id);
+          if (item != null) {
+            debugPrint('[Home] Prewarmed item $id for instant start');
+          }
+        } catch (_) {}
+      }());
+    });
   }
 
   @override
@@ -1146,7 +1211,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           EpisodeListSheet.show(context, item);
         }
       } else {
-        showBookDetailSheet(context, itemId);
+        // The shelf already handed us a minified item. Seed the sheet with it
+        // so the title/cover/actions paint on the first frame; _loadItem still
+        // refines the full payload in the background (same as library tiles).
+        showBookDetailSheet(context, itemId, initialItem: item);
       }
     }
 
@@ -1409,6 +1477,15 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       final showTitle = metadata['title'] as String? ?? '';
       final epDuration = (recentEpisode['duration'] as num?)?.toDouble() ?? 0;
       final coverUrl = widget.lib.getCoverUrl(itemId);
+      // Let playItem shape the episode's single file from what the card
+      // already holds instead of waiting for the show item over the network.
+      final episodeSnapshot = <String, dynamic>{
+        ...widget.item,
+        'media': {
+          ...media,
+          'episodes': [recentEpisode],
+        },
+      };
 
       final error = await widget.player.playItem(
         api: api,
@@ -1418,6 +1495,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         coverUrl: coverUrl,
         totalDuration: epDuration,
         chapters: [],
+        itemSnapshot: episodeSnapshot,
         episodeId: episodeId,
         episodeTitle: episodeTitle,
         libraryId: widget.item['libraryId'] as String?,
@@ -1460,6 +1538,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
     double duration;
     List<dynamic> chapters;
     String? libraryId;
+    Map<String, dynamic>? itemSnapshot;
     final downloads = DownloadService();
     if (downloads.isDownloaded(itemId)) {
       // The download carries everything the player needs, so a book on the
@@ -1485,11 +1564,12 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         } catch (_) {}
       }
     } else {
-      // Full item data to get chapters. The shelf item already carries the
-      // media payload (metadata, chapters, duration) for most shelves, so use it
-      // directly and only hit the disk cache — then the network — when the
-      // chapters aren't already in hand. A 30s expanded fetch should never
-      // block starting a book that's sitting on screen.
+      // The shelf item already carries title/author/duration for most
+      // shelves, but a cold continue-listening entry can arrive without
+      // chapters. Read the disk copy when there is one, yet never block the
+      // start on the expanded network item: that 30s fetch is what left a
+      // book not yet in "正在收听" silent for half a minute. playItem starts
+      // from the shelf payload and the chapters land afterwards.
       var media = widget.item['media'] as Map<String, dynamic>? ?? {};
       var fullItem = widget.item;
       bool hasChapters(Map<String, dynamic> m) =>
@@ -1501,19 +1581,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           media = cached['media'] as Map<String, dynamic>? ?? {};
         }
       }
-      if (!hasChapters(media)) {
-        final fetched = await api.getLibraryItem(itemId);
-        if (fetched == null) {
-          if (mounted) {
-            showErrorToast(
-                context, AppLocalizations.of(context)!.loginCouldNotReachServer);
-            setState(() => _isLoading = false);
-          }
-          return;
-        }
-        fullItem = fetched;
-        media = fetched['media'] as Map<String, dynamic>? ?? {};
-      }
       final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
       title = metadata['title'] as String? ?? '';
       author = metadata['authorName'] as String? ?? '';
@@ -1522,6 +1589,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           : 0.0;
       chapters = (media['chapters'] as List<dynamic>?) ?? [];
       libraryId = fullItem['libraryId'] as String?;
+      itemSnapshot = fullItem;
     }
     final coverUrl = widget.lib.getCoverUrl(itemId);
 
@@ -1534,10 +1602,14 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       coverUrl: coverUrl,
       totalDuration: duration,
       chapters: chapters,
+      itemSnapshot: itemSnapshot,
       libraryId: libraryId,
       fromUi: true,
     );
     if (error != null && mounted) showErrorToast(context, error);
+    if (error == null && widget.player.chapters.isEmpty) {
+      _backfillChapters(api, itemId);
+    }
 
     // Ensure this book is on the absorbing list (clear any manual remove)
     if (context.mounted) {
@@ -1547,5 +1619,21 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
     if (mounted) setState(() => _isLoading = false);
     // Navigate to absorbing screen
     if (context.mounted) AppShell.goToAbsorbing(context);
+  }
+
+  /// Chapters were missing from the shelf payload, so the play started
+  /// without them. Fetch the expanded item in the background and adopt its
+  /// chapter list once it lands; audio never waits for this.
+  void _backfillChapters(ApiService api, String itemId) {
+    unawaited(() async {
+      try {
+        final item = await api.getLibraryItem(itemId);
+        final media = item?['media'] as Map<String, dynamic>? ?? const {};
+        final chapters = media['chapters'] as List<dynamic>? ?? const [];
+        if (chapters.isNotEmpty && widget.player.currentItemId == itemId) {
+          widget.player.adoptServerChapters(chapters);
+        }
+      } catch (_) {}
+    }());
   }
 }

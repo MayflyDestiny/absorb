@@ -3585,6 +3585,10 @@ class ApiService {
     return [];
   }
 
+  /// In-flight full-item reads keyed by item id, so a cold book opened from
+  /// several places at once shares one `expanded=1` request.
+  final Map<String, Future<Map<String, dynamic>?>> _libraryItemInFlight = {};
+
   /// Get a single library item with full detail (expanded=1 gives chapters,
   /// tracks, etc.)
   ///
@@ -3593,7 +3597,31 @@ class ApiService {
   /// link. It therefore gets a longer per-attempt timeout plus bounded
   /// retries, and the last successful payload is kept on disk so a failed
   /// refresh still returns something renderable instead of null.
-  Future<Map<String, dynamic>?> getLibraryItem(String itemId) async {
+  /// Concurrent callers asking for the same id share one in-flight read: every
+  /// caller still sees the same payload, but the multi-MB body is fetched only
+  /// once instead of once per caller.
+  Future<Map<String, dynamic>?> getLibraryItem(String itemId) {
+    final existing = _libraryItemInFlight[itemId];
+    if (existing != null) return existing;
+    final future = _fetchLibraryItem(itemId);
+    _libraryItemInFlight[itemId] = future;
+    unawaited(future.then(
+      (_) => _clearLibraryItemInFlight(itemId, future),
+      onError: (Object _) => _clearLibraryItemInFlight(itemId, future),
+    ));
+    return future;
+  }
+
+  void _clearLibraryItemInFlight(
+    String itemId,
+    Future<Map<String, dynamic>?> future,
+  ) {
+    if (identical(_libraryItemInFlight[itemId], future)) {
+      _libraryItemInFlight.remove(itemId);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchLibraryItem(String itemId) async {
     final cacheKey = 'library_item|$itemId';
     try {
       final response = await _authGetRetrying(
