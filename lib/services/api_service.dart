@@ -3621,6 +3621,36 @@ class ApiService {
     }
   }
 
+  /// Prewarm transfers started while browsing. A playback start cancels them
+  /// immediately so the audio's own requests get the bandwidth first.
+  final Set<http.Client> _prewarmClients = {};
+
+  void cancelLibraryItemPrewarm() {
+    if (_prewarmClients.isEmpty) return;
+    debugPrint(
+      '[API] Cancelling ${_prewarmClients.length} item prewarm transfer(s) for playback start',
+    );
+    for (final client in _prewarmClients) {
+      client.close();
+    }
+    _prewarmClients.clear();
+  }
+
+  /// Warms the disk copy of an item while its card is on screen. One transfer
+  /// at a time; [cancelLibraryItemPrewarm] aborts it when playback starts.
+  Future<void> prewarmLibraryItem(String itemId) async {
+    if (_prewarmClients.isNotEmpty) return;
+    final client = http.Client();
+    _prewarmClients.add(client);
+    try {
+      await getLibraryItemCancellable(itemId, client);
+    } catch (_) {
+    } finally {
+      _prewarmClients.remove(client);
+      client.close();
+    }
+  }
+
   Future<Map<String, dynamic>?> _fetchLibraryItem(String itemId) async {
     final cacheKey = 'library_item|$itemId';
     try {
@@ -3661,6 +3691,12 @@ class ApiService {
   /// nothing has been cached yet.
   Future<Map<String, dynamic>?> getCachedLibraryItem(String itemId) =>
       JsonFileCache.readMap('library_item|$itemId');
+
+  /// Whether the full-item disk cache exists, without decoding it. The
+  /// browse-time prewarm only needs to know whether a fetch is worth doing;
+  /// reading a multi-MB payload just to check one field is wasted work.
+  Future<bool> hasCachedLibraryItem(String itemId) =>
+      JsonFileCache.contains('library_item|$itemId');
 
   /// Light item fetch for the chapter alignment check: GET /api/items/{id}
   /// WITHOUT the expanded flag. The base response already carries

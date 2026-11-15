@@ -252,6 +252,16 @@ class JsonFileCache {
     return data is List<dynamic> ? data : null;
   }
 
+  /// Whether a payload for [key] exists in either tier, without reading or
+  /// decoding it. For callers that only need "is there a cache?" (a prewarm
+  /// deciding whether to pay for a network fetch), decoding megabytes just to
+  /// answer that would be wasted work.
+  static Future<bool> contains(String key, {String? scope}) async {
+    final active = scope ?? _scope();
+    if (!UserAccountService().hasScope && active.isEmpty) return false;
+    return (await _existingFile(relPath(active, key))) != null;
+  }
+
   /// When the cached payload was written, or null when missing/corrupt.
   static Future<DateTime?> storedAt(String key, {String? scope}) async {
     try {

@@ -2232,6 +2232,10 @@ class AudioPlayerService extends ChangeNotifier {
   void _enginePlayAfterLoad() {
     _playStartAt = DateTime.now();
     _player!.play();
+    // A start that lands inside a chapter's intro window has no boundary
+    // crossing to arm the fast watch; begin it here so the first post-play
+    // tick doesn't leak the opening words (self-stops when no window applies).
+    if (_chapters.isNotEmpty) _startChapterSkipWatch();
   }
 
   /// The chapter index of the current skip "entry". When playback crosses into
@@ -2249,7 +2253,8 @@ class AudioPlayerService extends ChangeNotifier {
   /// period) depending on where the last tick landed - the outro jumped with
   /// a bit of the tail still audible. Polling just those last few seconds
   /// brings the worst case down to ~one poll interval.
-  Timer? _outroWatchTimer;
+  Timer? _chapterSkipWatchTimer;
+  bool _chapterSkipWatchBusy = false;
 
   /// Deliberate same-chapter rewind (prev button). [._skipEntryChapterIdx] and
   /// the skip flags live per-ITEM and get wiped by
@@ -4825,6 +4830,9 @@ class AudioPlayerService extends ChangeNotifier {
     // default true.
     bool clearPauseRequest = true,
   }) async {
+    // A browsing prewarm must not keep downloading while this start needs the
+    // pipe for its first audio bytes.
+    api.cancelLibraryItemPrewarm();
     if (clearPauseRequest) _pauseRequested = false;
     _finishedHeld = false;
     _playFromUi = fromUi;
@@ -8163,8 +8171,8 @@ class AudioPlayerService extends ChangeNotifier {
     _coverRepushTimer?.cancel();
     _coverRepushItem = null;
     _coverRepushAttempt = 0;
-    _outroWatchTimer?.cancel();
-    _outroWatchTimer = null;
+    _chapterSkipWatchTimer?.cancel();
+    _chapterSkipWatchTimer = null;
     _playbackSessionId = null;
     _isOfflineMode = false;
     _localSessionMode = false;
@@ -10246,6 +10254,7 @@ class AudioPlayerService extends ChangeNotifier {
   /// starts right away and a stale one no longer clobbers newer server
   /// progress (GH #430).
   Future<void> play({String? logDetail, bool fromUi = false}) async {
+    _api?.cancelLibraryItemPrewarm();
     _pauseRequested = false;
     // Parked on a finished book: both hold and replay reload on play — hold
     // restarts the last chapter/episode, replay restarts from the beginning.
@@ -12748,28 +12757,40 @@ class AudioPlayerService extends ChangeNotifier {
   /// NOT re-fire the skip, so navigating to a chapter start isn't dragged
   /// forward again. A skip is only performed when the jump is meaningful
   /// (>= 1s), otherwise the window is just marked handled - never an empty seek.
-  /// Fast-poll (120ms) the outro window while playback sits in it. Re-runs
-  /// [_maybeSkipChapterIntroOutro] at a fine grain so the boundary crossing is
-  /// caught within ~one poll instead of a full position-stream period. The
-  /// checked condition inside [._maybeSkipChapterIntroOutro] stops and cancels
-  /// it once the jump fires or the watch leaves the window.
-  void _startOutroWatch() {
-    if (_outroWatchTimer != null) return;
-    _outroWatchTimer = Timer.periodic(const Duration(milliseconds: 120), (
+  /// Fast-poll (120ms) the chapter skip windows. Re-runs
+  /// [_maybeSkipChapterIntroOutro] at a fine grain so both an intro leak and a
+  /// boundary crossing are caught within ~one poll instead of a full
+  /// position-stream period. The conditions inside that function stop and
+  /// cancel it once the skips fire or the watch leaves the windows.
+  void _startChapterSkipWatch() {
+    if (_chapterSkipWatchTimer != null) return;
+    _chapterSkipWatchTimer = Timer.periodic(const Duration(milliseconds: 120), (
       _,
     ) async {
       if (_player?.playing != true) {
-        _stopOutroWatch();
+        _stopChapterSkipWatch();
         return;
       }
-      await _maybeSkipChapterIntroOutro(position.inMilliseconds / 1000.0);
+      // A seek (user action or an auto intro pre-jump) is still settling;
+      // re-evaluating now would only issue a second seek to the same target.
+      if (_lastSeekTargetSeconds != null) return;
+      if (_chapterSkipWatchBusy) return;
+      _chapterSkipWatchBusy = true;
+      try {
+        await _maybeSkipChapterIntroOutro(position.inMilliseconds / 1000.0);
+      } catch (e) {
+        // A failed evaluation must not kill the timer with an unhandled error.
+        debugPrint('[ChapterSkip] Watch evaluation failed: $e');
+      } finally {
+        _chapterSkipWatchBusy = false;
+      }
     });
   }
 
-  void _stopOutroWatch() {
-    if (_outroWatchTimer == null) return;
-    _outroWatchTimer!.cancel();
-    _outroWatchTimer = null;
+  void _stopChapterSkipWatch() {
+    if (_chapterSkipWatchTimer == null) return;
+    _chapterSkipWatchTimer!.cancel();
+    _chapterSkipWatchTimer = null;
   }
 
   Future<void> _maybeSkipChapterIntroOutro(double posSec) async {
@@ -12889,20 +12910,34 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     // The shared position stream runs this whole function on a 500-1000ms
-    // cadence, so the outro boundary crossing could be recognized up to a full
-    // period late depending on where the last tick landed - the chapter tail
-    // would play ~1s too long whenever the phase was wrong. Once we get within
-    // a fast-poll margin of the window, spin a 120ms watch that re-runs this
-    // function until the crossing is caught, then it cancels itself.
+    // cadence, so a chapter boundary crossing could be recognized up to a full
+    // period late - the chapter tail would play ~1s too long, and an automatic
+    // advance into the next chapter would leak the opening words before the
+    // intro skip fired. Spin a 120ms watch near the boundary and inside an
+    // intro window; it re-runs this function until the skip fires or the
+    // window is left, then it cancels itself.
+    final inIntroWatch =
+        introSkip > 0 &&
+        !_introSkippedThisEntry &&
+        posSec >= chapterStart &&
+        posSec - chapterStart < introSkip;
+    final nextChapterStart = chapterIdx + 1 < _chapters.length
+        ? _chapterSkipBounds(chapterIdx + 1).start
+        : null;
+    final approachingChapter =
+        introSkip > 0 &&
+        nextChapterStart != null &&
+        posSec < nextChapterStart &&
+        nextChapterStart - posSec < 1.5;
     final inOutroWatch =
         outroSkip > 0 &&
         !_outroSkippedThisEntry &&
         posSec < chapterEnd &&
         chapterEnd - posSec < outroSkip + 1.5;
-    if (inOutroWatch) {
-      _startOutroWatch();
+    if (inOutroWatch || inIntroWatch || approachingChapter) {
+      _startChapterSkipWatch();
     } else {
-      _stopOutroWatch();
+      _stopChapterSkipWatch();
     }
 
     // Skip outro (once per entry): within the outro window and not yet handled

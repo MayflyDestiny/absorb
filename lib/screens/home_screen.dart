@@ -1074,6 +1074,15 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       _itemPrewarmStarted = true;
       return;
     }
+    // Never add a multi-MB read while audio is playing or a start is loading:
+    // the prewarm is only useful on an idle browse, and during a start it
+    // would take the bandwidth the first audio bytes need. A paused session
+    // doesn't use the pipe, so it doesn't block the prewarm.
+    final player = AudioPlayerService();
+    if (player.isPlaying || player.isLoadingOrBuffering) {
+      _itemPrewarmStarted = true;
+      return;
+    }
     final api = context.read<AuthProvider>().apiService;
     if (api == null) return; // auth still restoring; retry on the next change
     _itemPrewarmStarted = true;
@@ -1081,14 +1090,15 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       if (!mounted) return;
       unawaited(() async {
         try {
-          // Already warm on disk (the item was opened before): no network.
-          final cached = await api.getCachedLibraryItem(id);
-          final media = cached?['media'] as Map<String, dynamic>?;
-          if (media != null && media['audioFiles'] is List) return;
-          final item = await api.getLibraryItem(id);
-          if (item != null) {
-            debugPrint('[Home] Prewarmed item $id for instant start');
-          }
+          // Already warm on disk (the item was opened before): no network,
+          // and no multi-MB decode just to find that out.
+          if (await api.hasCachedLibraryItem(id)) return;
+          // A start may have begun while the disk check ran; never add a
+          // multi-MB transfer on top of it.
+          final player = AudioPlayerService();
+          if (player.isPlaying || player.isLoadingOrBuffering) return;
+          debugPrint('[Home] Prewarming item $id for instant start');
+          await api.prewarmLibraryItem(id);
         } catch (_) {}
       }());
     });

@@ -1174,6 +1174,17 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     });
   }
 
+  /// Heavy cold-start pulls must not compete with a playback start for the
+  /// pipe: while the player is loading or buffering, hold them back (capped).
+  /// The UI paints from the disk caches meanwhile.
+  Future<void> _yieldToPlaybackStart() async {
+    final gate = Stopwatch()..start();
+    final player = AudioPlayerService();
+    while (gate.elapsedMilliseconds < 10000 && player.isLoadingOrBuffering) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+  }
+
   Future<void> _doRefreshProgress() async {
     if (_api == null) return;
     // Cold start: paint progress from the on-disk snapshot before the first
@@ -1188,6 +1199,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         notifyListeners();
       }
     }
+    await _yieldToPlaybackStart();
     try {
       final pendingSyncs =
           (await ScopedPrefs.getStringList('pending_syncs')).toSet();

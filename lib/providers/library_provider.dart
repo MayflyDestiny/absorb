@@ -92,12 +92,30 @@ class LibraryProvider extends ChangeNotifier
       // it doesn't feel broken; the short wait still skips it if you stop or
       // switch right away. Rolling/queue look-ahead stays deferred to keep the
       // moment playback starts light.
-      Future.delayed(const Duration(seconds: 5), () {
+      Future.delayed(const Duration(seconds: 5), () async {
         final player = AudioPlayerService();
-        final currentKey = player.currentEpisodeId == null
+        String? currentKey() => player.currentEpisodeId == null
             ? player.currentItemId
             : '${player.currentItemId}-${player.currentEpisodeId}';
-        if (!player.isPlaying || currentKey != key) return;
+        if (!player.isPlaying || currentKey() != key) return;
+        // Auto-download may be off; don't sit in the settle wait for a feature
+        // that will not run.
+        if (!await PlayerSettings.getAutoDownloadOnStream()) return;
+        // Starting a whole-book download while the stream is still
+        // loading/buffering splits the pipe with the first audio bytes - on a
+        // weak link that is what made a start take half a minute while the
+        // download ran at full speed. Wait for a settled playback (capped) and
+        // re-check that this item is still the one playing.
+        final wait = Stopwatch()..start();
+        while (wait.elapsedMilliseconds < 30000 && player.isLoadingOrBuffering) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          if (!player.isPlaying || currentKey() != key) return;
+        }
+        if (!player.isPlaying ||
+            currentKey() != key ||
+            player.isLoadingOrBuffering) {
+          return;
+        }
         _checkAutoDownloadOnStream(key);
       });
       Future.delayed(const Duration(seconds: 30), () {
@@ -593,16 +611,9 @@ class LibraryProvider extends ChangeNotifier
     _lastFinishedItemId = null;
     await loadPersonalizedView(force: true);
     // The whole-progress pull (/api/me/progress — the full mediaProgress list)
-    // is the heaviest cold-start request. It must not compete with a playback
-    // start for the pipe: while a start is loading or buffering, hold it back
-    // (capped) so the audio's requests get the bandwidth first — otherwise
-    // cold-start traffic (progress + shelves + covers) delays the first audio
-    // by megabytes. The UI paints from the disk-cached progress meanwhile.
-    final gate = Stopwatch()..start();
-    final player = AudioPlayerService();
-    while (gate.elapsedMilliseconds < 10000 && player.isLoadingOrBuffering) {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
+    // is the heaviest cold-start request. It yields to a playback start inside
+    // _refreshProgress, so the audio's requests get the bandwidth first; the
+    // UI paints from the disk-cached progress meanwhile.
     await _refreshProgress();
     _localProgressOverrides
         .removeWhere((itemId, _) => !pendingSyncs.contains(itemId));
