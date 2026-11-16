@@ -2,6 +2,9 @@
 /// the same commit as the version bump for each beta. Full releases use an
 /// even patch number and never show it, so a stale value can't leak into a
 /// stable build - it only has to be right during a beta cycle.
+// The fork tracks its own release numbering (1.24.x), so it has no beta
+// counter of its own to publish; upstream's Beta 7 must not leak into these
+// builds.
 const int kBetaNumber = 0;
 
 /// The F-Droid (Google-services-free) build. Passed as a dart-define by the
