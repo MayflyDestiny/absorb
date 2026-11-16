@@ -1320,6 +1320,7 @@ class _SimpleBookmarkSheetState extends State<SimpleBookmarkSheet> {
       api: api, itemId: widget.itemId,
       title: episodeTitle ?? title, author: author, coverUrl: coverUrl,
       totalDuration: duration, chapters: chapters,
+      itemSnapshot: fullItem,
       episodeId: epId, episodeTitle: episodeTitle,
       startTime: positionSeconds, forceStartTime: true,
       libraryId: fullItem['libraryId'] as String?,
@@ -2248,7 +2249,7 @@ class CardActionDelegate {
         );
       case 'remove':
         return CardWideButton(
-          icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? l.remove : Wording.of(context).removeFromAbsorbing,
+          icon: Icons.remove_circle_outline_rounded, label: (compact || short) ? l.remove : Wording.from(l).removeFromAbsorbing,
           accent: Colors.red.shade300, isActive: true, alwaysEnabled: true, large: large, compact: compact, iconsOnly: iconsOnly,
           onTap: () { removeFromAbsorbing(); onRemoveExtra?.call(); },
         );
@@ -2326,7 +2327,11 @@ class CardActionDelegate {
   }
 
   Widget buildMoreMenuItem(String id, Color accent, TextTheme tt, BuildContext ctx) {
-    final l = AppLocalizations.of(context)!;
+    // The card this delegate belongs to may have been removed while the sheet
+    // is still open; its context no longer resolves localizations. Use the
+    // sheet's context and bail out instead of crashing on a null lookup.
+    final l = AppLocalizations.of(ctx) ?? AppLocalizations.of(context);
+    if (l == null) return const SizedBox.shrink();
     switch (id) {
       case 'chapters':
         return MoreMenuItem(
@@ -2424,7 +2429,7 @@ class CardActionDelegate {
         );
       case 'remove':
         return MoreMenuItem(
-          icon: Icons.remove_circle_outline_rounded, label: Wording.of(context).removeFromAbsorbing,
+          icon: Icons.remove_circle_outline_rounded, label: Wording.from(l).removeFromAbsorbing,
           accent: Colors.red.shade300,
           onTap: () { Navigator.pop(ctx); removeFromAbsorbing(); onRemoveExtra?.call(); },
         );

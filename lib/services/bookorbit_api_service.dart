@@ -4247,7 +4247,7 @@ class BookOrbitApiService extends ApiService implements BookOrbitTokenSource {
   /// Audiobookshelf-shaped content URLs (`/api/items/<book>/file/<file>`)
   /// become proxied BookOrbit asset streams.
   @override
-  String buildTrackUrl(String contentUrl, {String? sessionId, int? trackIndex, int? playMethod}) {
+  String buildTrackUrl(String contentUrl, {String? sessionId, int? trackIndex, int? playMethod, bool preferPublicSession = true}) {
     final uri = Uri.parse(contentUrl);
     if (BookOrbitMediaProxy.instance.owns(contentUrl) || NarrationStream.instance.owns(contentUrl)) return contentUrl;
     final seg = uri.pathSegments;

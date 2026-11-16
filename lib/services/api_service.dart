@@ -719,30 +719,6 @@ class ApiService {
 
   static String get userAgent => 'Absorb/$appVersionFull';
 
-  /// EWMA of recent `/play` session-POST latency, in milliseconds. The player
-  /// uses it to decide when a session is "unusually slow" and worth hedging
-  /// with a direct-file fetch: a fast server (small EWMA) is given a short
-  /// leash, a slow one a longer one, so the hedge only fires when it helps.
-  /// Null until the first session has been timed.
-  static double? playSessionLatencyEwmaMs;
-
-  /// How long the player should wait for `/play` before hedging. At least 4s so
-  /// a normally fast server is never hedged against, and up to 2x the recent
-  /// latency so a habitually slow server still gets its session first. Capped
-  /// at 12s.
-  Duration get adaptiveSessionRaceDeadline {
-    final ewma = playSessionLatencyEwmaMs;
-    final ms = ewma == null ? 4000.0 : (ewma * 2).clamp(4000.0, 12000.0);
-    return Duration(milliseconds: ms.round());
-  }
-
-  /// Fold one `/play` measurement into [playSessionLatencyEwmaMs].
-  static void _recordPlaySessionLatency(int ms) {
-    final prev = playSessionLatencyEwmaMs;
-    playSessionLatencyEwmaMs =
-        prev == null ? ms.toDouble() : (prev * 0.7) + (ms * 0.3);
-  }
-
   Map<String, String> get _headers => {
         ...customHeaders,
         'Authorization': 'Bearer $_accessToken',
@@ -763,9 +739,31 @@ class ApiService {
 
   String get _cleanBaseUrl => normalizeServerUrl(baseUrl);
 
+  /// Whether this server compressed a large API response for us. Recorded from
+  /// response headers we already receive; no probe request. Keyed by origin so
+  /// switching servers re-detects independently.
+  static final Map<String, bool> _compressionSupportByServer = {};
+
+  bool? get serverCompressionSupported =>
+      _compressionSupportByServer[_cleanBaseUrl];
+
+  void _noteCompression(http.Response r) {
+    final key = _cleanBaseUrl;
+    final encoding = r.headers['content-encoding']?.toLowerCase();
+    if (encoding != null && encoding.isNotEmpty && encoding != 'identity') {
+      _compressionSupportByServer[key] = true;
+    } else if (r.bodyBytes.length >= 4096 &&
+        _compressionSupportByServer[key] == null) {
+      // A large eligible body came back uncompressed; this origin is not
+      // compressing API JSON. Small 401 bodies must not decide this.
+      _compressionSupportByServer[key] = false;
+    }
+  }
+
   /// Logs response body size so cold-start traffic can be attributed to a
   /// specific endpoint straight from the verbose log (`[NET]`).
   void _netLog(String method, Uri url, http.Response r) {
+    _noteCompression(r);
     debugPrint('[NET] $method ${url.path} ${r.statusCode} ${r.bodyBytes.length}B');
   }
 
@@ -2649,6 +2647,92 @@ class ApiService {
   /// The media player a reading session is marked with.
   static const readingMediaPlayer = 'ebook-reader';
 
+  /// The shared `/play` request body, so the cancellable background variant
+  /// sends exactly what the normal start sends.
+  Map<String, dynamic> _playSessionBody({
+    bool forceTranscode = false,
+    double? startOffset,
+  }) {
+    final body = <String, dynamic>{
+      'deviceInfo': _deviceInfo,
+      'forceDirectPlay': !forceTranscode,
+      'forceTranscode': forceTranscode,
+      'mediaPlayer': 'exo-player',
+      'supportedMimeTypes': [
+        'audio/flac',
+        'audio/mpeg',
+        'audio/mp4',
+        'audio/ogg',
+        'audio/aac',
+        'audio/x-m4a',
+        'audio/x-m4b',
+        'audio/opus',
+        'audio/webm',
+        'audio/wav',
+        'audio/x-wav',
+        'audio/x-matroska',
+        'audio/x-ms-wma',
+      ],
+    };
+    if (startOffset != null && startOffset > 0) {
+      body['startOffset'] = startOffset;
+    }
+    return body;
+  }
+
+  /// Open a playback session on a caller-owned client so a stale background
+  /// request can be canceled when the user switches books. Single attempt;
+  /// the normal start path keeps its retry/token-refresh logic.
+  Future<Map<String, dynamic>?> startPlaybackSessionCancellable(
+    String itemId,
+    http.Client client, {
+    String? episodeId,
+    bool forceTranscode = false,
+    Duration timeout = const Duration(seconds: 20),
+    void Function(int bytes)? onProgress,
+    NetBodyGate? bodyGate,
+  }) async {
+    final sw = Stopwatch()..start();
+    final epPath = episodeId != null ? '/$episodeId' : '';
+    final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
+    try {
+      await _ensureFreshAccessToken();
+      final request = http.Request('POST', Uri.parse(url))
+        ..headers.addAll(_headers)
+        ..body = jsonEncode(_playSessionBody(forceTranscode: forceTranscode));
+      final response = await _sendWithNetPhases(
+        client,
+        request,
+        label: '/play $itemId',
+        timeout: timeout,
+        onProgress: onProgress,
+        bodyGate: bodyGate,
+      );
+      if (response.statusCode == 200) {
+        final decodeSw = Stopwatch()..start();
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint(
+          '[NetPhase] /play decode $itemId '
+          '${decodeSw.elapsedMilliseconds}ms',
+        );
+        debugPrint(
+          '[NetTrace] /play(cancelable) $itemId ${sw.elapsedMilliseconds}ms',
+        );
+        return data;
+      }
+      debugPrint(
+        '[NetTrace] /play(cancelable) $itemId HTTP ${response.statusCode} '
+        '${sw.elapsedMilliseconds}ms',
+      );
+    } catch (e) {
+      debugPrint(
+        '[NetTrace] /play(cancelable) $itemId fail '
+        '${sw.elapsedMilliseconds}ms $e',
+      );
+    }
+    return null;
+  }
+
   /// Start a playback session for a library item.
   /// POST /api/items/:id/play
   /// Returns the full session object including audioTracks with contentUrl.
@@ -2658,30 +2742,10 @@ class ApiService {
       final epPath = episodeId != null ? '/$episodeId' : '';
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
       debugPrint('[ABS] Starting playback session: POST $url (forceDirectPlay: $forceDirectPlay, forceTranscode: $forceTranscode)');
-      final body = <String, dynamic>{
-        'deviceInfo': _deviceInfo,
-        'forceDirectPlay': !forceTranscode,
-        'forceTranscode': forceTranscode,
-        // Match what the native ABS Android app sends so the server treats us
-        // as a known ExoPlayer client and picks direct-play correctly.
-        'mediaPlayer': 'exo-player',
-        'supportedMimeTypes': [
-          'audio/flac',
-          'audio/mpeg',
-          'audio/mp4',
-          'audio/ogg',
-          'audio/aac',
-          'audio/x-m4a',
-          'audio/x-m4b',
-          'audio/opus',
-          'audio/webm',
-          'audio/wav',
-          'audio/x-wav',
-          'audio/x-matroska',
-          'audio/x-ms-wma',
-        ],
-      };
-      if (startOffset != null && startOffset > 0) body['startOffset'] = startOffset;
+      final body = _playSessionBody(
+        forceTranscode: forceTranscode,
+        startOffset: startOffset,
+      );
       // Opening a session is replay-safe, and a dropped response here means no
       // audio at all, so it gets one bounded retry on a flaky link.
       final response = await _authPostRetrying(
@@ -2692,8 +2756,18 @@ class ApiService {
         totalDeadline: const Duration(seconds: 40));
 
       debugPrint('[ABS] Play session response: ${response.statusCode}');
+      debugPrint(
+        '[NetPhase] /play(shared) $itemId '
+        'response=${sw.elapsedMilliseconds}ms status=${response.statusCode} '
+        'bytes=${response.body.length}',
+      );
       if (response.statusCode == 200) {
+        final decodeSw = Stopwatch()..start();
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint(
+          '[NetPhase] /play(shared) decode $itemId '
+          '${decodeSw.elapsedMilliseconds}ms',
+        );
         final tracks = data['audioTracks'] as List<dynamic>?;
         debugPrint('[ABS] Session ID: ${data['id']}');
         debugPrint('[ABS] Audio tracks: ${tracks?.length ?? 0}');
@@ -2716,7 +2790,7 @@ class ApiService {
       debugPrint('[ABS] Play session error: $e');
     } finally {
       sw.stop();
-      _recordPlaySessionLatency(sw.elapsedMilliseconds);
+      debugPrint('[NetTrace] /play $itemId ${sw.elapsedMilliseconds}ms');
     }
     return null;
   }
@@ -2733,6 +2807,7 @@ class ApiService {
     String? sessionId,
     int? trackIndex,
     int? playMethod,
+    bool preferPublicSession = true,
   }) {
     // ABS servers with ROUTER_BASE_PATH set return contentUrls that already
     // include the base path (e.g. "/abs/public/session/.../track/0"). If the
@@ -2769,7 +2844,8 @@ class ApiService {
     // playMethod 0 = direct play. Transcode sessions must keep their HLS
     // contentUrl, and pre-2.22 servers lack the endpoint but hand out legacy
     // tokens that never expire, so both fall through safely.
-    if (sessionId != null &&
+    if (preferPublicSession &&
+        sessionId != null &&
         sessionId.isNotEmpty &&
         trackIndex != null &&
         playMethod == 0 &&
@@ -2819,6 +2895,7 @@ class ApiService {
     required double duration,
     int timeListened = 60,
   }) async {
+    final sw = Stopwatch()..start();
     try {
       final response = await _authPost(
         Uri.parse('$_cleanBaseUrl/api/session/$sessionId/sync'),
@@ -2831,8 +2908,13 @@ class ApiService {
           'duration': duration,
         }),
         timeout: const Duration(seconds: 10));
+      debugPrint(
+        '[NetTrace] session sync ${sw.elapsedMilliseconds}ms '
+        'status=${response.statusCode}',
+      );
       return response.statusCode;
     } catch (_) {
+      debugPrint('[NetTrace] session sync fail ${sw.elapsedMilliseconds}ms');
       return null;
     }
   }
@@ -2840,11 +2922,15 @@ class ApiService {
   /// Close a playback session.
   /// POST /api/session/:id/close
   Future<void> closePlaybackSession(String sessionId) async {
+    final sw = Stopwatch()..start();
     try {
       await _authPost(
         Uri.parse('$_cleanBaseUrl/api/session/$sessionId/close'),
         timeout: const Duration(seconds: 10));
-    } catch (_) {}
+      debugPrint('[NetTrace] session close ${sw.elapsedMilliseconds}ms');
+    } catch (_) {
+      debugPrint('[NetTrace] session close fail ${sw.elapsedMilliseconds}ms');
+    }
   }
 
   /// Upsert a client-owned local playback session (downloaded/offline plays).
@@ -3424,27 +3510,7 @@ class ApiService {
       debugPrint('[ABS] Starting episode session: POST $url (forceTranscode: $forceTranscode)');
       final response = await _authPostRetrying(
         Uri.parse(url),
-        body: jsonEncode({
-          'deviceInfo': _deviceInfo,
-          'forceDirectPlay': !forceTranscode,
-          'forceTranscode': forceTranscode,
-          'mediaPlayer': 'exo-player',
-          'supportedMimeTypes': [
-            'audio/flac',
-            'audio/mpeg',
-            'audio/mp4',
-            'audio/ogg',
-            'audio/aac',
-            'audio/x-m4a',
-            'audio/x-m4b',
-            'audio/opus',
-            'audio/webm',
-            'audio/wav',
-            'audio/x-wav',
-            'audio/x-matroska',
-            'audio/x-ms-wma',
-          ],
-        }),
+        body: jsonEncode(_playSessionBody(forceTranscode: forceTranscode)),
         timeout: const Duration(seconds: 20),
         attempts: 2,
         totalDeadline: const Duration(seconds: 40));
@@ -3459,7 +3525,7 @@ class ApiService {
       debugPrint('[ABS] Episode session error: $e');
     } finally {
       sw.stop();
-      _recordPlaySessionLatency(sw.elapsedMilliseconds);
+      debugPrint('[NetTrace] /play $itemId ${sw.elapsedMilliseconds}ms');
     }
     return null;
   }
@@ -3621,38 +3687,79 @@ class ApiService {
     }
   }
 
-  /// Prewarm transfers started while browsing. A playback start cancels them
-  /// immediately so the audio's own requests get the bandwidth first.
-  final Set<http.Client> _prewarmClients = {};
+  /// Low-priority item transfers started while browsing (card chapter
+  /// refetch, chapter backfill), keyed by item id. Global on purpose: cards and
+  /// the playback service can hold different ApiService instances after an
+  /// auth restore, and a start/stop must be able to cancel every transfer.
+  static final Map<String, _BackgroundItemTransfer> _backgroundItemTransfers =
+      {};
 
-  void cancelLibraryItemPrewarm() {
-    if (_prewarmClients.isEmpty) return;
-    debugPrint(
-      '[API] Cancelling ${_prewarmClients.length} item prewarm transfer(s) for playback start',
-    );
-    for (final client in _prewarmClients) {
-      client.close();
+  void cancelBackgroundItemTransfers({String? keepItemId}) {
+    if (_backgroundItemTransfers.isEmpty) return;
+    final cancelled = <String>[];
+    for (final entry in _backgroundItemTransfers.entries.toList()) {
+      if (entry.key == keepItemId) continue;
+      _backgroundItemTransfers.remove(entry.key);
+      entry.value.client.close();
+      cancelled.add(entry.key);
     }
-    _prewarmClients.clear();
+    if (cancelled.isEmpty) return;
+    debugPrint(
+      '[API] Cancelling ${cancelled.length} background item transfer(s): '
+      '${cancelled.join(',')}',
+    );
   }
 
-  /// Warms the disk copy of an item while its card is on screen. One transfer
-  /// at a time; [cancelLibraryItemPrewarm] aborts it when playback starts.
-  Future<void> prewarmLibraryItem(String itemId) async {
-    if (_prewarmClients.isNotEmpty) return;
-    final client = http.Client();
-    _prewarmClients.add(client);
-    try {
-      await getLibraryItemCancellable(itemId, client);
-    } catch (_) {
-    } finally {
-      _prewarmClients.remove(client);
-      client.close();
+  /// Cancel one background transfer (e.g. when the item is no longer visible).
+  void cancelBackgroundItemTransfer(String itemId) {
+    final entry = _backgroundItemTransfers.remove(itemId);
+    if (entry == null) return;
+    debugPrint('[API] Cancelling background item transfer for $itemId');
+    entry.client.close();
+  }
+
+  /// The in-flight background fetch for [itemId], if any. playItem reuses it
+  /// instead of canceling it and opening a duplicate request.
+  Future<Map<String, dynamic>?>? backgroundItemFetchFor(String itemId) =>
+      _backgroundItemTransfers[itemId]?.future;
+
+  /// Fetch an item on the low-priority channel. At most one transfer runs at a
+  /// time; returns null when another item is already in flight. Successful
+  /// payloads land in the same disk cache as [getLibraryItem].
+  Future<Map<String, dynamic>?> fetchLibraryItemBackground(String itemId) {
+    final existing = _backgroundItemTransfers[itemId];
+    if (existing != null) {
+      debugPrint('[BgTrace] background fetch reuse $itemId');
+      return existing.future;
     }
+    if (_backgroundItemTransfers.isNotEmpty) {
+      debugPrint('[BgTrace] background fetch skip (busy) $itemId');
+      return Future.value(null);
+    }
+    final client = http.Client();
+    final sw = Stopwatch()..start();
+    debugPrint('[BgTrace] background fetch start $itemId');
+    late final _BackgroundItemTransfer entry;
+    final future = getLibraryItemCancellable(itemId, client)
+        .catchError((Object _) => null)
+        .whenComplete(() {
+      debugPrint(
+        '[BgTrace] background fetch end $itemId ${sw.elapsedMilliseconds}ms',
+      );
+      if (identical(_backgroundItemTransfers[itemId], entry)) {
+        _backgroundItemTransfers.remove(itemId);
+      }
+      client.close();
+    });
+    entry = _BackgroundItemTransfer(client, future);
+    _backgroundItemTransfers[itemId] = entry;
+    return future;
   }
 
   Future<Map<String, dynamic>?> _fetchLibraryItem(String itemId) async {
     final cacheKey = 'library_item|$itemId';
+    final sw = Stopwatch()..start();
+    debugPrint('[NetTrace] item GET(shared) start $itemId');
     try {
       final response = await _authGetRetrying(
         Uri.parse('$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress'),
@@ -3663,6 +3770,10 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint(
+          '[NetTrace] item GET(shared) done $itemId ${sw.elapsedMilliseconds}ms '
+          '${response.body.length}B',
+        );
         unawaited(JsonFileCache.write(cacheKey, data));
         final media = data['media'];
         if (media is Map && media['chapters'] is List) {
@@ -3676,7 +3787,9 @@ class ApiService {
       }
       debugPrint('[API] getLibraryItem $itemId: HTTP ${response.statusCode}');
     } catch (e) {
-      debugPrint('[API] getLibraryItem $itemId failed: $e');
+      debugPrint(
+        '[NetTrace] item GET(shared) fail $itemId ${sw.elapsedMilliseconds}ms $e',
+      );
     }
     final cached = await JsonFileCache.readMap(cacheKey);
     if (cached != null) {
@@ -3691,12 +3804,6 @@ class ApiService {
   /// nothing has been cached yet.
   Future<Map<String, dynamic>?> getCachedLibraryItem(String itemId) =>
       JsonFileCache.readMap('library_item|$itemId');
-
-  /// Whether the full-item disk cache exists, without decoding it. The
-  /// browse-time prewarm only needs to know whether a fetch is worth doing;
-  /// reading a multi-MB payload just to check one field is wasted work.
-  Future<bool> hasCachedLibraryItem(String itemId) =>
-      JsonFileCache.contains('library_item|$itemId');
 
   /// Light item fetch for the chapter alignment check: GET /api/items/{id}
   /// WITHOUT the expanded flag. The base response already carries
@@ -3748,31 +3855,138 @@ class ApiService {
   /// the caller's own client - no shared-client state and no retry loop - so
   /// closing the client genuinely cancels the transfer. Falls back to the disk
   /// cache when the request fails or is aborted.
+  /// Send a request and log where the wall-clock time goes: response headers
+  /// (connect + server processing), first body byte, streamed body progress,
+  /// body total and (by the caller) JSON decode. Returns the same buffered
+  /// response the old Client.get/post callers consumed.
+  Future<http.Response> _sendWithNetPhases(
+    http.Client client,
+    http.Request request, {
+    required String label,
+    required Duration timeout,
+    void Function(int bytes)? onProgress,
+    NetBodyGate? bodyGate,
+  }) async {
+    final sw = Stopwatch()..start();
+    final streamed = await client.send(request).timeout(timeout);
+    final headersMs = sw.elapsedMilliseconds;
+    debugPrint(
+      '[NetPhase] $label headers=${headersMs}ms '
+      'status=${streamed.statusCode} '
+      'contentLength=${streamed.headers['content-length'] ?? '?'} '
+      'encoding=${streamed.headers['content-encoding'] ?? 'none'} '
+      'contentType=${streamed.headers['content-type'] ?? '?'} '
+      'cacheControl=${streamed.headers['cache-control'] ?? '?'} '
+      'vary=${streamed.headers['vary'] ?? '?'} '
+      'cfCache=${streamed.headers['cf-cache-status'] ?? '?'} '
+      'server=${streamed.headers['server'] ?? '?'} '
+      'cfRay=${streamed.headers['cf-ray'] ?? '?'}',
+    );
+    final remaining = timeout - Duration(milliseconds: headersMs);
+    if (remaining <= Duration.zero) {
+      throw TimeoutException('$label exceeded $timeout before the body');
+    }
+    final bodySw = Stopwatch()..start();
+    final body = <int>[];
+    var firstChunk = false;
+    var nextProgressMs = 1000;
+    Future<void> readBody() async {
+      if (bodyGate != null) await bodyGate.wait;
+      await for (final chunk in streamed.stream) {
+        body.addAll(chunk);
+        final elapsed = bodySw.elapsedMilliseconds;
+        if (!firstChunk) {
+          firstChunk = true;
+          onProgress?.call(body.length);
+          debugPrint(
+            '[NetPhase] $label firstBody=${elapsed}ms chunk=${chunk.length}B',
+          );
+        }
+        if (elapsed >= nextProgressMs) {
+          onProgress?.call(body.length);
+          debugPrint(
+            '[NetPhase] $label body=${elapsed}ms bytes=${body.length}',
+          );
+          while (nextProgressMs <= elapsed) {
+            nextProgressMs += 1000;
+          }
+        }
+        if (bodyGate != null) await bodyGate.wait;
+      }
+    }
+
+    await readBody().timeout(remaining);
+    final bodyMs = bodySw.elapsedMilliseconds;
+    final kbPerSec = bodyMs > 0
+        ? (body.length / 1024 / (bodyMs / 1000)).round()
+        : 0;
+    debugPrint(
+      '[NetPhase] $label bodyDone=${bodyMs}ms decoded=${body.length}B '
+      'speed=${kbPerSec}KB/s '
+      'wire=${streamed.headers['content-length'] ?? '?'}',
+    );
+    return http.Response.bytes(
+      body,
+      streamed.statusCode,
+      headers: streamed.headers,
+      request: streamed.request,
+      reasonPhrase: streamed.reasonPhrase,
+      isRedirect: streamed.isRedirect,
+      persistentConnection: streamed.persistentConnection,
+    );
+  }
+
   Future<Map<String, dynamic>?> getLibraryItemCancellable(
     String itemId,
-    http.Client client,
-  ) async {
+    http.Client client, {
+    void Function(int bytes)? onProgress,
+    Duration timeout = const Duration(seconds: 30),
+    bool fallbackToCache = true,
+    bool cacheOnTimeout = true,
+  }) async {
     final cacheKey = 'library_item|$itemId';
+    final sw = Stopwatch()..start();
+    Object? failure;
+    debugPrint('[NetTrace] item GET start $itemId');
     try {
-      final response = await client
-          .get(
-            Uri.parse(
-              '$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress',
-            ),
-            headers: _headers,
-          )
-          .timeout(const Duration(seconds: 30));
+      final response = await _sendWithNetPhases(
+        client,
+        http.Request(
+          'GET',
+          Uri.parse(
+            '$_cleanBaseUrl/api/items/$itemId?expanded=1&include=progress',
+          ),
+        )..headers.addAll(_headers),
+        label: 'item GET $itemId',
+        timeout: timeout,
+        onProgress: onProgress,
+      );
       if (response.statusCode == 200) {
+        final decodeSw = Stopwatch()..start();
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint(
+          '[NetPhase] item GET decode $itemId '
+          '${decodeSw.elapsedMilliseconds}ms',
+        );
+        debugPrint(
+          '[NetTrace] item GET done $itemId ${sw.elapsedMilliseconds}ms '
+          '${response.body.length}B',
+        );
         unawaited(JsonFileCache.write(cacheKey, data));
         return data;
       }
       debugPrint(
-        '[API] getLibraryItemCancellable $itemId: HTTP ${response.statusCode}',
+        '[NetTrace] item GET HTTP $itemId ${response.statusCode} '
+        '${sw.elapsedMilliseconds}ms',
       );
     } catch (e) {
-      debugPrint('[API] getLibraryItemCancellable $itemId failed: $e');
+      failure = e;
+      debugPrint(
+        '[NetTrace] item GET fail $itemId ${sw.elapsedMilliseconds}ms $e',
+      );
     }
+    if (!fallbackToCache) return null;
+    if (!cacheOnTimeout && failure is TimeoutException) return null;
     return JsonFileCache.readMap(cacheKey);
   }
 
@@ -5895,5 +6109,32 @@ class ApiService {
       }
     } catch (_) {}
     return null;
+  }
+}
+
+/// One low-priority item GET plus its cancellable client. Kept as a record so
+/// playItem can reuse the in-flight future without opening a second request.
+class _BackgroundItemTransfer {
+  _BackgroundItemTransfer(this.client, this.future);
+
+  final http.Client client;
+  final Future<Map<String, dynamic>?> future;
+}
+
+/// A pause gate for a streaming response body. The request may be opened and
+/// raced normally; once the caller decides to start from cache, the body is
+/// held here so it cannot compete with the first audio bytes. Opening it
+/// resumes the same request (no second POST, no lost session).
+class NetBodyGate {
+  Completer<void> _open = Completer<void>()..complete();
+
+  Future<void> get wait => _open.future;
+
+  void close() {
+    if (_open.isCompleted) _open = Completer<void>();
+  }
+
+  void open() {
+    if (!_open.isCompleted) _open.complete();
   }
 }

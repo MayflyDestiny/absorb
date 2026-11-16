@@ -169,6 +169,13 @@ class ProgressSyncService {
   /// Prefer the item's own server-side duration whenever it can be fetched.
   final Map<String, double> _serverDurationCache = {};
 
+  /// Record a duration already known from the playback session/item at start
+  /// time, so a later progress sync doesn't fetch the whole item just to learn
+  /// it.
+  void rememberServerDuration(String itemId, double duration) {
+    if (duration > 0) _serverDurationCache[itemId] = duration;
+  }
+
   Future<double> serverTrustedDuration(
       ApiService api, String itemId, double localDuration) async {
     final cached = _serverDurationCache[itemId];
@@ -177,7 +184,10 @@ class ProgressSyncService {
     final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
     final episodeId = isCompound ? itemId.substring(37) : null;
     try {
-      final item = await api.getLibraryItem(apiItemId);
+      // Disk copy only: a progress sync must never download a multi-MB item
+      // just to learn its duration. The playback start seeds the memory cache;
+      // this is the next-best source when it didn't (e.g. an external start).
+      final item = await api.getCachedLibraryItem(apiItemId);
       final media = item?['media'] as Map<String, dynamic>?;
       double serverDur = 0;
       if (episodeId != null) {
@@ -200,6 +210,10 @@ class ProgressSyncService {
         return serverDur;
       }
     } catch (_) {}
+    debugPrint(
+      '[Sync] $itemId: no cached server duration - using local '
+      '${localDuration.toStringAsFixed(0)}s',
+    );
     return localDuration;
   }
 

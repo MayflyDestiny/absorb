@@ -953,7 +953,6 @@ class _ContinueListeningCard extends StatefulWidget {
 
 class _ContinueListeningCardState extends State<_ContinueListeningCard> {
   bool _isLoading = false;
-  bool _itemPrewarmStarted = false;
   Color? _accent;
   String? _derivedCoverKey;
 
@@ -1046,62 +1045,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           });
         })
         .catchError((_) {});
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _prewarmFullItem();
-  }
-
-  /// Continue Listening carries minified shelf items: no chapters and no
-  /// audioFiles. A cold tap would then wait for /play or the expanded item
-  /// fetch before any audio. Pull the full item while the card sits on screen
-  /// so the tap starts from the disk cache and playItem can shape a direct
-  /// file session without a network wait.
-  void _prewarmFullItem() {
-    if (_itemPrewarmStarted || widget.reading) return;
-    final id = widget.item['id'] as String?;
-    if (id == null || id.isEmpty) return;
-    // Podcast episodes already carry audioFile + chapters in recentEpisode,
-    // and a downloaded book needs nothing from the server.
-    if (widget.item['recentEpisode'] != null ||
-        DownloadService().isDownloaded(id)) {
-      _itemPrewarmStarted = true;
-      return;
-    }
-    if (widget.lib.isOffline) {
-      _itemPrewarmStarted = true;
-      return;
-    }
-    // Never add a multi-MB read while audio is playing or a start is loading:
-    // the prewarm is only useful on an idle browse, and during a start it
-    // would take the bandwidth the first audio bytes need. A paused session
-    // doesn't use the pipe, so it doesn't block the prewarm.
-    final player = AudioPlayerService();
-    if (player.isPlaying || player.isLoadingOrBuffering) {
-      _itemPrewarmStarted = true;
-      return;
-    }
-    final api = context.read<AuthProvider>().apiService;
-    if (api == null) return; // auth still restoring; retry on the next change
-    _itemPrewarmStarted = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(() async {
-        try {
-          // Already warm on disk (the item was opened before): no network,
-          // and no multi-MB decode just to find that out.
-          if (await api.hasCachedLibraryItem(id)) return;
-          // A start may have begun while the disk check ran; never add a
-          // multi-MB transfer on top of it.
-          final player = AudioPlayerService();
-          if (player.isPlaying || player.isLoadingOrBuffering) return;
-          debugPrint('[Home] Prewarming item $id for instant start');
-          await api.prewarmLibraryItem(id);
-        } catch (_) {}
-      }());
-    });
   }
 
   @override
@@ -1473,6 +1416,8 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       setState(() => _isLoading = false);
       return;
     }
+    final sw = Stopwatch()..start();
+    debugPrint('[StartTrace] home tap item=$itemId');
 
     // Check if this is a podcast with a recentEpisode
     final recentEpisode = widget.item['recentEpisode'] as Map<String, dynamic>?;
@@ -1496,6 +1441,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           'episodes': [recentEpisode],
         },
       };
+      debugPrint(
+        '[StartTrace] home podcast prep ${sw.elapsedMilliseconds}ms '
+        'inFlight=${api.backgroundItemFetchFor(itemId) != null}',
+      );
 
       final error = await widget.player.playItem(
         api: api,
@@ -1510,6 +1459,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         episodeTitle: episodeTitle,
         libraryId: widget.item['libraryId'] as String?,
         fromUi: true,
+      );
+      debugPrint(
+        '[StartTrace] home podcast playItem returned '
+        '${sw.elapsedMilliseconds}ms error=$error',
       );
       if (mounted) {
         if (error != null) showErrorToast(context, error);
@@ -1604,6 +1557,12 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
     final coverUrl = widget.lib.getCoverUrl(itemId);
 
     // Start playback
+    debugPrint(
+      '[StartTrace] home book prep ${sw.elapsedMilliseconds}ms '
+      'chapters=${chapters.length} snapshot=${itemSnapshot != null} '
+      'inFlight=${api.backgroundItemFetchFor(itemId) != null} '
+      'local=${downloads.isDownloaded(itemId)}',
+    );
     final error = await widget.player.playItem(
       api: api,
       itemId: itemId,
@@ -1615,6 +1574,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       itemSnapshot: itemSnapshot,
       libraryId: libraryId,
       fromUi: true,
+    );
+    debugPrint(
+      '[StartTrace] home book playItem returned '
+      '${sw.elapsedMilliseconds}ms error=$error',
     );
     if (error != null && mounted) showErrorToast(context, error);
     if (error == null && widget.player.chapters.isEmpty) {
@@ -1632,16 +1595,49 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
   }
 
   /// Chapters were missing from the shelf payload, so the play started
-  /// without them. Fetch the expanded item in the background and adopt its
-  /// chapter list once it lands; audio never waits for this.
+  /// without them. Fetch the full item only after the start has settled -
+  /// the body can be multi-MB and must not split the pipe with the first
+  /// audio bytes - then adopt its chapter list. Canceled by stop/removal.
   void _backfillChapters(ApiService api, String itemId) {
     unawaited(() async {
       try {
-        final item = await api.getLibraryItem(itemId);
-        final media = item?['media'] as Map<String, dynamic>? ?? const {};
-        final chapters = media['chapters'] as List<dynamic>? ?? const [];
-        if (chapters.isNotEmpty && widget.player.currentItemId == itemId) {
-          widget.player.adoptServerChapters(chapters);
+        final player = AudioPlayerService();
+        final wait = Stopwatch()..start();
+        while (wait.elapsedMilliseconds < 30000 &&
+            player.isLoadingOrBuffering) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          if (player.currentItemId != itemId) return;
+        }
+        if (player.currentItemId != itemId || player.isLoadingOrBuffering) {
+          return;
+        }
+        debugPrint('[BgTrace] backfill start settled $itemId');
+        // Give the first seconds of audio room before the bulk read.
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (player.currentItemId != itemId || player.isLoadingOrBuffering) {
+          return;
+        }
+        // The start's item leg may already have written the item cache; use
+        // it only when it actually carries chapters, otherwise fetch.
+        var item = await api.getCachedLibraryItem(itemId);
+        var chapters =
+            (item?['media'] as Map<String, dynamic>?)?['chapters']
+                as List<dynamic>? ??
+            const <dynamic>[];
+        if (chapters.isEmpty) {
+          debugPrint('[BgTrace] backfill fetch start $itemId');
+          item = await api.fetchLibraryItemBackground(itemId);
+          if (item == null) return;
+          chapters =
+              (item['media'] as Map<String, dynamic>?)?['chapters']
+                  as List<dynamic>? ??
+              const <dynamic>[];
+        } else {
+          debugPrint('[BgTrace] backfill cache hit $itemId');
+        }
+        if (chapters.isNotEmpty && player.currentItemId == itemId) {
+          player.adoptServerChapters(chapters);
+          debugPrint('[BgTrace] backfill adopted $itemId');
         }
       } catch (_) {}
     }());

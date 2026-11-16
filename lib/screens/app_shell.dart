@@ -737,7 +737,7 @@ class _AppShellState extends State<AppShell>
           local != null &&
           local.isNotEmpty &&
           File(local).existsSync();
-      if (useLocal && local != null) {
+      if (useLocal) {
         final identity = coverCacheIdentity(local);
         await CoverBlurCache.instance.warm(FileImage(File(local)), identity);
         unawaited(

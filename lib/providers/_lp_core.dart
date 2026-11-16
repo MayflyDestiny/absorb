@@ -744,6 +744,15 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     return (mp['ebookProgress'] as num?)?.toDouble() ?? 0;
   }
 
+  /// Saved audio position in seconds for [key] (an item id, or an
+  /// `itemId-episodeId` key), as the shelves know it. Used by the idle
+  /// notification so its progress bar starts at the real position.
+  double getSavedAudioPosition(String? key) {
+    if (key == null) return 0;
+    final mp = _progressMap[key];
+    return (mp?['currentTime'] as num?)?.toDouble() ?? 0;
+  }
+
   /// The ebook's own reading progress, apart from any audio progress.
   ///
   /// The server only knows one `ebookProgress` per item, which for a

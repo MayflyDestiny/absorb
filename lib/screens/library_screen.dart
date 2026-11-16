@@ -1426,7 +1426,7 @@ class LibraryScreenState extends State<LibraryScreen>
             _items.addAll(unique);
             _loadedCount += results.length;
             _page++;
-            _hasMore = results.length >= limit && unique.length > 0;
+            _hasMore = results.length >= limit && unique.isNotEmpty;
             _isLoadingPage = false;
           });
           _writeItemsCache();
@@ -1486,7 +1486,7 @@ class LibraryScreenState extends State<LibraryScreen>
       _totalItems = total;
       _page = 1; // First page merged
       _loadedCount = merged.length;
-      _hasMore = freshItems.length > 0; // If we got items, there might be more
+      _hasMore = freshItems.isNotEmpty; // If we got items, there might be more
       _isLoadingPage = false;
     });
     _writeItemsCache();

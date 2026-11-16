@@ -1716,8 +1716,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Change the server URL of a saved account in place (e.g. a dynamic-DNS
-  /// hostname changed) without re-adding it. The account's per-user data is
-  /// migrated to the new scope by [UserAccountService.updateAccountUrl]. If the
+  /// hostname changed) without re-adding it. Per-user data keeps the account's
+  /// pinned scope, so nothing is migrated and the switch is immediate. If the
   /// edited account is the live session, its URL is updated immediately so the
   /// next API call (and the [apiService] getter) uses the new address.
   /// Returns true if the account was found and updated.
@@ -1774,6 +1774,14 @@ class AuthProvider extends ChangeNotifier {
           token,
           customHeaders: _customHeaders,
         );
+        // The player holds its own ApiService; point it at the new address
+        // now so the next start/progress call does not go to the old one.
+        final switchedApi = apiService;
+        if (switchedApi != null) {
+          final player = AudioPlayerService();
+          player.useApi(switchedApi);
+          player.resetServerSyncBackoff();
+        }
       }
       _pushSessionToWear();
       notifyListeners();

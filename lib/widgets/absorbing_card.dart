@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../l10n/app_localizations.dart';
@@ -10,6 +12,7 @@ import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../screens/app_shell.dart';
 import '../services/audio_player_service.dart';
+import '../services/chapter_cache.dart';
 import '../services/chapter_lookup.dart';
 import '../services/cover_blur_cache.dart';
 import '../services/cover_palette_cache.dart';
@@ -39,7 +42,19 @@ import 'stable_cached_network_image.dart';
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
   final AudioPlayerService player;
-  const AbsorbingCard({super.key, required this.item, required this.player});
+  /// RepaintBoundary owned by the carousel, used to capture this card for the
+  /// dismiss cross-fade before its list entry is removed.
+  final GlobalKey? snapshotKey;
+  /// Hands the captured card to the screen, which starts the cross-fade when
+  /// the PageView actually swaps in the next card.
+  final void Function(ui.Image image, Rect rect)? onRemovalSnapshot;
+  const AbsorbingCard({
+    super.key,
+    required this.item,
+    required this.player,
+    this.snapshotKey,
+    this.onRemovalSnapshot,
+  });
 
   @override
   State<AbsorbingCard> createState() => AbsorbingCardState();
@@ -67,6 +82,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
   bool _isStarting = false;
   List<dynamic>? _fetchedChapters;
   Map<String, dynamic>? _fetchedEbookFile;
+  /// Full item payload once fetched. Handed to playItem as its snapshot so a
+  /// first play can start from per-file URLs without a /play round-trip.
+  Map<String, dynamic>? _fullItem;
+  bool _refetchRetryScheduled = false;
+  int _refetchIdleRetries = 0;
   // Server-change tick last acted on, so a same-id item_updated (e.g. an ebook
   // file added to this book) re-runs the full-item fetch. The card is kept
   // alive with a stable key, so without this it never picks up a server change.
@@ -696,47 +716,104 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
+    final refetchKey = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
+    if (!context.read<LibraryProvider>().isInAbsorbing(refetchKey)) {
+      debugPrint(
+        '[BgTrace] card refetch skip (not in absorbing) $refetchKey',
+      );
+      return;
+    }
+    debugPrint(
+      '[BgTrace] card refetch start item=$_itemId force=$forceChapters '
+      'loading=${widget.player.isLoadingOrBuffering}',
+    );
     try {
-      // Disk copy first: on a cold restart the network copy of the item can
-      // take tens of seconds, while chapter switching on the active card
-      // needs to unlock immediately. Only fetch when nothing was cached.
-      final fullItem = forceChapters
-          ? await api.getLibraryItem(_itemId)
-          : await api.getCachedLibraryItem(_itemId) ??
-                await api.getLibraryItem(_itemId);
-      if (fullItem != null && mounted) {
-        final media = fullItem['media'] as Map<String, dynamic>? ?? {};
-        // Cache ebookFile if the inline item didn't have it. resolveEbookFile
-        // also covers supplementary-only books (audiobooks-only libraries
-        // never set media.ebookFile).
-        if (forceChapters || _fetchedEbookFile == null) {
-          final ef = resolveEbookFile(fullItem);
-          if (ef != null) setState(() => _fetchedEbookFile = ef);
-        }
-        // Books: chapters at media level
-        var chapters = media['chapters'] as List<dynamic>? ?? [];
-        // Podcasts: chapters on the specific episode
-        if (chapters.isEmpty && _episodeId != null) {
-          final episodes = media['episodes'] as List<dynamic>? ?? [];
-          for (final ep in episodes) {
-            if (ep is Map<String, dynamic> && ep['id'] == _episodeId) {
-              chapters = ep['chapters'] as List<dynamic>? ?? [];
-              break;
-            }
-          }
-        }
-        if (chapters.isNotEmpty) {
-          // Adopt only a genuine change. Most server updates are cover or
-          // progress metadata; rebuilding the list (and re-deriving the player's
-          // current-chapter latch) for those would be needless churn.
-          if (ChapterLookup.equivalent(_chapters, chapters)) return;
-          setState(() => _fetchedChapters = chapters);
-          // Keep the live player in step so the chapter list the sheet reads
-          // from player.chapters matches what the server now reports.
-          if (_isActive) widget.player.adoptServerChapters(chapters);
+      // Disk copy first: it unlocks chapters immediately and is also where a
+      // just-finished playback start wrote its item.
+      final cached =
+          forceChapters ? null : await api.getCachedLibraryItem(_itemId);
+      if (cached != null) {
+        debugPrint('[BgTrace] card refetch cache hit item=$_itemId');
+        _applyFullItem(cached, forceEbook: forceChapters);
+        return;
+      }
+      // Never start a multi-MB network read while a playback start is loading
+      // or buffering; retry once the pipe is free.
+      if (widget.player.isLoadingOrBuffering) {
+        debugPrint('[BgTrace] card refetch wait (player loading) item=$_itemId');
+        _scheduleRefetchWhenIdle();
+        return;
+      }
+      final fullItem = await api.fetchLibraryItemBackground(_itemId);
+      if (fullItem == null) {
+        // Another background transfer was in flight, or a playback start/stop
+        // canceled this one. Try again when the pipe is free.
+        debugPrint('[BgTrace] card refetch null/retry item=$_itemId');
+        _scheduleRefetchWhenIdle();
+        return;
+      }
+      debugPrint('[BgTrace] card refetch applied item=$_itemId');
+      _applyFullItem(fullItem, forceEbook: forceChapters);
+    } catch (_) {}
+  }
+
+  void _applyFullItem(
+    Map<String, dynamic> fullItem, {
+    required bool forceEbook,
+  }) {
+    if (!mounted) return;
+    _fullItem = fullItem;
+    final media = fullItem['media'] as Map<String, dynamic>? ?? {};
+    // Cache ebookFile if the inline item didn't have it. resolveEbookFile
+    // also covers supplementary-only books (audiobooks-only libraries
+    // never set media.ebookFile).
+    if (forceEbook || _fetchedEbookFile == null) {
+      final ef = resolveEbookFile(fullItem);
+      if (ef != null) setState(() => _fetchedEbookFile = ef);
+    }
+    // Books: chapters at media level
+    var chapters = media['chapters'] as List<dynamic>? ?? [];
+    // Podcasts: chapters on the specific episode
+    if (chapters.isEmpty && _episodeId != null) {
+      final episodes = media['episodes'] as List<dynamic>? ?? [];
+      for (final ep in episodes) {
+        if (ep is Map<String, dynamic> && ep['id'] == _episodeId) {
+          chapters = ep['chapters'] as List<dynamic>? ?? [];
+          break;
         }
       }
-    } catch (_) {}
+    }
+    if (chapters.isNotEmpty) {
+      unawaited(ChapterCache.write(
+        _itemId,
+        (fullItem['updatedAt'] as num?)?.toInt(),
+        chapters,
+      ));
+      // Adopt only a genuine change. Most server updates are cover or
+      // progress metadata; rebuilding the list (and re-deriving the player's
+      // current-chapter latch) for those would be needless churn.
+      if (ChapterLookup.equivalent(_chapters, chapters)) return;
+      setState(() => _fetchedChapters = chapters);
+      // Keep the live player in step so the chapter list the sheet reads
+      // from player.chapters matches what the server now reports.
+      if (_isActive) widget.player.adoptServerChapters(chapters);
+    }
+  }
+
+  void _scheduleRefetchWhenIdle() {
+    if (_refetchRetryScheduled || _refetchIdleRetries >= 12) return;
+    _refetchRetryScheduled = true;
+    Future<void>.delayed(const Duration(seconds: 5), () {
+      _refetchRetryScheduled = false;
+      if (!mounted) return;
+      if (widget.player.isLoadingOrBuffering) {
+        _refetchIdleRetries++;
+        _scheduleRefetchWhenIdle();
+        return;
+      }
+      _refetchIdleRetries = 0;
+      unawaited(_refetchItem());
+    });
   }
 
   /// Re-fetch the full item when the server reports this book changed (socket
@@ -898,6 +975,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _placeholderColor = null;
       _fetchedChapters = null;
       _fetchedEbookFile = null;
+      _fullItem = null;
+      _refetchIdleRetries = 0;
       _lastChapterIdx = -1;
       _lastSeenUpdatedAt =
           context.read<LibraryProvider>().itemUpdatedAt(_itemId) ??
@@ -1697,7 +1776,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                     // fadeInDuration，这里手动在首帧解码后淡入。
                                                                     return _fadeInCover(
                                                                       child,
-                                                                      coverIdentity!,
+                                                                      coverIdentity,
                                                                     );
                                                                   },
                                                               errorBuilder:
@@ -1764,7 +1843,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
                                                                         : BoxFit
                                                                               .contain,
                                                                   ),
-                                                                  coverIdentity!,
+                                                                  coverIdentity,
                                                                 );
                                                               },
                                                               placeholder: (_, __) =>
@@ -2371,6 +2450,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
       setState(() => _isStarting = false);
       return;
     }
+    final sw = Stopwatch()..start();
+    debugPrint(
+      '[StartTrace] card tap item=$_itemId snapshot=${_fullItem != null} '
+      'inFlight=${api.backgroundItemFetchFor(_itemId) != null}',
+    );
     final error = await widget.player.playItem(
       api: api,
       itemId: _itemId,
@@ -2379,11 +2463,16 @@ class AbsorbingCardState extends State<AbsorbingCard>
       coverUrl: _coverUrl,
       totalDuration: _effectiveDuration,
       chapters: _chapters,
+      itemSnapshot: _fullItem,
       episodeId: _episodeId,
       episodeTitle: _recentEpisode?['title'] as String?,
       libraryId: _resolveLibraryId(),
       seriesId: seriesIdFromItem(widget.item),
       fromUi: true,
+    );
+    debugPrint(
+      '[StartTrace] card playItem returned ${sw.elapsedMilliseconds}ms '
+      'error=$error',
     );
     if (mounted) {
       if (error != null) showErrorToast(context, error);
@@ -2392,16 +2481,122 @@ class AbsorbingCardState extends State<AbsorbingCard>
   }
 
   Future<void> _removeFromAbsorbing() async {
+    final sw = Stopwatch()..start();
+    debugPrint(
+      '[RemoveTrace] card tap item=$_itemId current=${widget.player.currentItemId}',
+    );
+    Future<void>? stopFuture;
     if (widget.player.currentItemId == _itemId) {
+      context.read<AuthProvider>().apiService?.cancelBackgroundItemTransfers();
       await widget.player.pause();
-      await widget.player.stop();
+      // Server progress sync/close still runs inside stop(), but the removal
+      // is a local decision; don't make the list wait for the network. The
+      // notification is retargeted to the first remaining book once stop()
+      // finishes (below), not cleared while another book is still queued.
+      stopFuture = widget.player.stop();
+      unawaited(
+        stopFuture.catchError((e) {
+          debugPrint('[RemoveTrace] stop failed: $e');
+        }),
+      );
     }
-    if (mounted) {
-      final lib = context.read<LibraryProvider>();
-      // Use compound key for podcast episodes
-      final key = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
-      await lib.removeFromAbsorbing(key);
+    if (!mounted) return;
+    final lib = context.read<LibraryProvider>();
+    // Use compound key for podcast episodes
+    final key = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
+    await _playRemovalSnapshot();
+    await lib.removeFromAbsorbing(key);
+    debugPrint(
+      '[RemoveTrace] card local removal done ${sw.elapsedMilliseconds}ms',
+    );
+    final afterStop = stopFuture ?? Future<void>.value();
+    unawaited(
+      afterStop.then(
+        (_) => _showIdleNotificationForRemaining(lib),
+        onError: (e) {
+          debugPrint('[RemoveTrace] stop/notification failed: $e');
+        },
+      ),
+    );
+  }
+
+  /// Freeze the card into an overlay so it can drop out of the stack while
+  /// the next card takes its place underneath. The list entry is removed
+  /// immediately after this; the overlay covers the swap.
+  Future<void> _playRemovalSnapshot() async {
+    final key = widget.snapshotKey;
+    if (key == null) return;
+    final boundary = key.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary || !boundary.attached) return;
+    final topLeft = boundary.localToGlobal(Offset.zero);
+    final bottomRight = boundary.localToGlobal(
+      boundary.size.bottomRight(Offset.zero),
+    );
+    final rect = Rect.fromPoints(topLeft, bottomRight);
+    final screen = MediaQuery.sizeOf(context);
+    // Only the card actually on screen needs the overlay; a neighbour's
+    // off-screen rect would flash at the viewport edge.
+    if (rect.center.dx < 0 || rect.center.dx > screen.width) return;
+    ui.Image image;
+    try {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      image = await boundary.toImage(
+        pixelRatio: dpr.clamp(1.0, 2.0).toDouble(),
+      );
+    } catch (e) {
+      debugPrint('[RemoveTrace] removal snapshot failed: $e');
+      return;
     }
+    final sink = widget.onRemovalSnapshot;
+    if (!mounted || sink == null) {
+      image.dispose();
+      return;
+    }
+    sink(image, rect);
+  }
+
+  /// After a removal the notification should describe the first book still
+  /// in Absorbing (paused, no progress bar). When nothing remains, clear it.
+  void _showIdleNotificationForRemaining(LibraryProvider lib) {
+    for (final key in lib.absorbingBookIds) {
+      if (!lib.isInAbsorbing(key)) continue;
+      final item = lib.absorbingItemCache[key];
+      if (item == null) continue;
+      final media = item['media'] as Map<String, dynamic>? ?? {};
+      final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
+      final id = item['id'] as String? ?? key;
+      final recent = item['recentEpisode'] as Map<String, dynamic>?;
+      final episodeId = recent?['id'] as String?;
+      final showTitle = (metadata['title'] as String?) ?? '';
+      final episodeTitle = recent?['title'] as String?;
+      final displayTitle = episodeId != null
+          ? (episodeTitle ?? showTitle)
+          : showTitle;
+      if (displayTitle.isEmpty) continue;
+      final duration =
+          (recent?['duration'] as num?)?.toDouble() ??
+          (media['duration'] as num?)?.toDouble() ??
+          0;
+      double startTime = lib.getSavedAudioPosition(key);
+      if (startTime <= 0 && duration > 0) {
+        startTime = lib.getProgress(key) * duration;
+      }
+      unawaited(widget.player.showIdleNowPlaying(
+        itemId: id,
+        title: showTitle.isEmpty ? displayTitle : showTitle,
+        author: (metadata['authorName'] as String?) ?? '',
+        coverUrl: lib.getCoverUrl(id),
+        totalDuration: duration,
+        startTime: startTime,
+        episodeId: episodeId,
+        episodeTitle: episodeId != null ? displayTitle : null,
+        itemSnapshot: item,
+        chapters: (media['chapters'] as List<dynamic>?) ?? const [],
+        libraryId: item['libraryId'] as String?,
+      ));
+      return;
+    }
+    unawaited(widget.player.clearNowPlayingIfIdle());
   }
 
   // ── Dynamic button builders (delegated) ─────────────────────
@@ -2452,4 +2647,86 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
   void _showMoreMenu(BuildContext context, Color accent, TextTheme tt) =>
       _makeActions().showMoreMenu(accent, tt);
+}
+
+/// A snapshot of the removed card. It drops out of the stack (slide, tilt,
+/// fade) once [start] completes, while the replacement card scales up
+/// underneath, so the list change reads as a native dismissal rather than a
+/// pop. The overlay is inserted before the list swap; [start] is fired after.
+class CardDismissSnapshot extends StatefulWidget {
+  final ui.Image image;
+  final Rect rect;
+  final Future<void> start;
+  final VoidCallback onDone;
+
+  const CardDismissSnapshot({
+    super.key,
+    required this.image,
+    required this.rect,
+    required this.start,
+    required this.onDone,
+  });
+
+  @override
+  State<CardDismissSnapshot> createState() => _CardDismissSnapshotState();
+}
+
+class _CardDismissSnapshotState extends State<CardDismissSnapshot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    widget.start.then((_) {
+      if (!mounted) return;
+      _controller.forward().whenComplete(() {
+        if (mounted) widget.onDone();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    widget.image.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fromRect(
+      rect: widget.rect,
+      child: IgnorePointer(
+        child: ClipRect(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              // iOS-style card stack dismissal: the old card drops out of
+              // its slot with a slight rotation while the next card (scaled
+              // up by the screen) takes its place underneath.
+              final t = Curves.easeInOutCubic.transform(_controller.value);
+              final drop = widget.rect.height * 0.92 * t;
+              return Opacity(
+                opacity: 1 - 0.55 * t,
+                child: Transform.translate(
+                  offset: Offset(0, drop),
+                  child: Transform.rotate(
+                    angle: 0.04 * t,
+                    alignment: Alignment.center,
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: RawImage(image: widget.image, fit: BoxFit.fill),
+          ),
+        ),
+      ),
+    );
+  }
 }

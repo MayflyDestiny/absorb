@@ -27,6 +27,7 @@ import '../services/book_search_index.dart';
 import '../services/home_widget_service.dart';
 import '../services/queue_download_policy.dart';
 import '../services/siri_service.dart';
+import '../services/user_account_service.dart';
 import '../utils/absorbing_inclusion.dart';
 import '../utils/app_platform.dart';
 import '../l10n/app_localizations.dart';
@@ -157,7 +158,11 @@ class LibraryProvider extends ChangeNotifier
     if (auth.isAuthenticated) {
       final isFreshLogin = !wasAuthenticated;
 
-      final authKey = '${auth.userId}@${auth.serverUrl}';
+      // The account's pinned data scope, not its URL: editing the server
+      // address of the same account must not look like a different user and
+      // wipe the loaded shelves.
+      final authKey =
+          '${auth.userId}@${UserAccountService().activeScopeKey}';
       final isNewUser = _lastAuthKey != null && authKey != _lastAuthKey;
       final isDuplicate = !isNewUser && !isFreshLogin;
       debugPrint(

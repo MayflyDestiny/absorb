@@ -17,6 +17,11 @@ class SavedAccount {
   final Map<String, String> customHeaders;
   final ServerBackend backend;
 
+  /// The scope this account's data lives under, once it has been pinned.
+  /// Stays fixed when the account's URL is edited (a dynamic-DNS change, a
+  /// mirror address), so the per-user data does not have to be migrated.
+  final String? pinnedScopeKey;
+
   SavedAccount({
     required this.serverUrl,
     required this.username,
@@ -26,17 +31,33 @@ class SavedAccount {
     this.isLegacyToken = false,
     Map<String, String> customHeaders = const {},
     this.backend = ServerBackend.audiobookshelf,
+    this.pinnedScopeKey,
   }) : customHeaders = Map.unmodifiable(customHeaders);
 
-  /// Unique key for scoping per-user SharedPreferences data.
-  /// Uses serverUrl + username to uniquely identify an account.
-  String get scopeKey {
+  /// Unique key for scoping per-user SharedPreferences data. Pinned per
+  /// account once saved; otherwise derived from serverUrl + username.
+  String get scopeKey => pinnedScopeKey ?? _derivedScopeKey;
+
+  String get _derivedScopeKey {
     // Normalize: strip protocol and trailing slashes for consistency
     final cleanUrl = serverUrl
         .replaceAll(RegExp(r'^https?://'), '')
         .replaceAll(RegExp(r'/+$'), '');
     return '${cleanUrl}_$username';
   }
+
+  /// Rebuild this account with [scope] pinned, keeping all other fields.
+  SavedAccount withPinnedScope(String scope) => SavedAccount(
+        serverUrl: serverUrl,
+        username: username,
+        token: token,
+        refreshToken: refreshToken,
+        userId: userId,
+        isLegacyToken: isLegacyToken,
+        customHeaders: customHeaders,
+        backend: backend,
+        pinnedScopeKey: scope,
+      );
 
   Map<String, dynamic> toJson() => {
         'serverUrl': serverUrl,
@@ -47,6 +68,7 @@ class SavedAccount {
         'isLegacyToken': isLegacyToken,
         'customHeaders': customHeaders,
         'backend': backend.key,
+        'scopeKey': scopeKey,
       };
 
   factory SavedAccount.fromJson(
@@ -64,6 +86,9 @@ class SavedAccount {
             ? Map<String, String>.from(json['customHeaders'] as Map? ?? const {})
             : legacyCustomHeaders,
         backend: ServerBackend.fromKey(json['backend'] as String?),
+        pinnedScopeKey: (json['scopeKey'] as String?)?.isNotEmpty == true
+            ? json['scopeKey'] as String
+            : null,
       );
 
   @override
@@ -89,20 +114,24 @@ class UserAccountService {
 
   static const _accountsKey = 'saved_accounts';
   static const _activeKey = 'active_account_scope';
+  static const _scopeHintsKey = 'account_scope_hints';
 
   /// Runs before a sign-in changes the active account, so anything still
   /// being recorded for the old one is saved under it first.
   static Future<void> Function(SavedAccount next)? beforeAccountChange;
 
-  /// Told when an account's address changes, for data kept outside its
-  /// scope that names the scope (which account each download came from).
-  static Future<void> Function(String from, String to)? onScopeMoved;
-
   List<SavedAccount> _accounts = [];
+  // URL|username -> pinned scope for accounts whose data must survive a
+  // remove/re-add. Only pinned (URL-edited) accounts need one; a derived
+  // scope re-derives identically.
+  Map<String, String> _scopeHints = {};
   String? _activeScopeKey;
 
   List<SavedAccount> get accounts => List.unmodifiable(_accounts);
   String get activeScopeKey => _activeScopeKey ?? '';
+
+  static String _hintKey(String serverUrl, String username) =>
+      '$serverUrl|$username';
 
   /// Initialise from SharedPreferences. Call once at app startup.
   Future<void> init() async {
@@ -131,9 +160,14 @@ class UserAccountService {
         debugPrint('[UserAccount] Failed to load accounts: $e');
       }
     }
+    try {
+      final hints = prefs.getString(_scopeHintsKey);
+      if (hints != null) {
+        _scopeHints = Map<String, String>.from(jsonDecode(hints) as Map);
+      }
+    } catch (_) {}
 
     // Load active scope
-    _activeScopeKey = prefs.getString(_activeKey);
     _activeScopeKey = prefs.getString(_activeKey);
     debugPrint('[UserAccount] Loaded ${_accounts.length} accounts, active=$_activeScopeKey');
     await _alignScopeWithSession(prefs);
@@ -173,13 +207,24 @@ class UserAccountService {
     } catch (e) {
       debugPrint('[UserAccount] beforeAccountChange failed: $e');
     }
-    // Remove existing entry for same server+username (update token)
+    // Re-login on the same server+username must keep the scope its data was
+    // pinned to (the account's URL may have been edited since it was added).
+    final previous = _accounts.where(
+      (a) => a.serverUrl == account.serverUrl && a.username == account.username,
+    );
+    final hinted = _scopeHints[_hintKey(account.serverUrl, account.username)];
+    final pinned = previous.isEmpty ? hinted : previous.first.pinnedScopeKey;
+    final saved = pinned == null ? account : account.withPinnedScope(pinned);
+    if (previous.isEmpty && hinted != null) {
+      _scopeHints.remove(_hintKey(account.serverUrl, account.username));
+      await _persistScopeHints();
+    }
     _accounts.removeWhere(
-        (a) => a.serverUrl == account.serverUrl && a.username == account.username);
-    _accounts.insert(0, account); // Most recent first
-    _activeScopeKey = account.scopeKey;
+        (a) => a.serverUrl == saved.serverUrl && a.username == saved.username);
+    _accounts.insert(0, saved); // Most recent first
+    _activeScopeKey = saved.scopeKey;
     await _persist();
-    debugPrint('[UserAccount] Saved & activated: ${account.username}@${account.serverUrl}');
+    debugPrint('[UserAccount] Saved & activated: ${saved.username}@${saved.serverUrl}');
   }
 
   /// Switch to a different saved account. Returns the account or null if not found.
@@ -198,15 +243,20 @@ class UserAccountService {
   /// Remove a saved account. Does NOT delete its scoped data (in case the
   /// user wants to re-add later). Returns true if found and removed.
   Future<bool> removeAccount(String serverUrl, String username) async {
-    final before = _accounts.length;
-    _accounts.removeWhere(
+    final index = _accounts.indexWhere(
         (a) => a.serverUrl == serverUrl && a.username == username);
-    if (_accounts.length < before) {
-      await _persist();
-      debugPrint('[UserAccount] Removed: $username@$serverUrl');
-      return true;
+    if (index < 0) return false;
+    final removed = _accounts.removeAt(index);
+    if (removed.pinnedScopeKey != null) {
+      // A pinned scope would otherwise be unreachable after a re-add: remember
+      // it by the connection the user will type again.
+      _scopeHints[_hintKey(removed.serverUrl, removed.username)] =
+          removed.scopeKey;
+      await _persistScopeHints();
     }
-    return false;
+    await _persist();
+    debugPrint('[UserAccount] Removed: $username@$serverUrl');
+    return true;
   }
 
   /// Update tokens for the active account (e.g. after token refresh).
@@ -228,6 +278,7 @@ class UserAccountService {
         isLegacyToken: old.isLegacyToken,
         customHeaders: old.customHeaders,
         backend: old.backend,
+        pinnedScopeKey: old.scopeKey,
       );
       await _persist();
     }
@@ -344,14 +395,15 @@ class UserAccountService {
       isLegacyToken: old.isLegacyToken,
       customHeaders: old.customHeaders,
       backend: old.backend,
+      pinnedScopeKey: old.scopeKey,
     );
     await _persist();
   }
 
   /// Change the server URL of a saved account (e.g. a dynamic-DNS hostname
-  /// changed) WITHOUT losing the account's per-user data. The scopeKey is
-  /// derived from the URL, so every scoped SharedPreferences key is migrated
-  /// from the old scope to the new one. Returns true if the account was found.
+  /// changed) WITHOUT losing the account's per-user data. The data scope is
+  /// pinned to the account, so it stays valid under the new URL and nothing
+  /// has to be copied. Returns true if the account was found.
   Future<bool> updateAccountUrl(
       String oldServerUrl, String username, String newServerUrl) async {
     final index = _accounts.indexWhere(
@@ -365,15 +417,16 @@ class UserAccountService {
     );
   }
 
-  /// Update the URL and proxy headers for one saved account. If the URL
-  /// changes, scoped per-account data follows it just as it did for the older
-  /// URL-only editor.
+  /// Update the URL and proxy headers for one saved account. The account keeps
+  /// its pinned scope, so stats, progress and downloads stay attached to it
+  /// without migrating every stored key.
   Future<bool> updateAccountConnection(
     String oldServerUrl,
     String username,
     String newServerUrl,
     Map<String, String> customHeaders,
   ) async {
+    final sw = Stopwatch()..start();
     final idx = _accounts.indexWhere(
         (a) => a.serverUrl == oldServerUrl && a.username == username);
     if (idx < 0) return false;
@@ -388,64 +441,20 @@ class UserAccountService {
       isLegacyToken: old.isLegacyToken,
       customHeaders: customHeaders,
       backend: old.backend,
+      pinnedScopeKey: old.scopeKey,
     );
 
-    final oldScope = old.scopeKey;
-    final newScope = updated.scopeKey;
-    await _migrateScopedData(oldScope, newScope);
-    if (oldScope != newScope) await onScopeMoved?.call(oldScope, newScope);
-
     _accounts[idx] = updated;
-    // If this was the active account, re-point the active scope so scoped
-    // reads/writes land on the migrated data.
-    if (_activeScopeKey == oldScope) {
-      _activeScopeKey = newScope;
+    // The scope did not change, but keep the pointer aligned if it was this
+    // account's.
+    if (_activeScopeKey == old.scopeKey) {
+      _activeScopeKey = updated.scopeKey;
     }
     await _persist();
     debugPrint(
-        '[UserAccount] Updated server URL for $username: $oldServerUrl -> $newServerUrl');
+        '[UserAccount] Updated server URL for $username: $oldServerUrl -> '
+        '$newServerUrl in ${sw.elapsedMilliseconds}ms (data scope kept)');
     return true;
-  }
-
-  /// Copy every `oldScope:*` SharedPreferences key to `newScope:*` (without
-  /// clobbering keys that already exist under the new scope), then remove the
-  /// old ones. No-op when the scope is unchanged.
-  Future<void> _migrateScopedData(String oldScope, String newScope) async {
-    if (oldScope.isEmpty || newScope.isEmpty || oldScope == newScope) return;
-    final prefs = await SharedPreferences.getInstance();
-    final oldPrefix = '$oldScope:';
-    final newPrefix = '$newScope:';
-    int moved = 0;
-    for (final key in prefs.getKeys().toList()) {
-      if (!key.startsWith(oldPrefix)) continue;
-      final newKey = '$newPrefix${key.substring(oldPrefix.length)}';
-      if (prefs.containsKey(newKey)) {
-        // Target already has data for this key; drop the stale old copy.
-        await prefs.remove(key);
-        continue;
-      }
-      final value = prefs.get(key);
-      bool copied = true;
-      if (value is String) {
-        await prefs.setString(newKey, value);
-      } else if (value is bool) {
-        await prefs.setBool(newKey, value);
-      } else if (value is int) {
-        await prefs.setInt(newKey, value);
-      } else if (value is double) {
-        await prefs.setDouble(newKey, value);
-      } else if (value is List<String>) {
-        await prefs.setStringList(newKey, value);
-      } else {
-        copied = false; // unknown type — leave the old key untouched
-      }
-      if (copied) {
-        await prefs.remove(key);
-        moved++;
-      }
-    }
-    debugPrint(
-        '[UserAccount] Migrated $moved scoped key(s): $oldScope -> $newScope');
   }
 
   // ── Scoped key helpers ──────────────────────────────────
@@ -475,6 +484,15 @@ class UserAccountService {
     final prefs = await SharedPreferences.getInstance();
     if (_activeScopeKey != null) {
       await prefs.setString(_activeKey, _activeScopeKey!);
+    }
+  }
+
+  Future<void> _persistScopeHints() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_scopeHints.isEmpty) {
+      await prefs.remove(_scopeHintsKey);
+    } else {
+      await prefs.setString(_scopeHintsKey, jsonEncode(_scopeHints));
     }
   }
 }

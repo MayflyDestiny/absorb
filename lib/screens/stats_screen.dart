@@ -768,12 +768,21 @@ class _StatsScreenState extends State<StatsScreen>
         const spacing = 12.0;
         final cardWidth =
             (constraints.maxWidth - (spacing * (columns - 1))) / columns;
+        // On a two-column grid an odd card count leaves the last row half
+        // empty (the saved-time card is the usual last one). Let that lone
+        // card span the row instead of leaving a hole.
+        final lastSpansRow = columns == 2 && cards.length.isOdd;
         return Wrap(
           spacing: spacing,
           runSpacing: spacing,
           children: [
-            for (final card in cards)
-              SizedBox(width: cardWidth, child: card),
+            for (var i = 0; i < cards.length; i++)
+              SizedBox(
+                width: lastSpansRow && i == cards.length - 1
+                    ? constraints.maxWidth
+                    : cardWidth,
+                child: cards[i],
+              ),
           ],
         );
       },

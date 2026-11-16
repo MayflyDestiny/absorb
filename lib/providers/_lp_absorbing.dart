@@ -661,14 +661,19 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
   }
 
   Future<void> removeFromAbsorbing(String key) async {
-    debugPrint('[Absorbing] Removed $key (from ${_caller()})');
+    final sw = Stopwatch()..start();
     _manualAbsorbRemoves.add(key);
     _manualAbsorbAdds.remove(key);
     _finishedManualAbsorbAdds.remove(key);
     _absorbingBookIds.remove(key);
     _absorbingItemCache.remove(key);
-    await _saveManualAbsorbing();
+    // Paint the removal immediately; persisting the manual-remove list can
+    // take hundreds of ms and must not hold the card on screen.
     notifyListeners();
+    await _saveManualAbsorbing();
+    debugPrint(
+      '[RemoveTrace] provider remove $key saved ${sw.elapsedMilliseconds}ms',
+    );
     unawaited(_catchUpQueueAutoDownloads());
   }
 

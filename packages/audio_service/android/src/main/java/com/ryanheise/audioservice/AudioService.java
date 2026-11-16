@@ -1029,6 +1029,24 @@ public class AudioService extends MediaBrowserServiceCompat {
         getNotificationManager().cancel(NOTIFICATION_ID);
     }
 
+    /**
+     * Remove the media notification while keeping the MediaSession alive.
+     * The app deliberately avoids the normal idle -> stop() path on Android
+     * (Android 16 media-button routing), but a book explicitly removed from
+     * Now Playing must not leave its paused notification behind.
+     */
+    public void dismissNotification() {
+        ServiceCompat.stopForeground(this, STOP_FOREGROUND_DETACH);
+        getNotificationManager().cancel(NOTIFICATION_ID);
+        if (mediaSession != null) {
+            // Drop the removed book's title/art from the lock screen and the
+            // Android 13+ media carousel as well as the notification.
+            mediaSession.setMetadata(null);
+        }
+        notificationCreated = false;
+        releaseWakeLock();
+    }
+
     private void releaseMediaSession() {
         if (mediaSession == null) return;
         deactivateMediaSession();

@@ -18,7 +18,6 @@ import '../services/wording.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_player_service.dart';
-import '../services/player_settings.dart';
 import '../services/download_service.dart';
 import '../services/narrated_books.dart';
 import 'book_detail_sheet.dart';

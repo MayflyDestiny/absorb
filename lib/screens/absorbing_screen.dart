@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -64,19 +65,123 @@ class AbsorbingScreen extends StatefulWidget {
   State<AbsorbingScreen> createState() => _AbsorbingScreenState();
 }
 
-class _AbsorbingScreenState extends State<AbsorbingScreen> {
+class _AbsorbingScreenState extends State<AbsorbingScreen>
+    with SingleTickerProviderStateMixin {
   final _player = AudioPlayerService();
   // viewportFraction is fixed at construction time, so we swap controllers
   // when orientation changes (preserving the current page index).
   PageController _pageController = PageController(viewportFraction: 0.92);
   Orientation? _lastOrientation;
   final _cardKeys = <String, GlobalKey<AbsorbingCardState>>{};
+  final _cardBoundaryKeys = <String, GlobalKey>{};
   // 当前窗口的邻居封面预热：滑到第 5/6 张前就把模糊图、清晰图和配色做好。
   final _prewarmedCoverIdentities = <String>{};
   bool _prewarmScheduled = false;
+  // Card the user is actually looking at. Kept across list removals so the
+  // PageView's numeric page cannot silently slide onto a different book.
+  String? _visibleCardKey;
+  int _lastBooksLength = 0;
+  bool _pageReconcileScheduled = false;
 
   GlobalKey<AbsorbingCardState> _cardKey(String absorbingKey) {
     return _cardKeys.putIfAbsent(absorbingKey, () => GlobalKey<AbsorbingCardState>());
+  }
+
+  GlobalKey _cardBoundaryKey(String absorbingKey) {
+    return _cardBoundaryKeys.putIfAbsent(absorbingKey, () => GlobalKey());
+  }
+
+  OverlayEntry? _pendingRemovalEntry;
+  Completer<void>? _pendingRemovalStart;
+  bool _pendingRemovalStarted = false;
+  Timer? _pendingRemovalDisposeTimer;
+  // Starts at 1 so ordinary builds are untouched; reset to 0 before the list
+  // swap so the next card grows from the stack while the old one drops.
+  late final AnimationController _removalStageController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+    value: 1,
+  );
+  late final Animation<double> _removalStageScale = Tween<double>(
+    begin: 0.94,
+    end: 1,
+  ).animate(CurvedAnimation(
+    parent: _removalStageController,
+    curve: Curves.easeOutCubic,
+  ));
+
+  /// The card snapshot is taken before the list removal. Insert it right away
+  /// (identical pixels, invisible) so the next card can never flash at full
+  /// size for the frame between the swap and the overlay; the dismissal itself
+  /// starts only after the PageView has swapped in the next card.
+  void _acceptRemovalSnapshot(ui.Image image, Rect rect) {
+    _disposePendingRemovalSnapshot();
+    if (!mounted) {
+      image.dispose();
+      return;
+    }
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) {
+      image.dispose();
+      return;
+    }
+    final start = Completer<void>();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => CardDismissSnapshot(
+        image: image,
+        rect: rect,
+        start: start.future,
+        onDone: () {
+          if (entry.mounted) entry.remove();
+        },
+      ),
+    );
+    overlay.insert(entry);
+    _pendingRemovalEntry = entry;
+    _pendingRemovalStart = start;
+    _pendingRemovalStarted = false;
+    // The next card must already sit at the back-of-stack size on the frame
+    // the list swaps, or it pops in at full size first.
+    _removalStageController.value = 0;
+    _pendingRemovalDisposeTimer = Timer(const Duration(seconds: 2), () {
+      if (!identical(_pendingRemovalStart, start)) return;
+      debugPrint('[RemoveTrace] pending removal snapshot timed out');
+      _disposePendingRemovalSnapshot();
+    });
+  }
+
+  void _disposePendingRemovalSnapshot() {
+    _pendingRemovalDisposeTimer?.cancel();
+    _pendingRemovalDisposeTimer = null;
+    final entry = _pendingRemovalEntry;
+    _pendingRemovalEntry = null;
+    _pendingRemovalStart = null;
+    if (entry != null && entry.mounted) entry.remove();
+    // A snapshot that never got its list change must not leave the stage
+    // frozen at the back-of-stack size.
+    if (!_pendingRemovalStarted && _removalStageController.value == 0) {
+      _removalStageController.value = 1;
+    }
+    _pendingRemovalStarted = false;
+  }
+
+  void _schedulePendingRemovalSnapshot() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startPendingRemovalSnapshot();
+    });
+  }
+
+  void _startPendingRemovalSnapshot() {
+    final start = _pendingRemovalStart;
+    if (start == null) return;
+    _pendingRemovalDisposeTimer?.cancel();
+    _pendingRemovalDisposeTimer = null;
+    _pendingRemovalStarted = true;
+    if (!start.isCompleted) start.complete();
+    // The next card sits under the snapshot; scale it up from the stack while
+    // the old card drops away, matching the iOS card-stack dismissal.
+    _removalStageController.forward();
   }
 
 
@@ -137,6 +242,91 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
     if (!_pageController.hasClients) return _pageController.initialPage;
     return (_pageController.page ?? _pageController.initialPage.toDouble())
         .round();
+  }
+
+  /// Keep the visible card pinned when the list shrinks (a removal): the
+  /// PageView's numeric page would otherwise point at a different book,
+  /// re-initialising the card and flashing. Jump without animation; additions
+  /// and reorders keep the normal PageView behaviour.
+  void _syncVisiblePageAfterListChange(
+    List<Map<String, dynamic>> books,
+  ) {
+    final previousLength = _lastBooksLength;
+    if (books.length < previousLength) {
+      _schedulePendingRemovalSnapshot();
+    }
+    if (books.isEmpty) {
+      debugPrint(
+        '[PageTrace] list empty prev=$_lastBooksLength visible=$_visibleCardKey',
+      );
+      _lastBooksLength = 0;
+      _visibleCardKey = null;
+      return;
+    }
+    if (books.length == 1) {
+      debugPrint(
+        '[PageTrace] single card prev=$_lastBooksLength key=${_absorbingKey(books[0])}',
+      );
+      _visibleCardKey = _absorbingKey(books[0]);
+      _lastBooksLength = 1;
+      return;
+    }
+    _lastBooksLength = books.length;
+    final currentPage = _pageController.hasClients
+        ? (_pageController.page ?? _pageController.initialPage.toDouble())
+            .round()
+            .clamp(0, books.length - 1)
+            .toInt()
+        : 0;
+    if (previousLength != books.length) {
+      debugPrint(
+        '[PageTrace] list change $previousLength->${books.length} '
+        'page=$currentPage visible=$_visibleCardKey',
+      );
+    }
+    if (books.length >= previousLength) {
+      // PageView keeps its numeric page across an insertion/reorder, so the
+      // card the user is actually looking at becomes books[currentPage].
+      // Refresh the key here; otherwise a later removal pins the book that
+      // used to occupy this page and jumps to it (B1,C2,A3 -> remove B -> A).
+      final pageKey = _absorbingKey(books[currentPage]);
+      if (_visibleCardKey != pageKey) {
+        debugPrint('[PageTrace] follow page=$currentPage key=$pageKey');
+        _visibleCardKey = pageKey;
+      }
+      return;
+    }
+    if (_visibleCardKey == null) {
+      _visibleCardKey = _absorbingKey(books[currentPage]);
+      debugPrint(
+        '[PageTrace] init visible=$_visibleCardKey page=$currentPage',
+      );
+    }
+    if (!_pageController.hasClients || _pageReconcileScheduled) return;
+    final visibleKey = _visibleCardKey;
+    final existing = visibleKey == null
+        ? -1
+        : books.indexWhere((b) => _absorbingKey(b) == visibleKey);
+    final target = existing >= 0 ? existing : currentPage;
+    debugPrint(
+      '[PageTrace] shrink visible=$visibleKey current=$currentPage '
+      'existing=$existing target=$target',
+    );
+    _visibleCardKey = _absorbingKey(books[target]);
+    _pageReconcileScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageReconcileScheduled = false;
+      if (!mounted || !_pageController.hasClients) return;
+      final page = (_pageController.page ?? 0).round();
+      if (page != target) {
+        debugPrint('[PageTrace] jumpToPage $page->$target');
+        _pageController.jumpToPage(target);
+      } else {
+        debugPrint('[PageTrace] already on target $target');
+      }
+      final lib = context.read<LibraryProvider>();
+      _prewarmAroundPage(target, books, lib);
+    });
   }
 
   void _prewarmAroundPage(
@@ -301,6 +491,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
 
   @override
   void dispose() {
+    _disposePendingRemovalSnapshot();
+    _removalStageController.dispose();
     _player.removeListener(_rebuild);
     _cast.removeListener(_rebuild);
     PlayerSettings.settingsChanged.removeListener(_loadQueueMode);
@@ -636,36 +828,40 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
       if (_mergeLibraries || activeIsPodcast == isPod) {
         final activeKey = activeEpId != null ? '$activeId-$activeEpId' : activeId;
 
-        final existingIdx = items.indexWhere((b) => _absorbingKey(b) == activeKey);
-        // Only pull the active item to the top while it's actually playing.
-        // When paused, leave the queue order alone so a freshly-queued
-        // "beginning" episode stays first instead of being bumped to 2nd.
-        final activePlaying = _player.hasBook ? _player.isPlaying : _cast.isCasting;
-        if (!_suppressReorder && existingIdx > 0 && activePlaying) {
-          final item = items.removeAt(existingIdx);
-          items.insert(0, item);
-        } else if (existingIdx < 0) {
-          // Synthesize entry for the currently active item
-          final entry = <String, dynamic>{
-            'id': activeId,
-            'media': {
-              'metadata': {
-                'title': activeTitle,
-                'authorName': activeAuthor,
+        // A manual removal must not be undone by the "keep the current book
+        // on screen" synthesis below while stop() is still finishing.
+        if (!removes.contains(activeKey)) {
+          final existingIdx = items.indexWhere((b) => _absorbingKey(b) == activeKey);
+          // Only pull the active item to the top while it's actually playing.
+          // When paused, leave the queue order alone so a freshly-queued
+          // "beginning" episode stays first instead of being bumped to 2nd.
+          final activePlaying = _player.hasBook ? _player.isPlaying : _cast.isCasting;
+          if (!_suppressReorder && existingIdx > 0 && activePlaying) {
+            final item = items.removeAt(existingIdx);
+            items.insert(0, item);
+          } else if (existingIdx < 0) {
+            // Synthesize entry for the currently active item
+            final entry = <String, dynamic>{
+              'id': activeId,
+              'media': {
+                'metadata': {
+                  'title': activeTitle,
+                  'authorName': activeAuthor,
+                },
+                'duration': activeDuration,
+                'chapters': activeChapters,
               },
-              'duration': activeDuration,
-              'chapters': activeChapters,
-            },
-          };
-          if (activeEpId != null) {
-            entry['recentEpisode'] = {
-              'id': activeEpId,
-              'title': activeEpTitle ?? activeTitle,
-              'duration': activeDuration,
             };
-            entry['_absorbingKey'] = activeKey;
+            if (activeEpId != null) {
+              entry['recentEpisode'] = {
+                'id': activeEpId,
+                'title': activeEpTitle ?? activeTitle,
+                'duration': activeDuration,
+              };
+              entry['_absorbingKey'] = activeKey;
+            }
+            items.insert(0, entry);
           }
-          items.insert(0, entry);
         }
       }
     }
@@ -757,6 +953,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
         !_player.hasBook &&
         !_cast.isCasting &&
         lib.personalizedSections.isEmpty;
+
+    _syncVisiblePageAfterListChange(books);
 
     // 首帧后给前 6 张卡片预热模糊图/配色；第 5/6 张滑到时不再现场生成。
     if (books.isNotEmpty) _scheduleNeighborPrewarm(lib, books);
@@ -965,7 +1163,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                   : books.isEmpty
                       ? _emptyState(cs, tt, effectiveOffline, l)
                       : books.length == 1
-                          ? LayoutBuilder(
+                          ? ScaleTransition(
+                              scale: _removalStageScale,
+                              child: LayoutBuilder(
                               builder: (context, constraints) {
                                 final vPad = isPhoneLandscape
                                     ? 0.0
@@ -973,17 +1173,39 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                                 final hPad = isPhoneLandscape ? 0.0 : 4.0;
                                 return Padding(
                                   padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-                                  child: RepaintBoundary(child: AbsorbingCard(key: _cardKey(_absorbingKey(books[0])), item: books[0], player: _player)),
+                                  child: RepaintBoundary(
+                                    key: _cardBoundaryKey(
+                                      _absorbingKey(books[0]),
+                                    ),
+                                    child: AbsorbingCard(
+                                      key: _cardKey(_absorbingKey(books[0])),
+                                      snapshotKey: _cardBoundaryKey(
+                                        _absorbingKey(books[0]),
+                                      ),
+                                      onRemovalSnapshot:
+                                          _acceptRemovalSnapshot,
+                                      item: books[0],
+                                      player: _player,
+                                    ),
+                                  ),
                                 );
                               },
-                            )
-                          : PageView.builder(
+                            ),
+                          )
+                          : ScaleTransition(
+                          scale: _removalStageScale,
+                          child: PageView.builder(
                           controller: _pageController,
                           scrollDirection: Axis.horizontal,
                           clipBehavior: Clip.none,
                           // 提前构建邻页，滑动到下一张时卡片已经初始化过。
                           allowImplicitScrolling: true,
-                          onPageChanged: (i) => _prewarmAroundPage(i, books, lib),
+                          onPageChanged: (i) {
+                            if (i >= 0 && i < books.length) {
+                              _visibleCardKey = _absorbingKey(books[i]);
+                            }
+                            _prewarmAroundPage(i, books, lib);
+                          },
                           physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
                           itemCount: books.length,
                           itemBuilder: (_, i) => LayoutBuilder(
@@ -1029,11 +1251,26 @@ class _AbsorbingScreenState extends State<AbsorbingScreen> {
                                     ),
                                   );
                                 },
-                                child: RepaintBoundary(child: AbsorbingCard(key: _cardKey(_absorbingKey(books[i])), item: books[i], player: _player)),
+                                child: RepaintBoundary(
+                                  key: _cardBoundaryKey(
+                                    _absorbingKey(books[i]),
+                                  ),
+                                  child: AbsorbingCard(
+                                    key: _cardKey(_absorbingKey(books[i])),
+                                    snapshotKey: _cardBoundaryKey(
+                                      _absorbingKey(books[i]),
+                                    ),
+                                    onRemovalSnapshot:
+                                        _acceptRemovalSnapshot,
+                                    item: books[i],
+                                    player: _player,
+                                  ),
+                                ),
                               );
                             },
                           ),
                         ),
+                      ),
             ),
           ],
         );

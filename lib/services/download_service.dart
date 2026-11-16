@@ -527,9 +527,7 @@ class DownloadService extends ChangeNotifier {
   DownloadService._()
     : _initializeOverride = null,
       _cancelTasksOverride = null,
-      _deleteTaskRecordOverride = null {
-    UserAccountService.onScopeMoved = _moveOrigins;
-  }
+      _deleteTaskRecordOverride = null;
 
   @visibleForTesting
   DownloadService.forTesting({
@@ -603,28 +601,6 @@ class DownloadService extends ChangeNotifier {
 
   @visibleForTesting
   void debugSetOrigin(String itemId, String scope) => _origins[itemId] = scope;
-
-  /// An account's address changed: its downloads are still its own, and so
-  /// are the places kept for another account's books.
-  Future<void> _moveOrigins(String from, String to) async {
-    var moved = 0;
-    _origins.updateAll((_, scope) {
-      if (scope != from) return scope;
-      moved++;
-      return to;
-    });
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final spots = jsonDecode(prefs.getString(_otherAccountSpotsKey) ?? '{}') as Map<String, dynamic>;
-      final renamed = {
-        for (final e in spots.entries)
-          e.key.startsWith('$from|') ? '$to|${e.key.substring(from.length + 1)}' : e.key: e.value,
-      };
-      await prefs.setString(_otherAccountSpotsKey, jsonEncode(renamed));
-    } catch (_) {}
-    if (moved > 0) await _save();
-    debugPrint('[Download] $moved download(s) moved with their account: $from -> $to');
-  }
 
   static const _otherAccountSpotsKey = 'other_account_reading';
 

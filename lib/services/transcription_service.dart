@@ -17,7 +17,6 @@ import 'api_service.dart';
 import 'audio_player_service.dart';
 import 'download_service.dart';
 import 'inflight_temp_writes.dart';
-import 'player_settings.dart';
 import 'remote_audio_slice.dart';
 import '../utils/whisper_language.dart';
 

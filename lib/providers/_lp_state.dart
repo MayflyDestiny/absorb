@@ -170,6 +170,11 @@ mixin _StateMixin on ChangeNotifier {
   List<dynamic> get personalizedSections => _personalizedSections;
   List<dynamic> get series => _series;
   bool get isLoading => _isLoading;
+
+  /// Whether [key] is still part of the Absorbing list. Used by cards and
+  /// background work to stop touching an item the user just removed.
+  bool isInAbsorbing(String key) =>
+      _absorbingBookIds.contains(key) || _absorbingItemCache.containsKey(key);
   bool get isLoadingSeries => _isLoadingSeries;
   String? get errorMessage => _errorMessage;
   List<dynamic> get playlists => _playlists;
