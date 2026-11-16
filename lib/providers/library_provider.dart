@@ -272,11 +272,28 @@ class LibraryProvider extends ChangeNotifier
             debugPrint('[Library] Offline start: podcast tab=$on library=$tabLib');
           }));
           _networkOffline = true;
+          // Mirror into the player, exactly as setNetworkOffline does. This
+          // launch path flips the flag directly, so without this the service
+          // still believes it is online: a play of a streamed book would head
+          // for the network, and the foreground session prewarm would keep
+          // attempting a /play the offline state exists to avoid.
+          AudioPlayerService().setKnownOffline(true);
           _buildOfflineSections();
           _isLoading = false;
           notifyListeners();
           refreshLocalProgress();
-          if (_deviceHasConnectivity) _startServerPingTimer();
+          // Recover on our own instead of waiting for a tap on the cloud:
+          // the boot ping that marked us offline often just raced the radio
+          // still coming up, and a second attempt seconds later answers. The
+          // connectivity flag can lag this flip at boot too, so don't gate
+          // on it - probe immediately. pingServerAuthenticated never throws,
+          // and every failure path in _runServerPing reschedules into the
+          // ping timer's backoff cadence, so a genuinely down server still
+          // settles into 20s→60s polling on its own.
+          if (!_manualOffline) {
+            _offlinePingInterval = _CoreMixin._offlinePingBase;
+            unawaited(_runServerPing());
+          }
           _completeAccountLoad(accountLoadGeneration);
           return;
         }

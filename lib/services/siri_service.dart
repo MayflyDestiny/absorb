@@ -95,7 +95,7 @@ class SiriService {
     if (result.status == 'none' && await AndroidAutoService().getApi() == null) {
       return {'status': 'signedOut', 'items': const []};
     }
-    debugPrint('[Siri] resolve -> ${result.status}: ${result.items.map((e) => e.title).join(' | ')}');
+    debugPrint('[Siri] resolve -> ${result.status}: ${result.items.length} item(s)');
     return {'status': result.status, 'items': result.items.map(_itemJson).toList()};
   }
 

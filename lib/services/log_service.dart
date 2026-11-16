@@ -254,8 +254,9 @@ class LogService {
     caseSensitive: false,
   );
 
-  /// Sanitize a single log message: mask URLs, sensitive query params, and
-  /// bare key=value pairs that look like credentials.
+  /// Sanitize a single log message: mask URLs, sensitive query params, bare
+  /// key=value pairs that look like credentials, and the user's own library
+  /// content (book, chapter and author names).
   static String _sanitize(String message) {
     var result = _sanitizeUrls(message);
     // Mask standalone sensitive key=value pairs not inside URLs
@@ -267,7 +268,26 @@ class LogService {
       ),
       (m) => '${m.group(1)}=***',
     );
-    return result;
+    return _maskLibraryContent(result);
+  }
+
+  /// Book titles, chapter titles and author names are the user's own library,
+  /// not diagnostics: a log sent to support must not carry what they are
+  /// listening to. Two shapes cover it - the quoted `title="…"` /
+  /// `artist="…"` / `author="…"` fields, and any CJK text, which in this app's
+  /// English log can only come from content or a localised server message.
+  /// Item ids stay intact: they are the key support needs to correlate a
+  /// problem, and they are not credentials.
+  static String _maskLibraryContent(String content) {
+    var result = content.replaceAllMapped(
+      RegExp(
+        r'\b(title|artist|album|author|subtitle|bookName)\s*=\s*"[^"]*"',
+        caseSensitive: false,
+      ),
+      (m) => '${m.group(1)}="***"',
+    );
+    result = result.replaceAll(RegExp(r'"[^"]*[\u3400-\u9fff][^"]*"'), '"***"');
+    return result.replaceAll(RegExp(r'[\u3400-\u9fff\uf900-\ufaff]+'), '***');
   }
 
   /// Sanitize URLs in log content, replacing server hosts with a connection

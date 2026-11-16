@@ -24,6 +24,7 @@ import '../services/log_service.dart';
 import '../services/json_file_cache.dart';
 import '../services/cover_cache_manager.dart';
 import '../services/session_cache.dart';
+import '../services/playback_manifest.dart';
 import '../services/transcript_line_store.dart';
 import '../services/ebook_cache.dart';
 import '../services/pdf_cache_manager.dart';
@@ -247,6 +248,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _transcriptCacheBytes = 0;
   int _streamingCacheBytes = 0;
   int _sessionCacheBytes = 0;
+  int _manifestCacheBytes = 0;
   int _ebookCacheBytes = 0;
   int _exportCacheBytes = 0;
   int _pdfStreamCacheBytes = 0;
@@ -1554,6 +1556,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _transcriptCacheBytes +
       _streamingCacheBytes +
       _sessionCacheBytes +
+      _manifestCacheBytes +
       _ebookCacheBytes +
       _ebookStreamCacheBytes +
       _exportCacheBytes;
@@ -1726,9 +1729,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final jsonBytes = await JsonFileCache.usageBytes();
     final coverBytes = await _measureCoverBytes();
     final transcriptBytes = await TranscriptLineStore.instance.cacheBytes();
-    final [streamBytes, sessionBytes] = await Future.wait([
+    final [streamBytes, sessionBytes, manifestBytes] = await Future.wait([
       _measureStreamingCacheBytes(),
       SessionCache.byteSize(),
+      PlaybackManifest.byteSize(),
     ]);
     final exportBytes = await _measureExportBytes();
     final systemStats = await DownloadService.getStorageStats();
@@ -1741,6 +1745,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _transcriptCacheBytes = transcriptBytes;
       _streamingCacheBytes = streamBytes;
       _sessionCacheBytes = sessionBytes;
+      _manifestCacheBytes = manifestBytes;
       _ebookCacheBytes = ebookBytes;
       _ebookStreamCacheBytes = ebookStreamBytes;
       _exportCacheBytes = exportBytes;
@@ -1852,16 +1857,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.dns_outlined,
                   title: l.appCache,
                   subtitle: l.cacheAppDataHint,
-                  sizeBytes: _jsonCacheBytes + _sessionCacheBytes,
-                  enabled: _jsonCacheBytes + _sessionCacheBytes > 0,
+                  sizeBytes:
+                      _jsonCacheBytes + _sessionCacheBytes + _manifestCacheBytes,
+                  enabled:
+                      _jsonCacheBytes + _sessionCacheBytes + _manifestCacheBytes >
+                      0,
                   clearedMessage: l.appCacheCleared,
                   onClear: () async {
                     await JsonFileCache.clearAll();
                     await SessionCache.clearAll();
+                    // Start manifests are the third piece of "app data": tiny
+                    // per-book file lists that let a start rebuild its source
+                    // without the item payload.
+                    await PlaybackManifest.clearAll();
                     if (mounted) {
                       setState(() {
                         _jsonCacheBytes = 0;
                         _sessionCacheBytes = 0;
+                        _manifestCacheBytes = 0;
                       });
                     }
                   },
@@ -2012,6 +2025,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await DownloadService().forgetKeptEbooks();
     await _deleteLooseEbooks();
     await SessionCache.clearAll();
+    unawaited(PlaybackManifest.clearAll());
     await TranscriptLineStore.instance.clearAll();
     try {
       await AudioPlayer.clearStreamingCache();
@@ -2032,6 +2046,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _transcriptCacheBytes = 0;
       _streamingCacheBytes = 0;
       _sessionCacheBytes = 0;
+      _manifestCacheBytes = 0;
       _ebookCacheBytes = 0;
       _exportCacheBytes = 0;
       _pdfStreamCacheBytes = 0;

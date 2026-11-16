@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'achievements.dart';
 import 'auth_tokens.dart';
 import 'chapter_cache.dart';
+import 'playback_manifest.dart';
 import 'json_file_cache.dart';
 import 'book_dock.dart';
 import 'book_requests.dart';
@@ -3775,6 +3776,10 @@ class ApiService {
           '${response.body.length}B',
         );
         unawaited(JsonFileCache.write(cacheKey, data));
+        // Leave a tiny start manifest behind: a later start with no snapshot
+        // and no session cache can then build its source from the file ids
+        // instead of waiting for this multi-MB payload again.
+        unawaited(PlaybackManifest.saveFromItem(itemId, data));
         final media = data['media'];
         if (media is Map && media['chapters'] is List) {
           unawaited(ChapterCache.write(
@@ -3973,6 +3978,7 @@ class ApiService {
           '${response.body.length}B',
         );
         unawaited(JsonFileCache.write(cacheKey, data));
+        unawaited(PlaybackManifest.saveFromItem(itemId, data));
         return data;
       }
       debugPrint(

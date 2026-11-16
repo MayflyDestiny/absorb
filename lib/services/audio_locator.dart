@@ -255,7 +255,7 @@ class AudioLocator {
           final between = counts.fold<double>(0, (x, y) => x + y);
           anchorStart = aStart;
           anchoredEst = aStart + (between + offset) * _fallbackSecPerChar;
-          debugPrint('[FindAudio] anchored on si=$a "${aCh['title']}" '
+          debugPrint('[FindAudio] anchored on si=$a '
               'start=${aStart.toStringAsFixed(0)} '
               'charsBetween=${between.toInt()} est=${anchoredEst.toStringAsFixed(1)}');
         }

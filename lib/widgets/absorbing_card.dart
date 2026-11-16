@@ -100,6 +100,18 @@ class AbsorbingCardState extends State<AbsorbingCard>
   // Set when a server change lands mid-fetch, so the in-flight pass is followed
   // by one more instead of swallowing the update.
   bool _refetchQueued = false;
+  // When this card last paid for a cache-bypassing full-item read. That read is
+  // several MB on a thousand-file book, and the server's tick also moves on the
+  // progress writes this app pushes itself (one real capture: the same 2.87 MB
+  // item fetched twice back to back, then again on every tap). The floor keeps
+  // a progress bump from buying a whole new copy; a genuine chapter edit is
+  // still picked up by the next pass once it expires.
+  DateTime? _lastForcedRefetchAt;
+  static const _forcedRefetchCooldown = Duration(minutes: 3);
+  // How long a scheduled multi-MB read waits for a tap to claim the pipe. A
+  // start fired mid-download has to share the tunnel with the item, which is
+  // how one start ended up taking 4.3s the moment the item finished.
+  static const _startQuietWindow = Duration(milliseconds: 1200);
   StreamSubscription<Duration>? _chapterTrackSub;
   int _lastChapterIdx = -1;
   CoverBlurLease? _blurLease; // Cached blurred background (owned by the cache)
@@ -723,10 +735,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
       );
       return;
     }
-    debugPrint(
-      '[BgTrace] card refetch start item=$_itemId force=$forceChapters '
-      'loading=${widget.player.isLoadingOrBuffering}',
-    );
+    // No entry log: this runs on every card rebuild for every absorbing item,
+    // and only the outcome (cache hit / deferred / fetched) is worth a line.
     try {
       // Disk copy first: it unlocks chapters immediately and is also where a
       // just-finished playback start wrote its item.
@@ -744,6 +754,36 @@ class AbsorbingCardState extends State<AbsorbingCard>
         _scheduleRefetchWhenIdle();
         return;
       }
+      if (forceChapters) {
+        // The server clock (updatedAt) advances on progress writes too, so a
+        // bare tick comparison would buy a fresh multi-MB copy every few
+        // seconds while listening. Cap how often that copy is paid for. The
+        // timestamp is stamped below, right before the request, so a pass that
+        // ends up deferred does not burn the window.
+        final last = _lastForcedRefetchAt;
+        if (last != null &&
+            DateTime.now().difference(last) < _forcedRefetchCooldown) {
+          debugPrint(
+            '[BgTrace] card refetch skip (forced read '
+            '${DateTime.now().difference(last).inSeconds}s ago) item=$_itemId',
+          );
+          return;
+        }
+      }
+      // This refetch is scheduled by the same foreground (and by the progress
+      // bumps of the previous tap) that puts a finger back on the play button,
+      // so a tap often lands while the item is still downloading. On a
+      // thousand-file book that download owns the tunnel and the first audio
+      // bytes queue behind it. Give the tap the first claim; if a start does
+      // begin, hand the pipe over and retry when it goes idle.
+      await Future<void>.delayed(_startQuietWindow);
+      if (!mounted) return;
+      if (widget.player.isLoadingOrBuffering) {
+        debugPrint('[BgTrace] card refetch defer (start began) item=$_itemId');
+        _scheduleRefetchWhenIdle();
+        return;
+      }
+      if (forceChapters) _lastForcedRefetchAt = DateTime.now();
       final fullItem = await api.fetchLibraryItemBackground(_itemId);
       if (fullItem == null) {
         // Another background transfer was in flight, or a playback start/stop
@@ -2451,10 +2491,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
       return;
     }
     final sw = Stopwatch()..start();
-    debugPrint(
-      '[StartTrace] card tap item=$_itemId snapshot=${_fullItem != null} '
-      'inFlight=${api.backgroundItemFetchFor(_itemId) != null}',
-    );
+    // playItem's own `0ms` line already carries item, snapshot and in-flight
+    // item state, so this tap does not need its own entry log.
     final error = await widget.player.playItem(
       api: api,
       itemId: _itemId,

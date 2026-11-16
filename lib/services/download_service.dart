@@ -1077,10 +1077,10 @@ class DownloadService extends ChangeNotifier {
         libraryId: info.libraryId,
       );
       await _save();
-      debugPrint('[Download] migrated "$title" (${sources.length} files)');
+      debugPrint('[Download] migrated (${sources.length} files)');
       return true;
     } catch (e) {
-      debugPrint('[Download] migrate "$title" failed: $e');
+      debugPrint('[Download] migrate failed: $e');
       return false;
     }
   }
@@ -1122,7 +1122,7 @@ class DownloadService extends ChangeNotifier {
             : await _relayoutInternalBook(info);
         if (ok) moved++;
       } catch (e) {
-        debugPrint('[Download] relayout "${info.title}" failed: $e');
+        debugPrint('[Download] relayout failed: $e');
       }
     }
     await prefs.setBool(_downloadLayoutV2Key, true);
@@ -1243,7 +1243,7 @@ class DownloadService extends ChangeNotifier {
       );
       return true;
     } catch (e) {
-      debugPrint('[Download] relayout SAF "${info.title}" failed: $e');
+      debugPrint('[Download] relayout SAF failed: $e');
       return false;
     }
   }
@@ -2913,7 +2913,7 @@ class DownloadService extends ChangeNotifier {
     // holding the bare podcast id (the transcription download prompt did)
     // used to fail in the key math before a single request went out.
     if (episodeId != null && !itemId.endsWith('-$episodeId')) {
-      debugPrint('[Download] "$title": composing the episode key from '
+      debugPrint('[Download] composing the episode key from '
           'podcast $itemId + episode $episodeId');
       itemId = '$itemId-$episodeId';
     }
@@ -3187,7 +3187,7 @@ class DownloadService extends ChangeNotifier {
   }) async {
     _activeDownloadIds.add(itemId);
     _cancelledIds.remove(itemId);
-    debugPrint('[Download] Starting "$title" ($itemId)');
+    debugPrint('[Download] Starting $itemId');
 
     _downloads[itemId] = DownloadInfo(
       itemId: itemId,
@@ -3265,12 +3265,12 @@ class DownloadService extends ChangeNotifier {
       final authorField = episodeId != null ? 'title' : 'authorName';
       final serverAuthor = (serverMeta?[authorField] as String?)?.trim() ?? '';
       if (serverTitle.isNotEmpty && serverTitle != title) {
-        debugPrint('[Download] Title from the server: "$serverTitle" (was "$title")');
+        debugPrint('[Download] Title from the server differs from the local copy');
         title = serverTitle;
       }
       var renamed = false;
       if (serverAuthor.isNotEmpty && serverAuthor != author) {
-        debugPrint('[Download] Author from the server: "$serverAuthor" (was "$author")');
+        debugPrint('[Download] Author from the server differs from the local copy');
         author = serverAuthor;
         renamed = true;
       }
@@ -3300,7 +3300,7 @@ class DownloadService extends ChangeNotifier {
       final usesSessionLinks = files.any((f) => _isSessionLink(f.url));
       if (usesSessionLinks) {
         _linkSessions[itemId] = (api: api, sessionId: sessionId!);
-        debugPrint('[Download] No permanent file links for "$title", downloading '
+        debugPrint('[Download] No permanent file links, downloading '
             'through play session $sessionId (kept open until the download ends)');
       }
 
@@ -3495,7 +3495,7 @@ class DownloadService extends ChangeNotifier {
         );
         if (!ok) throw Exception('Failed to enqueue track ${i + 1}');
       }
-      debugPrint('[Download] Enqueued ${files.length} task(s) for "$title"');
+      debugPrint('[Download] Enqueued ${files.length} task(s) for $itemId');
     } catch (e) {
       await _failBook(
         itemId,
@@ -3670,7 +3670,7 @@ class DownloadService extends ChangeNotifier {
         progressBar: true,
       );
       final ok = await FileDownloader().enqueue(task);
-      debugPrint('[Download] narration EPUB for "$title" ($itemId) enqueued ok=$ok: $filename, '
+      debugPrint('[Download] narration EPUB for $itemId enqueued ok=$ok: $filename, '
           '${size ?? '?'} bytes, from ${Uri.parse(url).path}, dir=${bookDir.path}, '
           '${serverTimings ? "BookOrbit's timings kept, " : ''}'
           'audio goes to ${useSaf ? 'the custom folder' : 'app storage'} once it lands');
@@ -3691,7 +3691,7 @@ class DownloadService extends ChangeNotifier {
     try {
       bytes = File(epubPath).lengthSync();
     } catch (_) {}
-    debugPrint('[Download] narration EPUB for "${p.title}" ($itemId) landed ($bytes bytes) - taking its audio out');
+    debugPrint('[Download] narration EPUB for $itemId landed ($bytes bytes) - taking its audio out');
     Map<String, dynamic>? item;
     try {
       item = (jsonDecode(p.slimSessionJson ?? '{}') as Map<String, dynamic>)['libraryItem']
@@ -3706,7 +3706,7 @@ class DownloadService extends ChangeNotifier {
         debugPrint('[Download] narration for $itemId has no saved item to keep it with');
       }
     } catch (e) {
-      debugPrint('[Download] taking the narration out of "${p.title}" ($itemId) failed: $e');
+      debugPrint('[Download] taking the narration out of $itemId failed: $e');
     }
     if (!ok) {
       p.finalizing = false; // let _failBook proceed
@@ -3718,7 +3718,7 @@ class DownloadService extends ChangeNotifier {
     await _persistPending();
     await _deleteDbRecords(itemId, p.trackCount);
     notifyListeners();
-    debugPrint('[Download] Complete: ${p.title} (narration, kept '
+    debugPrint('[Download] Complete: ${p.itemId} (narration, kept '
         '${DateTime.now().difference(started).inMilliseconds}ms after the EPUB landed)');
     unawaited(_processQueue());
   }
@@ -4857,7 +4857,7 @@ class DownloadService extends ChangeNotifier {
       }
     } catch (_) {}
 
-    debugPrint('[Download] Complete: ${p.title} (${localPaths.length} files)');
+    debugPrint('[Download] Complete: ${p.itemId} (${localPaths.length} files)');
     unawaited(_processQueue());
   }
 
@@ -4953,7 +4953,7 @@ class DownloadService extends ChangeNotifier {
     await _persistPending();
     await _deleteDbRecords(itemId, p?.trackCount ?? 0);
     _cancelledIds.remove(itemId);
-    debugPrint('[Download] Cancelled: ${p?.title ?? itemId}');
+    debugPrint('[Download] Cancelled: $itemId');
     notifyListeners();
     unawaited(_processQueue());
   }

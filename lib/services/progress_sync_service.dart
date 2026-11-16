@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'api_service.dart';
 import 'download_service.dart';
+import 'playback_quiet_gate.dart';
 import 'scoped_prefs.dart';
 import 'sync_logic.dart';
 
@@ -683,6 +684,20 @@ class ProgressSyncService {
     await _flushOfflineListeningTimeInternal(api: api);
   }
 
+  /// Hold background work back while a start owns the pipe: it is loading, or
+  /// it just sounded and its first bytes are still settling. Bounded, so a
+  /// caller is never parked for long; `false` means the pipe is still taken.
+  Future<bool> _yieldToPlaybackStart({
+    Duration budget = const Duration(seconds: 4),
+  }) async {
+    final gate = Stopwatch()..start();
+    while (PlaybackQuietGate.ownsPipe()) {
+      if (gate.elapsedMilliseconds >= budget.inMilliseconds) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    return true;
+  }
+
   Future<void> _flushOfflineListeningTimeInternal({required ApiService api}) async {
     // Guard against concurrent runs. Without this, "back online" triggers
     // both the external flushOfflineListeningTime and flushPendingSync's
@@ -694,6 +709,24 @@ class ProgressSyncService {
       final pending = List<String>.from(
           await ScopedPrefs.getStringList('pending_offline_listening'));
       if (pending.isEmpty) return;
+      // Crediting this listening time needs a playback session, and on a
+      // server that doesn't compress its API JSON that `/play` body is several
+      // MB (measured 4.2 MB). This flush runs right when the app comes back -
+      // exactly when the listener reaches for play - so it must not take the
+      // pipe from a start. A start that doesn't clear in time leaves the
+      // ledger intact; flushPendingSync schedules another pass.
+      final startWait = Stopwatch()..start();
+      if (!await _yieldToPlaybackStart()) {
+        debugPrint(
+          '[Sync] Offline listening flush deferred - a playback start owns the pipe',
+        );
+        return;
+      }
+      if (startWait.elapsedMilliseconds > 500) {
+        debugPrint(
+          '[Sync] Offline listening flush waited ${startWait.elapsedMilliseconds}ms for the start',
+        );
+      }
       final flushed = <String>{};
 
       debugPrint('[Sync] Flushing offline listening time for ${pending.length} item(s)');

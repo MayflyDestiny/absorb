@@ -1,7 +1,7 @@
 name: absorb
 description: An Audiobookshelf Client
 publish_to: 'none'
-version: 1.24.8+453
+version: 1.24.9+454
 
 environment:
   sdk: '>=3.10.0 <4.0.0'

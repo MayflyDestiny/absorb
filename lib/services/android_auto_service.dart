@@ -582,7 +582,7 @@ class AndroidAutoService {
         showId: showId,
         libraryId: dl.libraryId,
       ));
-      debugPrint('[AutoBrowse] Download entry: ${dl.title} cover=$coverUrl');
+      debugPrint('[AutoBrowse] Download entry: ${dl.itemId} cover=$coverUrl');
     }
 
     _downloaded = entries;
@@ -2059,7 +2059,7 @@ class AndroidAutoService {
       }
       if (title.isEmpty) return const [];
       final cover = Uri.tryParse(localCoverUri(itemId));
-      debugPrint('[AutoBrowse] Recent for media resumption: $key "$title"');
+      debugPrint('[AutoBrowse] Recent for media resumption: $key');
       return [
         MediaItem(
           id: AutoMediaIds.itemId(key),

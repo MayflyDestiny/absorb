@@ -91,6 +91,9 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     // with this header, which asks for the plain network path and is never
     // sent to the server.
     private static final String BYPASS_CACHE_HEADER = "X-Absorb-Stream-Cache";
+    // Absorb: a stable per-file cache key chosen by the app (itemId|ino), so
+    // cached spans survive a token re-sign instead of becoming a new entry.
+    private static final String CACHE_KEY_HEADER = "X-Absorb-Cache-Key";
     private static File sCacheDir;
 
     @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
@@ -833,6 +836,16 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             bypassCache = stringHeaders.remove(BYPASS_CACHE_HEADER) != null
                     | stringHeaders.remove(BYPASS_CACHE_HEADER.toLowerCase()) != null;
         }
+        // Absorb: an app-chosen cache key (stable per book file) so the same
+        // audio reuses its cached spans even when the URL's token was
+        // re-signed. Never sent to the server.
+        String customCacheKey = null;
+        if (stringHeaders != null) {
+            customCacheKey = stringHeaders.remove(CACHE_KEY_HEADER);
+            if (customCacheKey == null) {
+                customCacheKey = stringHeaders.remove(CACHE_KEY_HEADER.toLowerCase());
+            }
+        }
         DefaultHttpDataSource.Factory httpDataSourceFactory = new DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
             .setAllowCrossProtocolRedirects(true)
@@ -845,7 +858,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
         // Wrap with disk cache if enabled
         if (sCache != null && !bypassCache) {
-            return new CacheDataSource.Factory()
+            CacheDataSource.Factory cacheFactory = new CacheDataSource.Factory()
                 .setCache(sCache)
                 .setUpstreamDataSourceFactory(baseFactory)
                 .setCacheWriteDataSinkFactory(
@@ -853,6 +866,11 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                         .setCache(sCache)
                         .setFragmentSize(CacheDataSink.DEFAULT_FRAGMENT_SIZE))
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
+            if (customCacheKey != null && !customCacheKey.isEmpty()) {
+                final String key = customCacheKey;
+                cacheFactory.setCacheKeyFactory(dataSpec -> key);
+            }
+            return cacheFactory;
         }
         return baseFactory;
     }

@@ -288,7 +288,7 @@ class BookmarkService {
     }
 
     await _store(key, existing);
-    debugPrint('[Bookmarks] Added "${bookmark.title}" at ${bookmark.formattedPosition}');
+    debugPrint('[Bookmarks] Added at ${bookmark.formattedPosition}');
 
     await _ensureHydrated();
 
@@ -337,7 +337,7 @@ class BookmarkService {
     if (i < 0) return bookmark;
     all[i] = moved;
     await _saveAll(itemId, all);
-    debugPrint('[Bookmarks] "${bookmark.title}" landed on its sentence at ${moved.formattedPosition}');
+    debugPrint('[Bookmarks] Landed on its sentence at ${moved.formattedPosition}');
     return moved;
   }
 
@@ -571,7 +571,7 @@ class BookmarkService {
           final existing = (await ScopedPrefs.getStringList(key)).toList();
           existing.add(jsonEncode(serverBm.toJson()));
           await _store(key, existing);
-          debugPrint('[Bookmarks] Synced from server: "${serverBm.title}" at ${serverBm.formattedPosition}');
+          debugPrint('[Bookmarks] Synced from server at ${serverBm.formattedPosition}');
         } else if (serverBm.serverTitle != localMatch.serverTitle && serverBm.created.isAfter(localMatch.created)) {
           // Server is newer - take its title and note (fromServer already
           // split the combined server string back into the two fields).
@@ -579,7 +579,7 @@ class BookmarkService {
             ..title = serverBm.title
             ..note = serverBm.note;
           await _saveAll(itemId, localBookmarks);
-          debugPrint('[Bookmarks] Updated from server: "${serverBm.title}"');
+          debugPrint('[Bookmarks] Updated from server');
         }
       }
 
@@ -610,17 +610,17 @@ class BookmarkService {
           if (pushed) {
             _unpushed.remove(unpushedKey);
             unpushedChanged = true;
-            debugPrint('[Bookmarks] Pushed offline bookmark: "${lb.title}" at ${lb.formattedPosition}');
+            debugPrint('[Bookmarks] Pushed offline bookmark at ${lb.formattedPosition}');
           } else if (await _keptOnPhone(api, itemId, lb)) {
             noServerPlace = true;
             _unpushed.remove(unpushedKey);
             unpushedChanged = true;
           } else {
-            debugPrint('[Bookmarks] Push failed, will retry: "${lb.title}" at ${lb.formattedPosition}');
+            debugPrint('[Bookmarks] Push failed, will retry at ${lb.formattedPosition}');
           }
           kept.add(lb);
         } else {
-          debugPrint('[Bookmarks] Removed locally (deleted on server): "${lb.title}" at ${lb.formattedPosition}');
+          debugPrint('[Bookmarks] Removed locally (deleted on server) at ${lb.formattedPosition}');
           localChanged = true;
         }
       }
