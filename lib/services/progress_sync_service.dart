@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import 'download_service.dart';
 import 'playback_quiet_gate.dart';
@@ -24,6 +25,13 @@ class ProgressSyncService {
   bool _isFlushingOfflineListening = false;
   int _consecutiveFailures = 0;
   static const _maxConsecutiveFailures = 10;
+
+  /// The `/play` client of an in-flight offline-listening flush, so a
+  /// playback start can abort that multi-MB body instead of sharing the pipe
+  /// with the first audio bytes. The ledger is only consumed after a
+  /// successful sync+close, so an abort keeps every second for the next pass.
+  http.Client? _flushSessionClient;
+  bool _flushAborted = false;
 
   /// Initialize — start listening for connectivity changes.
   Future<void> init() async {
@@ -698,6 +706,26 @@ class ProgressSyncService {
     return true;
   }
 
+  /// A playback start just took the network pipe. Stop an offline-listening
+  /// flush that is already running: close its in-flight `/play` client (the
+  /// quiet gate only holds back flushes that START after a start, which left
+  /// an already-downloading multi-MB body competing for the whole load) and
+  /// make its loop bail out. The ledger is left untouched, so the same
+  /// listening time is reported by the next flush pass.
+  void abortInFlightFlushForPlaybackStart() {
+    if (_flushSessionClient == null && !_isFlushingOfflineListening) return;
+    _flushAborted = true;
+    final client = _flushSessionClient;
+    _flushSessionClient = null;
+    if (client != null) {
+      debugPrint(
+        '[Sync] Aborting the in-flight offline listening flush for a '
+        'playback start - ledger kept',
+      );
+      client.close();
+    }
+  }
+
   Future<void> _flushOfflineListeningTimeInternal({required ApiService api}) async {
     // Guard against concurrent runs. Without this, "back online" triggers
     // both the external flushOfflineListeningTime and flushPendingSync's
@@ -705,6 +733,7 @@ class ProgressSyncService {
     // sessions on the server.
     if (_isFlushingOfflineListening) return;
     _isFlushingOfflineListening = true;
+    _flushAborted = false;
     try {
       final pending = List<String>.from(
           await ScopedPrefs.getStringList('pending_offline_listening'));
@@ -732,6 +761,13 @@ class ProgressSyncService {
       debugPrint('[Sync] Flushing offline listening time for ${pending.length} item(s)');
 
       for (final itemId in pending) {
+        if (_flushAborted) {
+          debugPrint(
+            '[Sync] Offline listening flush aborted for a playback start - '
+            'ledger kept',
+          );
+          break;
+        }
         final key = 'offline_listening_$itemId';
         final seconds = await ScopedPrefs.getInt(key) ?? 0;
         if (seconds <= 0) {
@@ -778,9 +814,39 @@ class ProgressSyncService {
           final apiItemId = isCompound ? itemId.substring(0, 36) : itemId;
           final episodeId = isCompound ? itemId.substring(37) : null;
 
-          final sessionData = episodeId != null
-              ? await api.startEpisodePlaybackSession(apiItemId, episodeId)
-              : await api.startPlaybackSession(apiItemId);
+          // Caller-owned client: a playback start that lands mid-download
+          // closes it (see [abortInFlightFlushForPlaybackStart]) so this
+          // multi-MB `/play` body stops taking the pipe from the start.
+          final client = http.Client();
+          _flushSessionClient = client;
+          Map<String, dynamic>? sessionData;
+          try {
+            sessionData = await api.startPlaybackSessionCancellable(
+              apiItemId,
+              client,
+              episodeId: episodeId,
+              timeout: const Duration(seconds: 20),
+            );
+          } finally {
+            if (identical(_flushSessionClient, client)) {
+              _flushSessionClient = null;
+            }
+            client.close();
+          }
+          if (_flushAborted) {
+            // The body may have landed just as the start took the pipe: still
+            // don't report this item (the ledger is kept) - close the session
+            // it opened and let the next pass ship the time.
+            final abortedSid = sessionData?['id'] as String?;
+            if (abortedSid != null) {
+              unawaited(api.closePlaybackSession(abortedSid));
+            }
+            debugPrint(
+              '[Sync] Offline listening flush aborted for a playback start - '
+              'ledger kept',
+            );
+            break;
+          }
 
           if (sessionData != null) {
             final sid = sessionData['id'] as String?;
@@ -808,6 +874,15 @@ class ProgressSyncService {
             flushed.add(itemId);
           }
         } catch (e) {
+          if (_flushAborted) {
+            // The closed client surfaces as a ClientException; this is a
+            // deliberate yield to a playback start, not a server failure.
+            debugPrint(
+              '[Sync] Offline listening flush aborted for a playback start - '
+              'ledger kept',
+            );
+            break;
+          }
           debugPrint('[Sync] Failed to flush offline listening for $itemId: $e');
           final msg = e.toString();
           if (msg.contains('SocketException') ||
@@ -829,6 +904,8 @@ class ProgressSyncService {
         await ScopedPrefs.setStringList('pending_offline_listening', remaining);
       }
     } finally {
+      _flushAborted = false;
+      _flushSessionClient = null;
       _isFlushingOfflineListening = false;
     }
   }
