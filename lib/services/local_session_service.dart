@@ -43,6 +43,9 @@ class LocalSessionService {
   // too old, so route everything through the legacy /play flush instead.
   bool _localUnsupported = false;
 
+  /// True once this server proved it has no /api/session/local route.
+  bool get localUnsupported => _localUnsupported;
+
   // ── Date helpers (must match home_widget_service._dateKey so day buckets
   //    line up with the streak calculation). ──
 
@@ -296,17 +299,17 @@ class LocalSessionService {
     // a 20s server timeout did), so work from the copy taken here.
     final active = _active;
     if (active == null) return true;
-    if (_localUnsupported) {
-      await _legacyFlush(api, active);
-      return true;
-    }
+    // On an old server, do not open a full /play session on every push: the
+    // active session is queued at finalize and shipped once by flushPending.
+    if (_localUnsupported) return false;
     final result =
         await api.syncLocalSession(await _trustedPayload(api, active));
     if (result.serverTooOld) {
-      debugPrint('[LocalSession] Server lacks /api/session/local — falling back to /play');
+      debugPrint(
+        '[LocalSession] Server lacks /api/session/local — will ship at finalize',
+      );
       _localUnsupported = true;
-      await _legacyFlush(api, active);
-      return true;
+      return false;
     }
     final ct = (active['currentTime'] as num?)?.toDouble() ?? 0;
     if (!result.ok) {
@@ -358,7 +361,10 @@ class LocalSessionService {
       if (combined.isEmpty) return;
 
       if (_localUnsupported) {
-        for (final s in combined) {
+        // Only finalized/queued sessions go through the legacy /play route;
+        // the active one stays live and is queued at finalize. Re-sending it
+        // here would report the same cumulative time again on every flush.
+        for (final s in sessions) {
           await _legacyFlush(api, s);
         }
         await ScopedPrefs.setStringList(_kPending, []);
@@ -375,9 +381,12 @@ class LocalSessionService {
         await ScopedPrefs.setStringList(_kPending, []);
         debugPrint('[LocalSession] Flushed ${combined.length} local session(s)');
       } else if (result.serverTooOld) {
-        debugPrint('[LocalSession] Server lacks /api/session/local-all — falling back to /play');
+        debugPrint(
+          '[LocalSession] Server lacks /api/session/local-all — legacy flush',
+        );
         _localUnsupported = true;
-        for (final s in combined) {
+        // Same rule as above: queued sessions only, never the live active one.
+        for (final s in sessions) {
           await _legacyFlush(api, s);
         }
         await ScopedPrefs.setStringList(_kPending, []);

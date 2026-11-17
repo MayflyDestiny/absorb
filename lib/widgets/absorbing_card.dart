@@ -23,6 +23,7 @@ import 'overlay_toast.dart';
 import '../services/ebook_cache.dart';
 import '../services/find_in_ebook.dart';
 import '../services/lyrics_service.dart';
+import '../services/scoped_prefs.dart';
 import 'lyrics_overlay.dart';
 import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
@@ -108,6 +109,24 @@ class AbsorbingCardState extends State<AbsorbingCard>
   // still picked up by the next pass once it expires.
   DateTime? _lastForcedRefetchAt;
   static const _forcedRefetchCooldown = Duration(minutes: 3);
+  // Automatic full-item refreshes are a fallback, not a startup cost: the
+  // first pass is deferred this long so a cold start / unlock never pulls the
+  // multi-MB item just because the server tick moved. While this book is the
+  // one playing, the fallback comes sooner (the listener is actively using
+  // it), but the persisted interval below still caps how often it is paid.
+  Timer? _deferredItemRefresh;
+  DateTime? _deferredRefreshAt;
+  bool _deferredRefreshIntervalLimited = false;
+  int _deferredRefreshGeneration = 0;
+  bool _deferredRefreshScheduling = false;
+  // Ten minutes is a freshness/payload balance: a chapter edit on the server
+  // reaches the card without opening the detail sheet, while the persisted
+  // interval keeps a tick that moves on every progress write from paying the
+  // multi-MB item more than once per ten minutes.
+  static const _deferredRefreshIdle = Duration(minutes: 10);
+  static const _deferredRefreshPlaying = Duration(minutes: 1);
+  static const _autoRefreshMinInterval = Duration(minutes: 10);
+  String get _autoRefreshKey => 'bg_item_refresh_$_itemId';
   // How long a scheduled multi-MB read waits for a tap to claim the pipe. A
   // start fired mid-download has to share the tunnel with the item, which is
   // how one start ended up taking 4.3s the moment the item finished.
@@ -416,35 +435,19 @@ class AbsorbingCardState extends State<AbsorbingCard>
     );
   }
 
-  /// Deterministic two-tone pair for books with NO cover at all: each item
-  /// gets its own hue, stable across restarts (derived from the item id —
-  /// String.hashCode is not stable across runs/platforms). Muted saturation
-  /// so the gradient reads as a designed placeholder, not a random sticker.
-  List<Color> _titleFallbackPair() {
-    var h = 0;
-    for (final c in _itemId.codeUnits) {
-      h = (h * 31 + c) & 0x7fffffff;
-    }
-    final hue = (h % 360).toDouble();
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final start = HSLColor.fromAHSL(
-      1.0,
-      hue,
-      dark ? 0.34 : 0.52,
-      dark ? 0.45 : 0.80,
-    ).toColor();
-    final end = HSLColor.fromAHSL(
-      1.0,
-      (hue + 28) % 360,
-      dark ? 0.32 : 0.48,
-      dark ? 0.32 : 0.70,
-    ).toColor();
-    return [start, end];
+  /// Upstream's placeholder pair: Material tonal container over the raised
+  /// surface tone. On a card whose cover palette is known this follows that
+  /// cover's own scheme, so the placeholder reads as the book's colour instead
+  /// of an unrelated hue.
+  List<Color> _tonalPlaceholderPair() {
+    final cs = (PlayerSettings.einkMode ? null : _coverScheme) ??
+        Theme.of(context).colorScheme;
+    return [cs.primaryContainer, cs.surfaceContainerHighest];
   }
 
   /// A book with genuinely no cover (no blur lease, no cached blur, no URL):
-  /// both the card background and the cover placeholder then show the
-  /// title-colored pair instead of near-black grey.
+  /// both the card background and the cover placeholder then show the tonal
+  /// container pair instead of near-black grey.
   bool get _placeholderIsCoverless {
     return _blurLease == null &&
         _placeholderBlurLease == null &&
@@ -452,17 +455,16 @@ class AbsorbingCardState extends State<AbsorbingCard>
   }
 
   Color get _placeholderStart {
-    if (_placeholderIsCoverless) return _titleFallbackPair()[0];
-    // With no cached average colour (a card beyond the prewarm window) the
-    // neutral surface reads as black under the scrim in dark themes and on
-    // e-ink. Use the item's own muted hue until the blur arrives.
-    return _placeholderColor ?? _titleFallbackPair()[0];
+    if (_placeholderIsCoverless) return _tonalPlaceholderPair()[0];
+    // With no cached average colour (a card beyond the prewarm window) use
+    // the cover-derived tonal container, which stays lighter than the scrim.
+    return _placeholderColor ?? _tonalPlaceholderPair()[0];
   }
 
   Color get _placeholderEnd {
     final dark = Theme.of(context).brightness == Brightness.dark;
     if (_placeholderIsCoverless || _placeholderColor == null) {
-      return _titleFallbackPair()[1];
+      return _tonalPlaceholderPair()[1];
     }
     return Color.lerp(
       _placeholderStart,
@@ -724,7 +726,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
   /// re-read even when the card already has chapters: that "only fill the gaps"
   /// early-out is what kept a chapter list edited on the ABS web UI stale until
   /// the next cold start.
-  Future<void> _refetchItem({bool forceChapters = false}) async {
+  Future<void> _refetchItem({
+    bool forceChapters = false,
+    int? serverUpdatedAt,
+    bool allowBackgroundFetch = false,
+  }) async {
     final auth = context.read<AuthProvider>();
     final api = auth.apiService;
     if (api == null) return;
@@ -738,28 +744,102 @@ class AbsorbingCardState extends State<AbsorbingCard>
     // No entry log: this runs on every card rebuild for every absorbing item,
     // and only the outcome (cache hit / deferred / fetched) is worth a line.
     try {
+      // Freshness gate for a forced read: when the copy we already hold is not
+      // older than the server's change tick, there is nothing to fetch.
+      // Checked in memory first - the tick also advances on progress writes,
+      // and decoding the multi-MB disk copy on every such tick would jank the
+      // card for nothing.
+      if (forceChapters) {
+        if (serverUpdatedAt != null) {
+          final memoryTs = (_fullItem?['updatedAt'] as num?)?.toInt();
+          if (memoryTs != null && memoryTs >= serverUpdatedAt) {
+            debugPrint(
+              '[BgTrace] card refetch skip (item current) item=$_itemId',
+            );
+            return;
+          }
+          // Another screen (the detail sheet) may have just fetched a newer
+          // copy; its payload is still in memory, so adopting it is free.
+          final recent = api.recentLibraryItem(_itemId);
+          final recentTs = (recent?['updatedAt'] as num?)?.toInt();
+          if (recent != null &&
+              recentTs != null &&
+              recentTs >= serverUpdatedAt) {
+            debugPrint(
+              '[BgTrace] card refetch adopted (recent item) item=$_itemId',
+            );
+            _applyFullItem(recent, forceEbook: true);
+            return;
+          }
+          if (memoryTs == null) {
+            final cached = await api.getCachedLibraryItem(_itemId);
+            final diskTs = (cached?['updatedAt'] as num?)?.toInt();
+            if (cached != null && diskTs != null && diskTs >= serverUpdatedAt) {
+              debugPrint(
+                '[BgTrace] card refetch skip (disk item current) '
+                'item=$_itemId',
+              );
+              _applyFullItem(cached, forceEbook: true);
+              return;
+            }
+          }
+        }
+        // Automatic refresh is a fallback, not a startup cost: defer it - a
+        // tick that is not even known yet (the shelf data registers a moment
+        // after mount) is no reason to pull the multi-MB copy either. The
+        // detail sheet (immediate fetch) and the playing shortcut cover the
+        // moments a listener actually needs fresh chapters.
+        if (!allowBackgroundFetch) {
+          _scheduleDeferredItemRefresh();
+          debugPrint(
+            '[BgTrace] card refetch deferred (low-frequency) item=$_itemId',
+          );
+          return;
+        }
+        // A background pass pays for the multi-MB copy at most this often, so
+        // the server tick moving on progress writes can't re-download it.
+        final lastAuto = await ScopedPrefs.getInt(_autoRefreshKey) ?? 0;
+        final autoAgeMs =
+            DateTime.now().millisecondsSinceEpoch - lastAuto;
+        if (lastAuto > 0 &&
+            autoAgeMs >= 0 &&
+            autoAgeMs < _autoRefreshMinInterval.inMilliseconds) {
+          debugPrint(
+            '[BgTrace] card refetch skip (auto refresh recent) item=$_itemId',
+          );
+          // Keep a pass on the calendar for when the interval expires; the
+          // tick that brought us here may be the only one for this change.
+          _scheduleDeferredItemRefresh();
+          return;
+        }
+      }
       // Disk copy first: it unlocks chapters immediately and is also where a
       // just-finished playback start wrote its item.
-      final cached =
-          forceChapters ? null : await api.getCachedLibraryItem(_itemId);
-      if (cached != null) {
-        debugPrint('[BgTrace] card refetch cache hit item=$_itemId');
-        _applyFullItem(cached, forceEbook: forceChapters);
-        return;
+      if (!forceChapters) {
+        final cached = await api.getCachedLibraryItem(_itemId);
+        if (cached != null) {
+          debugPrint('[BgTrace] card refetch cache hit item=$_itemId');
+          _applyFullItem(cached, forceEbook: false);
+          return;
+        }
       }
       // Never start a multi-MB network read while a playback start is loading
       // or buffering; retry once the pipe is free.
       if (widget.player.isLoadingOrBuffering) {
         debugPrint('[BgTrace] card refetch wait (player loading) item=$_itemId');
-        _scheduleRefetchWhenIdle();
+        _scheduleRefetchWhenIdle(
+          forceChapters: forceChapters,
+          serverUpdatedAt: serverUpdatedAt,
+          allowBackgroundFetch: allowBackgroundFetch,
+        );
         return;
       }
       if (forceChapters) {
         // The server clock (updatedAt) advances on progress writes too, so a
         // bare tick comparison would buy a fresh multi-MB copy every few
         // seconds while listening. Cap how often that copy is paid for. The
-        // timestamp is stamped below, right before the request, so a pass that
-        // ends up deferred does not burn the window.
+        // window is stamped only after a successful read, so a canceled or
+        // failed attempt can retry instead of sitting out ten minutes.
         final last = _lastForcedRefetchAt;
         if (last != null &&
             DateTime.now().difference(last) < _forcedRefetchCooldown) {
@@ -780,21 +860,137 @@ class AbsorbingCardState extends State<AbsorbingCard>
       if (!mounted) return;
       if (widget.player.isLoadingOrBuffering) {
         debugPrint('[BgTrace] card refetch defer (start began) item=$_itemId');
-        _scheduleRefetchWhenIdle();
+        _scheduleRefetchWhenIdle(
+          forceChapters: forceChapters,
+          serverUpdatedAt: serverUpdatedAt,
+          allowBackgroundFetch: allowBackgroundFetch,
+        );
         return;
       }
-      if (forceChapters) _lastForcedRefetchAt = DateTime.now();
       final fullItem = await api.fetchLibraryItemBackground(_itemId);
       if (fullItem == null) {
         // Another background transfer was in flight, or a playback start/stop
         // canceled this one. Try again when the pipe is free.
         debugPrint('[BgTrace] card refetch null/retry item=$_itemId');
-        _scheduleRefetchWhenIdle();
+        _scheduleRefetchWhenIdle(
+          forceChapters: forceChapters,
+          serverUpdatedAt: serverUpdatedAt,
+          allowBackgroundFetch: allowBackgroundFetch,
+        );
         return;
+      }
+      if (forceChapters) {
+        _lastForcedRefetchAt = DateTime.now();
+        if (allowBackgroundFetch) {
+          await ScopedPrefs.setInt(
+            _autoRefreshKey,
+            DateTime.now().millisecondsSinceEpoch,
+          );
+        }
       }
       debugPrint('[BgTrace] card refetch applied item=$_itemId');
       _applyFullItem(fullItem, forceEbook: forceChapters);
     } catch (_) {}
+  }
+
+  /// Defers an automatic full-item refresh. A cold start, unlock or ordinary
+  /// server tick only schedules this; the multi-MB body is paid for later, and
+  /// only while the book is still on screen. While this book is playing the
+  /// wait is short (the listener is actively using it), otherwise long.
+  void _scheduleDeferredItemRefresh() {
+    if (_deferredItemRefresh != null || _deferredRefreshScheduling) return;
+    _deferredRefreshScheduling = true;
+    unawaited(_scheduleDeferredItemRefreshAsync());
+  }
+
+  /// If an idle card begins playing after its deferred pass was already
+  /// parked, shorten that wait to the playing interval so a chapter edit does
+  /// not sit out the ten-minute idle window.
+  void _shortenDeferredRefreshForPlaying() {
+    if (!widget.player.isPlaying || widget.player.currentItemId != _itemId) {
+      return;
+    }
+    final timer = _deferredItemRefresh;
+    final at = _deferredRefreshAt;
+    if (timer == null || at == null) return;
+    // The wait is already capped by the automatic-refresh interval; shortening
+    // to the playing delay would just be skipped and rescheduled on the next
+    // build, churning a timer and a prefs read every position tick.
+    if (_deferredRefreshIntervalLimited) return;
+    if (!at.isAfter(DateTime.now().add(_deferredRefreshPlaying))) return;
+    timer.cancel();
+    _deferredItemRefresh = null;
+    _deferredRefreshAt = null;
+    _scheduleDeferredItemRefresh();
+  }
+
+  Future<void> _scheduleDeferredItemRefreshAsync() async {
+    final generation = _deferredRefreshGeneration;
+    try {
+      var wait = (widget.player.currentItemId == _itemId &&
+              widget.player.isPlaying)
+          ? _deferredRefreshPlaying
+          : _deferredRefreshIdle;
+      // If an automatic pass already ran recently, wait out the remainder of
+      // its interval. A skipped pass is not a dropped pass: without this a
+      // one-off chapter edit arriving just after a pass could wait for the
+      // next unrelated server tick.
+      final lastAuto = await ScopedPrefs.getInt(_autoRefreshKey) ?? 0;
+      var intervalLimited = false;
+      if (lastAuto > 0) {
+        final elapsedMs =
+            DateTime.now().millisecondsSinceEpoch - lastAuto;
+        // A clock moved backwards must not park the retry hours in the
+        // future; in that case fall back to the normal deferral.
+        if (elapsedMs >= 0) {
+          final remaining = _autoRefreshMinInterval -
+              Duration(milliseconds: elapsedMs);
+          if (remaining > wait) {
+            wait = remaining;
+            intervalLimited = true;
+          }
+        }
+      }
+      if (!mounted ||
+          generation != _deferredRefreshGeneration ||
+          _deferredItemRefresh != null) {
+        return;
+      }
+      _deferredItemRefresh = Timer(
+        wait,
+        () {
+          _deferredItemRefresh = null;
+          _deferredRefreshAt = null;
+          _deferredRefreshIntervalLimited = false;
+          if (!mounted) return;
+          // A timer parked through a background stay must not fire the moment
+          // the app comes back - that is exactly the foreground burst this
+          // deferral exists to avoid. Wait another interval in the foreground.
+          if (widget.player.isBackgrounded) {
+            _scheduleDeferredItemRefresh();
+            return;
+          }
+          final lib = context.read<LibraryProvider>();
+          final key = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
+          if (!lib.isInAbsorbing(key)) return;
+          final ts = lib.itemUpdatedAt(_itemId) ??
+              (_fullItem?['updatedAt'] as num?)?.toInt();
+          unawaited(
+            _refetchItem(
+              forceChapters: true,
+              serverUpdatedAt: ts,
+              allowBackgroundFetch: true,
+            ),
+          );
+        },
+      );
+      _deferredRefreshAt = DateTime.now().add(wait);
+      _deferredRefreshIntervalLimited = intervalLimited;
+    } finally {
+      if (generation == _deferredRefreshGeneration) {
+        _deferredRefreshScheduling = false;
+      }
+    }
   }
 
   void _applyFullItem(
@@ -840,7 +1036,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
     }
   }
 
-  void _scheduleRefetchWhenIdle() {
+  void _scheduleRefetchWhenIdle({
+    bool forceChapters = false,
+    int? serverUpdatedAt,
+    bool allowBackgroundFetch = false,
+  }) {
     if (_refetchRetryScheduled || _refetchIdleRetries >= 12) return;
     _refetchRetryScheduled = true;
     Future<void>.delayed(const Duration(seconds: 5), () {
@@ -848,11 +1048,21 @@ class AbsorbingCardState extends State<AbsorbingCard>
       if (!mounted) return;
       if (widget.player.isLoadingOrBuffering) {
         _refetchIdleRetries++;
-        _scheduleRefetchWhenIdle();
+        _scheduleRefetchWhenIdle(
+          forceChapters: forceChapters,
+          serverUpdatedAt: serverUpdatedAt,
+          allowBackgroundFetch: allowBackgroundFetch,
+        );
         return;
       }
       _refetchIdleRetries = 0;
-      unawaited(_refetchItem());
+      unawaited(
+        _refetchItem(
+          forceChapters: forceChapters,
+          serverUpdatedAt: serverUpdatedAt,
+          allowBackgroundFetch: allowBackgroundFetch,
+        ),
+      );
     });
   }
 
@@ -870,13 +1080,20 @@ class AbsorbingCardState extends State<AbsorbingCard>
   /// actually moved. [_refetchingItem] keeps a burst of updates from stacking
   /// duplicate requests.
   void _maybeRefetchOnServerChange(LibraryProvider lib) {
-    final ts = lib.itemUpdatedAt(_itemId);
+    // The provider tick is the freshest signal; until the shelf data registers
+    // it, the card's own shelf entity still carries one. A null tick means
+    // "not known yet", NOT "changed" - acting on it forced a multi-MB read on
+    // every cold start (the gate then deferred the fetch, but only after the
+    // old code had already started it).
+    final ts = lib.itemUpdatedAt(_itemId) ??
+        (widget.item['updatedAt'] as num?)?.toInt();
+    if (ts == null) return;
     // The first ts registration after a cold start is the baseline, not an
     // item_updated event; resetting here made the cover colours flip on every
     // start before the ts was known.
     if (!_updatedAtBaselineKnown) {
       _lastSeenUpdatedAt = ts;
-      _updatedAtBaselineKnown = ts != null;
+      _updatedAtBaselineKnown = true;
       return;
     }
     if (ts == _lastSeenUpdatedAt) return;
@@ -897,11 +1114,14 @@ class AbsorbingCardState extends State<AbsorbingCard>
     _refetchingItem = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        // Bypass the disk cache: a chapter edit is precisely the case where the
-        // cached copy is the stale one we're trying to replace.
+        // A forced read is a fallback, not a startup cost: it adopts a copy we
+        // already hold (memory / the detail sheet's fresh payload) and
+        // otherwise defers the multi-MB refresh to a low-frequency timer. A
+        // cold start or unlock must not pay for it (see _refetchItem /
+        // _scheduleDeferredItemRefresh).
         do {
           _refetchQueued = false;
-          await _refetchItem(forceChapters: true);
+          await _refetchItem(forceChapters: true, serverUpdatedAt: ts);
         } while (_refetchQueued && mounted);
       } finally {
         _refetchingItem = false;
@@ -1017,6 +1237,13 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _fetchedEbookFile = null;
       _fullItem = null;
       _refetchIdleRetries = 0;
+      // A recycled card must not keep the previous item's deferred refresh.
+      _deferredRefreshGeneration++;
+      _deferredItemRefresh?.cancel();
+      _deferredItemRefresh = null;
+      _deferredRefreshAt = null;
+      _deferredRefreshIntervalLimited = false;
+      _deferredRefreshScheduling = false;
       _lastChapterIdx = -1;
       _lastSeenUpdatedAt =
           context.read<LibraryProvider>().itemUpdatedAt(_itemId) ??
@@ -1040,6 +1267,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
     DownloadService().removeListener(_onDownloadChanged);
     widget.player.removeListener(_onSpeedMaybeChanged);
     _chapterTrackSub?.cancel();
+    _deferredRefreshGeneration++;
+    _deferredItemRefresh?.cancel();
+    _deferredItemRefresh = null;
+    _deferredRefreshAt = null;
+    _deferredRefreshIntervalLimited = false;
     _blurLease?.release();
     _placeholderBlurLease?.release();
     _edgeBarExpanded.dispose();
@@ -1310,6 +1542,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
         ? (_blurLease != null || _placeholderBlurLease != null)
         : hasCoverVisual;
     _maybeRefetchOnServerChange(lib);
+    _shortenDeferredRefreshForPlaying();
     // For podcast episodes, look up progress by compound key (itemId-episodeId)
     final progress = (_episodeId != null)
         ? lib.getEpisodeProgress(_itemId, _episodeId!)

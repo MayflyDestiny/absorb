@@ -675,17 +675,16 @@ class AndroidAutoService {
       // Book libraries: continue-listening / continue-series for the Continue
       // tab, recently-added for the New tab.
       // Podcast libraries: continue-listening for the Continue tab. New
-      // episodes come from a separate /recent-episodes call below since the
-      // personalized endpoint's `episodes-recently-added` shelf gets stripped
-      // when a `shelves` filter is passed.
+      // episodes come from a separate /recent-episodes call below.
+      //
+      // Request the same URL the home provider uses (no shelf filter) so the
+      // short-lived response cache in ApiService can share one fetch between
+      // the two callers. The loop below already picks only the shelves it
+      // needs, so extra shelves are ignored.
       final clFutures = _libraries.map((lib) => api
           .getPersonalizedView(
             lib.id,
             include: const ['numEpisodesIncomplete'],
-            shelves: lib.isPodcast
-                ? const ['continue-listening']
-                : const ['continue-listening', 'continue-series', 'recently-added'],
-            limit: 10,
           )
           .then((sections) => sections ?? const <dynamic>[]));
 

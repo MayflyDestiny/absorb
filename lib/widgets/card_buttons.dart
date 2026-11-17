@@ -3234,7 +3234,7 @@ class _PlaybackHistorySheetBodyState extends State<_PlaybackHistoryBody>
               ),
             ),
             trailing: Text(
-              timeOfDay(event.timestamp, l),
+              timeOfDay(event.timestamp),
               style: widget.tt.labelSmall?.copyWith(
                 color: cs.onSurface.withValues(alpha: 0.3),
               ),

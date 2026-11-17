@@ -1746,14 +1746,39 @@ class ApiService {
   /// Returns sections like "continue-listening", "recently-added", "discover", etc.
   /// Null means the request failed (network / non-200), as opposed to an
   /// empty list of shelves.
+  ///
+  /// The home provider and the car browse prewarm ask for the same URL within
+  /// a second of each other on cold start. A 2-second response cache (and an
+  /// in-flight join) serves the second caller without another 139 KB fetch;
+  /// each caller still gets its own decoded list, so neither can mutate the
+  /// other's shelves.
+  static final Map<String, ({String body, DateTime at})> _personalizedCache = {};
+  static final Map<String, ({Future<http.Response> future, int generation})>
+      _personalizedInFlight = {};
+  static final Map<String, int> _personalizedRequestSeq = {};
+  static int _personalizedCacheGeneration = 0;
+  static const _personalizedCacheTtl = Duration(seconds: 2);
+  static const _personalizedCacheMax = 8;
+
+  /// Drop shared personalized responses after a content mutation or account
+  /// switch, so a forced refresh never reuses a pre-edit body.
+  static void invalidatePersonalizedCache() {
+    _personalizedCacheGeneration++;
+    _personalizedCache.clear();
+    _personalizedInFlight.clear();
+    _personalizedRequestSeq.clear();
+  }
+
   Future<List<dynamic>?> getPersonalizedView(
     String libraryId, {
     bool minified = true,
     List<String> include = const ['numEpisodesIncomplete'],
     List<String>? shelves,
     int? limit,
+    bool bypassCache = false,
   }) async {
     try {
+      final generation = _personalizedCacheGeneration;
       final query = <String, String>{};
       if (minified) query['minified'] = '1';
       if (include.isNotEmpty) query['include'] = include.join(',');
@@ -1762,27 +1787,84 @@ class ApiService {
       }
       if (limit != null) query['limit'] = '$limit';
 
-      final response = await _authGetRetrying(
-        Uri.parse('$_cleanBaseUrl/api/libraries/$libraryId/personalized')
-            .replace(queryParameters: query.isEmpty ? null : query),
-        timeout: const Duration(seconds: 30),
-        attempts: 2,
-        totalDeadline: const Duration(seconds: 90),
-      );
+      final uri = Uri.parse(
+              '$_cleanBaseUrl/api/libraries/$libraryId/personalized')
+          .replace(queryParameters: query.isEmpty ? null : query);
+      final cacheKey = '${uri.toString()}|${tokenFp(_accessToken)}';
+      final cached = _personalizedCache[cacheKey];
+      final cachedAge =
+          cached == null ? null : DateTime.now().difference(cached.at);
+      if (!bypassCache &&
+          cached != null &&
+          cachedAge != null &&
+          cachedAge >= Duration.zero &&
+          cachedAge < _personalizedCacheTtl) {
+        final sections = _decodePersonalized(cached.body);
+        if (sections != null) return sections;
+      }
+
+      http.Response response;
+      int? requestSeq;
+      final inFlight = _personalizedInFlight[cacheKey];
+      if (!bypassCache && inFlight != null && inFlight.generation == generation) {
+        response = await inFlight.future;
+      } else {
+        requestSeq = (_personalizedRequestSeq[cacheKey] ?? 0) + 1;
+        _personalizedRequestSeq[cacheKey] = requestSeq;
+        final future = _authGetRetrying(
+          uri,
+          timeout: const Duration(seconds: 30),
+          attempts: 2,
+          totalDeadline: const Duration(seconds: 90),
+        );
+        _personalizedInFlight[cacheKey] = (
+          future: future,
+          generation: generation,
+        );
+        try {
+          response = await future;
+        } finally {
+          if (identical(
+              _personalizedInFlight[cacheKey]?.future, future)) {
+            _personalizedInFlight.remove(cacheKey);
+          }
+        }
+      }
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data is List<dynamic>) return data;
-        if (data is Map<String, dynamic>) {
-          final shelvesData = data['shelves'];
-          if (shelvesData is List<dynamic>) return shelvesData;
-          final results = data['results'];
-          if (results is List<dynamic>) return results;
+        // A request that started before a content mutation must not put its
+        // pre-edit body back into the cache after the invalidation.
+        if (generation == _personalizedCacheGeneration &&
+            requestSeq != null &&
+            _personalizedRequestSeq[cacheKey] == requestSeq) {
+          _personalizedCache.remove(cacheKey);
+          _personalizedCache[cacheKey] = (
+            body: response.body,
+            at: DateTime.now(),
+          );
+          while (_personalizedCache.length > _personalizedCacheMax) {
+            _personalizedCache.remove(_personalizedCache.keys.first);
+          }
         }
+        return _decodePersonalized(response.body);
       }
     } catch (e) {
       // ignore
     }
+    return null;
+  }
+
+  List<dynamic>? _decodePersonalized(String body) {
+    try {
+      final data = jsonDecode(body);
+      if (data is List<dynamic>) return data;
+      if (data is Map<String, dynamic>) {
+        final shelvesData = data['shelves'];
+        if (shelvesData is List<dynamic>) return shelvesData;
+        final results = data['results'];
+        if (results is List<dynamic>) return results;
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -2078,17 +2160,75 @@ class ApiService {
   }
 
   /// Get user's listening stats.
+  ///
+  /// The home widget and the stats screen each build their own ApiService and
+  /// both pull this on cold start. Share one response for a few seconds so
+  /// that launch costs one 87 KB request instead of two.
+  ///
+  /// The cache is scoped to server + token and stores the raw body; every
+  /// caller decodes its own map. That rules out both cross-account reuse (a
+  /// token change always misses) and one caller mutating another's payload.
+  static String? _listeningStatsCacheBody;
+  static DateTime? _listeningStatsCacheAt;
+  static String? _listeningStatsCacheKey;
+  static Future<String?>? _listeningStatsInFlight;
+  static String? _listeningStatsInFlightKey;
+  static const _listeningStatsCacheTtl = Duration(seconds: 3);
+
   Future<Map<String, dynamic>?> getListeningStats() async {
+    final key = '$_cleanBaseUrl|${tokenFp(_accessToken)}';
+    final body = _listeningStatsCacheBody;
+    final cachedAt = _listeningStatsCacheAt;
+    final statsAge =
+        cachedAt == null ? null : DateTime.now().difference(cachedAt);
+    if (body != null &&
+        statsAge != null &&
+        statsAge >= Duration.zero &&
+        _listeningStatsCacheKey == key &&
+        statsAge < _listeningStatsCacheTtl) {
+      return _decodeListeningStats(body);
+    }
+    final inFlight = _listeningStatsInFlight;
+    if (inFlight != null && _listeningStatsInFlightKey == key) {
+      final sharedBody = await inFlight;
+      return sharedBody == null ? null : _decodeListeningStats(sharedBody);
+    }
+    final future = _fetchListeningStats(key);
+    _listeningStatsInFlight = future;
+    _listeningStatsInFlightKey = key;
+    try {
+      final body = await future;
+      return body == null ? null : _decodeListeningStats(body);
+    } finally {
+      if (identical(_listeningStatsInFlight, future)) {
+        _listeningStatsInFlight = null;
+        _listeningStatsInFlightKey = null;
+      }
+    }
+  }
+
+  Future<String?> _fetchListeningStats(String key) async {
     try {
       final response = await _authGet(
         Uri.parse('$_cleanBaseUrl/api/me/listening-stats'),
         timeout: const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        _listeningStatsCacheBody = response.body;
+        _listeningStatsCacheAt = DateTime.now();
+        _listeningStatsCacheKey = key;
+        return response.body;
       }
     } catch (_) {}
     return null;
+  }
+
+  Map<String, dynamic>? _decodeListeningStats(String body) {
+    try {
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Every listening session this user has for one item - the whole history,
@@ -2734,11 +2874,68 @@ class ApiService {
     return null;
   }
 
+  /// Open a playback session for statistics/presence ONLY: POST /play, read
+  /// just enough of the body to learn the session id, then drop the rest of
+  /// the response (the multi-MB track list is never pulled). The server
+  /// registers the session as active before writing the body, so this gives a
+  /// real, syncable session at a few KB of traffic. Null when the id can't be
+  /// read - the caller falls back to the client-owned local session.
+  Future<String?> startPlaybackSessionPresence(
+    String itemId,
+    http.Client client, {
+    String? episodeId,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final sw = Stopwatch()..start();
+    final epPath = episodeId != null ? '/$episodeId' : '';
+    final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
+    try {
+      await _ensureFreshAccessToken();
+      final request = http.Request('POST', Uri.parse(url))
+        ..headers.addAll(_headers)
+        ..body = jsonEncode(_playSessionBody());
+      final response = await client.send(request).timeout(timeout);
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[NetTrace] /play(presence) $itemId HTTP ${response.statusCode} '
+          '${sw.elapsedMilliseconds}ms',
+        );
+        return null;
+      }
+      // `id` is the first field the server writes; stop reading as soon as it
+      // is found (or the cap is hit) and let the caller abort the rest.
+      final head = StringBuffer();
+      var readBytes = 0;
+      String? id;
+      await for (final chunk in response.stream.timeout(timeout)) {
+        readBytes += chunk.length;
+        head.write(utf8.decode(chunk, allowMalformed: true));
+        final m = RegExp(r'"id"\s*:\s*"([^"]+)"').firstMatch(head.toString());
+        if (m != null) {
+          id = m.group(1);
+          break;
+        }
+        if (head.length >= 64 * 1024) break;
+      }
+      debugPrint(
+        '[NetTrace] /play(presence) $itemId id=${id ?? 'null'} '
+        'read=${readBytes}B/${response.contentLength ?? '?'}B '
+        '${sw.elapsedMilliseconds}ms',
+      );
+      return id;
+    } catch (e) {
+      debugPrint(
+        '[NetTrace] /play(presence) $itemId fail '
+        '${sw.elapsedMilliseconds}ms $e',
+      );
+      return null;
+    }
+  }
+
   /// Start a playback session for a library item.
   /// POST /api/items/:id/play
   /// Returns the full session object including audioTracks with contentUrl.
-  Future<Map<String, dynamic>?> startPlaybackSession(String itemId, {String? episodeId, bool forceDirectPlay = false, bool forceTranscode = false, double? startOffset}) async {
-    final sw = Stopwatch()..start();
+  Future<Map<String, dynamic>?> startPlaybackSession(String itemId, {String? episodeId, bool forceDirectPlay = false, bool forceTranscode = false, double? startOffset}) async {    final sw = Stopwatch()..start();
     try {
       final epPath = episodeId != null ? '/$episodeId' : '';
       final url = '$_cleanBaseUrl/api/items/$itemId/play$epPath';
@@ -3776,6 +3973,7 @@ class ApiService {
           '${response.body.length}B',
         );
         unawaited(JsonFileCache.write(cacheKey, data));
+        _rememberRecentItem(itemId, data);
         // Leave a tiny start manifest behind: a later start with no snapshot
         // and no session cache can then build its source from the file ids
         // instead of waiting for this multi-MB payload again.
@@ -3807,8 +4005,36 @@ class ApiService {
   /// touching the network. Lets a detail view paint immediately from cache
   /// while a fresh [getLibraryItem] runs in the background. Returns null when
   /// nothing has been cached yet.
-  Future<Map<String, dynamic>?> getCachedLibraryItem(String itemId) =>
-      JsonFileCache.readMap('library_item|$itemId');
+  /// The most recent full-item payload, kept in memory so a card can adopt a
+  /// copy another screen (the detail sheet) just fetched without decoding the
+  /// multi-MB disk cache again. Static because [ApiService.forSession] hands
+  /// out a fresh instance per access; keyed by server so accounts don't see
+  /// each other's payloads. One entry only - a decoded thousand-file item is
+  /// large, and the adoption only ever needs the latest fetch.
+  static final Map<String, Map<String, dynamic>> _recentItemPayloads = {};
+  static const _recentItemPayloadsMax = 1;
+
+  String _recentItemKey(String itemId) => '$_cleanBaseUrl|$itemId';
+
+  void _rememberRecentItem(String itemId, Map<String, dynamic> data) {
+    final key = _recentItemKey(itemId);
+    _recentItemPayloads.remove(key);
+    _recentItemPayloads[key] = data;
+    while (_recentItemPayloads.length > _recentItemPayloadsMax) {
+      _recentItemPayloads.remove(_recentItemPayloads.keys.first);
+    }
+  }
+
+  /// The most recent full-item payload any ApiService instance fetched for
+  /// this server, if still in memory.
+  Map<String, dynamic>? recentLibraryItem(String itemId) =>
+      _recentItemPayloads[_recentItemKey(itemId)];
+
+  Future<Map<String, dynamic>?> getCachedLibraryItem(String itemId) async {
+    final recent = recentLibraryItem(itemId);
+    if (recent != null) return recent;
+    return JsonFileCache.readMap('library_item|$itemId');
+  }
 
   /// Light item fetch for the chapter alignment check: GET /api/items/{id}
   /// WITHOUT the expanded flag. The base response already carries
@@ -3978,6 +4204,7 @@ class ApiService {
           '${response.body.length}B',
         );
         unawaited(JsonFileCache.write(cacheKey, data));
+        _rememberRecentItem(itemId, data);
         unawaited(PlaybackManifest.saveFromItem(itemId, data));
         return data;
       }

@@ -46,6 +46,7 @@ part '_lp_absorbing.dart';
 class LibraryProvider extends ChangeNotifier
     with _StateMixin, _CoreMixin, _AbsorbingMixin {
   int _accountLoadGeneration = 0;
+  final DateTime _createdAt = DateTime.now();
   Completer<void>? _accountReadyCompleter;
 
   Future<void> waitForActiveAccountReady() =>
@@ -218,9 +219,24 @@ class LibraryProvider extends ChangeNotifier
         _seriesBooksCache.clear();
         _seriesTabCache.clear();
         _personalizedInFlight = null;
+        _personalizedReloadQueued = false;
+        _librariesInFlight = null;
+        _progressShelvesInFlight = null;
+        _refreshProgressInFlight = null;
+        _progressRefreshDebounce?.cancel();
+        _remoteProgressShelfForce = false;
         _rssHydrationInFlight = false;
         _lastRssHydrationAt = null;
         _lastRssHydrationLibraryId = null;
+        // Another account's shelves and fetch cooldowns must not survive the
+        // switch: otherwise a fresh login within the cooldown window can skip
+        // personalized and leave Home empty (or show the previous account's
+        // shelf cache).
+        _sectionsByLibrary.clear();
+        _sectionsFetchedAt.clear();
+        ApiService.invalidatePersonalizedCache();
+        _lastProgressShelvesFetchAt = null;
+        _lastProgressShelvesLibraryId = null;
         _networkOffline = false;
         _connectivitySub?.cancel();
         _connectivityDebounce?.cancel();
@@ -340,6 +356,11 @@ class LibraryProvider extends ChangeNotifier
       _stopBookOrbitPoll();
       SocketService().disconnect();
       _personalizedInFlight = null;
+      _personalizedReloadQueued = false;
+      _librariesInFlight = null;
+      _progressShelvesInFlight = null;
+      _refreshProgressInFlight = null;
+      _remoteProgressShelfForce = false;
       _networkOffline = false;
       debugPrint('[Library] Signed out - showing what is on the phone');
       () async {
@@ -379,6 +400,11 @@ class LibraryProvider extends ChangeNotifier
       _stopHealthCheckTimer();
       SocketService().disconnect();
       _personalizedInFlight = null;
+      _personalizedReloadQueued = false;
+      _librariesInFlight = null;
+      _progressShelvesInFlight = null;
+      _refreshProgressInFlight = null;
+      _remoteProgressShelfForce = false;
       _rssHydrationInFlight = false;
       _lastRssHydrationAt = null;
       _lastRssHydrationLibraryId = null;
@@ -421,23 +447,30 @@ class LibraryProvider extends ChangeNotifier
   }
 
   Future<void> _doLoadLibraries() async {
+    final accountGen = _accountLoadGeneration;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       final fetched = await _api!.getLibraries();
+      if (accountGen != _accountLoadGeneration) return;
       debugPrint('[Library] loadLibraries: got ${fetched.length} libraries');
 
       if (fetched.isNotEmpty) {
         _libraries = fetched;
         _librariesFromCache = false;
         await LibraryCache.save(fetched);
+        if (accountGen != _accountLoadGeneration) return;
         debugPrint('[Library] Saved ${fetched.length} libraries for offline starts');
         await _restoreSelectedLibrary();
+        if (accountGen != _accountLoadGeneration) return;
 
         await _loadSectionPrefs();
-        await loadPersonalizedView(force: true);
+        // Not forced: on cold start refresh() may already have loaded the
+        // shelves moments ago, and a forced call would hit the 139 KB
+        // personalized endpoint a second time for identical data.
+        await loadPersonalizedView();
       } else {
         // getLibraries swallows network/auth failures and returns an empty
         // list, so empty is indistinguishable from a failed fetch. Keep the
@@ -445,6 +478,7 @@ class LibraryProvider extends ChangeNotifier
         await _restoreCachedLibraries();
       }
     } catch (e) {
+      if (accountGen != _accountLoadGeneration) return;
       if (_isLikelyNetworkError(e)) {
         // A weak-but-alive link can make the retried libraries fetch still fail
         // without the server being down. Keep the cached library list and stay
@@ -459,6 +493,7 @@ class LibraryProvider extends ChangeNotifier
       }
     }
 
+    if (accountGen != _accountLoadGeneration) return;
     _isLoading = false;
     notifyListeners();
 
@@ -631,6 +666,10 @@ class LibraryProvider extends ChangeNotifier
     final pendingSyncs =
         (await ScopedPrefs.getStringList('pending_syncs')).toSet();
     _lastFinishedItemId = null;
+    // Forced: this entry point follows user actions (metadata edits, deletes,
+    // a server switch). A 5s startup cooldown must not swallow a refresh the
+    // user just asked for; the startup duplicate is absorbed by
+    // loadLibraries() using the non-forced path instead.
     await loadPersonalizedView(force: true);
     // The whole-progress pull (/api/me/progress — the full mediaProgress list)
     // is the heaviest cold-start request. It yields to a playback start inside

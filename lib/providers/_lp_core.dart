@@ -1196,12 +1196,16 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
 
   Future<void> _doRefreshProgress() async {
     if (_api == null) return;
+    final accountGen = (this as LibraryProvider)._accountLoadGeneration;
     // Cold start: paint progress from the on-disk snapshot before the first
     // network pull lands, so progress bars and shelf membership don't sit
     // empty while getAllProgress round-trips.
     if (!_progressCacheRestored && _progressMap.isEmpty) {
       _progressCacheRestored = true;
       final cached = await JsonFileCache.readMap(_progressCacheKey());
+      if (accountGen != (this as LibraryProvider)._accountLoadGeneration) {
+        return;
+      }
       if (cached != null && cached.isNotEmpty) {
         _progressMap =
             cached.map((k, v) => MapEntry(k, Map<String, dynamic>.from(v as Map)));
@@ -1213,6 +1217,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final pendingSyncs =
           (await ScopedPrefs.getStringList('pending_syncs')).toSet();
       final progressList = await _api!.getAllProgress();
+      if (accountGen != (this as LibraryProvider)._accountLoadGeneration) {
+        return;
+      }
       if (progressList != null) {
           final localFinished = <String, Map<String, dynamic>>{};
           if (_lastFinishedItemId != null &&
@@ -1321,6 +1328,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   /// start, so evicting now just stops the next launch from painting data the
   /// newest event already contradicted.
   void _invalidatePayloadCaches() {
+    ApiService.invalidatePersonalizedCache();
     unawaited(JsonFileCache.invalidate(_progressCacheKey()));
     final selected = _selectedLibraryId;
     if (selected != null) {
@@ -2072,8 +2080,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final api = _api;
     if (api == null) return;
     final now = DateTime.now();
+    // Short guard only: a quick background/foreground round trip must still
+    // replay progress that changed while the socket was away. The list is
+    // ~12 KB, so freshness wins over saving the occasional duplicate pull.
     if (_lastProgressCatchUp != null &&
-        now.difference(_lastProgressCatchUp!) < const Duration(seconds: 45)) {
+        now.difference(_lastProgressCatchUp!) < const Duration(seconds: 10)) {
       return;
     }
     _lastProgressCatchUp = now;
@@ -2231,21 +2242,36 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
       return;
     }
+    final wasFinished = _progressMap[key]?['isFinished'] == true;
     _progressMap[key] = mp;
     _localProgressOverrides.remove(key);
     _resetItems.remove(key);
     (this as _AbsorbingMixin)._pruneRemotelyFinishedBooks([key]);
     notifyListeners();
+    final finishChanged = wasFinished != (mp['isFinished'] == true);
 
     // Own-device PATCHes are broadcast back over the socket; the sheet already
-    // forced a shelf refresh, so skip the redundant re-fetch for those.
-    _progressRefreshDebounce?.cancel();
+    // forced a shelf refresh, so skip the redundant re-fetch for those. Do not
+    // cancel a timer queued by a genuine remote change: an own sync echo can
+    // arrive between its event and our debounce firing.
     if (ApiService.wasRecentLocalProgressPush(key)) {
       _invalidatePayloadCaches();
       return;
     }
+    _progressRefreshDebounce?.cancel();
+    // Merge across the debounce: a finish event followed by an ordinary
+    // progress tick must not downgrade the queued refresh back to cooldown.
+    _remoteProgressShelfForce =
+        _remoteProgressShelfForce || finishChanged;
     _progressRefreshDebounce = Timer(const Duration(seconds: 2), () {
-      refreshProgressShelves(reason: 'remote-progress');
+      final force = _remoteProgressShelfForce;
+      _remoteProgressShelfForce = false;
+      // A remote finish/unfinish changes shelf membership, so it must not
+      // wait out the 20s cooldown; ordinary remote progress ticks can.
+      refreshProgressShelves(
+        force: force,
+        reason: 'remote-progress',
+      );
     });
     _invalidatePayloadCaches();
   }
@@ -2515,6 +2541,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       notifyListeners();
     } else {
       _progressRefreshDebounce?.cancel();
+      _remoteProgressShelfForce = false; // the forced pass below covers it
       _progressRefreshDebounce = Timer(const Duration(milliseconds: 800), () {
         refreshProgressShelves(force: true, reason: 'user-updated');
       });
@@ -2526,8 +2553,14 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   Future<void> loadPersonalizedView({bool force = false}) async {
     final existing = _personalizedInFlight;
     if (existing != null) {
+      // A forced refresh that lands while a load is in flight must not be
+      // swallowed: the running request may predate the edit that asked for
+      // this one. Queue exactly one follow-up pass.
+      if (force) _personalizedReloadQueued = true;
       await existing;
-      return;
+      if (!_personalizedReloadQueued) return;
+      _personalizedReloadQueued = false;
+      return loadPersonalizedView(force: true);
     }
 
     // Per-library cooldown, so a book <-> podcast tab flip that returns
@@ -2541,7 +2574,19 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       }
     }
 
-    final inFlight = _doLoadPersonalizedView();
+    // An explicit refresh of an already-loaded library must not reuse the
+    // few-second shared response: a metadata edit can land between them. A
+    // startup load still shares it, which is what removes the duplicate
+    // personalized request.
+    // During the launch window, keep sharing the car prewarm's response even
+    // for a forced load; a duplicate 139 KB request at every cold start is
+    // not worth protecting against an edit made in the first few seconds.
+    // Later forced refreshes (metadata edits, server switches) bypass it.
+    final bypassCache = force &&
+        _sectionsFetchedAt[_selectedLibraryId] != null &&
+        DateTime.now().difference((this as LibraryProvider)._createdAt) >
+            const Duration(seconds: 10);
+    final inFlight = _doLoadPersonalizedView(bypassCache: bypassCache);
     _personalizedInFlight = inFlight;
     try {
       await inFlight;
@@ -2654,8 +2699,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     return mergedSections;
   }
 
-  Future<void> _doLoadPersonalizedView() async {
+  Future<void> _doLoadPersonalizedView({bool bypassCache = false}) async {
     if (_api == null || _selectedLibraryId == null) return;
+    final accountGen = (this as LibraryProvider)._accountLoadGeneration;
 
     if (isOffline) {
       _buildOfflineSections();
@@ -2670,6 +2716,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     // shelves can't bleed into another's.
     if (_personalizedSections.isEmpty) {
       final cached = await JsonFileCache.readList(_sectionsCacheKey(libId));
+      if (accountGen != (this as LibraryProvider)._accountLoadGeneration) {
+        return;
+      }
       final sections =
           cached?.whereType<Map<String, dynamic>>().toList() ?? const [];
       if (sections.isNotEmpty) {
@@ -2696,7 +2745,11 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       final fetched = await _api!.getPersonalizedView(
         libId,
         include: const ['numEpisodesIncomplete'],
+        bypassCache: bypassCache,
       );
+      if (accountGen != (this as LibraryProvider)._accountLoadGeneration) {
+        return;
+      }
       // A null response is a failed fetch, not "no shelves". Keep whatever is
       // already on screen (the cache we just painted) rather than wiping it.
       if (fetched != null) {
@@ -2841,6 +2894,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final api = _api;
     final libraryId = _selectedLibraryId;
     if (api == null || libraryId == null) return;
+    final accountGen = (this as LibraryProvider)._accountLoadGeneration;
 
     try {
       final sections = await api.getPersonalizedView(
@@ -2850,9 +2904,13 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             limit: 10,
           ) ??
           [];
+      if (_selectedLibraryId != libraryId ||
+          accountGen != (this as LibraryProvider)._accountLoadGeneration ||
+          isOffline) {
+        return;
+      }
       _lastProgressShelvesFetchAt = DateTime.now();
       _lastProgressShelvesLibraryId = libraryId;
-      if (_selectedLibraryId != libraryId || isOffline) return;
 
       _registerSectionsEpochs(sections);
       _mergeProgressShelves(sections);
@@ -2975,6 +3033,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     final api = _api;
     final libraryId = _selectedLibraryId;
     if (api == null || libraryId == null || isOffline) return;
+    final accountGen = (this as LibraryProvider)._accountLoadGeneration;
     if (_rssHydrationInFlight) return;
 
     final now = DateTime.now();
@@ -2995,7 +3054,9 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         _lastRssHydrationAt = DateTime.now();
         _lastRssHydrationLibraryId = libraryId;
 
-        if (_selectedLibraryId == libraryId && sections.isNotEmpty) {
+        if (accountGen == (this as LibraryProvider)._accountLoadGeneration &&
+            _selectedLibraryId == libraryId &&
+            sections.isNotEmpty) {
           _registerSectionsEpochs(sections);
           _personalizedSections = _withoutJustHidden(sections);
           await (this as _AbsorbingMixin)._updateAbsorbingCache();

@@ -6915,7 +6915,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                 color: cs.onSurfaceVariant,
               ),
               title: Text(s.chapter ?? pct ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('$why · ${dateLabel(s.at, l)} ${timeOfDay(s.at, l)}',
+              subtitle: Text('$why · ${dateLabel(s.at, l)} ${timeOfDay(s.at)}',
                   style: TextStyle(color: cs.onSurfaceVariant)),
               trailing: s.chapter != null && pct != null
                   ? Text(pct, style: TextStyle(color: cs.onSurfaceVariant))

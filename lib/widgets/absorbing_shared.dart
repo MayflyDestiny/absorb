@@ -36,14 +36,11 @@ String dateLabel(DateTime dt, [AppLocalizations? l]) {
   return '${dt.month}/${dt.day}/${dt.year}';
 }
 
-String timeOfDay(DateTime dt, [AppLocalizations? l]) {
-  final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+/// Clock time for history rows, 24-hour form (e.g. "09:05" or "21:30").
+String timeOfDay(DateTime dt) {
+  final h = dt.hour.toString().padLeft(2, '0');
   final m = dt.minute.toString().padLeft(2, '0');
-  final isAm = dt.hour < 12;
-  final ampm = l != null
-      ? (isAm ? l.absorbingSharedAm : l.absorbingSharedPm)
-      : (isAm ? 'AM' : 'PM');
-  return '$h:$m $ampm';
+  return '$h:$m';
 }
 
 /// Localized short month name (e.g. "Sep" / "9月"). Empty for invalid months.

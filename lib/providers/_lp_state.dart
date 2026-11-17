@@ -47,6 +47,7 @@ mixin _StateMixin on ChangeNotifier {
   int _sectionsFetchMisses = 0;
 
   Future<void>? _personalizedInFlight;
+  bool _personalizedReloadQueued = false;
   Future<void>? _librariesInFlight;
   Future<void>? _progressShelvesInFlight;
   Future<void>? _refreshProgressInFlight;
@@ -59,6 +60,7 @@ mixin _StateMixin on ChangeNotifier {
   static const _progressShelvesFetchCooldown = Duration(seconds: 20);
   static const _rssHydrationCooldown = Duration(minutes: 10);
   Timer? _progressRefreshDebounce;
+  bool _remoteProgressShelfForce = false;
   static const _progressDrivenShelfIds = <String>[
     'continue-listening',
     'continue-reading',

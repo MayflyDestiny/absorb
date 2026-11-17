@@ -379,8 +379,12 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     if (!mounted) return;
+    // Force both edges: starting a book moves it to the top of the continue
+    // shelf, and a stop (or leaving the app without pausing) can leave the
+    // shelf's membership stale. The shelf data is what the user sees next, so
+    // pay the 139 KB instead of letting the cooldown skip it.
     await lib.refreshProgressShelves(
-      force: stopped,
+      force: true,
       reason: stopped ? 'player-stopped' : 'player-item-changed',
     );
   }

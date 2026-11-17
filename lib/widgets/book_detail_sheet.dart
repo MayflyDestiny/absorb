@@ -688,6 +688,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
             });
           }
           _scheduleCoverScheme();
+          // Cards showing this book can adopt the fresh payload from the
+          // in-memory item cache instead of paying for their own multi-MB
+          // refetch: bump the provider tick so they re-check.
+          final fetchedTs = (finalItem['updatedAt'] as num?)?.toInt();
+          if (fetchedTs != null) {
+            lib.registerUpdatedAt(widget.itemId, fetchedTs);
+          }
           if (api.isBookOrbit && !_similarLoaded && !ApiService.isBookDockItem(widget.itemId)) {
             _similarLoaded = true;
             unawaited(_loadSimilar(api));

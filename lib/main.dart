@@ -40,6 +40,7 @@ import 'services/narrated_books.dart';
 import 'services/read_listen_sync.dart';
 import 'services/windows_media_controls.dart';
 import 'services/log_service.dart';
+import 'services/cover_cache_manager.dart';
 import 'services/quick_actions_service.dart';
 import 'services/setup_link_service.dart';
 import 'services/wording.dart';
@@ -212,6 +213,10 @@ Future<void> applyOrientationLock() async {
 void main() async {
   if (!AppPlatform.isWeb) HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  // Route covers through the app's cache manager: 2000-entry store (the
+  // package default's 200 evicts a shelf's multi-width covers every launch)
+  // and real connect/read timeouts on stalled cover downloads.
+  CoverCacheManager.install();
   ReadListenSync.instance.start();
   WindowsMediaControls.instance.start();
   BookOrbitApiService.placeReadingSpot = NarrationService.readingSpotSeconds;

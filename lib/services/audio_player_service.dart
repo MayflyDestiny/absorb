@@ -66,7 +66,14 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         // (rebuffer recovery keeps its own, larger 5s threshold).
         bufferForPlaybackDuration: Duration(seconds: 1),
         bufferForPlaybackAfterRebufferDuration: Duration(seconds: 5),
-        targetBufferBytes: 5 * 1024 * 1024, // 5 MB buffer
+        // Read-ahead is the app's largest data cost: the player fills to the
+        // maximum even while paused (measured ~7 MB per start/seek and 2.6 MB
+        // per pause at 50s). 40s forward (4 MB ceiling) trims that while
+        // keeping enough cushion for a weak mobile link; rewind stays instant
+        // because the 2-minute back buffer below is separate.
+        minBufferDuration: Duration(seconds: 15),
+        maxBufferDuration: Duration(seconds: 40),
+        targetBufferBytes: 4 * 1024 * 1024,
         // Keep played audio buffered: a backward seek inside the current
         // file (rewind button, chapter-start snap) then lands INSTANTLY on
         // already-buffered samples instead of re-fetching the byte range
@@ -132,6 +139,23 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// Output devices arrive comma-separated from the Java side and often repeat
+  /// the same headset several times; keep the line readable in exported logs.
+  static String _compactOutputs(Object? raw, {int max = 4}) {
+    final s = raw?.toString() ?? '';
+    if (s.isEmpty || s == 'none' || s == 'n/a') return s;
+    final seen = <String>{};
+    final unique = <String>[];
+    for (final part in s.split(',')) {
+      final t = part.trim();
+      if (t.isEmpty || !seen.add(t)) continue;
+      unique.add(t);
+    }
+    final shown = unique.take(max).join(',');
+    final rest = unique.length - max;
+    return rest > 0 ? '$shown,+$rest' : shown;
+  }
+
   static void _logAbsorbDiagFromSnapshot(
     String tag,
     Map<String, dynamic>? snap,
@@ -143,7 +167,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
       'lastPlayCaller=${snap['lastPlayCaller']} playAgeMs=${snap['lastPlayCallerAgeMs']} '
       'lastPauseCaller=${snap['lastPauseCaller']} pauseAgeMs=${snap['lastPauseCallerAgeMs']} '
       'carClientAgeMs=${snap['carClientAgeMs']} keyPkg=${snap['lastKeyPkg']} '
-      'route=[${snap['route']}] outputs=[${snap['outputs']}]',
+      'route=[${snap['route']}] outputs=[${_compactOutputs(snap['outputs'])}]',
     );
   }
 
@@ -1833,6 +1857,13 @@ class AudioPlayerService extends ChangeNotifier {
   /// to the server via the client-owned LOCAL session model (GH #276/#280)
   /// instead of a live `/play` session. Position still syncs via /me/progress.
   bool _localSessionMode = false;
+
+  /// True while a STREAMING play whose source doesn't run through a server
+  /// session (manifest / cache / direct-file URLs) is credited through a
+  /// client-owned local session instead of opening `/play`. The session is
+  /// stamped Direct Play, so the server label matches what `/play` produced;
+  /// only the multi-MB session body is avoided.
+  bool _localSessionAccounting = false;
 
   // Set when a loadOnly playItem skipped starting the local session; the
   // first real play() begins it, so listening time still gets recorded.
@@ -3634,7 +3665,9 @@ class AudioPlayerService extends ChangeNotifier {
         final snap = await AudioPlayerHandler._absorbDiagSnapshot();
         if (snap != null) {
           pieces.add('route=[${snap['route']}]');
-          pieces.add('outputs=[${snap['outputs']}]');
+          pieces.add(
+            'outputs=[${AudioPlayerHandler._compactOutputs(snap['outputs'])}]',
+          );
           pieces.add('musicVol=${snap['musicVolume']}');
         }
       }
@@ -5825,6 +5858,8 @@ class AudioPlayerService extends ChangeNotifier {
     // for downloaded items. Without this it leaks from a prior downloaded play
     // into a following streaming play and misroutes the listening time.
     _localSessionMode = false;
+    _localSessionAccounting = false;
+    _presenceSessionRetryAfter = null;
     _localPlayableChapterIndices = const [];
     _isPartialLocalPlay = false;
     _localCoverageEndSec = null;
@@ -7333,6 +7368,7 @@ class AudioPlayerService extends ChangeNotifier {
         );
         _shortLocalDurationSec = null;
         _localSessionMode = false;
+        _localSessionAccounting = false;
         final fallbackResult = await _playFromServer(
           _api!,
           rawItemId,
@@ -7853,6 +7889,22 @@ class AudioPlayerService extends ChangeNotifier {
         );
         return;
       }
+      // A session-less source needs no full /play: a presence-only session
+      // registers it as active (the multi-MB track list is dropped). A /play
+      // already racing from the start is closed when it lands.
+      if (_currentItemId == itemId &&
+          _currentEpisodeId == episodeIdAtStart &&
+          _sourceSessionless) {
+        final racing = pendingSession;
+        if (racing != null) {
+          racing.then((s) {
+            final id = s?['id'] as String?;
+            if (id != null) unawaited(api.closePlaybackSession(id));
+          }).catchError((Object _) {});
+        }
+        await _ensureStatsSessionForSessionlessSource();
+        return;
+      }
       final progressRequest = api.getItemProgress(progressKey);
       // The race in playItem may already have a POST in flight - consume it
       // rather than opening a second session.
@@ -8098,6 +8150,7 @@ class AudioPlayerService extends ChangeNotifier {
     debugPrint('[Player] Streaming from server');
     _isOfflineMode = false;
     _localSessionMode = false;
+    _localSessionAccounting = false;
     _sourceIsNetwork = true;
     _parkedAtBoundary = false;
     _parkedBoundaryChapterIdx = null;
@@ -9592,6 +9645,7 @@ class AudioPlayerService extends ChangeNotifier {
     _playbackSessionId = null;
     _isOfflineMode = false;
     _localSessionMode = false;
+    _localSessionAccounting = false;
     _trackStartOffsets = [];
     _trackDurations = [];
     _currentTrackIndex = 0;
@@ -10414,53 +10468,11 @@ class AudioPlayerService extends ChangeNotifier {
                   _api != null &&
                   _currentItemId != null &&
                   !_recreatingSession) {
-                _recreatingSession = true;
-                try {
-                  final sessionApi = _api!;
-                  final sessionItemId = _currentItemId!;
-                  final sessionEpisodeId = _currentEpisodeId;
-                  final sessionData = sessionEpisodeId != null
-                      ? await sessionApi.startEpisodePlaybackSession(
-                          sessionItemId,
-                          sessionEpisodeId,
-                        )
-                      : await sessionApi.startPlaybackSession(sessionItemId);
-                  if (_currentItemId != sessionItemId ||
-                      _currentEpisodeId != sessionEpisodeId) {
-                    final staleId = sessionData?['id'] as String?;
-                    if (staleId != null) {
-                      unawaited(sessionApi.closePlaybackSession(staleId));
-                    }
-                  } else if (sessionData != null) {
-                    _playbackSessionId = sessionData['id'] as String?;
-                    if (_playbackSessionId != null) {
-                      debugPrint(
-                        '[Player] Recreated session in sync tick: '
-                        '$_playbackSessionId',
-                      );
-                      // The playing source still points at the OLD session's
-                      // URLs. Adopt this one at the next pause/seek, unless
-                      // that old session is already gone: then the stream
-                      // dies with the cache, so move it now.
-                      _stashSessionUpgrade(sessionData);
-                      if (_sourceSessionDead) {
-                        final playing = _player?.playing ?? false;
-                        if (!await _applyPendingLocalSwap(
-                          resumeAfter: playing,
-                        )) {
-                          await _applyPendingSessionUpgrade(
-                            resumeAfter: playing,
-                          );
-                        }
-                      }
-                    }
-                  }
-                } catch (e) {
-                  debugPrint(
-                    '[Player] Session recreate in sync tick failed: $e',
-                  );
-                } finally {
-                  _recreatingSession = false;
+                if (_sourceSessionless) {
+                  // Presence-only session: no full /play track list.
+                  await _ensureStatsSessionForSessionlessSource();
+                } else {
+                  await _recreateSessionInSyncTick();
                 }
               }
 
@@ -10468,7 +10480,7 @@ class AudioPlayerService extends ChangeNotifier {
               // branches only handle the interval-rate bookkeeping (time-saved,
               // widget tick) and, for downloaded plays, pushing the local session.
               final secs = sinceLastSync.clamp(0, 300);
-              if (_localSessionMode) {
+              if (_localSessionMode || _localSessionAccounting) {
                 final online =
                     !manualOffline && !_isOfflineMode && _api != null;
                 unawaited(
@@ -11274,7 +11286,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Local-session play: push the final accrued listening and finalize before
     // any auto-advance begins a new session (awaited to avoid racing it).
-    if (_localSessionMode) {
+    if (_localSessionMode || _localSessionAccounting) {
       _logEvent(PlaybackEventType.sessionEnd, detail: 'local book finished');
       // Capped: a dozing phone on a slow tunnel left the book half finished
       // with the controls gone (GH #428).
@@ -11496,7 +11508,13 @@ class AudioPlayerService extends ChangeNotifier {
         ? '$_currentItemId-$_currentEpisodeId'
         : _currentItemId!;
     final manualOffline = (_prefs?.getBool('manual_offline_mode')) ?? false;
-    if (_localSessionMode) {
+    if (!_localSessionMode &&
+        !_localSessionAccounting &&
+        _playbackSessionId == null &&
+        _sourceSessionless) {
+      await _ensureStatsSessionForSessionlessSource();
+    }
+    if (_localSessionMode || _localSessionAccounting) {
       await LocalSessionService().accrue(
         progressKey: key,
         seconds: secs,
@@ -11616,6 +11634,26 @@ class AudioPlayerService extends ChangeNotifier {
     final api = _api!;
     final sessionItemId = _currentItemId!;
     final sessionEpisodeId = _currentEpisodeId;
+    // A session-less stream gets its replacement from the presence-only /play
+    // head; never pay for the full track list here.
+    if (_sourceSessionless) {
+      await _ensureStatsSessionForSessionlessSource();
+      if (_currentItemId == sessionItemId &&
+          _currentEpisodeId == sessionEpisodeId &&
+          _playbackSessionId != null) {
+        debugPrint('[Player] Recovered session: $_playbackSessionId');
+        _logEvent(PlaybackEventType.sessionStart, detail: 'recovery');
+        if (lostTimeListened > 0) {
+          await api.syncPlaybackSession(
+            _playbackSessionId!,
+            currentTime: currentTime,
+            duration: _totalDuration,
+            timeListened: lostTimeListened,
+          );
+        }
+      }
+      return;
+    }
     try {
       final sessionData = await _sharedSessionStart(
         api,
@@ -12548,6 +12586,180 @@ class AudioPlayerService extends ChangeNotifier {
     return m?.group(1);
   }
 
+  /// The source is loaded and streams without a server session (manifest /
+  /// cache / direct-file URLs), and the backend isn't BookOrbit.
+  bool get _sourceSessionless =>
+      !_localSessionMode &&
+      _activeStreamUrls.isNotEmpty &&
+      _sourceSessionId == null &&
+      _api?.isBookOrbit != true;
+
+  /// A client-owned local session may credit the listening time for such a
+  /// source (used as the fallback when the presence `/play` can't be read).
+  bool get _sourceNeedsLocalAccounting =>
+      _sourceSessionless && !LocalSessionService().localUnsupported;
+
+  /// Begin a client-owned local session for the current (session-less stream)
+  /// play. Stamped `streamed: true` -> Direct Play, so the server label is the
+  /// same one `/play` produced. Idempotent; on an old server the eventual push
+  /// falls back to the `/play` route inside [LocalSessionService].
+  Future<void> _beginLocalSessionAccounting() async {
+    if (_localSessionMode ||
+        _localSessionAccounting ||
+        !_sourceNeedsLocalAccounting) {
+      return;
+    }
+    final api = _api;
+    final itemId = _currentItemId;
+    if (api == null || itemId == null) return;
+    _localSessionAccounting = true;
+    final key = _currentEpisodeId != null
+        ? '$itemId-$_currentEpisodeId'
+        : itemId;
+    try {
+      await LocalSessionService().beginSession(
+        progressKey: key,
+        libraryItemId: itemId,
+        episodeId: _currentEpisodeId,
+        mediaType: _currentEpisodeId != null ? 'podcast' : 'book',
+        duration: _totalDuration,
+        startTime: position.inMilliseconds / 1000.0,
+        displayTitle: _currentTitle,
+        displayAuthor: _currentAuthor,
+        streamed: true,
+      );
+      // Probe the route with this zero-time upsert. An old server answers
+      // 404/501; the legacy fallback would otherwise fire a /play on every
+      // tick, so hand the listening time back to the ledger (which flushes a
+      // /play only when it holds enough).
+      await LocalSessionService().pushActive(api: api);
+      if (LocalSessionService().localUnsupported) {
+        _localSessionAccounting = false;
+        await LocalSessionService().finalizeActive(pushed: true);
+        debugPrint(
+          '[Player] Server lacks /api/session/local - keeping the offline '
+          'ledger for listening time',
+        );
+        return;
+      }
+      debugPrint(
+        '[Player] Listening credited via local session (source has no '
+        'playback session)',
+      );
+    } catch (e) {
+      _localSessionAccounting = false;
+      debugPrint('[Player] Local session begin failed: $e');
+    }
+  }
+
+  bool _presenceSessionInFlight = false;
+  DateTime? _presenceSessionRetryAfter;
+
+  /// Statistics session for a session-less stream. Prefers a presence-only
+  /// `/play` (the server registers an active session; only its id is read and
+  /// the multi-MB track list is dropped) so the server's active sessions and
+  /// per-session sync work as before. Falls back to the client-owned local
+  /// session when the head can't be read.
+  Future<void> _ensureStatsSessionForSessionlessSource() async {
+    if (_playbackSessionId != null || _localSessionAccounting) return;
+    final api = _api;
+    final itemId = _currentItemId;
+    if (api == null || itemId == null || !_sourceSessionless) return;
+    // Offline listening belongs in the ledger, not in a stream of failed
+    // presence requests; a failed online attempt is retried after a pause
+    // instead of once per sync tick.
+    final manualOffline = (_prefs?.getBool('manual_offline_mode')) ?? false;
+    if (manualOffline || _isOfflineMode) return;
+    final retryAfter = _presenceSessionRetryAfter;
+    if (retryAfter != null && DateTime.now().isBefore(retryAfter)) return;
+    if (_presenceSessionInFlight) return;
+    _presenceSessionInFlight = true;
+    final episodeId = _currentEpisodeId;
+    final generation = _playbackGeneration;
+    final client = http.Client();
+    String? id;
+    try {
+      id = await api.startPlaybackSessionPresence(
+        itemId,
+        client,
+        episodeId: episodeId,
+      );
+    } catch (e) {
+      debugPrint('[Player] Presence session failed: $e');
+    } finally {
+      _presenceSessionInFlight = false;
+      client.close();
+    }
+    if (id == null) {
+      _presenceSessionRetryAfter =
+          DateTime.now().add(const Duration(minutes: 2));
+      await _beginLocalSessionAccounting();
+      return;
+    }
+    if (_currentItemId != itemId ||
+        _currentEpisodeId != episodeId ||
+        _playbackGeneration != generation) {
+      // The book changed while the head was in flight - close the stray.
+      unawaited(api.closePlaybackSession(id).catchError((Object _) {}));
+      return;
+    }
+    if (_playbackSessionId != null) {
+      unawaited(api.closePlaybackSession(id).catchError((Object _) {}));
+      return;
+    }
+    _playbackSessionId = id;
+    _presenceSessionRetryAfter = null;
+    _lastServerSync = DateTime.now();
+    debugPrint('[Player] Presence session $id (stats-only, no track list)');
+  }
+
+  /// Re-create the server playback session from the sync tick: the guarded
+  /// branch needs one (a session-backed source whose id was lost, or a
+  /// BookOrbit stream), and reuses the same stashing/adoption path a start
+  /// uses.
+  Future<void> _recreateSessionInSyncTick() async {
+    _recreatingSession = true;
+    try {
+      final sessionApi = _api!;
+      final sessionItemId = _currentItemId!;
+      final sessionEpisodeId = _currentEpisodeId;
+      final sessionData = sessionEpisodeId != null
+          ? await sessionApi.startEpisodePlaybackSession(
+              sessionItemId,
+              sessionEpisodeId,
+            )
+          : await sessionApi.startPlaybackSession(sessionItemId);
+      if (_currentItemId != sessionItemId ||
+          _currentEpisodeId != sessionEpisodeId) {
+        final staleId = sessionData?['id'] as String?;
+        if (staleId != null) {
+          unawaited(sessionApi.closePlaybackSession(staleId));
+        }
+      } else if (sessionData != null) {
+        _playbackSessionId = sessionData['id'] as String?;
+        if (_playbackSessionId != null) {
+          debugPrint(
+            '[Player] Recreated session in sync tick: $_playbackSessionId',
+          );
+          // The playing source still points at the OLD session's URLs. Adopt
+          // this one at the next pause/seek, unless that old session is
+          // already gone: then the stream dies with the cache, so move it now.
+          _stashSessionUpgrade(sessionData);
+          if (_sourceSessionDead) {
+            final playing = _player?.playing ?? false;
+            if (!await _applyPendingLocalSwap(resumeAfter: playing)) {
+              await _applyPendingSessionUpgrade(resumeAfter: playing);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[Player] Session recreate in sync tick failed: $e');
+    } finally {
+      _recreatingSession = false;
+    }
+  }
+
   /// A session URL stops working the moment the server closes the session:
   /// its public track route serves open sessions only, and Audiobookshelf
   /// closes any other open session from the same device when a new one
@@ -12627,17 +12839,18 @@ class AudioPlayerService extends ChangeNotifier {
     final ino = RegExp(r'/file/([^/?#]+)').firstMatch(url)?.group(1);
     if (ino == null || ino.isEmpty) return headers;
     final key = '$itemId|$ino';
-    // Once per book, not once per start and certainly not per track: the key
-    // is only interesting when it changes.
-    if (_lastLoggedCacheKey != key) {
-      _lastLoggedCacheKey = key;
-      debugPrint('[Player] Streaming cache key: $key');
+    // Log the book once, not once per file: every track has its own ino, so
+    // the old per-key check printed one line per track (1122 lines per start
+    // on a thousand-file book) and dominated the exported log.
+    if (_lastLoggedCacheKey != itemId) {
+      _lastLoggedCacheKey = itemId;
+      debugPrint('[Player] Streaming cache key book=$itemId (itemId|ino per file)');
     }
     return {...headers, 'X-Absorb-Cache-Key': key};
   }
 
-  // Last cache key reported, so the key is logged once per book rather than
-  // once per start.
+  // Last book whose cache key was reported, so the line prints once per book
+  // rather than once per track.
   String? _lastLoggedCacheKey;
 
   /// Move a source that streams through a dead session onto a live one.
@@ -12738,10 +12951,12 @@ class AudioPlayerService extends ChangeNotifier {
   /// and only has to move the source, so the slow part - the /play round trip -
   /// is already paid for.
   ///
-  /// Throttled to [_sessionPrewarmCooldown]: a failed attempt (server down,
-  /// link still coming up) would otherwise repeat on every app switch, each
-  /// one burning a /play request's 20s x 2 budget. A session it does open is
-  /// armed for closing ([_armPrewarmSessionClose]) so it cannot linger unused.
+  /// Gated to a recent pause (within [_prewarmResumeWindow]) that this pause
+  /// hasn't already prewarmed, and throttled to [_sessionPrewarmCooldown]: a
+  /// failed attempt (server down, link still coming up) would otherwise repeat
+  /// on every app switch, each one burning a /play request's 20s x 2 budget. A
+  /// session it does open is armed for closing ([_armPrewarmSessionClose]) so
+  /// it cannot linger unused.
   Future<void> _prewarmSessionForPlay() async {
     if (_api == null || _currentItemId == null || _isLoadingNewItem) return;
     if (_localSessionMode ||
@@ -12755,6 +12970,35 @@ class AudioPlayerService extends ChangeNotifier {
     // a stashed upgrade (resume/sync-tick recreations stash before they swap),
     // so there is nothing to open here: the tap applies it.
     if (_playbackSessionId != null) return;
+    // A prewarm only pays off when the SOURCE streams through a playback
+    // session: a dead session is what makes the next play wait for a rebuild.
+    // Manifest / cached sources use tokened file URLs (there is no session to
+    // die) and play() opens its stats session in the background anyway, so
+    // warming one here is a multi-MB `/play` download for nothing.
+    if (_sourceSessionId == null) return;
+    // Prewarm only covers a pause the listener is likely to resume. A book
+    // left paused for a long time is far more often opened to browse than to
+    // play, and each prewarm downloads the whole `/play` session body (multi-MB
+    // on a server that doesn't compress its API JSON).
+    final lastPause = _lastPauseTime;
+    if (lastPause == null ||
+        DateTime.now().difference(lastPause) > _prewarmResumeWindow) {
+      debugPrint(
+        '[Service] Foreground prewarm skipped - no recent pause to resume',
+      );
+      return;
+    }
+    // One prewarm per pause: a prewarm the listener never used (they only
+    // switched apps) must not be repeated for the SAME pause after the
+    // cooldown - the unused session was already closed by its own timer.
+    final lastPrewarm = _lastSessionPrewarmAt;
+    if (lastPrewarm != null && !lastPrewarm.isBefore(lastPause)) {
+      debugPrint(
+        '[Service] Foreground prewarm skipped - this pause was already '
+        'prewarmed',
+      );
+      return;
+    }
     final last = _lastSessionPrewarmAt;
     if (last != null) {
       final since = DateTime.now().difference(last);
@@ -12778,6 +13022,11 @@ class AudioPlayerService extends ChangeNotifier {
   /// cannot be needed again before that same window has passed, so there is no
   /// point asking a second time sooner.
   static const _sessionPrewarmCooldown = Duration(minutes: 10);
+
+  /// How recently the listener must have paused for a foreground prewarm to be
+  /// worth its multi-MB `/play` body. Past this, opening the app reads as
+  /// browsing rather than returning to the book.
+  static const _prewarmResumeWindow = Duration(minutes: 30);
 
   Timer? _prewarmSessionCloseTimer;
 
@@ -12868,6 +13117,13 @@ class AudioPlayerService extends ChangeNotifier {
     if (_api == null || _currentItemId == null) return;
     if (_recreatingSession || _isLoadingNewItem) return;
     if (_playbackSessionId != null) return;
+    // A source that doesn't stream through a server session needs no full
+    // /play: a presence-only session keeps the server's active view and the
+    // per-session sync, and only its id is read from the response.
+    if (_sourceSessionless) {
+      await _ensureStatsSessionForSessionlessSource();
+      return;
+    }
     final manualOffline =
         (_prefs ?? await SharedPreferences.getInstance()).getBool(
           'manual_offline_mode',
@@ -12973,7 +13229,7 @@ class AudioPlayerService extends ChangeNotifier {
     // restarts both clocks so the paused span is never counted. Runs even under
     // manual offline since accrual works offline.
     await _accrueListening(pos);
-    if (_localSessionMode) {
+    if (_localSessionMode || _localSessionAccounting) {
       final online = !manualOffline && !_isOfflineMode && _api != null;
       if (online) unawaited(LocalSessionService().pushActive(api: _api!));
       _lastServerSync = DateTime.now();
@@ -15099,7 +15355,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Local-session play: push the final accrued listening, then finalize.
     // Runs even under manual offline so the session is queued for replay.
-    if (_localSessionMode) {
+    if (_localSessionMode || _localSessionAccounting) {
       bool pushed = false;
       if (!manualOffline && _api != null) {
         pushed = await LocalSessionService().pushActive(api: _api!);
@@ -15153,7 +15409,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     // Local-session play: queue the accrued listening for replay (the user did
     // listen; resetting position shouldn't erase that).
-    if (_localSessionMode) {
+    if (_localSessionMode || _localSessionAccounting) {
       await LocalSessionService().finalizeActive();
     }
     await _player?.stop();
