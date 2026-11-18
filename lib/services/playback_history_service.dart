@@ -107,6 +107,8 @@ class PlaybackEvent {
     switch (type) {
       case PlaybackEventType.play:
         if (detail != null && detail!.isNotEmpty) {
+          final rebuilt = _rebuiltPlayLabel(l, detail!);
+          if (rebuilt != null) return rebuilt;
           return l.historyEventResumedDetail(_localizePlayDetail(l, detail!));
         }
         return l.historyEventResumed;
@@ -132,6 +134,10 @@ class PlaybackEvent {
         return l.historyEventAutoRewound;
       case PlaybackEventType.skipForward:
         if (detail != null && detail!.isNotEmpty) {
+          if (detail == 'cross to next chapter (intro skip applies)' ||
+              detail == 'cross to next chapter(intro skip applies)') {
+            return l.historyDetailCrossToNextChapterIntroSkip;
+          }
           return l.historyEventSkipForwardDetail(
               _localizeSkipDetail(l, detail!, forward: true));
         }
@@ -140,6 +146,9 @@ class PlaybackEvent {
         if (detail != null && detail!.isNotEmpty) {
           if (detail == 'snap to chapter start') {
             return l.historyDetailSnapToChapterStart;
+          }
+          if (detail == 'snap to chapter start (engine-anchored)') {
+            return l.historyDetailEngineAnchoredSnap;
           }
           return l.historyEventSkipBackDetail(
               _localizeSkipDetail(l, detail!, forward: false));
@@ -189,8 +198,30 @@ class PlaybackEvent {
     return raw;
   }
 
+  static String? _rebuiltPlayLabel(AppLocalizations l, String d) {
+    final m = RegExp(r'^(?:(.*?)\s+)?\(rebuilt:\s*(.+)\)$').firstMatch(d);
+    if (m == null) return null;
+    final rawBase = m.group(1)?.trim();
+    final base =
+        rawBase == null || rawBase.isEmpty || rawBase == 'null' ? null : rawBase;
+    final rawReason = m.group(2)!.trim();
+    final reason = rawReason == 'Seek on resume never finished'
+        ? l.historyDetailRebuildSeekResume
+        : rawReason == 'Player failed while paused'
+            ? l.historyDetailRebuildPlayerFailed
+            : rawReason;
+    if (base == null) return l.historyEventRebuiltPlay(reason);
+    return l.historyEventRebuiltPlayDetail(_localizePlayDetail(l, base), reason);
+  }
+
   static String _localizePlayDetail(AppLocalizations l, String d) {
     if (d == 'Switched to local playback') return l.historyDetailSwitchedToLocal;
+    if (d == 'chapter jump from paused') {
+      return l.historyDetailPlayChapterJumpFromPaused;
+    }
+    if (d == 'requested while loading') {
+      return l.historyDetailPlayRequestedWhileLoading;
+    }
     if (d == 'Auto-resumed after interruption') {
       return l.historyDetailPlayAutoResumedInterruption;
     }
@@ -202,6 +233,9 @@ class PlaybackEvent {
 
   static String _localizePauseDetail(AppLocalizations l, String d) {
     if (d == 'offline') return l.historyDetailPauseOffline;
+    if (d == 'Download boundary reached') {
+      return l.historyDetailPauseDownloadBoundary;
+    }
     if (d == 'Spurious completion blocked') {
       return l.historyDetailPauseSpuriousBlocked;
     }
@@ -224,6 +258,7 @@ class PlaybackEvent {
     if (d == 'book finished') return l.historyDetailBookFinished;
     if (d == 'local book finished') return l.historyDetailLocalBookFinished;
     if (d == 'pause timeout') return l.historyDetailPauseTimeout;
+    if (d == 'prewarm unused') return l.historyDetailPrewarmUnused;
     if (d == 'stop') return l.historyDetailStop;
     return d;
   }
@@ -240,6 +275,40 @@ class PlaybackEvent {
     }
     if (detail == 'prev chapter (direct)') {
       return l.historyDetailPrevChapterDirect;
+    }
+    final chapterIntro = RegExp(
+      r'^chapter (\d+) to ([\d.]+)s \(intro skip\)$',
+    ).firstMatch(detail);
+    if (chapterIntro != null) {
+      final chapterNo = int.tryParse(chapterIntro.group(1)!);
+      return l.historyDetailChapterToIntroSkip(
+        chapterNo == null ? chapterIntro.group(1)! : l.chapterNumber(chapterNo),
+        _localizedDuration(l, '${chapterIntro.group(2)}s'),
+      );
+    }
+    final chapterOnly = RegExp(r'^chapter (\d+)$').firstMatch(detail);
+    if (chapterOnly != null) {
+      final chapterNo = int.tryParse(chapterOnly.group(1)!);
+      return l.historyEventSeekedDetail(
+        chapterNo == null ? chapterOnly.group(1)! : l.chapterNumber(chapterNo),
+      );
+    }
+    final boundary = RegExp(
+      r'^restart at download boundary from chapter (\d+)$',
+    ).firstMatch(detail);
+    if (boundary != null) {
+      final chapterNo = int.tryParse(boundary.group(1)!);
+      return l.historyDetailRestartDownloadBoundary(
+        chapterNo == null ? boundary.group(1)! : l.chapterNumber(chapterNo),
+      );
+    }
+    final adopted = RegExp(
+      r'^adopted server position ([\d.]+)s before resume$',
+    ).firstMatch(detail);
+    if (adopted != null) {
+      return l.historyDetailAdoptedServerPosition(
+        _localizedDuration(l, '${adopted.group(1)}s'),
+      );
     }
     final m = RegExp(r'^(next|prev) chapter to ([\d.]+)s \(intro skip\)$')
         .firstMatch(detail);
@@ -289,6 +358,18 @@ class PlaybackEvent {
     String detail, {
     required bool forward,
   }) {
+    final engine = RegExp(
+      r'^([+-])([\d.]+)s \(engine-anchored\)$',
+    ).firstMatch(detail);
+    if (engine != null) {
+      return l.historyDetailEngineAnchoredAmount(
+        _localizedDuration(l, '${engine.group(2)}s'),
+      );
+    }
+    final simple = RegExp(r'^([+-])([\d.]+)s$').firstMatch(detail);
+    if (simple != null) {
+      return _localizedDuration(l, '${simple.group(2)}s');
+    }
     final m =
         RegExp(r'^[+-](\d+)s \(([\d.]+)s @ ([\d.]+)x\)$').firstMatch(detail);
     if (m == null) return detail;

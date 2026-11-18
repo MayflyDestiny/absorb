@@ -6779,6 +6779,19 @@
       "detail": {"type": "String"}
     }
   },
+  "historyEventRebuiltPlay": "Playback rebuilt ({reason})",
+  "@historyEventRebuiltPlay": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "historyEventRebuiltPlayDetail": "Playback rebuilt ({base}; {reason})",
+  "@historyEventRebuiltPlayDetail": {
+    "placeholders": {
+      "base": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
   "historySeconds": "{value}s",
   "@historySeconds": {
     "placeholders": {
@@ -6835,6 +6848,39 @@
       "position": {"type": "String"}
     }
   },
+  "historyDetailChapterToIntroSkip": "Seek to {chapter} {position} (intro skip)",
+  "@historyDetailChapterToIntroSkip": {
+    "placeholders": {
+      "chapter": {"type": "String"},
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailEngineAnchoredSnap": "Back to chapter start (engine-anchored)",
+  "historyDetailEngineAnchoredAmount": "{amount} (engine-anchored)",
+  "@historyDetailEngineAnchoredAmount": {
+    "placeholders": {
+      "amount": {"type": "String"}
+    }
+  },
+  "historyDetailCrossToNextChapterIntroSkip": "Skipped to next chapter (intro skip applies)",
+  "historyDetailPlayChapterJumpFromPaused": "chapter jump while paused",
+  "historyDetailPlayRequestedWhileLoading": "play requested while loading",
+  "historyDetailPauseDownloadBoundary": "Download boundary reached",
+  "historyDetailRestartDownloadBoundary": "Restart at download boundary from {chapter}",
+  "@historyDetailRestartDownloadBoundary": {
+    "placeholders": {
+      "chapter": {"type": "String"}
+    }
+  },
+  "historyDetailAdoptedServerPosition": "Adopted server position {position} before resume",
+  "@historyDetailAdoptedServerPosition": {
+    "placeholders": {
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailPrewarmUnused": "prewarm unused",
+  "historyDetailRebuildSeekResume": "seek on resume never finished",
+  "historyDetailRebuildPlayerFailed": "player failed while paused",
   "historyDetailLocalHotSwap": "local hot-swap",
   "historyDetailLocalSession": "local-session",
   "historyDetailRefresh": "refresh",

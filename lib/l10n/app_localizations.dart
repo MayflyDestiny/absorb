@@ -21495,6 +21495,18 @@ abstract class AppLocalizations {
   /// **'Media button: {detail}'**
   String historyEventMediaButtonDetail(String detail);
 
+  /// No description provided for @historyEventRebuiltPlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback rebuilt ({reason})'**
+  String historyEventRebuiltPlay(String reason);
+
+  /// No description provided for @historyEventRebuiltPlayDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback rebuilt ({base}; {reason})'**
+  String historyEventRebuiltPlayDetail(String base, String reason);
+
   /// No description provided for @historySeconds.
   ///
   /// In en, this message translates to:
@@ -21650,6 +21662,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'prev chapter (direct) to {position} (intro skip)'**
   String historyDetailPrevChapterDirectToIntroSkip(String position);
+
+  /// No description provided for @historyDetailChapterToIntroSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Seek to {chapter} {position} (intro skip)'**
+  String historyDetailChapterToIntroSkip(String chapter, String position);
+
+  /// No description provided for @historyDetailEngineAnchoredSnap.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to chapter start (engine-anchored)'**
+  String get historyDetailEngineAnchoredSnap;
+
+  /// No description provided for @historyDetailEngineAnchoredAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} (engine-anchored)'**
+  String historyDetailEngineAnchoredAmount(String amount);
+
+  /// No description provided for @historyDetailCrossToNextChapterIntroSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped to next chapter (intro skip applies)'**
+  String get historyDetailCrossToNextChapterIntroSkip;
+
+  /// No description provided for @historyDetailPlayChapterJumpFromPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'chapter jump while paused'**
+  String get historyDetailPlayChapterJumpFromPaused;
+
+  /// No description provided for @historyDetailPlayRequestedWhileLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'play requested while loading'**
+  String get historyDetailPlayRequestedWhileLoading;
+
+  /// No description provided for @historyDetailPauseDownloadBoundary.
+  ///
+  /// In en, this message translates to:
+  /// **'Download boundary reached'**
+  String get historyDetailPauseDownloadBoundary;
+
+  /// No description provided for @historyDetailRestartDownloadBoundary.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart at download boundary from {chapter}'**
+  String historyDetailRestartDownloadBoundary(String chapter);
+
+  /// No description provided for @historyDetailAdoptedServerPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Adopted server position {position} before resume'**
+  String historyDetailAdoptedServerPosition(String position);
+
+  /// No description provided for @historyDetailPrewarmUnused.
+  ///
+  /// In en, this message translates to:
+  /// **'prewarm unused'**
+  String get historyDetailPrewarmUnused;
+
+  /// No description provided for @historyDetailRebuildSeekResume.
+  ///
+  /// In en, this message translates to:
+  /// **'seek on resume never finished'**
+  String get historyDetailRebuildSeekResume;
+
+  /// No description provided for @historyDetailRebuildPlayerFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'player failed while paused'**
+  String get historyDetailRebuildPlayerFailed;
 
   /// No description provided for @historyDetailLocalHotSwap.
   ///

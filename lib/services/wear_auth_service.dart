@@ -18,6 +18,19 @@ class WearAuthService {
 
   bool get _supported => !kIsWeb && Platform.isAndroid;
 
+  // Same missing-bridge case as WearPlayerService: say it once.
+  static bool _missingPluginLogged = false;
+
+  static void _logFailure(String what, Object e) {
+    if (e is MissingPluginException) {
+      if (_missingPluginLogged) return;
+      _missingPluginLogged = true;
+      debugPrint('[WearAuth] $what failed: $e (further identical failures hidden)');
+      return;
+    }
+    debugPrint('[WearAuth] $what failed: $e');
+  }
+
   /// Push the current session to the paired watch. Safe to call on any
   /// login/refresh/account-switch; the Data Layer dedupes by hash.
   ///
@@ -50,7 +63,7 @@ class WearAuthService {
     } catch (e) {
       // Pure-best-effort: the phone app must work even if Play Services
       // is missing (e.g. on degoogled ROMs).
-      debugPrint('[WearAuth] publish failed: $e');
+      _logFailure('publish', e);
     }
   }
 
@@ -60,7 +73,7 @@ class WearAuthService {
     try {
       await _channel.invokeMethod<void>('clear');
     } catch (e) {
-      debugPrint('[WearAuth] clear failed: $e');
+      _logFailure('clear', e);
     }
   }
 }

@@ -34,7 +34,15 @@ class SocketService {
       _askedForToken = true;
       debugPrint('[Socket] Token expired - getting a new one');
       refresh().then((ok) {
-        if (ok) return;
+        if (ok) {
+          // The socket may still be open; sign the same connection back in
+          // instead of waiting for a reconnect that may carry the old token.
+          if (_socket?.connected == true) {
+            debugPrint('[Socket] Re-authenticating with the refreshed token');
+            _socket!.emit('auth', _token);
+          }
+          return;
+        }
         debugPrint('[Socket] No new token - leaving live updates off');
         disconnect();
       }, onError: (Object e) {

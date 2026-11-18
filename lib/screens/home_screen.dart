@@ -1445,6 +1445,11 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
           'episodes': [recentEpisode],
         },
       };
+      final episodeStart =
+          (widget.lib.getEpisodeProgressData(itemId, episodeId)?['currentTime']
+                      as num?)
+                  ?.toDouble() ??
+              0;
       debugPrint(
         '[StartTrace] home podcast prep ${sw.elapsedMilliseconds}ms '
         'inFlight=${api.backgroundItemFetchFor(itemId) != null}',
@@ -1459,6 +1464,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         totalDuration: epDuration,
         chapters: [],
         itemSnapshot: episodeSnapshot,
+        startTime: episodeStart,
         episodeId: episodeId,
         episodeTitle: episodeTitle,
         libraryId: widget.item['libraryId'] as String?,
@@ -1559,6 +1565,10 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       itemSnapshot = fullItem;
     }
     final coverUrl = widget.lib.getCoverUrl(itemId);
+    final savedStart =
+        (widget.lib.getProgressData(itemId)?['currentTime'] as num?)
+            ?.toDouble() ??
+        0;
 
     // Start playback
     debugPrint(
@@ -1576,6 +1586,7 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       totalDuration: duration,
       chapters: chapters,
       itemSnapshot: itemSnapshot,
+      startTime: savedStart,
       libraryId: libraryId,
       fromUi: true,
     );

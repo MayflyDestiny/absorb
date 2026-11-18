@@ -17,6 +17,22 @@ class WearPlayerService {
   WearPlayerService._();
   static final WearPlayerService instance = WearPlayerService._();
 
+  // A build without the Wear bridge answers every call with the same
+  // MissingPluginException; logging it on every sync only rolls the buffer.
+  static bool _missingPluginLogged = false;
+
+  static void _logPublishFailure(String what, Object e) {
+    if (e is MissingPluginException) {
+      if (_missingPluginLogged) return;
+      _missingPluginLogged = true;
+      debugPrint(
+        '[WearPlayer] $what failed: $e (further identical failures hidden)',
+      );
+      return;
+    }
+    debugPrint('[WearPlayer] $what failed: $e');
+  }
+
   static const MethodChannel _channel =
       MethodChannel('com.barnabas.absorb/wear_player');
 
@@ -76,7 +92,7 @@ class WearPlayerService {
         'bookmarks': jsonEncode(rows),
       });
     } catch (e) {
-      debugPrint('[WearPlayer] publishBookmarks failed: $e');
+      _logPublishFailure('publishBookmarks', e);
     }
   }
 
@@ -105,7 +121,7 @@ class WearPlayerService {
         'chapters': jsonEncode(list),
       });
     } catch (e) {
-      debugPrint('[WearPlayer] publishChapters failed: $e');
+      _logPublishFailure('publishChapters', e);
     }
   }
 
@@ -174,7 +190,7 @@ class WearPlayerService {
         'themeColor': themeColor,
       });
     } catch (e) {
-      debugPrint('[WearPlayer] publish failed: $e');
+      _logPublishFailure('publish', e);
     }
   }
 }

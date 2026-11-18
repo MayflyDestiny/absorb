@@ -12148,6 +12148,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String historyEventRebuiltPlay(String reason) {
+    return '已重建播放（$reason）';
+  }
+
+  @override
+  String historyEventRebuiltPlayDetail(String base, String reason) {
+    return '已重建播放（$base；$reason）';
+  }
+
+  @override
   String historySeconds(String value) {
     return '$value秒';
   }
@@ -12236,6 +12246,50 @@ class AppLocalizationsZh extends AppLocalizations {
   String historyDetailPrevChapterDirectToIntroSkip(String position) {
     return '跳转到上一章（直跳）$position（跳过片头）';
   }
+
+  @override
+  String historyDetailChapterToIntroSkip(String chapter, String position) {
+    return '跳到$chapter $position（跳过片头）';
+  }
+
+  @override
+  String get historyDetailEngineAnchoredSnap => '回到本章开头（引擎锚定）';
+
+  @override
+  String historyDetailEngineAnchoredAmount(String amount) {
+    return '$amount（引擎锚定）';
+  }
+
+  @override
+  String get historyDetailCrossToNextChapterIntroSkip => '跳到下一章（应用片头跳过）';
+
+  @override
+  String get historyDetailPlayChapterJumpFromPaused => '暂停中跳转章节';
+
+  @override
+  String get historyDetailPlayRequestedWhileLoading => '加载中请求播放';
+
+  @override
+  String get historyDetailPauseDownloadBoundary => '已到下载边界';
+
+  @override
+  String historyDetailRestartDownloadBoundary(String chapter) {
+    return '从$chapter重新开始（下载边界）';
+  }
+
+  @override
+  String historyDetailAdoptedServerPosition(String position) {
+    return '恢复前采用服务器位置 $position';
+  }
+
+  @override
+  String get historyDetailPrewarmUnused => '预热的会话未使用';
+
+  @override
+  String get historyDetailRebuildSeekResume => '恢复时的定位未完成';
+
+  @override
+  String get historyDetailRebuildPlayerFailed => '暂停期间播放器失效';
 
   @override
   String get historyDetailLocalHotSwap => '本地热切换';

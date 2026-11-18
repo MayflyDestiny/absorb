@@ -22,6 +22,46 @@ class SessionCache {
         : '${prefix}session_cache_$itemId';
   }
 
+  /// A URL kept for a later play must not keep the access token it was minted
+  /// with: the token rotates, the cached URL does not. The URL is rebuilt with
+  /// the current token at start time instead.
+  static String _withoutToken(String url) {
+    final queryStart = url.indexOf('?');
+    if (queryStart < 0) return url;
+    final uri = Uri.tryParse(url);
+    // Only server-relative ABS item-file URLs: an external/CDN or backend-
+    // specific URL may carry a signed query that is not our access token and
+    // must be stored verbatim.
+    if (uri == null || uri.hasAuthority) return url;
+    if (!uri.path.contains('/api/items/') ||
+        !uri.path.contains('/file/')) {
+      return url;
+    }
+    final params = Map<String, dynamic>.from(uri.queryParametersAll);
+    if (!params.containsKey('token')) return url;
+    params.remove('token');
+    if (params.isEmpty) {
+      final fragmentStart = url.indexOf('#', queryStart);
+      return url.substring(0, queryStart) +
+          (fragmentStart < 0 ? '' : url.substring(fragmentStart));
+    }
+    return uri.replace(queryParameters: params).toString();
+  }
+
+  static List<dynamic> _withoutTokens(List<dynamic> tracks) {
+    return [
+      for (final track in tracks)
+        if (track is Map<String, dynamic>)
+          {
+            ...track,
+            if (track['contentUrl'] is String)
+              'contentUrl': _withoutToken(track['contentUrl'] as String),
+          }
+        else
+          track,
+    ];
+  }
+
   /// Save session metadata for an item. Only stores what we need to rebuild
   /// the audio source on next play.
   static Future<void> save({
@@ -34,7 +74,7 @@ class SessionCache {
     try {
       final prefs = await SharedPreferences.getInstance();
       final data = {
-        'audioTracks': audioTracks,
+        'audioTracks': _withoutTokens(audioTracks),
         'chapters': chapters,
         'totalDuration': totalDuration,
         'savedAt': DateTime.now().millisecondsSinceEpoch,

@@ -3863,6 +3863,19 @@
       "detail": {"type": "String"}
     }
   },
+  "historyEventRebuiltPlay": "已重建播放（{reason}）",
+  "@historyEventRebuiltPlay": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "historyEventRebuiltPlayDetail": "已重建播放（{base}；{reason}）",
+  "@historyEventRebuiltPlayDetail": {
+    "placeholders": {
+      "base": {"type": "String"},
+      "reason": {"type": "String"}
+    }
+  },
   "historySeconds": "{value}秒",
   "@historySeconds": {
     "placeholders": {
@@ -3919,6 +3932,39 @@
       "position": {"type": "String"}
     }
   },
+  "historyDetailChapterToIntroSkip": "跳到{chapter} {position}（跳过片头）",
+  "@historyDetailChapterToIntroSkip": {
+    "placeholders": {
+      "chapter": {"type": "String"},
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailEngineAnchoredSnap": "回到本章开头（引擎锚定）",
+  "historyDetailEngineAnchoredAmount": "{amount}（引擎锚定）",
+  "@historyDetailEngineAnchoredAmount": {
+    "placeholders": {
+      "amount": {"type": "String"}
+    }
+  },
+  "historyDetailCrossToNextChapterIntroSkip": "跳到下一章（应用片头跳过）",
+  "historyDetailPlayChapterJumpFromPaused": "暂停中跳转章节",
+  "historyDetailPlayRequestedWhileLoading": "加载中请求播放",
+  "historyDetailPauseDownloadBoundary": "已到下载边界",
+  "historyDetailRestartDownloadBoundary": "从{chapter}重新开始（下载边界）",
+  "@historyDetailRestartDownloadBoundary": {
+    "placeholders": {
+      "chapter": {"type": "String"}
+    }
+  },
+  "historyDetailAdoptedServerPosition": "恢复前采用服务器位置 {position}",
+  "@historyDetailAdoptedServerPosition": {
+    "placeholders": {
+      "position": {"type": "String"}
+    }
+  },
+  "historyDetailPrewarmUnused": "预热的会话未使用",
+  "historyDetailRebuildSeekResume": "恢复时的定位未完成",
+  "historyDetailRebuildPlayerFailed": "暂停期间播放器失效",
   "historyDetailLocalHotSwap": "本地热切换",
   "historyDetailLocalSession": "本地会话",
   "historyDetailRefresh": "刷新",

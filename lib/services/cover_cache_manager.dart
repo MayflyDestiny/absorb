@@ -90,14 +90,42 @@ class _TimeoutHttpFileService extends FileService {
   static const connectTimeout = Duration(seconds: 8);
   static const readTimeout = Duration(seconds: 10);
 
+  // A missing cover is asked for by every rebuild of its card; a 404 is not
+  // cached by flutter_cache_manager, so one absent image produced a burst of
+  // identical requests. Keep a short per-URL negative memo.
+  static final Map<String, DateTime> _missingUntil = {};
+  static const _missingTtl = Duration(minutes: 5);
+  static const _missingMaxEntries = 200;
+
+  static bool _isKnownMissing(String url) {
+    final until = _missingUntil[url];
+    if (until == null) return false;
+    if (DateTime.now().isAfter(until)) {
+      _missingUntil.remove(url);
+      return false;
+    }
+    return true;
+  }
+
+  static void _rememberMissing(String url) {
+    if (_missingUntil.length >= _missingMaxEntries) _missingUntil.clear();
+    _missingUntil[url] = DateTime.now().add(_missingTtl);
+  }
+
   @override
   Future<FileServiceResponse> get(String url,
       {Map<String, String>? headers}) async {
+    if (_isKnownMissing(url)) {
+      throw Exception('cover not found (negative cache)');
+    }
     final client = http.Client();
     final request = http.Request('GET', Uri.parse(url));
     if (headers != null) request.headers.addAll(headers);
     try {
       final response = await client.send(request).timeout(connectTimeout);
+      if (response.statusCode == 404 || response.statusCode == 410) {
+        _rememberMissing(url);
+      }
       debugPrint(
           '[NET] cover ${Uri.parse(url).path} ${response.statusCode} ${response.contentLength}B');
       return _TimeoutResponse(

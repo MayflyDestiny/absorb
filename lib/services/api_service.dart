@@ -359,6 +359,29 @@ class ApiService {
   Completer<_RefreshOutcome>? _refreshCompleter;
   static Completer<void>? _tokenMutationCompleter;
 
+  /// Listeners told after any ApiService instance rotates the access token.
+  /// Long-lived media URLs keep the token they were built with, so the player
+  /// uses this to rebuild them before the next file request would 401.
+  static final List<void Function()> _tokenRefreshListeners = [];
+
+  static void addTokenRefreshListener(void Function() listener) {
+    if (!_tokenRefreshListeners.contains(listener)) {
+      _tokenRefreshListeners.add(listener);
+    }
+  }
+
+  static void removeTokenRefreshListener(void Function() listener) {
+    _tokenRefreshListeners.remove(listener);
+  }
+
+  static void _notifyTokenRefreshListeners() {
+    for (final listener in List<void Function()>.of(_tokenRefreshListeners)) {
+      try {
+        listener();
+      } catch (_) {}
+    }
+  }
+
   // Timestamp of the last completed server HTTP response. A finished exchange
   // (any status, even 4xx/5xx) proves the server is alive, so weak-link offline
   // detection can defer offline flips while real traffic is still flowing.
@@ -906,6 +929,31 @@ class ApiService {
     } catch (e) {
       debugPrint('[API] Failed to persist refreshed tokens: $e');
     }
+    _notifyTokenRefreshListeners();
+  }
+
+  /// Refresh the access token before rebuilding media URLs after a stream
+  /// error, so the new URLs do not carry the same expired credential.
+  /// [force] refreshes after the server already answered 401 even when this
+  /// instance still believes the token is inside its expiry window.
+  /// Returns false only when the server explicitly rejected the refresh (the
+  /// session is dead). A transient refresh failure still returns true: the
+  /// caller's one retry may succeed, and giving up would turn a flaky link
+  /// into a failed start.
+  Future<bool> ensureMediaTokenFresh({bool force = false}) async {
+    if (force) {
+      // Without a refresh pair there is no new credential to put in the
+      // rebuilt URLs; retrying the same one can only fail again.
+      if (_isLegacyToken || _refreshToken == null) return false;
+      final outcome = await _refreshAccessToken();
+      if (outcome == _RefreshOutcome.rejected) {
+        onAuthExpired?.call();
+        return false;
+      }
+      return true;
+    }
+    await _ensureFreshAccessToken();
+    return true;
   }
 
   Future<Completer<void>> _acquireTokenMutationLock() async {
@@ -3037,7 +3085,12 @@ class ApiService {
       return trackUri.replace(queryParameters: query).toString();
     }
 
-    if (isAbsolute) return contentUrl;
+    // A cached absolute URL keeps the token it was minted with. Replacing it
+    // with the CURRENT token is what makes a cached start survive a rotation;
+    // returning the URL untouched pinned the player to an expired credential.
+    // External hosts (CDN/direct sources) are left alone: our token has no
+    // meaning there.
+    if (isAbsolute && trackUri.origin != baseUri.origin) return contentUrl;
 
     // playMethod 0 = direct play. Transcode sessions must keep their HLS
     // contentUrl, and pre-2.22 servers lack the endpoint but hand out legacy

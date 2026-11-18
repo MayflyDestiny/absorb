@@ -12665,6 +12665,16 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String historyEventRebuiltPlay(String reason) {
+    return 'Playback rebuilt ($reason)';
+  }
+
+  @override
+  String historyEventRebuiltPlayDetail(String base, String reason) {
+    return 'Playback rebuilt ($base; $reason)';
+  }
+
+  @override
   String historySeconds(String value) {
     return '${value}s';
   }
@@ -12755,6 +12765,54 @@ class AppLocalizationsDe extends AppLocalizations {
   String historyDetailPrevChapterDirectToIntroSkip(String position) {
     return 'prev chapter (direct) to $position (intro skip)';
   }
+
+  @override
+  String historyDetailChapterToIntroSkip(String chapter, String position) {
+    return 'Seek to $chapter $position (intro skip)';
+  }
+
+  @override
+  String get historyDetailEngineAnchoredSnap =>
+      'Back to chapter start (engine-anchored)';
+
+  @override
+  String historyDetailEngineAnchoredAmount(String amount) {
+    return '$amount (engine-anchored)';
+  }
+
+  @override
+  String get historyDetailCrossToNextChapterIntroSkip =>
+      'Skipped to next chapter (intro skip applies)';
+
+  @override
+  String get historyDetailPlayChapterJumpFromPaused =>
+      'chapter jump while paused';
+
+  @override
+  String get historyDetailPlayRequestedWhileLoading =>
+      'play requested while loading';
+
+  @override
+  String get historyDetailPauseDownloadBoundary => 'Download boundary reached';
+
+  @override
+  String historyDetailRestartDownloadBoundary(String chapter) {
+    return 'Restart at download boundary from $chapter';
+  }
+
+  @override
+  String historyDetailAdoptedServerPosition(String position) {
+    return 'Adopted server position $position before resume';
+  }
+
+  @override
+  String get historyDetailPrewarmUnused => 'prewarm unused';
+
+  @override
+  String get historyDetailRebuildSeekResume => 'seek on resume never finished';
+
+  @override
+  String get historyDetailRebuildPlayerFailed => 'player failed while paused';
 
   @override
   String get historyDetailLocalHotSwap => 'local hot-swap';
