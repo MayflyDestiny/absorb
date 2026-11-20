@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'expressive.dart';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -288,6 +289,8 @@ class _ReadAlongPanelState extends State<ReadAlongPanel> {
               await _act('discard', _api!.cancelReadAlong);
             }
           },
+          onPause: () => _act('pause', _api!.pauseReadAlong),
+          onResume: () => _act('resume', _api!.resumeReadAlong),
           onPublish: () => _act('publish', _api!.publishReadAlong),
           onRetry: () => _act('retry', _api!.retryReadAlong),
           onDismiss: () => _act('dismiss', _api!.dismissReadAlong),
@@ -305,6 +308,8 @@ class _JobCard extends StatelessWidget {
   final bool othersJob;
   final bool canStartOver;
   final VoidCallback onCancel;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
   final VoidCallback onDiscard;
   final VoidCallback onPublish;
   final VoidCallback onRetry;
@@ -318,6 +323,8 @@ class _JobCard extends StatelessWidget {
     required this.othersJob,
     required this.canStartOver,
     required this.onCancel,
+    required this.onPause,
+    required this.onResume,
     required this.onDiscard,
     required this.onPublish,
     required this.onRetry,
@@ -327,6 +334,7 @@ class _JobCard extends StatelessWidget {
 
   String _title(AppLocalizations l) {
     if (job.stopping) return l.readAlongStopping;
+    if (job.paused) return l.readAlongPaused;
     if (job.queued) return l.readAlongWaiting;
     if (job.processing) return _stageLabel(l, job.stage);
     if (job.awaitingReview) return l.readAlongReviewTitle;
@@ -374,6 +382,7 @@ class _JobCard extends StatelessWidget {
 
   List<String> _description(AppLocalizations l, String locale) {
     if (job.stopping) return [l.readAlongStoppingHint];
+    if (job.paused) return [l.readAlongPausedHint];
     if (job.queued) {
       final ahead = job.queuePosition;
       if (ahead == null) return const [];
@@ -464,7 +473,7 @@ class _JobCard extends StatelessWidget {
                     ? (Icons.error_rounded, cs.error)
                     : (Icons.block_rounded, cs.onSurfaceVariant);
 
-    Widget spinner() => const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2));
+    Widget spinner() => const SizedBox(width: 16, height: 16, child: AdaptiveSpinner(strokeWidth: 2));
 
     final step = readAlongStepOf(job.stage);
     final stepLabels = [
@@ -477,6 +486,16 @@ class _JobCard extends StatelessWidget {
     ];
 
     final buttons = <Widget>[
+      if (job.canPause)
+        OutlinedButton(
+          onPressed: busy != null ? null : onPause,
+          child: busy == 'pause' ? spinner() : Text(l.readAlongPause),
+        ),
+      if (job.canResume)
+        FilledButton.tonal(
+          onPressed: busy != null ? null : onResume,
+          child: busy == 'resume' ? spinner() : Text(l.readAlongResume),
+        ),
       if (job.canCancel)
         OutlinedButton(
           onPressed: busy != null ? null : onCancel,
@@ -539,7 +558,7 @@ class _JobCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 1),
                 child: job.running
-                    ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: iconColor))
+                    ? SizedBox(width: 18, height: 18, child: AdaptiveSpinner(strokeWidth: 2, color: iconColor))
                     : Icon(icon, size: 18, color: iconColor),
               ),
               const SizedBox(width: 10),
@@ -588,7 +607,7 @@ class _JobCard extends StatelessWidget {
                       if (step >= 0 && i < step)
                         Icon(Icons.check_circle_rounded, size: 14, color: cs.primary)
                       else if (i == step)
-                        SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: cs.primary))
+                        SizedBox(width: 12, height: 12, child: AdaptiveSpinner(strokeWidth: 1.6, color: cs.primary))
                       else
                         Icon(Icons.circle_outlined, size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                       const SizedBox(width: 4),
@@ -992,7 +1011,7 @@ class _CreateReadAlongSheetState extends State<_CreateReadAlongSheet> {
               child: FilledButton(
                 onPressed: canStart ? _start : null,
                 child: _starting
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(width: 18, height: 18, child: AdaptiveSpinner(strokeWidth: 2))
                     : Text(l.readAlongStart),
               ),
             ),

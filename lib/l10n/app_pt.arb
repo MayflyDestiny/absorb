@@ -15,28 +15,36 @@
   "timeRemaining": "{duration} left",
   "@timeRemaining": {
     "placeholders": {
-      "duration": {"type": "String"}
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "historyEventResumed": "Resumed playback",
   "historyEventResumedDetail": "Resumed playback ({detail})",
   "@historyEventResumedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventPaused": "Paused",
   "historyEventPausedDetail": "Paused ({detail})",
   "@historyEventPausedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSeeked": "Seeked",
   "historyEventSeekedDetail": "Seeked {detail}",
   "@historyEventSeekedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSyncLocal": "Saved locally",
@@ -45,28 +53,36 @@
   "historyEventAutoRewoundDetail": "Auto-rewound {detail}",
   "@historyEventAutoRewoundDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipForward": "Skipped forward",
   "historyEventSkipForwardDetail": "Skipped forward ({detail})",
   "@historyEventSkipForwardDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipBack": "Skipped back",
   "historyEventSkipBackDetail": "Skipped back ({detail})",
   "@historyEventSkipBackDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSpeedChanged": "Speed changed",
   "historyEventSpeedSetTo": "Speed set to {detail}",
   "@historyEventSpeedSetTo": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventBookFinished": "Book finished",
@@ -74,39 +90,51 @@
   "historyEventSessionStartedDetail": "Session started ({detail})",
   "@historyEventSessionStartedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSessionEnded": "Session ended",
   "historyEventSessionEndedDetail": "Session ended ({detail})",
   "@historyEventSessionEndedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventMediaButton": "Media button",
   "historyEventMediaButtonDetail": "Media button: {detail}",
   "@historyEventMediaButtonDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historySeconds": "{value}s",
   "@historySeconds": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyMinutes": "{value}m",
   "@historyMinutes": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historySpeed": "{value}x",
   "@historySpeed": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyDetailStream": "stream",
@@ -118,13 +146,17 @@
   "historyDetailNextChapterToIntroSkip": "next chapter to {position} (intro skip)",
   "@historyDetailNextChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrevChapterToIntroSkip": "prev chapter to {position} (intro skip)",
   "@historyDetailPrevChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipChapterIntro": "skip chapter intro",
@@ -136,45 +168,179 @@
   "historyDetailRewindAtSpeed": "{base} ({adjusted} at {speed})",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStart": "{base} (session start)",
   "@historyDetailRewindSessionStart": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStartAtSpeed": "{base} ({adjusted} at {speed}, session start)",
   "@historyDetailRewindSessionStartAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSleepTimer": "{base} (sleep timer)",
   "@historyDetailRewindSleepTimer": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipForwardAtSpeed": "+{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipForwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipBackwardAtSpeed": "-{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipBackwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
-  }
+  },
+  "online": "'Online'",
+  "offline": "Desconectado",
+  "stillOffline": "Ainda desconectado. Toque para tentar novamente.",
+  "retry": "Tentar novamente",
+  "listsNone": "Nenhuma coleção ou lista de reprodução",
+  "listsLoadFailed": "Não foi possível carregar as suas listas",
+  "cancel": "Cancelar",
+  "delete": "Excluir",
+  "remove": "Excluir",
+  "save": "Salvar",
+  "done": "Concluído",
+  "edit": "Editar",
+  "search": "Pesquisar",
+  "apply": "Confirmar",
+  "enable": "Ativar",
+  "clear": "Limpar",
+  "off": "Desligado",
+  "disabled": "Desabilitado",
+  "later": "Lembrar mais tarde",
+  "whatsNewTitle": "Absorb foi atualizado",
+  "whatsNewContent": "Agora está agora na versão {version}.",
+  "@whatsNewContent": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "whatsNewButton": "Ver o que há de novo",
+  "whatsNewKeepShowing": "Exibir isto após cada atualização",
+  "whatsNewKeepShowingHint": "Pode reativá-lo em Configurações",
+  "settingsWhatsNew": "Mostrar o que há de novo após as atualizações",
+  "settingsWhatsNewSubtitle": "",
+  "gotIt": "Entendi",
+  "betaLoggingTitle": "Os logs estão ativados",
+  "preview": "Pré-visualização",
+  "or": "ou",
+  "file": "Arquivo",
+  "more": "Mais",
+  "unknown": "Desconhecido",
+  "untitled": "Sem título",
+  "stay": "Permanecer",
+  "homeTitle": "Início",
+  "continueListening": "Continuar ouvindo",
+  "continueReading": "Continuar lendo",
+  "continueSeries": "Continuar Série",
+  "recentlyAdded": "Adicionado recentemente",
+  "listenAgain": "Ouvir novamente",
+  "discover": "Descobrir",
+  "newEpisodes": "Novos Episódios",
+  "downloads": "Transferências",
+  "noDownloadedBooks": "Nenhum livro baixado",
+  "yourLibraryIsEmpty": "A sua biblioteca está vazia",
+  "downloadBooksWhileOnline": "Baixe livros enquanto estiver online para ouvir offline",
+  "customizeHome": "Personalizar Página Inicial",
+  "loginAdvanced": "Avançado",
+  "loginCustomHttpHeaders": "Cabeçalhos HTTP personalizados",
+  "loginHeaderName": "Nome do cabeçalho",
+  "loginHeaderValue": "Valor",
+  "loginAddHeader": "Adicionar Cabeçalho",
+  "loginApiKey": "Chave da API",
+  "loginWaitingForSso": "Aguardando SSO...",
+  "loginOrSignInManually": "ou entre manualmente",
+  "loginUsername": "Nome de usuário",
+  "loginUsernameRequired": "Por favor, insira o seu nome de usuário",
+  "loginPassword": "Senha",
+  "loginSignIn": "Entrar",
+  "loginSignInAs": "Iniciar sessão como {username}?",
+  "@loginSignInAs": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "loginSignedInAs": "Sessão iniciada como {username}",
+  "@loginSignedInAs": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "adminCreateSetupFile": "Compartilhar sessão",
+  "adminSetupFileCreate": "Criar link",
+  "setupLinkShareTitle": "Compartilhar sessão",
+  "setupLinkShareSubject": "‘Login’ Absorb para {username}",
+  "@setupLinkShareSubject": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "loginPlayDownloads": "Reproduzir os seus downloads",
+  "loginPasteLink": "Colar link de login",
+  "loginRestoreFromBackup": "Importar",
+  "loginRestoreBackupTitle": "Restaurar backup?",
+  "libraryTabLibrary": "Biblioteca",
+  "libraryTabSeries": "Séries",
+  "libraryTabAuthors": "Autores",
+  "libraryTabNarrators": "Narradores",
+  "libraryNoBooks": "Nenhum livro encontrado",
+  "libraryNoAuthorsFound": "Nenhum autor encontrado",
+  "libraryNoNarratorsFound": "Nenhum narrador encontrado",
+  "libraryNoResults": "Nenhum resultado encontrado"
 }

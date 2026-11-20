@@ -30,7 +30,9 @@
   "whatsNewContent": "You're now on {version}.",
   "@whatsNewContent": {
     "placeholders": {
-      "version": {"type": "String"}
+      "version": {
+        "type": "String"
+      }
     }
   },
   "whatsNewSeeFull": "See full release notes",
@@ -82,7 +84,9 @@
   "pingFailureHttpStatus": "Server returned HTTP {status} instead of 200.",
   "@pingFailureHttpStatus": {
     "placeholders": {
-      "status": { "type": "int" }
+      "status": {
+        "type": "int"
+      }
     }
   },
   "pingFailureNotBookOrbit": "The server answered, but it does not look like BookOrbit.",
@@ -106,17 +110,29 @@
   "loginSignIn": "Sign In",
   "loginSignInAs": "Sign in as {username}?",
   "@loginSignInAs": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "loginSignInToServer": "Sign in to this server?",
   "loginSignedInAs": "Signed in as {username}",
   "@loginSignedInAs": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "adminCreateSetupFile": "Share sign-in",
   "adminSetupFileDescription": "Creates a private sign-in link for {username} that only works in the Absorb app.",
   "@adminSetupFileDescription": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "adminSetupFileServerUrl": "Server URL the new user will use",
   "adminSetupFileNoteWithHeaders": "A dedicated API key and your custom headers will be included so they can reach the server. Treat the link like a password.",
@@ -126,20 +142,36 @@
   "adminSetupFileKeyError": "Could not create an API key for this user",
   "adminSetupFileSaved": "Setup file for {username} saved",
   "@adminSetupFileSaved": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "adminSetupFileFailed": "Failed to create sign-in: {error}",
   "@adminSetupFileFailed": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "setupLinkShareTitle": "Share sign-in",
   "setupLinkShareDescription": "Send this private link or have them scan the QR code to sign in as {username}.",
   "@setupLinkShareDescription": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "setupLinkPrivateWarning": "Anyone with this link can sign in as {username}. Treat it like a password.",
   "@setupLinkPrivateWarning": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "setupLinkShare": "Share link",
   "setupLinkCopy": "Copy link",
@@ -148,14 +180,22 @@
   "setupLinkQrError": "This setup link is too large for a QR code. Share the link instead.",
   "setupLinkShareSubject": "Absorb sign-in for {username}",
   "@setupLinkShareSubject": {
-    "placeholders": { "username": { "type": "String" } }
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
   },
   "setupLinkConfirmTitle": "Sign in with this link?",
   "setupLinkConfirmBody": "Sign in to {server} as {username}? Only continue if you trust who sent this link.",
   "@setupLinkConfirmBody": {
     "placeholders": {
-      "server": { "type": "String" },
-      "username": { "type": "String" }
+      "server": {
+        "type": "String"
+      },
+      "username": {
+        "type": "String"
+      }
     }
   },
   "setupLinkInvalid": "This sign-in link is invalid or incomplete",
@@ -164,7 +204,9 @@
   "signedOutDownloadsNote": "You're signed out. Anything you listen to here syncs to {username} when you sign back in.",
   "@signedOutDownloadsNote": {
     "placeholders": {
-      "username": {"type": "String"}
+      "username": {
+        "type": "String"
+      }
     }
   },
   "loginPasteLink": "Paste login link",
@@ -598,14 +640,20 @@
   "statsRemoveFromYearWithDate": "The finished date will still be {date} on the server. This only removes \"{title}\" from your Absorb books-this-year list.",
   "@statsRemoveFromYearWithDate": {
     "placeholders": {
-      "date": { "type": "String" },
-      "title": { "type": "String" }
+      "date": {
+        "type": "String"
+      },
+      "title": {
+        "type": "String"
+      }
     }
   },
   "statsRemoveFromYearNoDate": "The finished date stays on the server. This only removes \"{title}\" from your Absorb books-this-year list.",
   "@statsRemoveFromYearNoDate": {
     "placeholders": {
-      "title": { "type": "String" }
+      "title": {
+        "type": "String"
+      }
     }
   },
   "statsRemovedFromYear": "Removed from this year",
@@ -613,7 +661,9 @@
   "statsAddBackToYearBody": "Add \"{title}\" back to your Absorb books-this-year list?",
   "@statsAddBackToYearBody": {
     "placeholders": {
-      "title": { "type": "String" }
+      "title": {
+        "type": "String"
+      }
     }
   },
   "statsAddBack": "Add back",
@@ -631,7 +681,11 @@
   "statsGoalEnterTimeHint": "Minutes or h:mm",
   "statsBooksShort": "{count} books",
   "@statsBooksShort": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "statsBookChallengeTitle": "Reading challenge",
   "statsBookChallengeDesc": "Books to finish this year",
@@ -640,11 +694,25 @@
   "statsMonthlyGoal": "Monthly goal",
   "statsGoalProgress": "{done} / {target}",
   "@statsGoalProgress": {
-    "placeholders": { "done": { "type": "String" }, "target": { "type": "String" } }
+    "placeholders": {
+      "done": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      }
+    }
   },
   "statsBookChallengeProgress": "{done} of {target} books",
   "@statsBookChallengeProgress": {
-    "placeholders": { "done": { "type": "int" }, "target": { "type": "int" } }
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "target": {
+        "type": "int"
+      }
+    }
   },
   "statsGoalReached": "Goal reached",
   "statsGoalPaceTickHint": "Fill = progress, tick = time elapsed",
@@ -664,14 +732,22 @@
   "statsTimeSavedLabel": "Saved by speed",
   "statsTimeSavedSince": "since {date}",
   "@statsTimeSavedSince": {
-    "placeholders": { "date": { "type": "String" } }
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
   },
   "statsTimeSavedReset": "Reset time saved",
   "statsTimeSavedResetConfirm": "Time saved will start counting again from today.",
   "statsTimeSavedResetDone": "Time saved reset",
   "statsOnPaceFor": "On pace for {count} books",
   "@statsOnPaceFor": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "statsDaysActive": "Days Active",
   "statsDailyAverage": "Daily Average",
@@ -870,8 +946,12 @@
   "chapterSkipOnSubtitleFormat": "On - skip {intro}s intro, {outro}s outro",
   "@chapterSkipOnSubtitleFormat": {
     "placeholders": {
-      "intro": { "type": "String" },
-      "outro": { "type": "String" }
+      "intro": {
+        "type": "String"
+      },
+      "outro": {
+        "type": "String"
+      }
     }
   },
   "chapterSkipOffSubtitle": "Off - play chapters normally",
@@ -896,7 +976,11 @@
   "subtitleVisibilityHide": "Hide",
   "currentLibrarySettingsTitle": "Current library: {name}",
   "@currentLibrarySettingsTitle": {
-    "placeholders": { "name": { "type": "String" } }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "currentLibrarySkipOverride": "Custom skip amounts",
   "currentLibrarySkipOverrideOnSubtitle": "On - this library uses its own skip amounts",
@@ -2577,7 +2661,7 @@
   "autoDownloadPodcastContent": "Automatically download the next episodes as you listen.",
   "download": "Download",
   "downloadConfirmTitle": "Confirm download",
-  "downloadConfirmContent": "Download \u201C{title}\u201D to this device?",
+  "downloadConfirmContent": "Download “{title}” to this device?",
   "@downloadConfirmContent": {
     "placeholders": {
       "title": {
@@ -2736,15 +2820,23 @@
   "coverSavedCount": "Downloaded {saved}/{total}",
   "@coverSavedCount": {
     "placeholders": {
-      "saved": { "type": "int" },
-      "total": { "type": "int" }
+      "saved": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "downloadedChaptersTitle": "Downloaded {saved}/{total} chapters",
   "@downloadedChaptersTitle": {
     "placeholders": {
-      "saved": { "type": "int" },
-      "total": { "type": "int" }
+      "saved": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "downloadedAddMore": "Download chapters",
@@ -2754,7 +2846,9 @@
   "removeSelectedChapters": "Remove Selected ({count})",
   "@removeSelectedChapters": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "downloadedRemove": "Remove download",
@@ -3211,14 +3305,26 @@
   },
   "fileInfoTitle": "File info",
   "fileInfoFileCount": "{count, plural, =1{1 file} other{{count} files}}",
-  "@fileInfoFileCount": {"placeholders": {"count": {"type": "int"}}},
+  "@fileInfoFileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileInfoNone": "This book has no file details.",
   "fileInfoAudio": "Audio",
   "fileInfoEbook": "Ebook",
   "fileInfoOther": "Other files",
   "fileInfoBookOrbitNote": "BookOrbit doesn't report codec or bitrate.",
   "fileInfoChannels": "{count} channels",
-  "@fileInfoChannels": {"placeholders": {"count": {"type": "int"}}},
+  "@fileInfoChannels": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileInfoCover": "Cover",
   "fileInfoMetadata": "Metadata",
   "fileInfoSupplement": "Extra",
@@ -4044,7 +4150,9 @@
   "statsSessionsForDate": "Sessions for {date}",
   "@statsSessionsForDate": {
     "placeholders": {
-      "date": {"type": "String"}
+      "date": {
+        "type": "String"
+      }
     }
   },
   "statsNoSessionsForDate": "No listening sessions found for this day",
@@ -4101,9 +4209,15 @@
   "statsShortDate": "{month} {day}, {year}",
   "@statsShortDate": {
     "placeholders": {
-      "month": {"type": "String"},
-      "day": {"type": "int"},
-      "year": {"type": "int"}
+      "month": {
+        "type": "String"
+      },
+      "day": {
+        "type": "int"
+      },
+      "year": {
+        "type": "int"
+      }
     }
   },
   "statsScreenMonthJan": "Jan",
@@ -4500,7 +4614,13 @@
   },
   "collectionDetailDefaultName": "Collection",
   "smartScopeBookCount": "Smart Scope · {count} books",
-  "@smartScopeBookCount": {"placeholders": {"count": {"type": "int"}}},
+  "@smartScopeBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "smartScopeNew": "New Smart Scope",
   "smartScopeNewSubtitle": "Save a set of filters as a list that keeps itself up to date",
   "smartScopeEditTitle": "Edit Smart Scope",
@@ -4610,9 +4730,21 @@
   "scopeOpIsTrue": "is yes",
   "scopeOpIsFalse": "is no",
   "smartScopeMatchCount": "{count, plural, =0{No books match} =1{1 book matches} other{{count} books match}}",
-  "@smartScopeMatchCount": {"placeholders": {"count": {"type": "int"}}},
+  "@smartScopeMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "smartScopeDeleteConfirm": "Delete \"{name}\"? This can't be undone.",
-  "@smartScopeDeleteConfirm": {"placeholders": {"name": {"type": "String"}}},
+  "@smartScopeDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "collectionDetailBookCount": "{count} books",
   "@collectionDetailBookCount": {
     "placeholders": {
@@ -5393,12 +5525,10 @@
   },
   "authorQuickMatchHint": "Pull name, ASIN, description and image from Audible for the chosen region.",
   "region": "Region",
-
   "editTabDetails": "Details",
   "editTabCover": "Cover",
   "editTabMatch": "Match",
   "editTabEmbed": "Embed",
-
   "chapterEditorTitle": "Edit Chapters",
   "chapterNotConnected": "Not connected to a server",
   "chapterErrorFirstNotZero": "First chapter must start at 0:00",
@@ -5464,7 +5594,11 @@
   "chapterShowSeconds": "Show seconds",
   "chapterWindowMinutes": "{minutes} min",
   "@chapterWindowMinutes": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "chapterLoopCut": "Loop the cut",
   "chapterFindStart": "Find the start",
@@ -5476,17 +5610,32 @@
   "chapterFindStartMaybe": "Chapter-like words",
   "chapterFindStartGap": "{seconds}s gap",
   "@chapterFindStartGap": {
-    "placeholders": { "seconds": { "type": "String" } }
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
   },
   "chapterFindStartRange": "Searched {from} to {to}",
   "@chapterFindStartRange": {
-    "placeholders": { "from": { "type": "String" }, "to": { "type": "String" } }
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
   },
   "chapterFindStartNeedsModel": "Turn on transcription in Settings and download a model first",
   "chapterFindStartUseThis": "Use this",
   "chapterFindStartTitle": "Title: {title}",
   "@chapterFindStartTitle": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "chapterShiftBySeconds": "Shift by (seconds)",
   "chapterShiftHint": "Shifts every unlocked chapter. Use a negative value to move them earlier.",
@@ -5534,7 +5683,6 @@
   "chapterAudibleShorter": "The Audible version is shorter than your file - chapters may not line up.",
   "chapterTitlesOnly": "Titles only",
   "chapterApplyChapters": "Apply chapters",
-
   "coverSearchTitle": "Search for a cover",
   "coverSearchRefineHint": "Refine the title/author to clean up results - this does not change the book.",
   "coverNoneFound": "No covers found",
@@ -5543,7 +5691,6 @@
   "coverCouldNotUpdate": "Could not update cover",
   "coverApply": "Apply cover",
   "coverUnknownResolution": "Unknown resolution",
-
   "embedIntro": "Embed metadata into audio files including cover image and chapters.",
   "embedBackupOption": "Back up audio files first",
   "embedNoteInFolder": "Metadata will be embedded in the audio tracks inside your audiobook folder.",
@@ -5673,7 +5820,6 @@
   "bookmarkListen": "Listen",
   "bookmarkPause": "Pause",
   "bookmarkPreviewFailed": "Couldn't play this spot.",
-
   "clipExport": "Export clip",
   "clipJumpToStart": "Jump to start",
   "clipJumpToEnd": "Jump to end",
@@ -5693,12 +5839,10 @@
   "clipExportClamped": "Clip saved, shortened to the end of this track",
   "clipExportFailed": "Couldn't export the clip.",
   "clipDownloadToExport": "Download this book first to export a clip on iPhone.",
-
   "fsPickerTitle": "Select folder",
   "fsServerRoot": "Server root",
   "fsEmptyFolder": "No subfolders here",
   "fsUseThisFolder": "Use this folder",
-
   "adminLibrariesManage": "Libraries",
   "adminLibrariesManageSubtitle": "Create, edit and reorder",
   "adminUploadTitle": "Upload media",
@@ -5741,18 +5885,45 @@
   "adminUploadDestinationUsedBy": "That destination is already used by \"{title}\".",
   "adminUploadAddToExistingTitle": "Folder already exists",
   "adminUploadAddToExisting": "That folder belongs to \"{title}\". Add the files to it? The server picks them up on its next scan.",
-  "@adminUploadAddToExisting": { "placeholders": { "title": { "type": "String" } } },
+  "@adminUploadAddToExisting": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminUploadAddToExistingNoItem": "That folder already exists on the server. Add the files to it?",
   "adminUploadAddToBook": "Add to an existing book",
   "adminUploadAddToBookHint": "Search this library",
   "adminUploadNoBooksFound": "No books found",
   "adminUploadAddingTo": "Adding files to \"{title}\"",
-  "@adminUploadAddingTo": { "placeholders": { "title": { "type": "String" } } },
+  "@adminUploadAddingTo": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminUploadAddedTo": "Added files to \"{title}\"",
-  "@adminUploadAddedTo": { "placeholders": { "title": { "type": "String" } } },
+  "@adminUploadAddedTo": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "adminUploadTargetNoFolder": "Couldn't find that book's folder on the server.",
   "adminUploadTargetFolderMismatch": "The server would put these files in \"{preview}\", not in that book's folder \"{folder}\". Nothing was uploaded.",
-  "@adminUploadTargetFolderMismatch": { "placeholders": { "preview": { "type": "String" }, "folder": { "type": "String" } } },
+  "@adminUploadTargetFolderMismatch": {
+    "placeholders": {
+      "preview": {
+        "type": "String"
+      },
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
   "@adminUploadDestinationUsedBy": {
     "placeholders": {
       "title": {
@@ -5798,7 +5969,6 @@
   "adminAllSessionsSubtitle": "View and manage all listening sessions",
   "adminSessionsAllUsers": "All users",
   "adminSessionsEmpty": "No sessions",
-
   "statsLibraryTotals": "Library totals",
   "statsTotalItems": "Items",
   "statsAudioFiles": "Audio files",
@@ -5815,7 +5985,6 @@
   "statsTopAuthors": "Top authors",
   "statsTopNarrators": "Top narrators",
   "statsTopGenres": "Top genres",
-
   "srvScannerSection": "Scanner",
   "srvFindCovers": "Find covers",
   "srvCoverProvider": "Cover provider",
@@ -5841,7 +6010,6 @@
   "srvSaved": "Settings saved",
   "srvSaveFailed": "Couldn't save settings",
   "srvPrefixesSaved": "Sorting prefixes updated",
-
   "authSetLoadFailed": "Couldn't load authentication settings",
   "authSetCustomMessage": "Custom message on login",
   "authSetMessage": "Message",
@@ -5916,7 +6084,6 @@
       }
     }
   },
-
   "libNoneYet": "No libraries yet",
   "libReorderFailed": "Couldn't save the new order",
   "libDeleteTitle": "Delete library?",
@@ -5931,7 +6098,6 @@
       }
     }
   },
-
   "libNewTitle": "New library",
   "libEditTitle": "Edit library",
   "libName": "Library name",
@@ -5967,7 +6133,6 @@
   "libUpdateFailed": "Couldn't update library",
   "libRemoveFoldersTitle": "Remove folders?",
   "libRemoveFoldersBody": "Removing a folder deletes its items from the library. This can't be undone.",
-
   "readEbook": "Read",
   "chooseEbookVersion": "Choose ebook version",
   "ebookPrimaryVersion": "server default",
@@ -6108,7 +6273,9 @@
   "readerHideControlsAfter": "{seconds}s",
   "@readerHideControlsAfter": {
     "placeholders": {
-      "seconds": {"type": "int"}
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "playerDownloadStreamingInstead": "This download couldn't be played, so it's streaming from the server. Downloading it again may fix it.",
@@ -6160,15 +6327,27 @@
   "readerAutoScrollSleepHint": "Stops the scrolling after a while and lets the screen go dark.",
   "readerAutoScrollSleepMinutes": "{minutes} min",
   "@readerAutoScrollSleepMinutes": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "readerAutoScrollSleepLeft": "{minutes} min left",
   "@readerAutoScrollSleepLeft": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "readerAutoScrollSleepIn": "Auto scroll stops in {minutes} min",
   "@readerAutoScrollSleepIn": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "readerAutoScrollSleepOff": "Auto scroll sleep timer off",
   "readerAutoScrollSleepEnded": "Sleep timer - auto scroll off",
@@ -6176,16 +6355,28 @@
   "detailChaptersJumpTitle": "Jump to this chapter?",
   "detailChaptersJumpContent": "Playback moves to \"{title}\".",
   "@detailChaptersJumpContent": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "detailChaptersJump": "Jump",
   "detailChaptersFinished": "{count, plural, =1{1 chapter finished} other{{count} chapters finished}}",
   "@detailChaptersFinished": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "detailOtherListeners": "{count, plural, =0{No other listeners} =1{1 other listener} other{{count} other listeners}}",
   "@detailOtherListeners": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "seriesUpNext": "Up next",
   "seriesJumpToUpNext": "Jump to up next",
@@ -6194,12 +6385,23 @@
   "seriesStatsLeft": "Left",
   "seriesFinishedOf": "{done} of {total}",
   "@seriesFinishedOf": {
-    "placeholders": { "done": { "type": "int" }, "total": { "type": "int" } }
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
   },
   "detailSessionsNone": "No listening sessions yet",
   "detailSessionsAll": "All {count} sessions",
   "@detailSessionsAll": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "readerVolumeNavWhilePlaying": "Even while audio is playing",
   "readerTranslateWith": "Translate with",
@@ -6212,20 +6414,26 @@
   "readerFontDownloadFailed": "Couldn't download {font}",
   "@readerFontDownloadFailed": {
     "placeholders": {
-      "font": {"type": "String"}
+      "font": {
+        "type": "String"
+      }
     }
   },
   "readerAnnotations": "Annotations",
   "readerHighlights": "Highlights ({count})",
   "@readerHighlights": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "readerBookmarks": "Bookmarks ({count})",
   "@readerBookmarks": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "readerNoHighlights": "No highlights yet",
@@ -6281,21 +6489,27 @@
   "syncSettingsAppliedCount": "{count, plural, one{1 setting updated from your other device} other{{count} settings updated from your other device}}",
   "@syncSettingsAppliedCount": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "syncSettingsUpToDate": "Already up to date",
   "syncSettingsLastSynced": "Last synced {when}",
   "@syncSettingsLastSynced": {
     "placeholders": {
-      "when": {"type": "String"}
+      "when": {
+        "type": "String"
+      }
     }
   },
   "syncSettingsNever": "Not synced yet",
   "navHoldPickTitle": "Holding {tab} will...",
   "@navHoldPickTitle": {
     "placeholders": {
-      "tab": {"type": "String"}
+      "tab": {
+        "type": "String"
+      }
     }
   },
   "navHoldPickBody": "Choose what a long press on this tab does. You can change it later in Settings.",
@@ -6334,14 +6548,20 @@
   "bookStatsScanningCount": "Scanning through sessions, {done} of {total} people...",
   "@bookStatsScanningCount": {
     "placeholders": {
-      "done": {"type": "int"},
-      "total": {"type": "int"}
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "bookStatsLastChecked": "Checked {when}",
   "@bookStatsLastChecked": {
     "placeholders": {
-      "when": {"type": "String"}
+      "when": {
+        "type": "String"
+      }
     }
   },
   "activityYourReading": "Your reading",
@@ -6349,13 +6569,17 @@
   "activityLastRead": "Last read {when}",
   "@activityLastRead": {
     "placeholders": {
-      "when": {"type": "String"}
+      "when": {
+        "type": "String"
+      }
     }
   },
   "activityLastListened": "Last listened {when}",
   "@activityLastListened": {
     "placeholders": {
-      "when": {"type": "String"}
+      "when": {
+        "type": "String"
+      }
     }
   },
   "activityNotStarted": "Not started",
@@ -6366,7 +6590,9 @@
   "activityReached": "{percent} reached",
   "@activityReached": {
     "placeholders": {
-      "percent": {"type": "String"}
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "readingLogTitle": "Reading log",
@@ -6376,15 +6602,21 @@
   "readingLogActiveDaysOf": "{active} of {total}",
   "@readingLogActiveDaysOf": {
     "placeholders": {
-      "active": {"type": "int"},
-      "total": {"type": "int"}
+      "active": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "readingLogPace": "Pace",
   "readingLogPacePerHour": "{percent}%/h",
   "@readingLogPacePerHour": {
     "placeholders": {
-      "percent": {"type": "String"}
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "readingLogLastRead": "Last read",
@@ -6394,33 +6626,45 @@
   "readingLogLeftMinutes": "About {m}m to finish",
   "@readingLogLeftMinutes": {
     "placeholders": {
-      "m": {"type": "int"}
+      "m": {
+        "type": "int"
+      }
     }
   },
   "readingLogLeftHours": "About {h}h to finish",
   "@readingLogLeftHours": {
     "placeholders": {
-      "h": {"type": "int"}
+      "h": {
+        "type": "int"
+      }
     }
   },
   "readingLogLeftHoursMinutes": "About {h}h {m}m to finish",
   "@readingLogLeftHoursMinutes": {
     "placeholders": {
-      "h": {"type": "int"},
-      "m": {"type": "int"}
+      "h": {
+        "type": "int"
+      },
+      "m": {
+        "type": "int"
+      }
     }
   },
   "readingLogLeftMax": "Over 99h to finish",
   "readingLogUpOnLastWeek": "Up {percent}% on the week before",
   "@readingLogUpOnLastWeek": {
     "placeholders": {
-      "percent": {"type": "int"}
+      "percent": {
+        "type": "int"
+      }
     }
   },
   "readingLogDownOnLastWeek": "Down {percent}% on the week before",
   "@readingLogDownOnLastWeek": {
     "placeholders": {
-      "percent": {"type": "int"}
+      "percent": {
+        "type": "int"
+      }
     }
   },
   "readingLogNewThisWeek": "New this week",
@@ -6439,14 +6683,18 @@
   "readingLogStreakDays": "{count, plural, =1{1 day} other{{count} days}}",
   "@readingLogStreakDays": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "readingLogJumpedBack": "Jumped back",
   "readingLogJumpedBackTimes": "{count, plural, =1{1 time} other{{count} times}}",
   "@readingLogJumpedBackTimes": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "readingLogFirstOpened": "First opened",
@@ -6454,13 +6702,17 @@
   "readingLogAttempt": "Attempt {index}",
   "@readingLogAttempt": {
     "placeholders": {
-      "index": {"type": "int"}
+      "index": {
+        "type": "int"
+      }
     }
   },
   "readingLogAttemptBegan": "Attempt {index} began",
   "@readingLogAttemptBegan": {
     "placeholders": {
-      "index": {"type": "int"}
+      "index": {
+        "type": "int"
+      }
     }
   },
   "readingLogOutcomeCompleted": "Completed",
@@ -6470,40 +6722,56 @@
   "readingLogSpanRange": "{from} to {to}",
   "@readingLogSpanRange": {
     "placeholders": {
-      "from": {"type": "String"},
-      "to": {"type": "String"}
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
     }
   },
   "readingLogSpanSince": "Since {from}",
   "@readingLogSpanSince": {
     "placeholders": {
-      "from": {"type": "String"}
+      "from": {
+        "type": "String"
+      }
     }
   },
   "readingLogSpanEnded": "Ended {to}",
   "@readingLogSpanEnded": {
     "placeholders": {
-      "to": {"type": "String"}
+      "to": {
+        "type": "String"
+      }
     }
   },
   "readingLogSpanUnknown": "No dates recorded",
   "readingLogSessionCount": "{count, plural, =1{1 session} other{{count} sessions}}",
   "@readingLogSessionCount": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "readingLogShowing": "{shown} of {total}",
   "@readingLogShowing": {
     "placeholders": {
-      "shown": {"type": "int"},
-      "total": {"type": "int"}
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "readingLogGapDays": "{count, plural, =1{1 day without reading} other{{count} days without reading}}",
   "@readingLogGapDays": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "readingLogEmpty": "No sessions recorded yet",
@@ -6532,7 +6800,9 @@
   "navHoldScanLibrary": "Scan {name}",
   "@navHoldScanLibrary": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "navHoldScanStarted": "Scan started",
@@ -6541,7 +6811,9 @@
   "navHoldAdminPage": "Admin: {page}",
   "@navHoldAdminPage": {
     "placeholders": {
-      "page": {"type": "String"}
+      "page": {
+        "type": "String"
+      }
     }
   },
   "navHoldNothingPlaying": "Nothing to play yet",
@@ -6568,15 +6840,21 @@
   "readerSearchMatches": "{count, plural, one{{count} match for \"{query}\"} other{{count} matches for \"{query}\"}}",
   "@readerSearchMatches": {
     "placeholders": {
-      "count": {"type": "int"},
-      "query": {"type": "String"}
+      "count": {
+        "type": "int"
+      },
+      "query": {
+        "type": "String"
+      }
     }
   },
   "readerSearchEmpty": "Type a word or phrase and tap search.",
   "readerSearchNoResults": "No matches for \"{query}\".",
   "@readerSearchNoResults": {
     "placeholders": {
-      "query": {"type": "String"}
+      "query": {
+        "type": "String"
+      }
     }
   },
   "transcriptionTitle": "Transcription",
@@ -6621,14 +6899,32 @@
   "lyricsBatteryInfo": "Live transcript and read along use extra battery and processing while they run. On phones with slower processors, lines can take longer to appear.",
   "lyricsClearCache": "Clear transcript cache",
   "lyricsClearCacheHint": "{size} of saved transcript lines. Cleared books and episodes are transcribed again as you listen.",
-  "@lyricsClearCacheHint": { "placeholders": { "size": { "type": "String" } } },
+  "@lyricsClearCacheHint": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "lyricsClearCacheConfirm": "Delete the saved transcripts for every book and episode? They rebuild automatically as you listen.",
   "lyricsCacheCleared": "Transcript cache cleared",
   "lyricsIntroBody": "This listens a little ahead of the narration and shows each line as it is spoken, transcribed on your phone - nothing leaves the device. After turning it on, hold off on pressing play for a few seconds while it gets ahead. The transcript appears once its head start is ready, and starting paused gives it the smoothest run. It uses extra battery and processing while it runs.",
   "lyricsBuildingLead": "Getting ahead of the narration... {percent}",
-  "@lyricsBuildingLead": { "placeholders": { "percent": { "type": "String" } } },
+  "@lyricsBuildingLead": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
   "lyricsCantKeepUp": "Can't transcribe as fast as you're listening at {speed}",
-  "@lyricsCantKeepUp": { "placeholders": { "speed": { "type": "String" } } },
+  "@lyricsCantKeepUp": {
+    "placeholders": {
+      "speed": {
+        "type": "String"
+      }
+    }
+  },
   "lyricsTurnOn": "Turn on",
   "readAlong": "Read along",
   "readAlongNeedsPlaying": "Play this book's audiobook first",
@@ -6646,13 +6942,17 @@
   "narrationUpNextBody": "{title} is next in your queue. It's an EPUB3 that reads itself aloud, so it needs to be downloaded before it can play.",
   "@narrationUpNextBody": {
     "placeholders": {
-      "title": {"type": "String"}
+      "title": {
+        "type": "String"
+      }
     }
   },
   "narrationQueueStopped": "Stopped before {title}. Download it to keep going.",
   "@narrationQueueStopped": {
     "placeholders": {
-      "title": {"type": "String"}
+      "title": {
+        "type": "String"
+      }
     }
   },
   "transcriptionNeedsDownload": "This needs the audio on your phone. Download it now?",
@@ -6703,28 +7003,36 @@
   "timeRemaining": "{duration} left",
   "@timeRemaining": {
     "placeholders": {
-      "duration": {"type": "String"}
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "historyEventResumed": "Resumed playback",
   "historyEventResumedDetail": "Resumed playback ({detail})",
   "@historyEventResumedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventPaused": "Paused",
   "historyEventPausedDetail": "Paused ({detail})",
   "@historyEventPausedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSeeked": "Seeked",
   "historyEventSeekedDetail": "Seeked {detail}",
   "@historyEventSeekedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSyncLocal": "Saved locally",
@@ -6733,28 +7041,36 @@
   "historyEventAutoRewoundDetail": "Auto-rewound {detail}",
   "@historyEventAutoRewoundDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipForward": "Skipped forward",
   "historyEventSkipForwardDetail": "Skipped forward ({detail})",
   "@historyEventSkipForwardDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipBack": "Skipped back",
   "historyEventSkipBackDetail": "Skipped back ({detail})",
   "@historyEventSkipBackDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSpeedChanged": "Speed changed",
   "historyEventSpeedSetTo": "Speed set to {detail}",
   "@historyEventSpeedSetTo": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventBookFinished": "Book finished",
@@ -6762,52 +7078,70 @@
   "historyEventSessionStartedDetail": "Session started ({detail})",
   "@historyEventSessionStartedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSessionEnded": "Session ended",
   "historyEventSessionEndedDetail": "Session ended ({detail})",
   "@historyEventSessionEndedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventMediaButton": "Media button",
   "historyEventMediaButtonDetail": "Media button: {detail}",
   "@historyEventMediaButtonDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventRebuiltPlay": "Playback rebuilt ({reason})",
   "@historyEventRebuiltPlay": {
     "placeholders": {
-      "reason": {"type": "String"}
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "historyEventRebuiltPlayDetail": "Playback rebuilt ({base}; {reason})",
   "@historyEventRebuiltPlayDetail": {
     "placeholders": {
-      "base": {"type": "String"},
-      "reason": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "historySeconds": "{value}s",
   "@historySeconds": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyMinutes": "{value}m",
   "@historyMinutes": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historySpeed": "{value}x",
   "@historySpeed": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyDetailStream": "stream",
@@ -6819,13 +7153,17 @@
   "historyDetailNextChapterToIntroSkip": "next chapter to {position} (intro skip)",
   "@historyDetailNextChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrevChapterToIntroSkip": "prev chapter to {position} (intro skip)",
   "@historyDetailPrevChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipChapterIntro": "skip chapter intro",
@@ -6845,21 +7183,29 @@
   "historyDetailPrevChapterDirectToIntroSkip": "prev chapter (direct) to {position} (intro skip)",
   "@historyDetailPrevChapterDirectToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailChapterToIntroSkip": "Seek to {chapter} {position} (intro skip)",
   "@historyDetailChapterToIntroSkip": {
     "placeholders": {
-      "chapter": {"type": "String"},
-      "position": {"type": "String"}
+      "chapter": {
+        "type": "String"
+      },
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailEngineAnchoredSnap": "Back to chapter start (engine-anchored)",
   "historyDetailEngineAnchoredAmount": "{amount} (engine-anchored)",
   "@historyDetailEngineAnchoredAmount": {
     "placeholders": {
-      "amount": {"type": "String"}
+      "amount": {
+        "type": "String"
+      }
     }
   },
   "historyDetailCrossToNextChapterIntroSkip": "Skipped to next chapter (intro skip applies)",
@@ -6869,13 +7215,17 @@
   "historyDetailRestartDownloadBoundary": "Restart at download boundary from {chapter}",
   "@historyDetailRestartDownloadBoundary": {
     "placeholders": {
-      "chapter": {"type": "String"}
+      "chapter": {
+        "type": "String"
+      }
     }
   },
   "historyDetailAdoptedServerPosition": "Adopted server position {position} before resume",
   "@historyDetailAdoptedServerPosition": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrewarmUnused": "prewarm unused",
@@ -6896,45 +7246,73 @@
   "historyDetailRewindAtSpeed": "{base} ({adjusted} at {speed})",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStart": "{base} (session start)",
   "@historyDetailRewindSessionStart": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStartAtSpeed": "{base} ({adjusted} at {speed}, session start)",
   "@historyDetailRewindSessionStartAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSleepTimer": "{base} (sleep timer)",
   "@historyDetailRewindSleepTimer": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipForwardAtSpeed": "+{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipForwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipBackwardAtSpeed": "-{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipBackwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "playerErrorConnect": "Couldn't reach the server. Check your connection and try again.",
@@ -6947,7 +7325,9 @@
   "playerErrorGeneric": "Playback failed: {error}",
   "@playerErrorGeneric": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "catchUpAudioAhead": "The audiobook is further along. Tap to go there.",
@@ -7020,7 +7400,13 @@
   },
   "comicReadingDirection": "Reading direction",
   "comicPageNumber": "Page {page}",
-  "@comicPageNumber": {"placeholders": {"page": {"type": "int"}}},
+  "@comicPageNumber": {
+    "placeholders": {
+      "page": {
+        "type": "int"
+      }
+    }
+  },
   "comicBookmarkRemoveFailed": "Couldn't remove the bookmark from the server. Try again when you're online.",
   "comicLeftToRight": "Left to right",
   "comicRightToLeft": "Right to left (manga)",
@@ -7061,46 +7447,84 @@
   "removeAbsDesc": "Remove every metadata.abs file found in the library item folders.",
   "srcPriorityN": "Priority {n}",
   "@srcPriorityN": {
-    "placeholders": { "n": { "type": "int" } }
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
   },
   "scheduleMinuteLabel": "Minute {minute}",
   "@scheduleMinuteLabel": {
-    "placeholders": { "minute": { "type": "int" } }
+    "placeholders": {
+      "minute": {
+        "type": "int"
+      }
+    }
   },
   "removeMetadataConfirm": "Remove all {filename} files?",
   "@removeMetadataConfirm": {
-    "placeholders": { "filename": { "type": "String" } }
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
   },
   "removeMetadataBody": "This permanently removes {filename} from every item folder in this library. The media files are not changed.",
   "@removeMetadataBody": {
-    "placeholders": { "filename": { "type": "String" } }
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
   },
   "removeMetadataFailed": "Could not remove {filename} files.",
   "@removeMetadataFailed": {
-    "placeholders": { "filename": { "type": "String" } }
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
   },
   "removeMetadataNone": "No {filename} files were found.",
   "@removeMetadataNone": {
-    "placeholders": { "filename": { "type": "String" } }
+    "placeholders": {
+      "filename": {
+        "type": "String"
+      }
+    }
   },
   "removeMetadataPartial": "{found} {filename} files were found, but none could be removed.",
   "@removeMetadataPartial": {
     "placeholders": {
-      "found": { "type": "int" },
-      "filename": { "type": "String" }
+      "found": {
+        "type": "int"
+      },
+      "filename": {
+        "type": "String"
+      }
     }
   },
   "removeMetadataDone": "Removed {removed} of {found} {filename} files.",
   "@removeMetadataDone": {
     "placeholders": {
-      "removed": { "type": "int" },
-      "found": { "type": "int" },
-      "filename": { "type": "String" }
+      "removed": {
+        "type": "int"
+      },
+      "found": {
+        "type": "int"
+      },
+      "filename": {
+        "type": "String"
+      }
     }
   },
   "removeMetadataBtn": "Remove metadata.{extension}",
   "@removeMetadataBtn": {
-    "placeholders": { "extension": { "type": "String" } }
+    "placeholders": {
+      "extension": {
+        "type": "String"
+      }
+    }
   },
   "scannerSectionDesc": "Choose which metadata sources are used. Drag them from highest to lowest priority.",
   "bookFinishReminder": "Book-finished reminder",
@@ -7121,9 +7545,21 @@
   "boAdminUsers": "Users",
   "boAdminLibraries": "Libraries",
   "boAdminUserCount": "{count, plural, =1{1 person} other{{count} people}}",
-  "@boAdminUserCount": {"placeholders": {"count": {"type": "int"}}},
+  "@boAdminUserCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boAdminLibraryCount": "{count, plural, =1{1 library} other{{count} libraries}}",
-  "@boAdminLibraryCount": {"placeholders": {"count": {"type": "int"}}},
+  "@boAdminLibraryCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boAdminSaved": "Saved",
   "boAdminFailed": "That didn't work. Try again.",
   "boAdminOffline": "Couldn't reach the server.",
@@ -7139,7 +7575,13 @@
   "boUserBadgeLocked": "Locked",
   "boUserBadgeNoPassword": "No password yet",
   "boUserLastActive": "Last active {date}",
-  "@boUserLastActive": {"placeholders": {"date": {"type": "String"}}},
+  "@boUserLastActive": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boUserNeverSignedIn": "Never signed in",
   "boUserNew": "New user",
   "boUserCreate": "Create",
@@ -7166,31 +7608,76 @@
   "boUserUnlocked": "Account unlocked",
   "boUserDelete": "Delete user",
   "boUserDeleteTitle": "Delete {name}?",
-  "@boUserDeleteTitle": {"placeholders": {"name": {"type": "String"}}},
+  "@boUserDeleteTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boUserDeleteBody": "Their account and everything they have on this server are removed. This cannot be undone.",
   "boUserDeleted": "User deleted",
   "boUserLinkTitle": "Password link",
   "boUserLinkBody": "Share this link with {name}. It lets them set a password and works for 15 minutes.",
-  "@boUserLinkBody": {"placeholders": {"name": {"type": "String"}}},
+  "@boUserLinkBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boPasswordRules": "At least 8 characters, with an uppercase letter, a lowercase letter and a number.",
   "boSetPasswordTitle": "Set your password",
   "boSetPasswordSubmit": "Set password and sign in",
   "boSetPasswordLinkBody": "Choose a password for {username} on {server}.",
-  "@boSetPasswordLinkBody": {"placeholders": {"username": {"type": "String"}, "server": {"type": "String"}}},
+  "@boSetPasswordLinkBody": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      },
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "boSetPasswordLinkBodyNoName": "Choose a password for your account on {server}.",
-  "@boSetPasswordLinkBodyNoName": {"placeholders": {"server": {"type": "String"}}},
+  "@boSetPasswordLinkBodyNoName": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "boSetPasswordStartingBody": "This account still has the password it was created with. Choose a new one to finish signing in.",
   "boSetPasswordTrust": "Only continue if you trust who sent this link.",
   "boPasswordLinkExpired": "This link has expired or was already used. Ask your server admin for a new one.",
   "boPasswordSetSignInFailed": "Your password is set, but signing in failed: {error}",
-  "@boPasswordSetSignInFailed": {"placeholders": {"error": {"type": "String"}}},
+  "@boPasswordSetSignInFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "boChangePasswordSubtitle": "Update your BookOrbit password",
   "boPasswordChangeEffect": "Changing your password signs out your other BookOrbit sessions. This device stays signed in.",
   "boPasswordChanged": "Password changed. Other signed-in devices were signed out.",
   "boPasswordShareDescription": "Send this link or have {username} scan the QR code to choose a password and sign in to Absorb. It works for 15 minutes.",
-  "@boPasswordShareDescription": {"placeholders": {"username": {"type": "String"}}},
+  "@boPasswordShareDescription": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "boPasswordShareWarning": "Anyone with this link can choose the password for {username} until it is used or expires.",
-  "@boPasswordShareWarning": {"placeholders": {"username": {"type": "String"}}},
+  "@boPasswordShareWarning": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "setupLinkCopyWebLink": "Copy web link",
   "boUserLinkCopy": "Copy link",
   "boUserLinkCopied": "Link copied",
@@ -7231,12 +7718,33 @@
   "boPermManageAppSettings": "App settings",
   "boLibsNone": "No libraries yet",
   "boLibBookCount": "{count, plural, =1{1 book} other{{count} books}}",
-  "@boLibBookCount": {"placeholders": {"count": {"type": "int"}}},
+  "@boLibBookCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boLibScanNow": "Scan now",
   "boLibScanStarted": "Scan started",
   "boLibScanning": "Scanning",
   "boLibLastScan": "Scanned {date}: {added} added, {updated} updated, {missing} missing",
-  "@boLibLastScan": {"placeholders": {"date": {"type": "String"}, "added": {"type": "int"}, "updated": {"type": "int"}, "missing": {"type": "int"}}},
+  "@boLibLastScan": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "added": {
+        "type": "int"
+      },
+      "updated": {
+        "type": "int"
+      },
+      "missing": {
+        "type": "int"
+      }
+    }
+  },
   "boLibScanFailed": "The last scan failed",
   "boLibNeverScanned": "Not scanned yet",
   "boLibNew": "New library",
@@ -7248,9 +7756,21 @@
   "boLibNeedFolder": "Add at least one folder",
   "boLibAddFolder": "Add folder",
   "boLibFolderFiles": "{count, plural, =1{1 file} other{{count} files}}",
-  "@boLibFolderFiles": {"placeholders": {"count": {"type": "int"}}},
+  "@boLibFolderFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boLibFolderInUse": "Already in {library}",
-  "@boLibFolderInUse": {"placeholders": {"library": {"type": "String"}}},
+  "@boLibFolderInUse": {
+    "placeholders": {
+      "library": {
+        "type": "String"
+      }
+    }
+  },
   "boLibFolderUnreadable": "The server can't read this folder",
   "boLibFolderRescan": "Changing the folders rescans the library.",
   "boLibOrganization": "Books are stored as",
@@ -7264,7 +7784,13 @@
   "boLibScheduleDaily": "Daily",
   "boLibScheduleWeekly": "Weekly",
   "boLibScheduleCustom": "Custom ({cron})",
-  "@boLibScheduleCustom": {"placeholders": {"cron": {"type": "String"}}},
+  "@boLibScheduleCustom": {
+    "placeholders": {
+      "cron": {
+        "type": "String"
+      }
+    }
+  },
   "boLibScheduleHint": "Runs at 3 AM server time.",
   "boLibCovers": "Cover shape",
   "boLibCoverBook": "Book (2:3)",
@@ -7280,7 +7806,13 @@
   "boLibAccessRemove": "Remove access",
   "boLibDelete": "Delete library",
   "boLibDeleteTitle": "Delete {name}?",
-  "@boLibDeleteTitle": {"placeholders": {"name": {"type": "String"}}},
+  "@boLibDeleteTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boLibDeleteBody": "The library is removed from BookOrbit, with its books' progress and highlights. The files on the server stay where they are.",
   "boLibDeleted": "Library deleted",
   "boFolderPickTitle": "Choose a folder",
@@ -7371,7 +7903,6 @@
   "statsBooksInProgress": "In progress",
   "statsAverageProgress": "Average progress",
   "statsTopBooks": "Top books",
-  "statsTopGenres": "Top genres",
   "statsYearRead": "Read",
   "boNotificationsUnread": "{count, plural, =0{Nothing new} =1{1 unread} other{{count} unread}}",
   "@boNotificationsUnread": {
@@ -7847,13 +8378,37 @@
   "readAlongEbookHint": "Pick the plain EPUB that matches the narration.",
   "readAlongAudio": "Audiobook",
   "readAlongTracks": "{count, plural, =1{1 track} other{{count} tracks}}",
-  "@readAlongTracks": {"placeholders": {"count": {"type": "int"}}},
+  "@readAlongTracks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongExistingTitle": "{count, plural, =1{This book already has a read along} other{This book already has {count} read alongs}}",
-  "@readAlongExistingTitle": {"placeholders": {"count": {"type": "int"}}},
+  "@readAlongExistingTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongReplace": "Replace {name}",
-  "@readAlongReplace": {"placeholders": {"name": {"type": "String"}}},
+  "@readAlongReplace": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongKeepBoth": "{count, plural, =1{Keep both} other{Keep all of them}}",
-  "@readAlongKeepBoth": {"placeholders": {"count": {"type": "int"}}},
+  "@readAlongKeepBoth": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongKeepHint": "The new read along is added as another file.",
   "readAlongReplaceHint": "The old file is only replaced once the new one passes its checks, and reading spots carry over.",
   "readAlongReplaceNotAllowed": "Replacing a read along needs permission to delete books, so the new one is added as another file.",
@@ -7862,7 +8417,13 @@
   "readAlongLanguage": "Narration language",
   "readAlongPickLanguage": "Choose a language",
   "readAlongLanguageUnsupported": "The speech model doesn't know this book's language ({language}).",
-  "@readAlongLanguageUnsupported": {"placeholders": {"language": {"type": "String"}}},
+  "@readAlongLanguageUnsupported": {
+    "placeholders": {
+      "language": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongLanguageFromBook": "From this book's details.",
   "readAlongLanguageIsDefault": "Your default language.",
   "readAlongLanguageSaved": "Saved as your default language.",
@@ -7874,10 +8435,25 @@
   "readAlongWord": "Word",
   "readAlongWordHint": "Highlights each word. Takes longer and makes a bigger file. Still experimental.",
   "readAlongEstimatedSize": "Estimated size: {size}",
-  "@readAlongEstimatedSize": {"placeholders": {"size": {"type": "String"}}},
+  "@readAlongEstimatedSize": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongBackgroundNote": "Runs on the server, so you can close this. Long audiobooks can take hours, and the first run for a language downloads its speech model.",
   "readAlongLowDisk": "Low disk space: this needs about {needed} of working space on the worker, which has {free} free.",
-  "@readAlongLowDisk": {"placeholders": {"needed": {"type": "String"}, "free": {"type": "String"}}},
+  "@readAlongLowDisk": {
+    "placeholders": {
+      "needed": {
+        "type": "String"
+      },
+      "free": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongStart": "Start",
   "readAlongStartFailed": "The read along couldn't be started. Try again.",
   "readAlongStartInvalid": "Some of the picked files are no longer on this book. Check them and try again.",
@@ -7887,12 +8463,24 @@
   "readAlongMovedOn": "This job had already moved on. It now shows where it is.",
   "readAlongActionFailed": "That didn't go through. Try again.",
   "readAlongStartedBy": "Started by {name}",
-  "@readAlongStartedBy": {"placeholders": {"name": {"type": "String"}}},
+  "@readAlongStartedBy": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongStartedByOther": "Started by another user",
   "readAlongWaiting": "Waiting to start",
   "readAlongNextInLine": "Next in line",
   "readAlongJobsAhead": "{count, plural, =1{1 job ahead} other{{count} jobs ahead}}",
-  "@readAlongJobsAhead": {"placeholders": {"count": {"type": "int"}}},
+  "@readAlongJobsAhead": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongStopping": "Stopping",
   "readAlongStoppingHint": "Finishing the current step, then it stops. Nothing will be added to this book.",
   "readAlongStagePreparingAudio": "Preparing the audio",
@@ -7904,17 +8492,59 @@
   "readAlongStagePublishing": "Adding the read along to this book",
   "readAlongStageWorking": "Working",
   "readAlongFileOf": "File {current} of {total}",
-  "@readAlongFileOf": {"placeholders": {"current": {"type": "int"}, "total": {"type": "int"}}},
+  "@readAlongFileOf": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongTrackOf": "Track {current} of {total}",
-  "@readAlongTrackOf": {"placeholders": {"current": {"type": "int"}, "total": {"type": "int"}}},
+  "@readAlongTrackOf": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongChapterOf": "Chapter {current} of {total}",
-  "@readAlongChapterOf": {"placeholders": {"current": {"type": "int"}, "total": {"type": "int"}}},
+  "@readAlongChapterOf": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongStepOf": "Step {current} of {total}",
-  "@readAlongStepOf": {"placeholders": {"current": {"type": "int"}, "total": {"type": "int"}}},
+  "@readAlongStepOf": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongFirstRun": "First run for this language",
   "readAlongJustStarted": "Just started",
   "readAlongRunningFor": "Running for {duration}",
-  "@readAlongRunningFor": {"placeholders": {"duration": {"type": "String"}}},
+  "@readAlongRunningFor": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongStepAudio": "Audio",
   "readAlongStepSpeech": "Speech",
   "readAlongStepText": "Text",
@@ -7923,11 +8553,23 @@
   "readAlongStepAdd": "Add",
   "readAlongReviewTitle": "Ready for review",
   "readAlongReviewMatched": "{percent} of the text matched the narration. Check it before adding it to the book.",
-  "@readAlongReviewMatched": {"placeholders": {"percent": {"type": "String"}}},
+  "@readAlongReviewMatched": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongReviewPlain": "Check it before adding it to the book.",
   "readAlongReviewWeb": "To leave chapters out and match again, open this book in BookOrbit on the web.",
   "readAlongReviewExpires": "Thrown away on its own on {date} unless you review it.",
-  "@readAlongReviewExpires": {"placeholders": {"date": {"type": "String"}}},
+  "@readAlongReviewExpires": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongAddAnyway": "Add it anyway",
   "readAlongDiscard": "Discard",
   "readAlongDiscardPrompt": "Discard this read along?",
@@ -7937,13 +8579,40 @@
   "readAlongAdded": "Added to this book as a new EPUB.",
   "readAlongReplaced": "Replaced the old read along. Reading spots carry over.",
   "readAlongMatchedSentences": "{matched} of {total} sentences matched the narration",
-  "@readAlongMatchedSentences": {"placeholders": {"matched": {"type": "String"}, "total": {"type": "String"}}},
+  "@readAlongMatchedSentences": {
+    "placeholders": {
+      "matched": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongAudioUsed": "{percent} of the audio used",
-  "@readAlongAudioUsed": {"placeholders": {"percent": {"type": "String"}}},
+  "@readAlongAudioUsed": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongOutside": "Not in the narration, so left without audio: {chapters}.",
-  "@readAlongOutside": {"placeholders": {"chapters": {"type": "String"}}},
+  "@readAlongOutside": {
+    "placeholders": {
+      "chapters": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongOutsideMore": "{count, plural, =1{1 more chapter} other{{count} more chapters}}",
-  "@readAlongOutsideMore": {"placeholders": {"count": {"type": "int"}}},
+  "@readAlongOutsideMore": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "readAlongWarnUnaligned": "One or more audio tracks couldn't be matched.",
   "readAlongWarnUnmatched": "A noticeable amount of the ebook text wasn't matched to the narration.",
   "readAlongWarnInterpolated": "Some text timing was estimated between confident matches.",
@@ -7954,7 +8623,13 @@
   "readAlongNothingAdded": "Nothing was added to this book.",
   "readAlongExpired": "It wasn't reviewed within 14 days, so nothing was added to this book.",
   "readAlongRetryUntil": "Retry picks up from the last finished step until {date}.",
-  "@readAlongRetryUntil": {"placeholders": {"date": {"type": "String"}}},
+  "@readAlongRetryUntil": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "readAlongStartOver": "Start over",
   "readAlongCancel": "Cancel read along",
   "readAlongCancelPrompt": "Cancel this read along?",
@@ -7983,7 +8658,13 @@
   "fileInfoCopyPath": "Copy path",
   "fileInfoDeleteTitle": "Delete file?",
   "fileInfoDeletePrompt": "\"{name}\" will be deleted from the server. This can't be undone.",
-  "@fileInfoDeletePrompt": {"placeholders": {"name": {"type": "String"}}},
+  "@fileInfoDeletePrompt": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "fileInfoDeleteLast": "It's the book's last audio or e-book file, so the book will show as missing.",
   "fileInfoDeleteNotAllowed": "You don't have permission to delete files",
   "chapterSourceEmbedded": "Read from the audio files",
@@ -7992,7 +8673,13 @@
   "chapterSourceMigration": "Imported from Audiobookshelf",
   "chapterSourceManual": "Edited in BookOrbit",
   "chapterSourceManualBy": "Edited by {name}",
-  "@chapterSourceManualBy": {"placeholders": {"name": {"type": "String"}}},
+  "@chapterSourceManualBy": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chapterSourceNone": "No chapters yet",
   "chapterProtected": "Protected from rescans",
   "chapterNotProtected": "A rescan can replace these",
@@ -8005,7 +8692,16 @@
   "chapterHistoryTitle": "Earlier versions",
   "chapterHistoryEmpty": "Saved versions show up here.",
   "chapterHistoryBy": "{source} by {name}",
-  "@chapterHistoryBy": {"placeholders": {"source": {"type": "String"}, "name": {"type": "String"}}},
+  "@chapterHistoryBy": {
+    "placeholders": {
+      "source": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chapterReadingFiles": "Reading the audio files...",
   "chapterRevertToFiles": "Revert to Files",
   "chapterRevertTitle": "Go back to the chapters in the files?",
@@ -8014,13 +8710,34 @@
   "chapterWriteFiles": "Write to Files",
   "chapterWriteTitle": "Write the chapters into the audio files?",
   "chapterWriteMessage": "{count, plural, =1{This rewrites the book's audio file with these chapters.} other{This rewrites the book's {count} audio files with these chapters.}} The audio itself is copied unchanged. Phones that already downloaded the book keep their copy until it's downloaded again.",
-  "@chapterWriteMessage": {"placeholders": {"count": {"type": "int"}}},
+  "@chapterWriteMessage": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chapterWriteConfirm": "Write",
   "chapterWriting": "Writing the chapters into the audio files...",
   "chapterWritten": "{count, plural, =1{Chapters written into the audio file} other{Chapters written into all {count} audio files}}",
-  "@chapterWritten": {"placeholders": {"count": {"type": "int"}}},
+  "@chapterWritten": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chapterWrittenPartly": "Chapters written into {written} of {total} files. The rest were left as they were.",
-  "@chapterWrittenPartly": {"placeholders": {"written": {"type": "int"}, "total": {"type": "int"}}},
+  "@chapterWrittenPartly": {
+    "placeholders": {
+      "written": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "chapterStaleTitle": "These chapters changed",
   "chapterStaleMessage": "Someone else saved these chapters after you opened them. Reload to see their version. Your edits stay until you do.",
   "chapterReload": "Reload",
@@ -8031,13 +8748,21 @@
   "matchAbridgedNo": "Unabridged",
   "boQuickMatchBody": "BookOrbit looks up {count, plural, =1{this book} other{these {count} books}} and fills in what it finds, following its metadata settings.",
   "@boQuickMatchBody": {
-    "placeholders": { "count": {"type": "int"} }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "boQuickMatchIgnoreCache": "Ask every source again",
   "boQuickMatchIgnoreCacheHint": "Skips saved answers. Slower, and uses more of each source's request limit.",
   "boAdminServerCount": "{count, plural, =0{None yet} =1{1 mail server} other{{count} mail servers}}",
   "@boAdminServerCount": {
-    "placeholders": { "count": {"type": "int"} }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "boEmailTitle": "Send by email",
   "boEmailSubtitle": "Devices, mail servers and templates for sending books",
@@ -8048,7 +8773,11 @@
   "boEmailName": "Name",
   "boEmailDeleteTitle": "Delete {name}?",
   "@boEmailDeleteTitle": {
-    "placeholders": { "name": {"type": "String"} }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "boEmailMakeDefault": "Make default",
   "boEmailBadgeDefault": "Default",
@@ -8068,7 +8797,11 @@
   "boEmailKindleHint": "Kindle gets the subject \"convert\" and only takes EPUB and PDF by email.",
   "boEmailKindleApprove": "Kindle drops mail from addresses it doesn't know. In Amazon's Personal Document Settings, add {address} to the approved list.",
   "@boEmailKindleApprove": {
-    "placeholders": { "address": {"type": "String"} }
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
   },
   "boEmailKindleApproveNoServer": "Add a mail server first to see the address Kindle needs to approve.",
   "boEmailFormat": "Format",
@@ -8090,15 +8823,27 @@
   "boEmailTestSubject": "Test email from Absorb",
   "boEmailTestBody": "This is a test from Absorb. If you can read it, books sent to {name} will arrive here too.",
   "@boEmailTestBody": {
-    "placeholders": { "name": {"type": "String"} }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "boEmailTestSent": "Test email sent to {name}",
   "@boEmailTestSent": {
-    "placeholders": { "name": {"type": "String"} }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "boEmailTestFailed": "The test email didn't go out: {error}",
   "@boEmailTestFailed": {
-    "placeholders": { "error": {"type": "String"} }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "boEmailDeleteDevice": "Delete device",
   "boEmailDeleteDeviceBody": "Its send history stays.",
@@ -8112,7 +8857,11 @@
   "boEmailGroupMembersEmpty": "Add a device first.",
   "boEmailGroupMemberCount": "{count, plural, =0{No devices} =1{1 device} other{{count} devices}}",
   "@boEmailGroupMemberCount": {
-    "placeholders": { "count": {"type": "int"} }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "boEmailDeleteGroup": "Delete group",
   "boEmailDeleteGroupBody": "The devices in it stay.",
@@ -8148,7 +8897,11 @@
   "boEmailServerTestOk": "Connected",
   "boEmailServerTestFailed": "Can't connect: {error}",
   "@boEmailServerTestFailed": {
-    "placeholders": { "error": {"type": "String"} }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "boEmailServerDelete": "Delete mail server",
   "boEmailServerDeleteBody": "Everyone it's shared with loses it.",
@@ -8168,7 +8921,11 @@
   "boEmailTemplatePreviewNone": "Send a book once to preview a template with it.",
   "boEmailTemplateAttached": "Attached: {name}",
   "@boEmailTemplateAttached": {
-    "placeholders": { "name": {"type": "String"} }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "boEmailTemplateBuiltIn": "Built in. Only an admin can change it.",
   "boEmailTemplateKindleNote": "Kindle never shows a template. It always gets the subject \"convert\".",
@@ -8182,12 +8939,20 @@
   "boEmailStatusSending": "Sending",
   "boEmailStatusRetrying": "Trying again ({attempt})",
   "@boEmailStatusRetrying": {
-    "placeholders": { "attempt": {"type": "int"} }
+    "placeholders": {
+      "attempt": {
+        "type": "int"
+      }
+    }
   },
   "boEmailStatusFailed": "Failed",
   "boEmailTo": "To {name}",
   "@boEmailTo": {
-    "placeholders": { "name": {"type": "String"} }
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "boEmailResend": "Send again",
   "boEmailResent": "Sending again",
@@ -8203,39 +8968,81 @@
   "boEmailSendButton": "Send",
   "boEmailSendGets": "Gets {format} · {size}",
   "@boEmailSendGets": {
-    "placeholders": { "format": {"type": "String"}, "size": {"type": "String"} }
+    "placeholders": {
+      "format": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendMissing": "No {format}, gets the {got}",
   "@boEmailSendMissing": {
-    "placeholders": { "format": {"type": "String"}, "got": {"type": "String"} }
+    "placeholders": {
+      "format": {
+        "type": "String"
+      },
+      "got": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendKindleRejects": "Kindle doesn't take {format} by email",
   "@boEmailSendKindleRejects": {
-    "placeholders": { "format": {"type": "String"} }
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendOverKindle": "{size}, over Kindle's 50 MB limit",
   "@boEmailSendOverKindle": {
-    "placeholders": { "size": {"type": "String"} }
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendOverGmail": "{size}, over Gmail's 25 MB limit",
   "@boEmailSendOverGmail": {
-    "placeholders": { "size": {"type": "String"} }
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendNarrated": "Gets the narrated copy · {size}",
   "@boEmailSendNarrated": {
-    "placeholders": { "size": {"type": "String"} }
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendHanding": "Sending through {server}",
   "@boEmailSendHanding": {
-    "placeholders": { "server": {"type": "String"} }
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendAccepted": "Sent through {server}",
   "@boEmailSendAccepted": {
-    "placeholders": { "server": {"type": "String"} }
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendFailedLine": "Didn't send: {error}",
   "@boEmailSendFailedLine": {
-    "placeholders": { "error": {"type": "String"} }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "boEmailSendStillGoing": "Still sending. You'll get a notification when it's done.",
   "boEmailKindleOriginal": "A Kindle can't take the narrated copy. Set it to text only.",
@@ -8292,11 +9099,29 @@
   "boActivityGenrePoetry": "Poetry",
   "boActivityGenreOther": "Other",
   "boActivityDays": "{count} days",
-  "@boActivityDays": {"placeholders": {"count": {"type": "int"}}},
+  "@boActivityDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boActivityMinutes": "{count} min",
-  "@boActivityMinutes": {"placeholders": {"count": {"type": "int"}}},
+  "@boActivityMinutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boActivityHours": "{count} h",
-  "@boActivityHours": {"placeholders": {"count": {"type": "double"}}},
+  "@boActivityHours": {
+    "placeholders": {
+      "count": {
+        "type": "double"
+      }
+    }
+  },
   "loginBoKeyOrLink": "API key or magic link",
   "loginBoKeyOrLinkDescription": "Sign in with an API key from BookOrbit, a magic link, or paste a password link to set your password.",
   "boPermLibraryMergeBooks": "Merge and link books",
@@ -8305,24 +9130,48 @@
   "boAdminApiKeysSubtitle": "Allow keys on this server and cap how long they last",
   "boAccountApiKeysSubtitle": "Keys that sign in without your password",
   "boAccountKeySession": "Signed in with an API key",
-  "boAccountKeySessionSubtitle": "Password, sessions and keys are managed from a password sign-in",
+  "boAccountKeySessionSubtitle": "Changing your password or keys asks for a password sign-in first",
   "boAccountKeyReadOnly": "This key is read only, so nothing you do is saved to the server",
   "boUserApiKeysSubtitle": "Issue a key that signs this person in to Absorb, or revoke theirs",
   "boApiKeysTitle": "API keys",
   "boApiKeysForUser": "API keys for {name}",
-  "@boApiKeysForUser": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeysForUser": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeysIntro": "A key signs in without your password, for a script or another Absorb. It can do no more than you can, and you can narrow it further.",
   "boApiKeysIntroAdmin": "A key signs {name} in without their password. It can do no more than they can, and runs as them.",
-  "@boApiKeysIntroAdmin": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeysIntroAdmin": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeysDisabled": "API keys are turned off on this server",
   "boApiKeysNoPermission": "Your account is not allowed to create API keys. An administrator can grant that, or issue one for you.",
   "boApiKeysLimit": "A person can have {count} active keys at most. Revoke one to make room.",
-  "@boApiKeysLimit": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeysLimit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeysEmpty": "No API keys yet",
   "boApiKeyCreate": "New key",
   "boApiKeyIssue": "Issue a key",
   "boApiKeyIssueFor": "Issue a key for {name}",
-  "@boApiKeyIssueFor": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyIssueFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyCreateHint": "The key is shown once, right after it is made.",
   "boApiKeyName": "Name",
   "boApiKeyNameHint": "What is this key for?",
@@ -8334,9 +9183,21 @@
   "boApiKeyExpires": "Expires",
   "boApiKeyExpiryNever": "Never",
   "boApiKeyExpiryDays": "{count} days",
-  "@boApiKeyExpiryDays": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyExpiryDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyExpiryCapped": "This server caps keys at {count} days.",
-  "@boApiKeyExpiryCapped": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyExpiryCapped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyAdmin": "Administrator access",
   "boApiKeyAdminHint": "The key can do everything an administrator can. It cannot be limited to libraries.",
   "boApiKeyPermissions": "Permissions",
@@ -8349,36 +9210,111 @@
   "boApiKeyRegenerate": "Regenerate",
   "boApiKeyRegenerateTitle": "Regenerate this key?",
   "boApiKeyRegenerateBody": "\"{name}\" gets a new secret and the old one stops working at once. Anything using the old one has to be updated.",
-  "@boApiKeyRegenerateBody": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyRegenerateBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyRevoke": "Revoke",
   "boApiKeyRevokeTitle": "Revoke this key?",
   "boApiKeyRevokeBody": "\"{name}\" stops working at once. Anything signed in with it is signed out.",
-  "@boApiKeyRevokeBody": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyRevokeBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyRevoked": "Key revoked",
   "boApiKeyRevokeAll": "Revoke all",
   "boApiKeyRevokeAllTitle": "Revoke every key?",
   "boApiKeyRevokeAllBody": "{count} keys stop working at once. Anything signed in with them is signed out.",
-  "@boApiKeyRevokeAllBody": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyRevokeAllBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyRevokedCount": "{count} keys revoked",
-  "@boApiKeyRevokedCount": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyRevokedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyRevokedOn": "Revoked {date}",
-  "@boApiKeyRevokedOn": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyRevokedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyExpiredOn": "Expired {date}",
-  "@boApiKeyExpiredOn": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyExpiredOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyExpiresSoon": "Expires soon, on {date}",
-  "@boApiKeyExpiresSoon": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyExpiresSoon": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyExpiresOn": "Expires {date}",
-  "@boApiKeyExpiresOn": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyExpiresOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyNeverExpires": "Never expires",
   "boApiKeyNeverUsed": "Never used",
   "boApiKeyLastUsed": "Last used {date}",
-  "@boApiKeyLastUsed": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyLastUsed": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLastUsedFrom": "Last used {date} from {ip}",
-  "@boApiKeyLastUsedFrom": {"placeholders": {"date": {"type": "String"}, "ip": {"type": "String"}}},
+  "@boApiKeyLastUsedFrom": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "ip": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLibrariesOnly": "Only {names}",
-  "@boApiKeyLibrariesOnly": {"placeholders": {"names": {"type": "String"}}},
+  "@boApiKeyLibrariesOnly": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyIssuedBy": "Issued by {name}",
-  "@boApiKeyIssuedBy": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyIssuedBy": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyAdminBadge": "Admin",
   "boApiKeyExpiringBadge": "Expiring",
   "boApiKeyExpiredBadge": "Expired",
@@ -8389,9 +9325,21 @@
   "boApiKeySignInElsewhere": "Sign in on another device",
   "boApiKeyRevealWarning": "This is the only time the key is shown. If it is lost, regenerate it.",
   "boApiKeyShareDescription": "Open this link or scan the QR code on the other device to sign in to Absorb as {username} with this key.",
-  "@boApiKeyShareDescription": {"placeholders": {"username": {"type": "String"}}},
+  "@boApiKeyShareDescription": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyShareWarning": "Anyone with this link can use the key \"{name}\" until it is revoked.",
-  "@boApiKeyShareWarning": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyShareWarning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyErrorExpiryCap": "That lifetime is longer than this server allows",
   "boApiKeyErrorOwner": "This account cannot hold keys right now: it is suspended or not allowed to create them",
   "boApiKeyErrorAdminLibraries": "An administrator key cannot be limited to libraries",
@@ -8407,10 +9355,112 @@
   "boApiKeySettingsCustom": "Other",
   "boApiKeySettingsCustomDays": "Days",
   "boApiKeySettingsCustomRange": "Between 1 and {max} days",
-  "@boApiKeySettingsCustomRange": {"placeholders": {"max": {"type": "int"}}},
+  "@boApiKeySettingsCustomRange": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
   "boUserKeyLink": "Sign-in link with an API key",
   "boUserKeyLinkSubtitle": "Makes a key with everything this person has and shows a QR code that signs them in to Absorb",
   "boApiKeyLinkName": "Absorb sign-in",
   "boApiKeyLinkFor": "Sign-in link for {name}",
-  "@boApiKeyLinkFor": {"placeholders": {"name": {"type": "String"}}}
+  "@boApiKeyLinkFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "liquidGlassNavLabel": "Liquid Glass",
+  "liquidGlassNavSubtitle": "iOS glass for the tab bar, library pills and toasts",
+  "materialExpressiveLabel": "Material 3 Expressive",
+  "materialExpressiveSubtitle": "Playful shapes in the tab bar, play button and switches",
+  "appIconLabel": "App icon",
+  "appIconClassic": "Classic",
+  "appIconAurora": "Aurora",
+  "appIconLight": "Light",
+  "appIconTeal": "Teal",
+  "appIconBlue": "Blue",
+  "appIconSky": "Sky",
+  "appIconPurple": "Purple",
+  "appIconPink": "Pink",
+  "appIconRed": "Red",
+  "appIconOrange": "Orange",
+  "appIconYellow": "Yellow",
+  "appIconGreen": "Green",
+  "appIconFailed": "Couldn't change the app icon",
+  "appIconAndroidNote": "Your launcher can take a moment to show the new icon, and an Absorb shortcut on the home screen may need adding back.",
+  "startMinTimer": "Start {minutes} min timer",
+  "@startMinTimer": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "editServerAddressField": "Server Address",
+  "cardBackgroundSolid": "Solid",
+  "cardSwipeStyle": "Card swipe style",
+  "cardSwipeStyleClassic": "Classic",
+  "cardSwipeStyleCarousel": "Carousel",
+  "cardSwipeStyleStack": "Stack",
+  "adminUsersPickLibrary": "Pick at least one library, or turn on access to all libraries",
+  "ebookSaveNarratedBody": "This EPUB has its narration built in, so the full file is large. Text only saves just the book's text and pictures, which is much smaller.",
+  "ebookSaveTextOnly": "Text only",
+  "ebookSaveWithNarration": "With narration",
+  "boLibraryVisibilityTitle": "Library visibility",
+  "boLibraryVisibilityIntro": "Hide a library from any of these places. It stays in the library list, search and its own page. This is saved on your account, so the web app follows it too.",
+  "boLibraryVisibilityShelves": "Shelves",
+  "boLibraryVisibilityShelvesDesc": "Continue Reading, Continue Listening, Up Next in Series and Discover Something New.",
+  "boLibraryVisibilitySeries": "Series",
+  "boLibraryVisibilitySeriesDesc": "The Series page. A series split across libraries keeps the books from libraries still shown.",
+  "boLibraryVisibilityStats": "Stats",
+  "boLibraryVisibilityStatsDesc": "Stats, reading history and Year in Review. Reading is still recorded, so showing the library again brings its numbers back.",
+  "boLibraryVisibilitySaveFailed": "Couldn't save library visibility",
+  "readAlongPaused": "Paused",
+  "readAlongPausedHint": "It keeps its place and starts again once resumed.",
+  "readAlongPause": "Pause",
+  "readAlongResume": "Resume",
+  "boQuickMatchStillRunning": "Still matching on the server ({count})",
+  "@boQuickMatchStillRunning": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "boQuickMatchBusy": "The server already has too many matches waiting. Try again once some finish.",
+  "boNotifyStoryGuides": "Story guides",
+  "boNotifyStoryGuidesDesc": "When a story guide you started building is ready or fails.",
+  "boNotifyBulkActions": "Bulk actions",
+  "boNotifyBulkActionsDesc": "When a bulk action you started finishes after you left it, stops, or is cut short by a restart.",
+  "boEmailSendTextOnly": "Gets the text only EPUB, narration left out",
+  "boPasswordSessionTitle": "Sign in to continue",
+  "boPasswordSessionBody": "BookOrbit doesn't let an API key do this. Sign in once and Absorb keeps it for next time.",
+  "boPasswordSessionSignIn": "Sign in",
+  "boPasswordSessionWith": "Sign in with {provider}",
+  "@boPasswordSessionWith": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "boPasswordSessionWrongPassword": "That password didn't work",
+  "boPasswordSessionOtherAccount": "That's a different account",
+  "boPasswordSessionFailed": "Couldn't sign in",
+  "boPasswordSessionNoMethods": "This server has no password or single sign-on to sign in with",
+  "boPasswordSessionUsed": "Using your password sign-in",
+  "boPasswordSessionUsedWith": "Using your {provider} sign-in",
+  "@boPasswordSessionUsedWith": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "boPasswordSessionNeeded": "This needs a password sign-in",
+  "coverNotSavedYet": "Tap Save to use this cover"
 }

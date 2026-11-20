@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../widgets/expressive.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -266,7 +267,7 @@ class _ReadingLogScreenState extends State<ReadingLogScreen> {
               ),
             )
           : _stats == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: AdaptiveSpinner())
               : RefreshIndicator(
                   onRefresh: _refresh,
                   child: ListView(
@@ -546,6 +547,13 @@ class _ReadingLogScreenState extends State<ReadingLogScreen> {
         'ios' || 'watchos' || 'android' || 'koreader' || 'kobo' => source as String,
         _ => 'bookorbit',
       };
+
+  /// The reading device's name, which BookOrbit 3.9 keeps for KOReader.
+  static String? _deviceName(Map<String, dynamic> session) {
+    final device = session['device'];
+    final name = device is Map ? (device['name'] ?? device['model']) : null;
+    return name is String && name.trim().isNotEmpty ? name.trim() : null;
+  }
 
   static String _bucketLabel(AppLocalizations l, String bucket) => switch (bucket) {
         'ios' => l.readingLogSourceIos,
@@ -921,7 +929,7 @@ class _ReadingLogScreenState extends State<ReadingLogScreen> {
               child: TextButton(
                 onPressed: _loadingMore ? null : _loadMore,
                 child: _loadingMore
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(width: 16, height: 16, child: AdaptiveSpinner(strokeWidth: 2))
                     : Text(l.showMore),
               ),
             ),
@@ -1036,7 +1044,7 @@ class _ReadingLogScreenState extends State<ReadingLogScreen> {
       padding: const EdgeInsets.fromLTRB(14, 0, 2, 0),
       child: Row(children: [
         Tooltip(
-          message: _bucketLabel(l, bucket),
+          message: _deviceName(s) == null ? _bucketLabel(l, bucket) : '${_bucketLabel(l, bucket)} · ${_deviceName(s)}',
           child: Container(
               width: 7,
               height: 7,

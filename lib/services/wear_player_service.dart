@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'audio_player_service.dart';
 import 'bookmark_service.dart';
+import 'home_widget_service.dart';
 import 'sleep_timer_service.dart';
 
 /// Pushes the active playback snapshot to the paired Wear OS companion
@@ -53,6 +54,17 @@ class WearPlayerService {
       final args = Map<String, dynamic>.from(call.arguments as Map);
       await WearCommands.handle(args['name'] as String? ?? '', args);
       return true;
+    });
+    // The watch may have started the app for a request; it waits natively
+    // until this handler is up.
+    _channel.invokeMethod<List<Object?>>('ready').then((held) async {
+      for (final raw in held ?? const <Object?>[]) {
+        if (raw is! Map) continue;
+        final args = Map<String, dynamic>.from(raw);
+        await WearCommands.handle(args['name'] as String? ?? '', args);
+      }
+    }).catchError((Object e) {
+      debugPrint('[WearPlayer] ready failed: $e');
     });
     // A bookmark added, moved or removed reaches the watch right away, not
     // on the next state push.
@@ -155,6 +167,8 @@ class WearPlayerService {
     int sleepAddMinutes = 5,
     List<double> speedPresets = const [],
     int themeColor = 0,
+    int coverVersion = 0,
+    String? appIcon,
   }) async {
     if (!_supported) return;
     try {
@@ -188,6 +202,11 @@ class WearPlayerService {
         'sleepAddMinutes': sleepAddMinutes,
         'speedPresets': speedPresets,
         'themeColor': themeColor,
+        // When the book's cover last changed, so the watch app stops showing
+        // a cover it kept from before.
+        'coverVersion': coverVersion,
+        // The icon picked on this phone, so the watch app shows the same one.
+        'appIcon': appIcon,
       });
     } catch (e) {
       _logPublishFailure('publish', e);
@@ -205,6 +224,21 @@ class WearCommands {
     debugPrint('[WearPlayer] command $name $args');
     final player = AudioPlayerService();
     switch (name) {
+      case 'play_pause':
+        await HomeWidgetService().resumeLastPlayedIfAvailable();
+        break;
+      case 'play_item':
+        final itemId = args['itemId'] as String?;
+        final rawEpisode = args['episodeId']?.toString();
+        final position = _double(args['position']);
+        if (itemId != null && itemId.isNotEmpty) {
+          await HomeWidgetService().playItemFromWatch(
+            itemId,
+            rawEpisode == null || rawEpisode.isEmpty ? null : rawEpisode,
+            position: position != null && position.isFinite && position > 0 ? position : null,
+          );
+        }
+        break;
       case 'next_chapter':
         if (player.hasBook) await player.skipToNextChapter();
         break;

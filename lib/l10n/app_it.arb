@@ -28,28 +28,36 @@
   "timeRemaining": "{duration} left",
   "@timeRemaining": {
     "placeholders": {
-      "duration": {"type": "String"}
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "historyEventResumed": "Resumed playback",
   "historyEventResumedDetail": "Resumed playback ({detail})",
   "@historyEventResumedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventPaused": "Paused",
   "historyEventPausedDetail": "Paused ({detail})",
   "@historyEventPausedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSeeked": "Seeked",
   "historyEventSeekedDetail": "Seeked {detail}",
   "@historyEventSeekedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSyncLocal": "Saved locally",
@@ -58,28 +66,36 @@
   "historyEventAutoRewoundDetail": "Auto-rewound {detail}",
   "@historyEventAutoRewoundDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipForward": "Skipped forward",
   "historyEventSkipForwardDetail": "Skipped forward ({detail})",
   "@historyEventSkipForwardDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipBack": "Skipped back",
   "historyEventSkipBackDetail": "Skipped back ({detail})",
   "@historyEventSkipBackDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSpeedChanged": "Speed changed",
   "historyEventSpeedSetTo": "Speed set to {detail}",
   "@historyEventSpeedSetTo": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventBookFinished": "Book finished",
@@ -87,39 +103,51 @@
   "historyEventSessionStartedDetail": "Session started ({detail})",
   "@historyEventSessionStartedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSessionEnded": "Session ended",
   "historyEventSessionEndedDetail": "Session ended ({detail})",
   "@historyEventSessionEndedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventMediaButton": "Media button",
   "historyEventMediaButtonDetail": "Media button: {detail}",
   "@historyEventMediaButtonDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historySeconds": "{value}s",
   "@historySeconds": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyMinutes": "{value}m",
   "@historyMinutes": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historySpeed": "{value}x",
   "@historySpeed": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyDetailStream": "stream",
@@ -131,13 +159,17 @@
   "historyDetailNextChapterToIntroSkip": "next chapter to {position} (intro skip)",
   "@historyDetailNextChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrevChapterToIntroSkip": "prev chapter to {position} (intro skip)",
   "@historyDetailPrevChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipChapterIntro": "skip chapter intro",
@@ -149,45 +181,78 @@
   "historyDetailRewindAtSpeed": "{base} ({adjusted} at {speed})",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStart": "{base} (session start)",
   "@historyDetailRewindSessionStart": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStartAtSpeed": "{base} ({adjusted} at {speed}, session start)",
   "@historyDetailRewindSessionStartAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSleepTimer": "{base} (sleep timer)",
   "@historyDetailRewindSleepTimer": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipForwardAtSpeed": "+{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipForwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipBackwardAtSpeed": "-{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipBackwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
-  }
+  },
+  "loginTagline": "Avvia Absorbing",
+  "loginServerHelper": "IP:port (ad es. 192.168.1.5:13378)",
+  "loginAdvanced": "Avanzate",
+  "loginHeaderValue": "Valore",
+  "libraryTitle": "Libreria"
 }

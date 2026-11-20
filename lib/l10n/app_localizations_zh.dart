@@ -420,7 +420,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginSsoAuthFailed => '单点登录认证失败，请重试。';
 
   @override
-  String get loginRestoreFromBackup => '从备份恢复';
+  String get loginRestoreFromBackup => '导入';
 
   @override
   String get loginInvalidBackupFile => '无效的备份文件';
@@ -15527,4 +15527,215 @@ class AppLocalizationsZh extends AppLocalizations {
   String boApiKeyLinkFor(String name) {
     return '$name 的登录链接';
   }
+
+  @override
+  String get liquidGlassNavLabel => 'Liquid Glass';
+
+  @override
+  String get liquidGlassNavSubtitle =>
+      'iOS glass for the tab bar, library pills and toasts';
+
+  @override
+  String get materialExpressiveLabel => 'Material 3 Expressive';
+
+  @override
+  String get materialExpressiveSubtitle =>
+      'Playful shapes in the tab bar, play button and switches';
+
+  @override
+  String get appIconLabel => '应用图标';
+
+  @override
+  String get appIconClassic => '经典';
+
+  @override
+  String get appIconAurora => '极光';
+
+  @override
+  String get appIconLight => '浅色';
+
+  @override
+  String get appIconTeal => '青色';
+
+  @override
+  String get appIconBlue => '蓝色';
+
+  @override
+  String get appIconSky => '天蓝';
+
+  @override
+  String get appIconPurple => '紫色';
+
+  @override
+  String get appIconPink => '粉色';
+
+  @override
+  String get appIconRed => '红色';
+
+  @override
+  String get appIconOrange => '橙色';
+
+  @override
+  String get appIconYellow => '黄色';
+
+  @override
+  String get appIconGreen => '绿色';
+
+  @override
+  String get appIconFailed => '无法更换应用图标';
+
+  @override
+  String get appIconAndroidNote =>
+      '桌面启动器可能需要一点时间才显示新图标，桌面上的 Absorb 快捷方式可能需要重新添加。';
+
+  @override
+  String startMinTimer(int minutes) {
+    return '启动 $minutes 分钟定时器';
+  }
+
+  @override
+  String get editServerAddressField => 'Server Address';
+
+  @override
+  String get cardBackgroundSolid => 'Solid';
+
+  @override
+  String get cardSwipeStyle => 'Card swipe style';
+
+  @override
+  String get cardSwipeStyleClassic => 'Classic';
+
+  @override
+  String get cardSwipeStyleCarousel => 'Carousel';
+
+  @override
+  String get cardSwipeStyleStack => 'Stack';
+
+  @override
+  String get adminUsersPickLibrary =>
+      'Pick at least one library, or turn on access to all libraries';
+
+  @override
+  String get ebookSaveNarratedBody =>
+      'This EPUB has its narration built in, so the full file is large. Text only saves just the book\'s text and pictures, which is much smaller.';
+
+  @override
+  String get ebookSaveTextOnly => 'Text only';
+
+  @override
+  String get ebookSaveWithNarration => 'With narration';
+
+  @override
+  String get boLibraryVisibilityTitle => 'Library visibility';
+
+  @override
+  String get boLibraryVisibilityIntro =>
+      'Hide a library from any of these places. It stays in the library list, search and its own page. This is saved on your account, so the web app follows it too.';
+
+  @override
+  String get boLibraryVisibilityShelves => 'Shelves';
+
+  @override
+  String get boLibraryVisibilityShelvesDesc =>
+      'Continue Reading, Continue Listening, Up Next in Series and Discover Something New.';
+
+  @override
+  String get boLibraryVisibilitySeries => 'Series';
+
+  @override
+  String get boLibraryVisibilitySeriesDesc =>
+      'The Series page. A series split across libraries keeps the books from libraries still shown.';
+
+  @override
+  String get boLibraryVisibilityStats => 'Stats';
+
+  @override
+  String get boLibraryVisibilityStatsDesc =>
+      'Stats, reading history and Year in Review. Reading is still recorded, so showing the library again brings its numbers back.';
+
+  @override
+  String get boLibraryVisibilitySaveFailed =>
+      'Couldn\'t save library visibility';
+
+  @override
+  String get readAlongPaused => 'Paused';
+
+  @override
+  String get readAlongPausedHint =>
+      'It keeps its place and starts again once resumed.';
+
+  @override
+  String get readAlongPause => 'Pause';
+
+  @override
+  String get readAlongResume => 'Resume';
+
+  @override
+  String boQuickMatchStillRunning(int count) {
+    return 'Still matching on the server ($count)';
+  }
+
+  @override
+  String get boQuickMatchBusy =>
+      'The server already has too many matches waiting. Try again once some finish.';
+
+  @override
+  String get boNotifyStoryGuides => 'Story guides';
+
+  @override
+  String get boNotifyStoryGuidesDesc =>
+      'When a story guide you started building is ready or fails.';
+
+  @override
+  String get boNotifyBulkActions => 'Bulk actions';
+
+  @override
+  String get boNotifyBulkActionsDesc =>
+      'When a bulk action you started finishes after you left it, stops, or is cut short by a restart.';
+
+  @override
+  String get boEmailSendTextOnly =>
+      'Gets the text only EPUB, narration left out';
+
+  @override
+  String get boPasswordSessionTitle => 'Sign in to continue';
+
+  @override
+  String get boPasswordSessionBody =>
+      'BookOrbit doesn\'t let an API key do this. Sign in once and Absorb keeps it for next time.';
+
+  @override
+  String get boPasswordSessionSignIn => 'Sign in';
+
+  @override
+  String boPasswordSessionWith(String provider) {
+    return 'Sign in with $provider';
+  }
+
+  @override
+  String get boPasswordSessionWrongPassword => 'That password didn\'t work';
+
+  @override
+  String get boPasswordSessionOtherAccount => 'That\'s a different account';
+
+  @override
+  String get boPasswordSessionFailed => 'Couldn\'t sign in';
+
+  @override
+  String get boPasswordSessionNoMethods =>
+      'This server has no password or single sign-on to sign in with';
+
+  @override
+  String get boPasswordSessionUsed => 'Using your password sign-in';
+
+  @override
+  String boPasswordSessionUsedWith(String provider) {
+    return 'Using your $provider sign-in';
+  }
+
+  @override
+  String get boPasswordSessionNeeded => 'This needs a password sign-in';
+
+  @override
+  String get coverNotSavedYet => 'Tap Save to use this cover';
 }

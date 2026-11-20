@@ -61,7 +61,7 @@
   "loginApiKey": "Clé API",
   "loginApiKeyDescription": "Utiliser une clé API générée par l’administrateur plutôt qu’un nom d’utilisateur et un mot de passe. Utile lorsque le rafraîchissement du jeton échoue pour votre compte.",
   "loginWaitingForSso": "En attente du SSO...",
-  "loginRedirectUri": "URI de redirection : absorb://oauth",
+  "loginRedirectUri": "URI de redirection : absorb://oauth",
   "loginOrSignInManually": "ou se connecter manuellement",
   "loginUsername": "Utilisateur",
   "loginUsernameRequired": "Entrez votre nom d'utilisateur",
@@ -295,7 +295,7 @@
   "hasEbook": "A un eBook",
   "noEbook": "Aucun eBook",
   "hasSupplementaryEbook": "A un eBook supplémentaire",
-  "noSupplementaryEbook": "Pas de eBook supplémentaire",
+  "noSupplementaryEbook": "Aucun eBook supplémentaire",
   "noSeries": "Pas de série",
   "publishedDecade": "Décennie de publication",
   "tracks": "Pistes",
@@ -704,7 +704,7 @@
   "flatBackgroundSubtitle": "Supprime le dégradé d’arrière‑plan. Noir pur en mode sombre pour les écrans OLED.",
   "einkModeLabel": "Mode encre électronique",
   "einkModeSubtitle": "Noir et blanc avec contraste élevé, sans animation, fait pour les écrans à encre électronique",
-  "einkModeIntroBody": "Fait pour les écrans d'encre électronique. L'application passe à un aspect noir et blanc plat avec un contraste élevé, les animations sont désactivées, la carte de lecture perd son arrière-plan et la connexion au serveur en direct reste désactivée pour économiser la batterie. La lecture et la progression continuent de se synchroniser normalement. Vos paramètres d'apparence sont conservés et sont réactivés lorsque vous désactivez cette fonction.",
+  "einkModeIntroBody": "Conçu pour les écrans d'encre électronique. L'application passe à un aspect noir et blanc plat avec un contraste élevé, les animations sont désactivées, la carte de lecture perd son arrière-plan et la connexion au serveur en direct reste désactivée pour économiser la batterie. La lecture et la progression continuent de se synchroniser normalement. Vos paramètres d'apparence sont conservés et sont réactivés lorsque vous désactivez cette fonction.",
   "einkModeIntroConfirm": "Activer",
   "backgroundIntensityLabel": "Intensité de l'arrière-plan",
   "startScreenLabel": "Écran d'accueil",
@@ -856,7 +856,7 @@
   "speedBookmarkOffSubtitle": "Désactivé - la notification montre le saut de chapitre, la vitesse et le signet restent dans Android Auto",
   "lockSeekBar": "Verrouiller la barre de lecture",
   "lockSeekBarOnSubtitle": "Activé - la barre dans la notification, l'écran de verrouillage et le mode voiture montre la progression mais ne peut pas être déplacée",
-  "lockSeekBarOffSubtitle": "Désactivé - faites glisser le curseur dans la notification, l'écran de verrouillage et le mode voiture pour vous déplacer ",
+  "lockSeekBarOffSubtitle": "Désactivé - faites glisser le curseur dans la notification, l'écran de verrouillage et le mode voiture pour vous déplacer",
   "autoRewindOnResume": "Rembobiner lors de la reprise",
   "autoRewindOnSubtitle": "Activé - {min}s à {max}s en fonction de la longueur de la pause",
   "@autoRewindOnSubtitle": {
@@ -2531,7 +2531,7 @@
   "notesDeleteNoteQuestion": "Supprimer la note ?",
   "notesNewNote": "Nouvelle note",
   "sleepTimerSheetMinShort": "{minutes}m",
-    "@sleepTimerSheetMinShort": {
+  "@sleepTimerSheetMinShort": {
     "placeholders": {
       "minutes": {
         "type": "int"
@@ -3163,28 +3163,36 @@
   "timeRemaining": "{duration} left",
   "@timeRemaining": {
     "placeholders": {
-      "duration": {"type": "String"}
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "historyEventResumed": "Resumed playback",
   "historyEventResumedDetail": "Resumed playback ({detail})",
   "@historyEventResumedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventPaused": "Paused",
   "historyEventPausedDetail": "Paused ({detail})",
   "@historyEventPausedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSeeked": "Seeked",
   "historyEventSeekedDetail": "Seeked {detail}",
   "@historyEventSeekedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSyncLocal": "Saved locally",
@@ -3193,28 +3201,36 @@
   "historyEventAutoRewoundDetail": "Auto-rewound {detail}",
   "@historyEventAutoRewoundDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipForward": "Skipped forward",
   "historyEventSkipForwardDetail": "Skipped forward ({detail})",
   "@historyEventSkipForwardDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipBack": "Skipped back",
   "historyEventSkipBackDetail": "Skipped back ({detail})",
   "@historyEventSkipBackDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSpeedChanged": "Speed changed",
   "historyEventSpeedSetTo": "Speed set to {detail}",
   "@historyEventSpeedSetTo": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventBookFinished": "Book finished",
@@ -3222,39 +3238,51 @@
   "historyEventSessionStartedDetail": "Session started ({detail})",
   "@historyEventSessionStartedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSessionEnded": "Session ended",
   "historyEventSessionEndedDetail": "Session ended ({detail})",
   "@historyEventSessionEndedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventMediaButton": "Media button",
   "historyEventMediaButtonDetail": "Media button: {detail}",
   "@historyEventMediaButtonDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historySeconds": "{value}s",
   "@historySeconds": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyMinutes": "{value}m",
   "@historyMinutes": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historySpeed": "{value}x",
   "@historySpeed": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyDetailStream": "stream",
@@ -3266,13 +3294,17 @@
   "historyDetailNextChapterToIntroSkip": "next chapter to {position} (intro skip)",
   "@historyDetailNextChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrevChapterToIntroSkip": "prev chapter to {position} (intro skip)",
   "@historyDetailPrevChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipChapterIntro": "skip chapter intro",
@@ -3284,45 +3316,464 @@
   "historyDetailRewindAtSpeed": "{base} ({adjusted} at {speed})",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStart": "{base} (session start)",
   "@historyDetailRewindSessionStart": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStartAtSpeed": "{base} ({adjusted} at {speed}, session start)",
   "@historyDetailRewindSessionStartAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSleepTimer": "{base} (sleep timer)",
   "@historyDetailRewindSleepTimer": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipForwardAtSpeed": "+{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipForwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipBackwardAtSpeed": "-{seconds} ({adjusted} @ {speed})",
   "@historyDetailSkipBackwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
-  }
+  },
+  "whatsNewTitle": "Absorb a été mis à jour",
+  "whatsNewContent": "La version {version} est installée.",
+  "@whatsNewContent": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "whatsNewButton": "Découvrez les nouveautés",
+  "continueReading": "Continuer la lecture",
+  "loginPlayDownloads": "Lire vos téléchargements",
+  "sortTotalDuration": "Durée totale",
+  "sortLastBookAdded": "Dernier livre ajouté",
+  "sortLastBookUpdated": "Dernier livre mis à jour",
+  "downloadsEbooks": "Ebooks",
+  "bookmarksSearchHint": "Rechercher dans les signets",
+  "bookmarksNoMatches": "Aucun signet ne correspond à votre recherche",
+  "showSubtitles": "Afficher les sous-titres",
+  "showSubtitlesOnSubtitle": "Les sous-titres s'affichent sous les titres de livres dans la bibliothèque et l'accueil",
+  "showSubtitlesOffSubtitle": "Désactivé - sous-titres uniquement sur la fiche de détails du livre",
+  "subtitleVisibilityLabel": "Sous-titres",
+  "subtitleVisibilityDefault": "Par défaut",
+  "subtitleVisibilityShow": "Afficher",
+  "subtitleVisibilityHide": "Cacher",
+  "nowPlayingText": "Texte en cours de lecture",
+  "nowPlayingTopLine": "Première ligne",
+  "nowPlayingSecondLine": "Deuxième ligne",
+  "nowPlayingNotShown": "Non affiché",
+  "nowPlayingPieceChapter": "Chapitre",
+  "nowPlayingPieceTitle": "Titre du livre",
+  "nowPlayingPieceNarrator": "Narrateur",
+  "nowPlayingPieceSeries": "Séries",
+  "nowPlayingPieceChapterNumber": "Numéro de chapitre",
+  "nowPlayingPieceTimeLeft": "Temps restant",
+  "nowPlayingChapterNumber": "Ch. {number}/{total}",
+  "@nowPlayingChapterNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "nowPlayingTimeLeft": "{time} restant",
+  "@nowPlayingTimeLeft": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "bookDockNoAuthor": "Aucun auteur pour le moment",
+  "bookDockFieldIsbn": "ISBN",
+  "bookDockMatch": "{percent}% de correspondance",
+  "@bookDockMatch": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "bookDockAddToLibrary": "Ajouter à la bibliothèque",
+  "bomatchFewDetails": "Peu de détails",
+  "bomatchBack": "Tous les résultats",
+  "bomatchNow": "Maintenant",
+  "bomatchEmpty": "Vide",
+  "startMinTimer": "Démarrer le minuteur de {minutes} min",
+  "@startMinTimer": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "editServerAddressField": "Adresse du serveur",
+  "narratedBy": "Lu par {narrator}",
+  "@narratedBy": {
+    "placeholders": {
+      "narrator": {
+        "type": "String"
+      }
+    }
+  },
+  "percentComplete": "{percent}% lu",
+  "@percentComplete": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "audioTracksCount": "Pistes audio ({count})",
+  "@audioTracksCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bookmarksWithCount": "Signets ({count})",
+  "@bookmarksWithCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "longPressBookmarkHint": "Appuyez longuement sur le bouton signet pour enregistrer rapidement",
+  "historyLocalTab": "Historique",
+  "booksInSeriesCount": "{count} livres dans cette série",
+  "@booksInSeriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadRemainingCount": "Téléchargements restants ({count})",
+  "@downloadRemainingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "turnAutoDownloadOff": "Désactiver le téléchargement automatique",
+  "turnAutoDownloadOn": "Activer le téléchargement automatique",
+  "autoDownloadThisSeries": "Télécharger automatiquement cette série ?",
+  "autoDownloadSeriesContent": "Télécharge automatiquement les livres suivants pendant l'écoute.",
+  "deleteFromServerContent": "Supprimer \"{title}\" d'Audiobookshelf ?",
+  "@deleteFromServerContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "deletedFromServer": "\"{title}\" supprimé",
+  "@deletedFromServer": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteFromServerFailed": "Échec de la suppression. Vérifiez les logs du serveur.",
+  "selectLibrary": "Sélectionner la bibliothèque",
+  "switchLibraryTooltip": "Changer de bibliothèque",
+  "refreshTooltip": "Rafraîchir",
+  "serverUpdateAvailable": "Mise à jour du serveur disponible {version}",
+  "@serverUpdateAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "cardBackgroundBlurred": "Flou",
+  "rewindActivationDelayValue": "{seconds}s+",
+  "@rewindActivationDelayValue": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "preReleaseUpdatesInfoTitle": "Mises-à-jour préliminaires",
+  "includePreReleases": "Inclure les pré-versions",
+  "includePreReleasesOnSubtitle": "Activé - vérification des versions alpha et pré-versions",
+  "includePreReleasesOffSubtitle": "Désactivé - versions stables uniquement",
+  "preReleaseAvailable": "Pré-version disponible",
+  "updateDialogContent": "Une nouvelle {kind} d'Absorb est disponible : {latest}\n\nVersion actuelle : {current}.",
+  "@updateDialogContent": {
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      },
+      "latest": {
+        "type": "String"
+      },
+      "current": {
+        "type": "String"
+      }
+    }
+  },
+  "updateKindPreRelease": "pré-release",
+  "updateKindVersion": "version",
+  "updateDownloading": "Téléchargement de la mise-à-jour...",
+  "historyShort": "Historique",
+  "adminBackupsLabel": "Sauvegardes",
+  "adminMissingBadge": "Manquant",
+  "adminInvalidBadge": "Invalide",
+  "adminMissingDeleteOneContent": "Supprimer \"{title}\" d'Audiobookshelf ?",
+  "@adminMissingDeleteOneContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "adminMissingDeleteManyContent": "Supprimer {count} éléments d'Audiobookshelf ?",
+  "@adminMissingDeleteManyContent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminUsersCreateUser": "Créer un utilisateur",
+  "adminUsersUsernameRequired": "Nom d'utilisateur requis",
+  "adminUsersPasswordRequired": "Mot de passe requis",
+  "adminPodcastsGenreScience": "Science",
+  "adminPodcastsDeletedEpisodes": "{count} épisode(s) supprimé(s)",
+  "@adminPodcastsDeletedEpisodes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "adminPodcastsDeleting": "Suppression...",
+  "episodeListShowSettings": "Afficher les paramètres",
+  "episodeListSortTitle": "Titre",
+  "episodeListSortSeason": "Saison",
+  "episodeListSortEpisode": "Numéro d'épisode",
+  "episodeListSortFileName": "Nom de fichier",
+  "statsScreenByAuthor": "de {author}",
+  "@statsScreenByAuthor": {
+    "placeholders": {
+      "author": {
+        "type": "String"
+      }
+    }
+  },
+  "statsScreenPlayMethodDirect": "Lecture directe",
+  "upcomingReleasesRemovedFromList": "Retiré de la liste",
+  "upcomingReleasesBadgeAdded": "AJOUTÉ",
+  "upcomingReleasesFinishedAfterNever": "Jamais",
+  "upcomingReleasesBadgeNew": "NOUVEAU",
+  "upcomingReleasesSetAsinHint": "B0… ou lien audible.com",
+  "upcomingReleasesRestore": "Restaurer",
+  "upcomingReleasesRestoredToast": "Restauré",
+  "upcomingReleasesRestoredNextScan": "Restauré - sera affiché au prochain scan",
+  "upcomingReleasesBulkRemove": "Supprimer",
+  "audibleSeriesRegionTitle": "Région Audible",
+  "notesDeleteNoteContent": "Supprimer \"{title}\" ?",
+  "@notesDeleteNoteContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "notesExport": "Exporter",
+  "sleepTimerSheetAddMinutesChip": "+{minutes}m",
+  "@sleepTimerSheetAddMinutesChip": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerSheetAddChaptersChip": "+{count} ch",
+  "@sleepTimerSheetAddChaptersChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerSheetMinSecShort": "{minutes}m {seconds}s",
+  "@sleepTimerSheetMinSecShort": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerSheetChaptersValue": "{count, plural, =1{1 chapitre} other{{count} chapitres}}",
+  "@sleepTimerSheetChaptersValue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerSheetStartChapterSleep": "{count, plural, =1{Veille après 1 chapitre} other{Veille après {count} chapitres}}",
+  "@sleepTimerSheetStartChapterSleep": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerSheetAddsMinutes": "Ajoute {minutes} min",
+  "@sleepTimerSheetAddsMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepTimerSheetAddsOneChapter": "Ajoute 1 chapitre",
+  "sleepTimerSheetResetsToFull": "Réinitialise à la durée totale",
+  "cardChaptersPlayFromChapterContent": "Démarrer à partir de \"{title}\" ?",
+  "@cardChaptersPlayFromChapterContent": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "absorbingSharedMonday": "Lundi",
+  "absorbingSharedFriday": "Vendredi",
+  "absorbingSharedSunday": "Dimanche",
+  "tipsSheetTranscribeBookmarkTitle": "Transcrire les signets",
+  "tipsSheetSettingsSyncTitle": "Synchronisation des paramètres",
+  "tipsSheetSettingsSyncDesc": "Gardez vos préférences, vitesse de lecture par livre, page d'accueil, ordre de lecture synchronisés entre appareils à travers votre propre serveur WebDAV. Paramétrez-le dans la section Sauvegarde et synchronisation des paramètres.",
+  "episodeRowDurationHm": "{hours}h {minutes}m",
+  "@episodeRowDurationHm": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "authInvalidUsernameOrPassword": "Utilisateur ou mot de passe invalide",
+  "statsWeekStartsOn": "La semaine commence le",
+  "backupAndSync": "Sauvegarde et synchronisation",
+  "backupAndSyncSubtitle": "Créer un fichier de sauvegarde ou synchroniser les paramètres entre appareils",
+  "syncSettingsExperimental": "Expérimental",
+  "syncSettingsNeedServer": "Besoin d'un serveur ?",
+  "syncSettingsConnection": "Connexion",
+  "syncSettingsConnectionNotSet": "Non configuré",
+  "syncSettingsBackupFile": "Fichier de sauvegarde",
+  "syncSettingsBackupFilePlain": "Enregistrez tout dans un fichier que vous conservez.",
+  "syncSettingsBackupFileWithSync": "Enregistrez tout dans un fichier que vous conservez. Inclure les informations de connexion et les restaurer sur un autre appareil active également la synchronisation sur celui-ci.",
+  "syncSettingsStatusOff": "Synchronisation désactivée",
+  "syncSettingsStatusProblem": "Impossible de joindre votre serveur",
+  "syncSettings": "Synchroniser les paramètres entre les appareils",
+  "syncSettingsExtras": "Synchroniser aussi",
+  "syncSettingsIncludeRmab": "Paramètres ReadMeABook",
+  "syncSettingsIncludeRmabSub": "Insère votre jeton d'API ReadMeABook dans le fichier synchronisé",
+  "syncSettingsSubtitle": "Synchronisez vos paramètres via votre propre serveur WebDAV",
+  "syncSettingsEnable": "Synchroniser les paramètres",
+  "syncSettingsServerUrl": "URL du dossier WebDAV",
+  "syncSettingsServerUrlHint": "https://cloud.example.com/remote.php/dav/files/you/Absorb",
+  "syncSettingsUsername": "Utilisateur",
+  "syncSettingsPassword": "Mot de passe",
+  "syncSettingsHeaders": "En-têtes personnalisés (facultatifs)",
+  "syncSettingsHeadersHint": "Un par ligne, tel que CF-Access-Client-Id:abc123",
+  "syncSettingsTest": "Tester la connexion",
+  "syncSettingsHoldToUpload": "Maintenir pour téléverser",
+  "syncSettingsUploadNow": "Téléverser",
+  "syncSettingsDownloadNow": "Télécharger",
+  "syncSettingsOk": "Connecté",
+  "syncSettingsNoRemote": "Connecté - rien n'est encore synchronisé",
+  "syncSettingsAuthFailed": "Utilisateur ou mot de passe incorrect",
+  "syncSettingsNetworkError": "Impossible de joindre cette adresse",
+  "syncSettingsNotConfigured": "Veuillez d'abord renseigner l'adresse, le nom d'utilisateur et le mot de passe",
+  "syncSettingsTooLarge": "Vos paramètres sont trop volumineux pour être synchronisés",
+  "syncSettingsUploaded": "Paramètres téléversés",
+  "syncSettingsApplied": "Paramètres mis à jour depuis votre autre appareil",
+  "syncSettingsUpToDate": "À jour",
+  "syncSettingsLastSynced": "Dernière synchronisation {when}",
+  "@syncSettingsLastSynced": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "syncSettingsNever": "Pas encore synchronisé",
+  "syncSourceTitle": "Quelle copie la synchronisation doit-elle conserver ?",
+  "syncSourceUseServer": "Dernière synchronisation du serveur",
+  "syncSourceUseBackup": "Cette sauvegarde",
+  "syncSettingsWhatTravels": "Vos préférences, vitesse de lecture par livre, page d'accueil, ordre de lecture, notes et signets d'ebook sont inclus. Les identifiants, les dossiers de téléchargement, les options de téléchargement automatique, la vue du lecteur et tout ce qui n'a pas encore été envoyé à votre serveur restent sur cet appareil.",
+  "syncSettingsDownloadWarnTitle": "Remplacer les paramètres de cet appareil ?",
+  "syncSettingsDownloadWarnBody": "La copie synchronisée écrasera les paramètres de cet appareil.",
+  "syncSettingsDownloadWarnConfirm": "Remplacer",
+  "findInAudiobookGoPlayer": "Ouvrir le lecteur",
+  "comicBookmarkRemoveFailed": "Impossible de supprimer le signet du serveur. Réessayez lorsque vous êtes connecté."
 }

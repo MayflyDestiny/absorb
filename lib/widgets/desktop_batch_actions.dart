@@ -246,7 +246,7 @@ class DesktopBatchActions {
       l.adminMatchingStarted(l.selectedCount(itemIds.length)),
       icon: Icons.auto_fix_high_rounded,
     );
-    final ({int matched, int failed}) result;
+    final ({int matched, int failed, int running}) result;
     try {
       result = await api.quickMatchBooks(
         itemIds,

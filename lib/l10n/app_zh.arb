@@ -1385,7 +1385,7 @@
   "autoDownloadPodcastContent": "边听边自动下载后续剧集。",
   "download": "下载",
   "downloadConfirmTitle": "确认下载",
-  "downloadConfirmContent": "将\u201c{title}\u201d下载到本机？",
+  "downloadConfirmContent": "将“{title}”下载到本机？",
   "@downloadConfirmContent": {
     "placeholders": {
       "title": {
@@ -1834,7 +1834,7 @@
   "librarySortFilterUpcomingReleases": "即将发布",
   "librarySortFilterUpcomingReleasesSubtitle": "Audible 中检查系列新书",
   "tipsSheetSpeedAdjustedTimeDesc": "剩余时间和章节时长会根据你的播放速度自动调整。用 1.5×倍播放？界面显示的时间就是你实际需要的时长。",
-  "loginRestoreFromBackup": "从备份恢复",
+  "loginRestoreFromBackup": "导入",
   "chapterProgressInNotification": "通知中显示章节进度",
   "chapterProgressOnSubtitle": "开启 - 锁屏显示章节进度",
   "chapterProgressOffSubtitle": "关闭 - 锁屏显示全书进度",
@@ -3343,7 +3343,6 @@
   "srvSaved": "设置已保存",
   "srvSaveFailed": "无法保存设置",
   "srvPrefixesSaved": "排序前缀已更新",
-
   "authSetLoadFailed": "无法加载身份验证设置",
   "authSetCustomMessage": "登录页自定义消息",
   "authSetMessage": "消息",
@@ -3590,7 +3589,9 @@
   "readerHideControlsAfter": "{seconds}秒",
   "@readerHideControlsAfter": {
     "placeholders": {
-      "seconds": {"type": "int"}
+      "seconds": {
+        "type": "int"
+      }
     }
   },
   "playerDownloadStreamingInstead": "此下载无法直接播放，正在从服务器流式传输。重新下载一次可能解决。",
@@ -3787,28 +3788,36 @@
   "timeRemaining": "剩余 {duration}",
   "@timeRemaining": {
     "placeholders": {
-      "duration": {"type": "String"}
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "historyEventResumed": "继续播放",
   "historyEventResumedDetail": "继续播放（{detail}）",
   "@historyEventResumedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventPaused": "暂停",
   "historyEventPausedDetail": "暂停（{detail}）",
   "@historyEventPausedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSeeked": "跳转",
   "historyEventSeekedDetail": "跳转到 {detail}",
   "@historyEventSeekedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSyncLocal": "保存到本地",
@@ -3817,28 +3826,36 @@
   "historyEventAutoRewoundDetail": "自动回退 {detail}",
   "@historyEventAutoRewoundDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipForward": "快进",
   "historyEventSkipForwardDetail": "快进 {detail}",
   "@historyEventSkipForwardDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSkipBack": "快退",
   "historyEventSkipBackDetail": "快退 {detail}",
   "@historyEventSkipBackDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSpeedChanged": "语速已调整",
   "historyEventSpeedSetTo": "语速 {detail}",
   "@historyEventSpeedSetTo": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventBookFinished": "整本听完",
@@ -3846,52 +3863,70 @@
   "historyEventSessionStartedDetail": "播放会话开始（{detail}）",
   "@historyEventSessionStartedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventSessionEnded": "播放会话结束",
   "historyEventSessionEndedDetail": "播放会话结束（{detail}）",
   "@historyEventSessionEndedDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventMediaButton": "媒体按钮",
   "historyEventMediaButtonDetail": "媒体按钮: {detail}",
   "@historyEventMediaButtonDetail": {
     "placeholders": {
-      "detail": {"type": "String"}
+      "detail": {
+        "type": "String"
+      }
     }
   },
   "historyEventRebuiltPlay": "已重建播放（{reason}）",
   "@historyEventRebuiltPlay": {
     "placeholders": {
-      "reason": {"type": "String"}
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "historyEventRebuiltPlayDetail": "已重建播放（{base}；{reason}）",
   "@historyEventRebuiltPlayDetail": {
     "placeholders": {
-      "base": {"type": "String"},
-      "reason": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
     }
   },
   "historySeconds": "{value}秒",
   "@historySeconds": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyMinutes": "{value}分钟",
   "@historyMinutes": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historySpeed": "{value}倍速",
   "@historySpeed": {
     "placeholders": {
-      "value": {"type": "String"}
+      "value": {
+        "type": "String"
+      }
     }
   },
   "historyDetailStream": "流式播放",
@@ -3903,13 +3938,17 @@
   "historyDetailNextChapterToIntroSkip": "跳到下一章 {position}（跳过片头）",
   "@historyDetailNextChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrevChapterToIntroSkip": "跳到上一章 {position}（跳过片头）",
   "@historyDetailPrevChapterToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipChapterIntro": "跳过章节片头",
@@ -3929,21 +3968,29 @@
   "historyDetailPrevChapterDirectToIntroSkip": "跳转到上一章（直跳）{position}（跳过片头）",
   "@historyDetailPrevChapterDirectToIntroSkip": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailChapterToIntroSkip": "跳到{chapter} {position}（跳过片头）",
   "@historyDetailChapterToIntroSkip": {
     "placeholders": {
-      "chapter": {"type": "String"},
-      "position": {"type": "String"}
+      "chapter": {
+        "type": "String"
+      },
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailEngineAnchoredSnap": "回到本章开头（引擎锚定）",
   "historyDetailEngineAnchoredAmount": "{amount}（引擎锚定）",
   "@historyDetailEngineAnchoredAmount": {
     "placeholders": {
-      "amount": {"type": "String"}
+      "amount": {
+        "type": "String"
+      }
     }
   },
   "historyDetailCrossToNextChapterIntroSkip": "跳到下一章（应用片头跳过）",
@@ -3953,13 +4000,17 @@
   "historyDetailRestartDownloadBoundary": "从{chapter}重新开始（下载边界）",
   "@historyDetailRestartDownloadBoundary": {
     "placeholders": {
-      "chapter": {"type": "String"}
+      "chapter": {
+        "type": "String"
+      }
     }
   },
   "historyDetailAdoptedServerPosition": "恢复前采用服务器位置 {position}",
   "@historyDetailAdoptedServerPosition": {
     "placeholders": {
-      "position": {"type": "String"}
+      "position": {
+        "type": "String"
+      }
     }
   },
   "historyDetailPrewarmUnused": "预热的会话未使用",
@@ -3980,45 +4031,73 @@
   "historyDetailRewindAtSpeed": "{base}（{speed}，对应 {adjusted}）",
   "@historyDetailRewindAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStart": "{base}（会话开始）",
   "@historyDetailRewindSessionStart": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSessionStartAtSpeed": "{base}（{speed}，对应 {adjusted}，会话开始）",
   "@historyDetailRewindSessionStartAtSpeed": {
     "placeholders": {
-      "base": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "base": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailRewindSleepTimer": "{base}（睡眠定时器）",
   "@historyDetailRewindSleepTimer": {
     "placeholders": {
-      "base": {"type": "String"}
+      "base": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipForwardAtSpeed": "{seconds}（{speed}，对应 {adjusted}）",
   "@historyDetailSkipForwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "historyDetailSkipBackwardAtSpeed": "{seconds}（{speed}，对应 {adjusted}）",
   "@historyDetailSkipBackwardAtSpeed": {
     "placeholders": {
-      "seconds": {"type": "String"},
-      "adjusted": {"type": "String"},
-      "speed": {"type": "String"}
+      "seconds": {
+        "type": "String"
+      },
+      "adjusted": {
+        "type": "String"
+      },
+      "speed": {
+        "type": "String"
+      }
     }
   },
   "playerErrorConnect": "连接不上服务器，请检查网络后重试",
@@ -4031,14 +4110,18 @@
   "playerErrorGeneric": "播放失败：{error}",
   "@playerErrorGeneric": {
     "placeholders": {
-      "error": {"type": "String"}
+      "error": {
+        "type": "String"
+      }
     }
   },
   "whatsNewTitle": "Absorb 已更新",
   "whatsNewContent": "你当前使用的是 {version}。",
   "@whatsNewContent": {
     "placeholders": {
-      "version": {"type": "String"}
+      "version": {
+        "type": "String"
+      }
     }
   },
   "whatsNewSeeFull": "查看完整更新日志",
@@ -4049,7 +4132,9 @@
   "signedOutDownloadsNote": "你已退出登录。在这里收听的内容，会在重新用 {username} 登录后同步过去。",
   "@signedOutDownloadsNote": {
     "placeholders": {
-      "username": {"type": "String"}
+      "username": {
+        "type": "String"
+      }
     }
   },
   "downloadsEbooks": "电子书",
@@ -4118,7 +4203,11 @@
   "androidAutoCatPlaylists": "播放列表",
   "chapterWindowMinutes": "{minutes} 分钟",
   "@chapterWindowMinutes": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "chapterLoopCut": "循环播放剪辑",
   "chapterFindStart": "查找章节开头",
@@ -4130,17 +4219,32 @@
   "chapterFindStartMaybe": "有类似章节开头的措辞",
   "chapterFindStartGap": "{seconds} 秒间隔",
   "@chapterFindStartGap": {
-    "placeholders": { "seconds": { "type": "String" } }
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
   },
   "chapterFindStartRange": "已搜索 {from} 至 {to}",
   "@chapterFindStartRange": {
-    "placeholders": { "from": { "type": "String" }, "to": { "type": "String" } }
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
   },
   "chapterFindStartNeedsModel": "请先在设置中开启转录并下载模型",
   "chapterFindStartUseThis": "使用这里",
   "chapterFindStartTitle": "标题：{title}",
   "@chapterFindStartTitle": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "readerKeepAwake": "保持屏幕常亮",
   "readerKeepAwakeHint": "按自己的节奏阅读时避免屏幕超时熄灭。自动滚动和朗读跟随会始终保持屏幕常亮。",
@@ -4149,15 +4253,27 @@
   "readerAutoScrollSleepHint": "一段时间后停止滚动并让屏幕熄灭。",
   "readerAutoScrollSleepMinutes": "{minutes} 分钟",
   "@readerAutoScrollSleepMinutes": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "readerAutoScrollSleepLeft": "剩余 {minutes} 分钟",
   "@readerAutoScrollSleepLeft": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "readerAutoScrollSleepIn": "自动滚动将在 {minutes} 分钟后停止",
   "@readerAutoScrollSleepIn": {
-    "placeholders": { "minutes": { "type": "int" } }
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "readerAutoScrollSleepOff": "自动滚动睡眠定时已关闭",
   "readerAutoScrollSleepEnded": "睡眠定时到 - 自动滚动已关闭",
@@ -4165,16 +4281,28 @@
   "detailChaptersJumpTitle": "跳转到本章节？",
   "detailChaptersJumpContent": "播放将跳转到 \"{title}\"。",
   "@detailChaptersJumpContent": {
-    "placeholders": { "title": { "type": "String" } }
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
   },
   "detailChaptersJump": "跳转",
   "detailChaptersFinished": "{count, plural, =1{已听完 1 个章节} other{已听完 {count} 个章节}}",
   "@detailChaptersFinished": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "detailOtherListeners": "{count, plural, =0{没有其他听众} =1{1 位其他听众} other{{count} 位其他听众}}",
   "@detailOtherListeners": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "seriesUpNext": "接下来",
   "seriesJumpToUpNext": "跳到下一部",
@@ -4183,12 +4311,23 @@
   "seriesStatsLeft": "剩余",
   "seriesFinishedOf": "{done} / {total}",
   "@seriesFinishedOf": {
-    "placeholders": { "done": { "type": "int" }, "total": { "type": "int" } }
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
   },
   "detailSessionsNone": "还没有收听会话",
   "detailSessionsAll": "全部 {count} 次会话",
   "@detailSessionsAll": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "catchUpAudioAhead": "有声书进度更靠前，点按跳过去。",
   "catchUpPageAhead": "当前页比有声书进度靠前，点按让有声书跳到这里。",
@@ -5481,32 +5620,101 @@
   "boApiKeyErrorScope": "该密钥申请的权限超出了其所属用户的权限",
   "boApiKeyExpiredBadge": "已过期",
   "boApiKeyExpiredOn": "已于 {date} 过期",
-  "@boApiKeyExpiredOn": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyExpiredOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyExpires": "到期时间",
   "boApiKeyExpiresOn": "将于 {date} 到期",
-  "@boApiKeyExpiresOn": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyExpiresOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyExpiresSoon": "即将于 {date} 到期",
-  "@boApiKeyExpiresSoon": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyExpiresSoon": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyExpiringBadge": "即将到期",
   "boApiKeyExpiryCapped": "本服务器的密钥有效期上限为 {count} 天。",
-  "@boApiKeyExpiryCapped": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyExpiryCapped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyExpiryDays": "{count} 天",
-  "@boApiKeyExpiryDays": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyExpiryDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyExpiryNever": "永不",
   "boApiKeyIssue": "签发密钥",
   "boApiKeyIssueFor": "为 {name} 签发密钥",
-  "@boApiKeyIssueFor": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyIssueFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyIssuedBy": "由 {name} 签发",
-  "@boApiKeyIssuedBy": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyIssuedBy": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLastUsed": "最后使用于 {date}",
-  "@boApiKeyLastUsed": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyLastUsed": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLastUsedFrom": "最后于 {date} 从 {ip} 使用",
-  "@boApiKeyLastUsedFrom": {"placeholders": {"date": {"type": "String"}, "ip": {"type": "String"}}},
+  "@boApiKeyLastUsedFrom": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "ip": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLibraries": "媒体库",
   "boApiKeyLibrariesOnly": "仅 {names}",
-  "@boApiKeyLibrariesOnly": {"placeholders": {"names": {"type": "String"}}},
+  "@boApiKeyLibrariesOnly": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLinkFor": "{name} 的登录链接",
-  "@boApiKeyLinkFor": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyLinkFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyLinkName": "Absorb 登录",
   "boApiKeyName": "名称",
   "boApiKeyNameHint": "这个密钥用来做什么？",
@@ -5517,7 +5725,13 @@
   "boApiKeyPermissionsHint": "选择密钥可用的权限。全部不选时，仍可读取媒体库和个人数据。",
   "boApiKeyRegenerate": "重新生成",
   "boApiKeyRegenerateBody": "「{name}」将获得新密钥，旧密钥立即失效。所有使用旧密钥的地方都需要更新。",
-  "@boApiKeyRegenerateBody": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyRegenerateBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyRegenerateTitle": "重新生成此密钥？",
   "boApiKeyRename": "重命名",
   "boApiKeyRevealHint": "请立即复制或发送到其他设备，之后将不再显示。",
@@ -5525,21 +5739,51 @@
   "boApiKeyRevoke": "撤销",
   "boApiKeyRevokeAll": "全部撤销",
   "boApiKeyRevokeAllBody": "{count} 个密钥将立即失效，所有使用它们的会话都会被登出。",
-  "@boApiKeyRevokeAllBody": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyRevokeAllBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyRevokeAllTitle": "撤销所有密钥？",
   "boApiKeyRevokeBody": "「{name}」将立即失效，所有使用它的会话都会被登出。",
-  "@boApiKeyRevokeBody": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyRevokeBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyRevokeTitle": "撤销此密钥？",
   "boApiKeyRevoked": "密钥已撤销",
   "boApiKeyRevokedBadge": "已撤销",
   "boApiKeyRevokedCount": "已撤销 {count} 个密钥",
-  "@boApiKeyRevokedCount": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeyRevokedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeyRevokedOn": "撤销于 {date}",
-  "@boApiKeyRevokedOn": {"placeholders": {"date": {"type": "String"}}},
+  "@boApiKeyRevokedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeySettingsCustom": "自定义",
   "boApiKeySettingsCustomDays": "天",
   "boApiKeySettingsCustomRange": "介于 1 到 {max} 天之间",
-  "@boApiKeySettingsCustomRange": {"placeholders": {"max": {"type": "int"}}},
+  "@boApiKeySettingsCustomRange": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeySettingsEnabled": "允许 API 密钥",
   "boApiKeySettingsEnabledHint": "关闭后会拒绝所有密钥但不撤销任何一个，同时禁止新建",
   "boApiKeySettingsIntro": "这些设置适用于服务器上的所有密钥。",
@@ -5548,19 +5792,49 @@
   "boApiKeySettingsNoLimit": "无限制",
   "boApiKeySettingsSaved": "API 密钥设置已保存",
   "boApiKeyShareDescription": "在另一台设备上打开此链接或扫描二维码，即可使用此密钥以 {username} 的身份登录 Absorb。",
-  "@boApiKeyShareDescription": {"placeholders": {"username": {"type": "String"}}},
+  "@boApiKeyShareDescription": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeyShareWarning": "任何持有此链接的人都可以使用密钥「{name}」，直到它被撤销。",
-  "@boApiKeyShareWarning": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeyShareWarning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeySignInElsewhere": "在其他设备登录",
   "boApiKeysDisabled": "此服务器已关闭 API 密钥功能",
   "boApiKeysEmpty": "还没有 API 密钥",
   "boApiKeysForUser": "{name} 的 API 密钥",
-  "@boApiKeysForUser": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeysForUser": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeysIntro": "密钥可用于脚本或另一个 Absorb，无需密码即可登录。它的权限不会超过您本人，还可以进一步收窄。",
   "boApiKeysIntroAdmin": "密钥可让 {name} 无需密码即可登录，权限不会超过其本人，并以其身份运行。",
-  "@boApiKeysIntroAdmin": {"placeholders": {"name": {"type": "String"}}},
+  "@boApiKeysIntroAdmin": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "boApiKeysLimit": "每人最多可有 {count} 个有效密钥。请先撤销一个。",
-  "@boApiKeysLimit": {"placeholders": {"count": {"type": "int"}}},
+  "@boApiKeysLimit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "boApiKeysNoPermission": "您的账号无权创建 API 密钥。可由管理员授予权限，或由其代您签发。",
   "boApiKeysTitle": "API 密钥",
   "boPermApiKeys": "创建 API 密钥",
@@ -5583,7 +5857,13 @@
   "readerSentenceTransitionBurst": "闪现",
   "readerSentenceTransitionFade": "淡入淡出",
   "readerSentenceWpmValue": "每分钟 {wpm} 词",
-  "@readerSentenceWpmValue": {"placeholders": {"wpm": {"type": "int"}}},
+  "@readerSentenceWpmValue": {
+    "placeholders": {
+      "wpm": {
+        "type": "int"
+      }
+    }
+  },
   "readerSentencesAtATime": "每次显示句数",
   "readerTapZonesCardBottom": "移至底部",
   "readerTapZonesCardHide": "收起卡片",
@@ -5591,5 +5871,73 @@
   "readerTapZonesCardTop": "移至顶部",
   "settingsOpenStats": "打开统计",
   "settingsStatsTab": "统计标签页",
-  "settingsStatsTabDesc": "在底部栏保留统计入口；关闭后可为小屏幕腾出更多空间"
+  "settingsStatsTabDesc": "在底部栏保留统计入口；关闭后可为小屏幕腾出更多空间",
+  "@adminSetupFileSaved": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "@libraryNoBooksWithTag": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
+  "@statsRemoveFromYearWithDate": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "@statsRemoveFromYearNoDate": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "@statsAddBackToYearBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "@statsBooksShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "startMinTimer": "启动 {minutes} 分钟定时器",
+  "@startMinTimer": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "appIconLabel": "应用图标",
+  "appIconClassic": "经典",
+  "appIconAurora": "极光",
+  "appIconLight": "浅色",
+  "appIconTeal": "青色",
+  "appIconBlue": "蓝色",
+  "appIconSky": "天蓝",
+  "appIconPurple": "紫色",
+  "appIconPink": "粉色",
+  "appIconRed": "红色",
+  "appIconOrange": "橙色",
+  "appIconYellow": "黄色",
+  "appIconGreen": "绿色",
+  "appIconFailed": "无法更换应用图标",
+  "appIconAndroidNote": "桌面启动器可能需要一点时间才显示新图标，桌面上的 Absorb 快捷方式可能需要重新添加。"
 }

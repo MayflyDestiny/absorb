@@ -55,6 +55,7 @@ import '../services/api_service.dart';
 import '../screens/downloads_screen.dart';
 import '../screens/bookmarks_screen.dart';
 import '../screens/backup_sync_screen.dart';
+import '../services/app_icon_service.dart';
 import '../services/settings_sync_service.dart';
 import '../screens/change_password_screen.dart';
 import '../screens/auth_sessions_screen.dart';
@@ -65,6 +66,7 @@ import '../utils/share_origin.dart';
 import '../widgets/settings_search.dart';
 import 'settings_search_index.dart';
 import '../widgets/absorb_page_header.dart';
+import '../widgets/app_icon_picker.dart';
 import '../widgets/theme_presets.dart';
 import '../widgets/color_wheel_picker.dart';
 import '../widgets/absorb_slider.dart';
@@ -462,6 +464,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    AppIconService.load();
     _localServerController = TextEditingController();
     _loadSettings();
     _loadBookRequests();
@@ -3893,6 +3896,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
+                            if (AppIconService.supported)
+                              InkWell(
+                                onTap: () => showAppIconPicker(context),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(l.appIconLabel,
+                                            style: tt.titleSmall),
+                                      ),
+                                      ValueListenableBuilder<String>(
+                                        valueListenable: AppIconService.current,
+                                        builder: (context, id, _) => Row(
+                                          children: [
+                                            Text(appIconName(l, id),
+                                                style: tt.bodyMedium?.copyWith(
+                                                    color:
+                                                        cs.onSurfaceVariant)),
+                                            const SizedBox(width: 8),
+                                            AppIconPreview(
+                                                option: appIconOption(id),
+                                                size: 28),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(Icons.chevron_right_rounded,
+                                          color: cs.onSurfaceVariant
+                                              .withValues(alpha: 0.5)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            if (AppIconService.supported)
+                              const Divider(
+                                  height: 1, indent: 16, endIndent: 16),
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                               child: Column(
