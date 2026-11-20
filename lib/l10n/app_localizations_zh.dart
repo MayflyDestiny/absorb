@@ -420,7 +420,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginSsoAuthFailed => '单点登录认证失败，请重试。';
 
   @override
-  String get loginRestoreFromBackup => '导入';
+  String get loginRestoreFromBackup => '从备份恢复';
 
   @override
   String get loginInvalidBackupFile => '无效的备份文件';

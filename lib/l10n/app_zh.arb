@@ -1834,7 +1834,7 @@
   "librarySortFilterUpcomingReleases": "即将发布",
   "librarySortFilterUpcomingReleasesSubtitle": "Audible 中检查系列新书",
   "tipsSheetSpeedAdjustedTimeDesc": "剩余时间和章节时长会根据你的播放速度自动调整。用 1.5×倍播放？界面显示的时间就是你实际需要的时长。",
-  "loginRestoreFromBackup": "导入",
+  "loginRestoreFromBackup": "从备份恢复",
   "chapterProgressInNotification": "通知中显示章节进度",
   "chapterProgressOnSubtitle": "开启 - 锁屏显示章节进度",
   "chapterProgressOffSubtitle": "关闭 - 锁屏显示全书进度",
