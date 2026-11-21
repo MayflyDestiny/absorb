@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../providers/library_provider.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/ebook_cache.dart';
 import '../services/image_epub.dart';
-import '../services/narration_service.dart';
+import '../services/offline_source.dart';
 import '../services/server_backend.dart';
 import 'comic_reader_view.dart';
 import 'ebook_reader_view.dart';
@@ -157,7 +159,11 @@ class _EpubGateState extends State<_EpubGate> {
     File? imageEpub;
     try {
       final api = context.read<AuthProvider>().apiService;
-      if (api is BookOrbitApiService) {
+      // Offline, the read-along copy's lookup can only wait out its timeout -
+      // and its fallback (the last fetched details) is exactly what it would
+      // end up using anyway.
+      final offline = context.read<LibraryProvider>().isOffline;
+      if (api is BookOrbitApiService && !offline) {
         final readAlong = await api.readAlongReaderFile(widget.itemId);
         if (readAlong != null && readAlong['ino'] != widget.ebookFile['ino']) {
           debugPrint('[EbookRouter] ${widget.itemId}: opening the read along EPUB ${readAlong['ino']} '
@@ -165,13 +171,28 @@ class _EpubGateState extends State<_EpubGate> {
           _ebookFile = readAlong;
         }
       }
-      if (api != null) {
-        final file = await NarrationService.instance
-            .readerFile(api, widget.itemId, _ebookFile, widget.title);
-        final pages = await imageEpubPageCount(file);
+      // The image-book check needs a real file, and a book with no local copy
+      // must not be pulled down just for it - the EPUB reader streams such a
+      // book instead, and this check runs once a copy exists. A content-URI
+      // export is skipped too: its descriptor is opened (and owned) by the
+      // source resolver, so only a plain-path export counts here.
+      final cached = await ebookCacheFileFor(widget.itemId, _ebookFile);
+      File? localFile;
+      if (cached.existsSync() && await cached.length() > 0) {
+        localFile = cached;
+      } else {
+        final refs = await DownloadService().savedEbookVersionRefs(widget.itemId);
+        final uri = refs[ebookVersionKey(_ebookFile)]?.uri;
+        if (uri != null && !isContentUri(uri)) {
+          final f = File(uri);
+          if (f.existsSync() && await f.length() > 0) localFile = f;
+        }
+      }
+      if (api != null && localFile != null) {
+        final pages = await imageEpubPageCount(localFile);
         if (pages > 0) {
           debugPrint('[EbookRouter] ${widget.itemId} is $pages page pictures - opening as a comic');
-          imageEpub = file;
+          imageEpub = localFile;
         }
       }
     } catch (e) {

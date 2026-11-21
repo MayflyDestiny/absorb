@@ -702,7 +702,13 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
           // Server item is in: the eBook pills can fade in via the grid's
           // trailing dynamic section on the rebuild this block triggers.
 
-          // Fetch Audible rating
+          // Fetch Audible rating, unless the stars are switched off in
+          // Settings; then nothing is looked up or shown. BookOrbit sends its
+          // ratings with the book, so the switch is ABS only.
+          if (!api.isBookOrbit &&
+              !await PlayerSettings.getShowAudibleRating()) {
+            return;
+          }
           final media = finalItem['media'] as Map<String, dynamic>? ?? {};
           final metadata = media['metadata'] as Map<String, dynamic>? ?? {};
           final asin = metadata['asin'] as String?;
@@ -3813,7 +3819,11 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
     final hasSafExportFolder =
         dl.customDownloadUri != null && dl.customDownloadUri!.isNotEmpty;
 
-    final confirmed = await showDialog<bool>(
+    final apiForNarration = auth.apiService;
+    final narrated = apiForNarration != null &&
+        NarrationService.instance.isNarratedEpub(
+            apiForNarration, widget.itemId, ebookFile);
+    final choice = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final sizeBytes = ebookFileSize(ebookFile);
@@ -3823,8 +3833,10 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(l.ebookSaveToDeviceBody),
-              if (sizeBytes != null && sizeBytes > 0) ...[
+              Text(narrated
+                  ? l.ebookSaveNarratedBody
+                  : l.ebookSaveToDeviceBody),
+              if (!narrated && sizeBytes != null && sizeBytes > 0) ...[
                 const SizedBox(height: 12),
                 Row(children: [
                   Icon(Icons.storage_rounded, size: 16,
@@ -3837,13 +3849,26 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.cancel)),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.ebookSaveToDevice)),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(l.cancel)),
+            if (narrated) ...[
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, 'full'),
+                  child: Text(l.ebookSaveWithNarration)),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, 'text'),
+                  child: Text(l.ebookSaveTextOnly)),
+            ] else
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, 'full'),
+                  child: Text(l.ebookSaveToDevice)),
           ],
         );
       },
     );
-    if (confirmed != true) return;
+    if (choice == null) return;
+    final textOnly = choice == 'text';
 
     setState(() => _ebookSaving = true);
 
@@ -3873,7 +3898,7 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       // missing. The legacy ASCII-only '\w' scrub would strip CJK titles to
       // nothing and produce a bare ".epub".
       final rawName = ebookName.trim();
-      final exportName = rawName.isNotEmpty &&
+      var exportName = rawName.isNotEmpty &&
               !rawName.contains('/') && !rawName.contains('\\')
           ? rawName
           : (() {
@@ -3882,17 +3907,28 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
                   .trim();
               return cleanTitle.isEmpty ? 'book.epub' : '$cleanTitle$ext';
             })();
+      if (textOnly) {
+        final dot = exportName.lastIndexOf('.');
+        exportName = dot > 0
+            ? '${exportName.substring(0, dot)} - Text Only${exportName.substring(dot)}'
+            : '$exportName - Text Only';
+      }
 
       // Reuse the reader's offline cache when this book's ebook is already on
       // the device: exporting a cached book must not hit the network. The cache
       // is keyed by itemId + format (ebookCacheFileFor derives the same
       // extension this export would write), so a hit is the exact file.
+      // A text-only copy is generated separately and never reuses the full file.
       final readerCache = await ebookCacheFileFor(widget.itemId, ebookFile);
       final cacheDir = await getTemporaryDirectory();
       final cachedFile = File('${cacheDir.path}/$exportName');
-      final sourceFile = readerCache.existsSync() ? readerCache : cachedFile;
+      final sourceFile =
+          textOnly ? cachedFile : (readerCache.existsSync() ? readerCache : cachedFile);
 
-      if (!sourceFile.existsSync()) {
+      if (textOnly && !cachedFile.existsSync()) {
+        await NarrationService.instance
+            .writeTextOnlyCopy(api, widget.itemId, ebookFile, cachedFile);
+      } else if (!sourceFile.existsSync()) {
         final cleanBase = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
         final url = api.isBookOrbit
             ? api.buildEbookUrl(widget.itemId, ino)

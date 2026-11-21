@@ -365,9 +365,16 @@ class NarrationService {
     Map<String, dynamic> ebookFile,
     String title, {
     bool wholeFallback = true,
+    bool offline = false,
   }) async {
     final cached = await ebookCacheFileFor(itemId, ebookFile);
-    if (cached.existsSync() && cached.lengthSync() > 0 && !await cachedEbookIsCurrent(cached, ebookFile)) {
+    // Offline, a stale version is kept as-is: the check for a fresh server
+    // copy happens the next time the app is online. The version comparison
+    // itself is a local file, only the refetch is skipped.
+    if (!offline &&
+        cached.existsSync() &&
+        cached.lengthSync() > 0 &&
+        !await cachedEbookIsCurrent(cached, ebookFile)) {
       // The server rewrote the book (BookOrbit writing metadata back, a file
       // replaced). Fetch the new one, keeping the old copy if that fails.
       final old = File('${cached.path}.old');
@@ -387,7 +394,7 @@ class NarrationService {
       }
     }
     if (cached.existsSync() && cached.lengthSync() > 0) {
-      if (_slimFailed.contains(itemId) || !await _cachedWithAudio(api, itemId, ebookFile, cached)) {
+      if (_slimFailed.contains(itemId) || !await _copyWithAudio(api, itemId, ebookFile, cached.lengthSync())) {
         debugPrint('[EbookCache] cache hit item=$itemId bytes=${cached.lengthSync()}');
         return cached;
       }
@@ -410,21 +417,35 @@ class NarrationService {
         return cached;
       }
     }
+    // Nothing in the reader cache. An exported copy (custom folder / SAF)
+    // still counts as the book being on the phone: hand that back rather than
+    // hitting the server, so opening a downloaded book works offline and never
+    // waits on transfers that can only fail out here. A narrated book's export
+    // keeps its audio inside - that one still wants the slim server copy.
+    final exported = await resolveLocalEbookSource(itemId, ebookFile, needFile: true);
+    final exportedFile = exported?.file;
+    if (exportedFile != null &&
+        !await _copyWithAudio(api, itemId, ebookFile, exportedFile.lengthSync())) {
+      debugPrint('[EbookCache] $itemId opens from its exported copy '
+          '(${exportedFile.lengthSync()} bytes)');
+      return exportedFile;
+    }
+    // Offline, callers have already checked a copy exists on the device: a
+    // stale version is kept as-is and no server attempt is made.
     final fresh = await _freshReaderFile(api, itemId, ebookFile, title, cached, wholeFallback: wholeFallback);
     await rememberEbookVersion(fresh, ebookFile);
     return fresh;
   }
 
-  /// A cached EPUB that still holds the narration: big, the book reads
-  /// itself aloud, and the copy is about the size of the server's file.
-  Future<bool> _cachedWithAudio(
+  /// Whether a copy this big is a narrated book's EPUB with its audio still
+  /// inside: heavy, and the reader wants the slim server copy instead.
+  Future<bool> _copyWithAudio(
     ApiService api,
     String itemId,
     Map<String, dynamic> ebookFile,
-    File cached,
+    int length,
   ) async {
     if (ebookExtFromFile(ebookFile) != '.epub') return false;
-    final length = cached.lengthSync();
     if (length < 50 * 1024 * 1024) return false;
     final narrated =
         api.isBookOrbit ? _bookOrbitNarrated(api, itemId, ebookFile) : await knownNarrated(itemId) == true;

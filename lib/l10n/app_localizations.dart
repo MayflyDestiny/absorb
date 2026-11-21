@@ -18443,12 +18443,6 @@ abstract class AppLocalizations {
   /// **'Longest finished'**
   String get statsYirLongestFinished;
 
-  /// No description provided for @removeFromNowPlaying.
-  ///
-  /// In en, this message translates to:
-  /// **'Remove from Now Playing'**
-  String get removeFromNowPlaying;
-
   /// No description provided for @speedPresetsHint.
   ///
   /// In en, this message translates to:
@@ -18616,6 +18610,240 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Using \"Absorb\", \"Absorbing\", \"Fully Absorbed\"'**
   String get wordingClassicOffSubtitle;
+
+  /// No description provided for @classicAbsorb.
+  ///
+  /// In en, this message translates to:
+  /// **'Play'**
+  String get classicAbsorb;
+
+  /// No description provided for @classicAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Playing...'**
+  String get classicAbsorbing;
+
+  /// No description provided for @classicAbsorbAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Play Again'**
+  String get classicAbsorbAgain;
+
+  /// No description provided for @classicDownloadToAbsorb.
+  ///
+  /// In en, this message translates to:
+  /// **'Download to Play'**
+  String get classicDownloadToAbsorb;
+
+  /// No description provided for @classicFullyAbsorbed.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished'**
+  String get classicFullyAbsorbed;
+
+  /// No description provided for @classicFullyAbsorbAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark Finished'**
+  String get classicFullyAbsorbAction;
+
+  /// No description provided for @classicAddToAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to Now Playing'**
+  String get classicAddToAbsorbing;
+
+  /// No description provided for @classicAbsorbNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Play Next'**
+  String get classicAbsorbNext;
+
+  /// No description provided for @classicAbsorbLast.
+  ///
+  /// In en, this message translates to:
+  /// **'Play Last'**
+  String get classicAbsorbLast;
+
+  /// No description provided for @classicAbsorbNextAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Up next in Now Playing'**
+  String get classicAbsorbNextAdded;
+
+  /// No description provided for @classicRemoveFromAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Now Playing'**
+  String get classicRemoveFromAbsorbing;
+
+  /// No description provided for @classicAddedToAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Added to Now Playing'**
+  String get classicAddedToAbsorbing;
+
+  /// No description provided for @classicRemovedFromAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from Now Playing'**
+  String get classicRemovedFromAbsorbing;
+
+  /// No description provided for @classicEpisodeListAddedToAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Added \"{title}\" to Now Playing'**
+  String classicEpisodeListAddedToAbsorbing(String title);
+
+  /// No description provided for @classicPlaylistDetailAddedToAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Added \"{title}\" to Now Playing'**
+  String classicPlaylistDetailAddedToAbsorbing(String title);
+
+  /// No description provided for @classicCollectionDetailAddedToAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Added \"{title}\" to Now Playing'**
+  String classicCollectionDetailAddedToAbsorbing(String title);
+
+  /// No description provided for @classicSectionDetailAddedToAbsorbing.
+  ///
+  /// In en, this message translates to:
+  /// **'Added \"{title}\" to Now Playing'**
+  String classicSectionDetailAddedToAbsorbing(String title);
+
+  /// No description provided for @classicAbsorbingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Now Playing'**
+  String get classicAbsorbingTitle;
+
+  /// No description provided for @classicAppShellAbsorbingTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Now Playing'**
+  String get classicAppShellAbsorbingTab;
+
+  /// No description provided for @classicStartScreenAbsorb.
+  ///
+  /// In en, this message translates to:
+  /// **'Now Playing'**
+  String get classicStartScreenAbsorb;
+
+  /// No description provided for @classicSectionAbsorbingCards.
+  ///
+  /// In en, this message translates to:
+  /// **'Player Cards'**
+  String get classicSectionAbsorbingCards;
+
+  /// No description provided for @classicMergeLibraries.
+  ///
+  /// In en, this message translates to:
+  /// **'Unified Now Playing'**
+  String get classicMergeLibraries;
+
+  /// No description provided for @classicMergeLibrariesInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unified Now Playing'**
+  String get classicMergeLibrariesInfoTitle;
+
+  /// No description provided for @classicMergeLibrariesInfoContent.
+  ///
+  /// In en, this message translates to:
+  /// **'When enabled, Now Playing shows and queues books and podcast episodes from every library together. When disabled, the page and Manual queue stay within the current library or media type.'**
+  String get classicMergeLibrariesInfoContent;
+
+  /// No description provided for @classicMergeLibrariesOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show and queue items from all libraries together'**
+  String get classicMergeLibrariesOnSubtitle;
+
+  /// No description provided for @classicMergeLibrariesOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the page and Manual queue in the current library'**
+  String get classicMergeLibrariesOffSubtitle;
+
+  /// No description provided for @classicAbsorbingNothingAbsorbingYet.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing playing yet'**
+  String get classicAbsorbingNothingAbsorbingYet;
+
+  /// No description provided for @classicMarkAsFullyAbsorbedQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as finished?'**
+  String get classicMarkAsFullyAbsorbedQuestion;
+
+  /// No description provided for @classicFullyAbsorbSeries.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark series finished?'**
+  String get classicFullyAbsorbSeries;
+
+  /// No description provided for @classicWhenAbsorbed.
+  ///
+  /// In en, this message translates to:
+  /// **'When finished'**
+  String get classicWhenAbsorbed;
+
+  /// No description provided for @classicWhenAbsorbedInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When Finished'**
+  String get classicWhenAbsorbedInfoTitle;
+
+  /// No description provided for @classicWhenAbsorbedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What happens to the player card when a book or episode finishes'**
+  String get classicWhenAbsorbedSubtitle;
+
+  /// No description provided for @classicDeleteAbsorbedDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete finished downloads'**
+  String get classicDeleteAbsorbedDownloads;
+
+  /// No description provided for @classicDeleteAbsorbedDownloadsInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Finished Downloads'**
+  String get classicDeleteAbsorbedDownloadsInfoTitle;
+
+  /// No description provided for @classicLoginTagline.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Listening'**
+  String get classicLoginTagline;
+
+  /// No description provided for @classicTipsSheetQuickAddAbsorbingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick Add to Now Playing'**
+  String get classicTipsSheetQuickAddAbsorbingTitle;
+
+  /// No description provided for @classicTipsSheetQuickAddAbsorbingDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Swipe right on any book in a list sheet (series, author, search results) to instantly add it to your Now Playing queue.'**
+  String get classicTipsSheetQuickAddAbsorbingDesc;
+
+  /// No description provided for @classicQueueModeInfoManualDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Items in Now Playing are your manual queue. When one finishes, the next unfinished item plays. Use Add to Now Playing on a book or episode, then reorder it in the Queue panel.'**
+  String get classicQueueModeInfoManualDesc;
+
+  /// No description provided for @classicDesktopManualQueueHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Add to Now Playing on a book or episode to put it here. Items play in this order.'**
+  String get classicDesktopManualQueueHint;
 
   /// No description provided for @rotationLockTitle.
   ///
@@ -27158,14 +27386,38 @@ abstract class AppLocalizations {
   /// No description provided for @materialExpressiveLabel.
   ///
   /// In en, this message translates to:
-  /// **'Material 3 Expressive'**
+  /// **'Expressive style'**
   String get materialExpressiveLabel;
 
   /// No description provided for @materialExpressiveSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Playful shapes in the tab bar, play button and switches'**
+  /// **'Rounder cards and livelier controls'**
   String get materialExpressiveSubtitle;
+
+  /// No description provided for @materialExpressiveInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Expressive style'**
+  String get materialExpressiveInfoTitle;
+
+  /// No description provided for @materialExpressiveInfoContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Rounds the player card\'s corners (24 → 34), gives the chapter, speed, timer and bookmark buttons their shaped, squishy press, and follows through in Settings switches, loading spinners and the card\'s chapter bar. The play button keeps its normal look.'**
+  String get materialExpressiveInfoContent;
+
+  /// No description provided for @readerLocating.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding where you left off…'**
+  String get readerLocating;
+
+  /// No description provided for @readerCurrentChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Current'**
+  String get readerCurrentChapter;
 
   /// No description provided for @appIconLabel.
   ///
@@ -27298,6 +27550,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Stack'**
   String get cardSwipeStyleStack;
+
+  /// No description provided for @cardDismissStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Card removal animation'**
+  String get cardDismissStyle;
+
+  /// No description provided for @cardDismissStyleClassic.
+  ///
+  /// In en, this message translates to:
+  /// **'Fling'**
+  String get cardDismissStyleClassic;
+
+  /// No description provided for @cardDismissStyleCarousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pull'**
+  String get cardDismissStyleCarousel;
+
+  /// No description provided for @cardDismissStyleStack.
+  ///
+  /// In en, this message translates to:
+  /// **'Sink'**
+  String get cardDismissStyleStack;
 
   /// No description provided for @adminUsersPickLibrary.
   ///

@@ -6,6 +6,7 @@ import '../services/audio_player_service.dart';
 import '../services/chapter_lookup.dart';
 import '../services/chromecast_service.dart';
 import 'absorb_slider.dart';
+import 'expressive.dart';
 
 // ─── DUAL PROGRESS BAR (card version) ───────────────────────
 
@@ -581,6 +582,10 @@ class ChapterPillPainter extends CustomPainter {
   final bool isDragging;
   final Color backgroundColor;
 
+  /// Snapshot of the setting, so a repaint is requested when it changes -
+  /// reading the notifier inside paint would never trigger one.
+  final bool expressive;
+
   ChapterPillPainter({
     required this.progress,
     required this.accent,
@@ -588,7 +593,7 @@ class ChapterPillPainter extends CustomPainter {
     required this.isPlaying,
     required this.isDragging,
     required this.backgroundColor,
-  });
+  }) : expressive = expressiveNotifier.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -596,6 +601,11 @@ class ChapterPillPainter extends CustomPainter {
     final w = size.width;
     final radius = h / 2;
     final p = progress.clamp(0.0, 1.0);
+
+    if (expressive) {
+      _paintExpressive(canvas, w, h, p);
+      return;
+    }
 
     // Pill shape
     final pillRect = RRect.fromRectAndRadius(
@@ -700,11 +710,55 @@ class ChapterPillPainter extends CustomPainter {
     }
   }
 
+  /// Material 3 Expressive track: the played part and the rest are separate
+  /// rounded shapes with a gap for the thumb, and the rest ends in a stop dot
+  /// rather than running to the edge.
+  void _paintExpressive(Canvas canvas, double w, double h, double p) {
+    const gap = 5.0;
+    const tight = Radius.circular(3);
+    final big = Radius.circular(h / 2);
+    final handleW = isDragging ? 2.5 : 5.0;
+    final x = (p * w).clamp(handleW / 2, w - handleW / 2);
+
+    final playedRight = x - handleW / 2 - gap;
+    if (playedRight > 10) {
+      canvas.drawRRect(
+        RRect.fromLTRBAndCorners(0, 0, playedRight, h,
+            topLeft: big, bottomLeft: big, topRight: tight, bottomRight: tight),
+        Paint()..color = accent.withValues(alpha: isDragging ? 0.5 : 0.38),
+      );
+    }
+    final restLeft = x + handleW / 2 + gap;
+    if (w - restLeft > 2) {
+      canvas.drawRRect(
+        RRect.fromLTRBAndCorners(restLeft, 0, w, h,
+            topLeft: tight, bottomLeft: tight, topRight: big, bottomRight: big),
+        Paint()..color = backgroundColor,
+      );
+      // The stop mark at the far end of the track.
+      if (w - restLeft > h) {
+        canvas.drawCircle(
+          Offset(w - h / 2, h / 2),
+          2,
+          Paint()..color = accent.withValues(alpha: 0.7),
+        );
+      }
+    }
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, h / 2), width: handleW, height: h),
+        Radius.circular(handleW / 2),
+      ),
+      Paint()..color = accent.withValues(alpha: isPlaying || isDragging ? 0.95 : 0.7),
+    );
+  }
+
   @override
   bool shouldRepaint(covariant ChapterPillPainter old) =>
       old.progress != progress ||
       old.isDragging != isDragging ||
-      old.backgroundColor != backgroundColor;
+      old.backgroundColor != backgroundColor ||
+      old.expressive != expressive;
 }
 
 // ─── MARQUEE TEXT ────────────────────────────────────────────

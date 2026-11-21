@@ -1095,7 +1095,7 @@ class _StatsScreenState extends State<StatsScreen>
     final peak = values.indexOf(maxVal);
     final anim = _animValue.value;
     final ml = MaterialLocalizations.of(context);
-    final h24 = MediaQuery.of(context).alwaysUse24HourFormat;
+    final h24 = MediaQuery.alwaysUse24HourFormatOf(context);
     String hourLabel(int h) =>
         ml.formatTimeOfDay(TimeOfDay(hour: h, minute: 0), alwaysUse24HourFormat: h24);
     return Container(

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'stats_screen.dart';
+import 'bookorbit_library_visibility_screen.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -67,6 +68,7 @@ import '../widgets/settings_search.dart';
 import 'settings_search_index.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/app_icon_picker.dart';
+import '../widgets/expressive.dart';
 import '../widgets/theme_presets.dart';
 import '../widgets/color_wheel_picker.dart';
 import '../widgets/absorb_slider.dart';
@@ -187,6 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _episodeNotifMinutes = 0;
   int _maxConcurrentDownloads = 1;
   bool _hideEbookOnly = false;
+  bool _showAudibleRating = true;
   bool _showGoodreadsButton = false;
   bool _homeCardsOpenDetails = false;
   bool _showExplicitBadge = true;
@@ -216,10 +219,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _curLibSkipBack = 10;
   bool _coverPlayButton = false;
   String _cardBackground = 'blurred';
+  String _cardSwipeStyle = 'classic';
+  String _cardDismissStyle = 'classic';
   double _progressTextScale = 1.0;
   String _themeMode = 'dark';
   bool _flatBackground = false;
   bool _einkMode = false;
+  bool _materialExpressive = false;
   String _colorSource = 'dynamic';
   int _manualSeed = 0xFF7C6FBF;
   double _gradientIntensity = 0.06;
@@ -465,6 +471,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     AppIconService.load();
+    PlayerSettings.getMaterialExpressive().then((v) {
+      if (mounted && v != _materialExpressive) {
+        setState(() => _materialExpressive = v);
+      }
+    });
+    PlayerSettings.getCardSwipeStyle().then((v) {
+      if (mounted && v != _cardSwipeStyle) {
+        setState(() => _cardSwipeStyle = v);
+      }
+    });
+    PlayerSettings.getCardDismissStyle().then((v) {
+      if (mounted && v != _cardDismissStyle) {
+        setState(() => _cardDismissStyle = v);
+      }
+    });
     _localServerController = TextEditingController();
     _loadSettings();
     _loadBookRequests();
@@ -1204,6 +1225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Loaded outside the positional Future.wait list below so its long-standing
     // index comments stay stable.
     _alignChaptersTracks = await PlayerSettings.getAlignChaptersTracks();
+    _showAudibleRating = await PlayerSettings.getShowAudibleRating();
     final results = await Future.wait([
       AutoRewindSettings.load(),                              // 0
       PlayerSettings.getDefaultSpeed(),                       // 1
@@ -2368,6 +2390,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'en': return 'English';
       case 'de': return 'Deutsch';
       case 'fr': return 'Français';
+      case 'pl': return 'Polski';
       case 'zh': return '中文';
       default: return l.languageSystemDefault;
     }
@@ -2377,7 +2400,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
-    const codes = ['', 'en', 'de', 'fr', 'zh'];
+    const codes = ['', 'en', 'de', 'fr', 'pl', 'zh'];
 
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -2580,7 +2603,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return SwitchTheme(
+      data: SwitchTheme.of(context).copyWith(
+        // On iPhone the switches are drawn the iOS way, which is green unless
+        // told otherwise; this keeps them on the app's own accent colour.
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected) &&
+                  !states.contains(WidgetState.disabled)
+              ? primary
+              : null,
+        ),
+        // Expressive switches carry a tick or a cross in the thumb.
+        thumbIcon: expressiveNotifier.value
+            ? WidgetStateProperty.resolveWith(
+                (states) => Icon(
+                  states.contains(WidgetState.selected)
+                      ? Icons.check_rounded
+                      : Icons.close_rounded,
+                ),
+              )
+            : null,
+      ),
+      child: _buildSettings(context),
+    );
+  }
+
+  Widget _buildSettings(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final auth = context.watch<AuthProvider>();
@@ -3895,6 +3946,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                               ),
                             ),
+                            if (context.read<AuthProvider>().isBookOrbit) ...[
+                              const Divider(
+                                  height: 1, indent: 16, endIndent: 16),
+                              InkWell(
+                                onTap: () =>
+                                    Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) =>
+                                      const BookOrbitLibraryVisibilityScreen(),
+                                )),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      16, 14, 16, 14),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                          child: Text(
+                                              l.boLibraryVisibilityTitle,
+                                              style: tt.titleSmall)),
+                                      Icon(Icons.chevron_right_rounded,
+                                          color: cs.onSurfaceVariant
+                                              .withValues(alpha: 0.5)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                             const Divider(height: 1, indent: 16, endIndent: 16),
                             if (AppIconService.supported)
                               InkWell(
@@ -4006,6 +4083,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             }
                               } : null,
                                   ),
+                                  if (Platform.isAndroid)
+                                    SwitchListTile.adaptive(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Row(children: [
+                                        Flexible(
+                                          child: Text(
+                                              l.materialExpressiveLabel,
+                                              style: tt.bodyLarge),
+                                        ),
+                                        _infoIcon(
+                                            l.materialExpressiveInfoTitle,
+                                            l.materialExpressiveInfoContent),
+                                      ]),
+                                      subtitle: Text(
+                                        l.materialExpressiveSubtitle,
+                                        style: tt.bodySmall?.copyWith(
+                                            color: cs.onSurfaceVariant),
+                                      ),
+                                      value: _materialExpressive,
+                                      onChanged: _loaded
+                                          ? (v) {
+                                              setState(
+                                                  () => _materialExpressive = v);
+                                              PlayerSettings
+                                                  .setMaterialExpressive(v);
+                                              expressiveNotifier.value = v;
+                                            }
+                                          : null,
+                                    ),
                                   if (!_flatBackground) ...[
                                     const SizedBox(height: 4),
                               Text(l.backgroundIntensityLabel, style: tt.bodyMedium),
@@ -4568,6 +4674,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       segments: [
                               ButtonSegment(value: 'blurred', icon: const Icon(Icons.blur_on_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardBackgroundBlurred))),
                               ButtonSegment(value: 'gradient', icon: const Icon(Icons.gradient_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardBackgroundGradient))),
+                              ButtonSegment(value: 'solid', icon: const Icon(Icons.square_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardBackgroundSolid))),
                               ButtonSegment(value: 'off', icon: const Icon(Icons.block_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.off))),
                                       ],
                                       selected: {_cardBackground},
@@ -4579,6 +4686,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             style: const ButtonStyle(visualDensity: VisualDensity.compact),
                           )),
                         ]),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l.cardSwipeStyle,
+                                    style: tt.bodyMedium?.copyWith(
+                                        color: cs.onSurface),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: SegmentedButton<String>(
+                                      showSelectedIcon: false,
+                                      segments: [
+                                        ButtonSegment(
+                                          value: 'classic',
+                                          icon: const Icon(
+                                              Icons.swipe_rounded,
+                                              size: 18),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                l.cardSwipeStyleClassic),
+                                          ),
+                                        ),
+                                        ButtonSegment(
+                                          value: 'carousel',
+                                          icon: const Icon(
+                                              Icons.view_carousel_rounded,
+                                              size: 18),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                l.cardSwipeStyleCarousel),
+                                          ),
+                                        ),
+                                        ButtonSegment(
+                                          value: 'stack',
+                                          icon: const Icon(
+                                              Icons.layers_rounded,
+                                              size: 18),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                l.cardSwipeStyleStack),
+                                          ),
+                                        ),
+                                      ],
+                                      selected: {_cardSwipeStyle},
+                                      onSelectionChanged: _loaded
+                                          ? (s) {
+                                              if (s.isEmpty) return;
+                                              setState(() =>
+                                                  _cardSwipeStyle = s.first);
+                                              PlayerSettings
+                                                  .setCardSwipeStyle(s.first);
+                                            }
+                                          : null,
+                                      style: const ButtonStyle(
+                                          visualDensity:
+                                              VisualDensity.compact),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l.cardDismissStyle,
+                                    style: tt.bodyMedium?.copyWith(
+                                        color: cs.onSurface),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: SegmentedButton<String>(
+                                      showSelectedIcon: false,
+                                      segments: [
+                                        ButtonSegment(
+                                          value: 'classic',
+                                          icon: const Icon(
+                                              Icons.west_rounded,
+                                              size: 18),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                l.cardDismissStyleClassic),
+                                          ),
+                                        ),
+                                        ButtonSegment(
+                                          value: 'carousel',
+                                          icon: const Icon(
+                                              Icons.compress_rounded,
+                                              size: 18),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                l.cardDismissStyleCarousel),
+                                          ),
+                                        ),
+                                        ButtonSegment(
+                                          value: 'stack',
+                                          icon: const Icon(
+                                              Icons.south_rounded,
+                                              size: 18),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                l.cardDismissStyleStack),
+                                          ),
+                                        ),
+                                      ],
+                                      selected: {_cardDismissStyle},
+                                      onSelectionChanged: _loaded
+                                          ? (s) {
+                                              if (s.isEmpty) return;
+                                              setState(() =>
+                                                  _cardDismissStyle = s.first);
+                                              PlayerSettings
+                                                  .setCardDismissStyle(s.first);
+                                            }
+                                          : null,
+                                      style: const ButtonStyle(
+                                          visualDensity:
+                                              VisualDensity.compact),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
                             Padding(
@@ -4719,17 +4964,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             SizedBox(width: double.infinity, child: SegmentedButton<String>(
                                         showSelectedIcon: false,
                                         segments: [
-                                ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
-                                ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
-                                ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeAuto))),
+                                ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff, style: tt.labelMedium))),
+                                ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, style: tt.labelMedium))),
+                                ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeAuto, style: tt.labelMedium))),
                                 if (!context.read<AuthProvider>().isBookOrbit || _mergedQueueMode == 'playlist')
-                                ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
+                                ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, style: tt.labelMedium))),
                                         ],
                                         selected: {_mergedQueueMode},
                                         onSelectionChanged: _loaded
                                   ? (s) { if (s.isNotEmpty) _setMergedQueueMode(s.first); }
                                             : null,
-                              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                // The four segments carry an icon again; the
+                                // default padding leaves 4-char labels such as
+                                // 播放列表 no room, and FittedBox then shrinks
+                                // only that one - the uneven sizes this fixes.
+                                padding: WidgetStatePropertyAll(
+                                    EdgeInsets.symmetric(horizontal: 4)),
+                              ),
                             )),
                                   ] else ...[
                                     // Separate controls per type
@@ -4738,16 +4991,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             SizedBox(width: double.infinity, child: SegmentedButton<String>(
                                         showSelectedIcon: false,
                                         segments: [
-                                ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
-                                ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
-                                ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeSeriesLabel))),
-                                ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
+                                ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff, style: tt.labelMedium))),
+                                ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, style: tt.labelMedium))),
+                                ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeSeriesLabel, style: tt.labelMedium))),
+                                ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, style: tt.labelMedium))),
                                         ],
                                         selected: {_bookQueueMode},
                                         onSelectionChanged: _loaded
                                   ? (s) { if (s.isNotEmpty) _setBookQueueMode(s.first); }
                                             : null,
-                              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                // The four segments carry an icon again; the
+                                // default padding leaves 4-char labels such as
+                                // 播放列表 no room, and FittedBox then shrinks
+                                // only that one - the uneven sizes this fixes.
+                                padding: WidgetStatePropertyAll(
+                                    EdgeInsets.symmetric(horizontal: 4)),
+                              ),
                             )),
                             if (lib.libraries.any((lib) => lib['mediaType'] == 'podcast')) ...[
                                       const SizedBox(height: 8),
@@ -4756,16 +5017,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               SizedBox(width: double.infinity, child: SegmentedButton<String>(
                                           showSelectedIcon: false,
                                           segments: [
-                                  ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
-                                  ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
-                                  ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeShowLabel))),
-                                  ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
+                                  ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff, style: tt.labelMedium))),
+                                  ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, style: tt.labelMedium))),
+                                  ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeShowLabel, style: tt.labelMedium))),
+                                  ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, style: tt.labelMedium))),
                                           ],
                                           selected: {_podcastQueueMode},
                                           onSelectionChanged: _loaded
                                     ? (s) { if (s.isNotEmpty) _setPodcastQueueMode(s.first); }
                                               : null,
-                                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                                style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                // The four segments carry an icon again; the
+                                // default padding leaves 4-char labels such as
+                                // 播放列表 no room, and FittedBox then shrinks
+                                // only that one - the uneven sizes this fixes.
+                                padding: WidgetStatePropertyAll(
+                                    EdgeInsets.symmetric(horizontal: 4)),
+                              ),
                               )),
                                     ],
                                   ],
@@ -5680,6 +5949,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         } : null,
                             ),
                             const Divider(height: 1, indent: 16, endIndent: 16),
+                            // BookOrbit sends ratings with the book, so the
+                            // switch only applies to Audiobookshelf's live
+                            // Audible lookup.
+                            if (!context.read<AuthProvider>().isBookOrbit) ...[
+                              SwitchListTile(
+                                title: Text(l.audibleRatings),
+                                subtitle: Text(
+                                  _showAudibleRating
+                                      ? l.audibleRatingsOnSubtitle
+                                      : l.audibleRatingsOffSubtitle,
+                                  style: tt.bodySmall
+                                      ?.copyWith(color: cs.onSurfaceVariant)),
+                                value: _showAudibleRating,
+                                onChanged: _loaded
+                                    ? (v) {
+                                        setState(
+                                            () => _showAudibleRating = v);
+                                        PlayerSettings
+                                            .setShowAudibleRating(v);
+                                      }
+                                    : null,
+                              ),
+                              const Divider(
+                                  height: 1, indent: 16, endIndent: 16),
+                            ],
                             SwitchListTile(
                               title: Text(l.homeCardsOpenDetails),
                               subtitle: Text(

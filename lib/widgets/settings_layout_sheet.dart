@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
 import '../services/player_settings.dart';
+import '../services/wording.dart';
 
 class SettingsLayoutSheet extends StatefulWidget {
   final List<String> initialOrder;
@@ -104,7 +105,9 @@ String settingsSectionTitle(String id, AppLocalizations l) {
     case 'Customize Stats':
       return l.settingsCustomizeStats;
     case 'Absorbing Cards':
-      return l.sectionAbsorbingCards;
+      // Follows the classic-wording setting, so the section does not keep the
+      // Absorb name while everything inside it says "Player".
+      return Wording.from(l).sectionAbsorbingCards;
     case 'Media Controls':
       return l.sectionMediaControls;
     case 'Car':

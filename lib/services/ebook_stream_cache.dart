@@ -75,11 +75,15 @@ class EbookStreamCache {
 
   /// (block count, total bytes) currently persisted for this key.
   Future<(int, int)> _countBlocks() async {
+    return _countBlocksIn(_dir);
+  }
+
+  static Future<(int, int)> _countBlocksIn(Directory dir) async {
     var count = 0;
     var bytes = 0;
     try {
-      if (_dir.existsSync()) {
-        await for (final e in _dir.list(followLinks: false)) {
+      if (dir.existsSync()) {
+        await for (final e in dir.list(followLinks: false)) {
           if (e is! File || !e.path.endsWith('.blk')) continue;
           count++;
           try {
@@ -89,6 +93,37 @@ class EbookStreamCache {
       }
     } catch (_) {}
     return (count, bytes);
+  }
+
+  /// Every book with persisted stream blocks: one entry per cache directory,
+  /// largest first. Powers the manage-downloads listing.
+  static Future<List<EbookStreamCacheEntry>> inventory() async {
+    final root = await _ebookStreamCacheRoot();
+    final entries = <EbookStreamCacheEntry>[];
+    try {
+      if (!root.existsSync()) return entries;
+      await for (final e in root.list(followLinks: false)) {
+        if (e is! Directory) continue;
+        final key = e.uri.pathSegments.isNotEmpty
+            ? e.uri.pathSegments[e.uri.pathSegments.length - 2]
+            : '';
+        if (key.isEmpty) continue;
+        final (blocks, bytes) = await _countBlocksIn(e);
+        if (blocks <= 0) continue;
+        entries.add(EbookStreamCacheEntry(key: key, blocks: blocks, bytes: bytes));
+      }
+    } catch (_) {}
+    entries.sort((a, b) => b.bytes.compareTo(a.bytes));
+    return entries;
+  }
+
+  /// Drops one book's persisted blocks (its whole cache directory).
+  static Future<void> clearBook(String key) async {
+    try {
+      final root = await _ebookStreamCacheRoot();
+      final dir = Directory('${root.path}${Platform.pathSeparator}$key');
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    } catch (_) {}
   }
 
   File _blockFile(int index) =>
@@ -284,4 +319,31 @@ Future<void> clearEbookStreamCacheItem(String itemId) async {
       }
     }
   } catch (_) {}
+}
+
+/// One book's persisted stream blocks, as listed in the manage-downloads
+/// screen. [key] is the cache directory name (`itemId.ino`, or `itemId` when
+/// the file has no ino) and doubles as the identifier for [EbookStreamCache.clearBook].
+class EbookStreamCacheEntry {
+  final String key;
+  final int blocks;
+  final int bytes;
+
+  const EbookStreamCacheEntry({
+    required this.key,
+    required this.blocks,
+    required this.bytes,
+  });
+
+  /// The library item id the key was built from.
+  String get itemId {
+    final i = key.indexOf('.');
+    return i <= 0 ? key : key.substring(0, i);
+  }
+
+  /// The file's ino half of the key, when present.
+  String? get ino {
+    final i = key.indexOf('.');
+    return i <= 0 ? null : key.substring(i + 1);
+  }
 }

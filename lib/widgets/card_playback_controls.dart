@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/audio_player_service.dart';
 import '../services/chromecast_service.dart';
 import 'card_buttons.dart';
+import 'expressive.dart';
+import 'glass_look.dart';
 
 // ─── PLAYBACK CONTROLS (card version) ───────────────────────
 
@@ -106,18 +108,44 @@ class _CardPlaybackControlsState extends State<CardPlaybackControls> {
     final s = _sevenControls ? 56.0 : widget.playButtonSize;
     final iconSize = s * 0.49;
     final spinnerSize = s * 0.4;
+    // The same soft cover color as the played part of the chapter bar,
+    // made solid, with the icon in whichever of black or white reads on it.
+    final fill =
+        Color.alphaBlend(widget.accent.withValues(alpha: 0.38), cs.surface);
+    final onFill =
+        ThemeData.estimateBrightnessForColor(fill) == Brightness.dark
+            ? Colors.white
+            : Colors.black;
+    // The play button keeps this look whether the Expressive setting is on or
+    // off: that setting is scoped to the card's action buttons.
     return Pressable(
       onTap: onTap,
+      expressive: false,
       child: Container(
-        width: s, height: s,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: cs.onSurface,
-          boxShadow: [BoxShadow(color: widget.accent.withValues(alpha: 0.4), blurRadius: 25, spreadRadius: -5)],
-        ),
+        width: s,
+        height: s,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: fill),
         child: loading
-            ? Center(child: SizedBox(width: spinnerSize, height: spinnerSize, child: CircularProgressIndicator(strokeWidth: 2, color: widget.accent)))
-            : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: iconSize, color: cs.surface),
+            ? Center(
+                child: SizedBox(
+                  width: spinnerSize,
+                  height: spinnerSize,
+                  child: AdaptiveSpinner(strokeWidth: 2, color: onFill),
+                ),
+              )
+            : glassLook
+                ? Center(
+                    child: MorphingPlayIcon(
+                      playing: playing,
+                      size: iconSize,
+                      color: onFill,
+                    ),
+                  )
+                : Icon(
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    size: iconSize,
+                    color: onFill,
+                  ),
       ),
     );
   }

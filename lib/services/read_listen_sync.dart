@@ -13,10 +13,10 @@ import '../widgets/overlay_toast.dart';
 import 'api_service.dart';
 import 'audio_locator.dart';
 import 'audio_player_service.dart';
+import 'download_service.dart';
 import 'ebook_cache.dart';
 import 'ebook_history.dart';
 import 'epub_book_text.dart';
-import 'narration_service.dart';
 import 'progress_sync_service.dart';
 import 'scoped_prefs.dart';
 import 'sync_point_store.dart';
@@ -356,8 +356,17 @@ class ReadListenSync {
       final started = DateTime.now();
       _setSyncing(itemId, SyncTarget.ebook);
       found = false;
-      final title = ((book.item['media'] as Map?)?['metadata'] as Map?)?['title'] as String? ?? '';
-      final epub = await NarrationService.instance.readerFile(api, itemId, book.ebook, title);
+      // Syncing the words heard onto the book needs the EPUB on disk. A book
+      // that is not on the device stays untouched: pulling a whole streamed
+      // book down in the background after the reader closed is exactly what
+      // filled the downloads list with half-cached entries.
+      final epub =
+          (await resolveLocalEbookSource(itemId, book.ebook, needFile: true))
+              ?.file;
+      if (epub == null) {
+        debugPrint('[SyncSpot] $itemId: book not on this device - sync skipped, not pulling it');
+        return null;
+      }
       final from = max(0.0, heard - 15);
       final segs = await TranscriptionService.instance.transcribeWindowSegments(
         itemId: itemId,
@@ -435,9 +444,15 @@ class ReadListenSync {
       final heard = await _heardAt(itemId) ?? 0;
       final book = await _book(api, itemId);
       if (book == null) return null;
-      final title = ((book.item['media'] as Map?)?['metadata'] as Map?)?['title'] as String? ?? '';
-      final file = await NarrationService.instance.readerFile(api, itemId, book.ebook, title);
-      if (!file.existsSync()) return null;
+      // Same rule as the audio-to-ebook direction: the sync needs the EPUB
+      // on disk and never pulls one down behind the user's back.
+      final file =
+          (await resolveLocalEbookSource(itemId, book.ebook, needFile: true))
+              ?.file;
+      if (file == null || !file.existsSync()) {
+        debugPrint('[SyncSpot] $itemId: book not on this device - sync skipped, not pulling it');
+        return null;
+      }
       final spot = await _spotAsync(file.path, cfi);
       if (spot == null) {
         debugPrint('[SyncSpot] $itemId: the saved page is not in this ebook');

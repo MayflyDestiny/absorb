@@ -5,7 +5,9 @@ import 'expressive.dart';
 /// True while the iOS Liquid Glass look is on.
 bool get glassLook => NativeTabBar.active.value;
 
-/// The player card's corners are rounder under either of the two looks.
+/// The player card's corners are rounder under either of the two looks: the
+/// iOS glass look, and the Material 3 Expressive setting (which rounds the
+/// card along with its buttons, switches, spinners and chapter bar).
 bool get softCardCorners => expressiveNotifier.value || glassLook;
 
 /// The cover's own colour as a card background, pulled down to a calm shade

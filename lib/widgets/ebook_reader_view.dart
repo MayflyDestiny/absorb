@@ -11,6 +11,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     show CompressFormat, InAppWebViewController, ScreenshotConfiguration;
 import 'package:url_launcher/url_launcher.dart';
 import 'dictionary_sheet.dart';
+import 'expressive.dart';
 import '../services/dictionary_service.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -226,6 +227,11 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
   // Key to force-rebuild EpubViewer when layout mode changes
   int _viewerKey = 0;
+  // The WebView paints black until epub.js has laid out its first page - a
+  // deep jump (chapter 140 of a big book) keeps that black up for seconds.
+  // A themed placeholder covers the view until the first page actually
+  // displays, then fades out. Reset whenever the viewer remounts.
+  bool _webReady = false;
   // onEpubLoaded is wired to epub.js's "displayed" event, which re-fires on
   // every display() - so the load-time rescue re-display must run at most once
   // per mount, or it re-triggers itself into an endless display->displayed loop
@@ -1287,6 +1293,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _pendingPercentJump = null;
       _spread = mode;
       _locationsReady = false;
+      _webReady = false;
       _viewerKey++; // force the viewer to remount with the new spread
       _didLoadRescue = false; // let the remounted viewer rescue its first paint
       _didInitViewer = false; // fresh JS context needs its wiring again
@@ -1309,6 +1316,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _locationsReady = false;
       _chapterPage = 0;
       _chapterPageTotal = 0;
+      _webReady = false;
       _viewerKey++;
       _didLoadRescue = false;
       _didInitViewer = false;
@@ -1954,6 +1962,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     final complete = !cancelled &&
         (forward ? (moved < -w * 0.18 || speed < -500) : (moved > w * 0.18 || speed > 500));
     _curlDragDecision = complete;
+    if (complete) _userMoved('swipe');
     if (_curlDragReady) unawaited(_endCurlDrag(forward, complete, _curlRun));
     return true;
   }
@@ -2216,14 +2225,60 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           'cached=${await isEbookCached(widget.itemId, widget.ebookFile)} playing=$playing');
       // Asked while the file downloads, so a slow answer costs no extra wait.
       final serverSpot = _otherAccount ? null : _pullServerPosition(api);
-      final file = await NarrationService.instance
-          .readerFile(api, widget.itemId, widget.ebookFile, widget.title);
-      _narrationLookup = _loadNarration(api, file);
+      // Offline, the copy already on the device (cache or export) is used
+      // as-is - no version refetch, no server attempt at all.
+      final offline = context.read<LibraryProvider>().isOffline;
+      // readerFile still runs for a book already on the device: it may swap in
+      // a slimmer copy for a narrated book or refresh a stale version, both
+      // with local checks first, and hands back the file the read-along
+      // markers parse from. Nothing on the device: skip it - it would pull
+      // the whole book down first, and the open below streams a streamable
+      // EPUB over HTTP Range instead. That wait was what read as "streaming
+      // still downloads everything". The narration check then runs against
+      // the server and the saved overlay without a file.
+      final cachedFile = await ebookCacheFileFor(widget.itemId, widget.ebookFile);
+      final onDevice = (cachedFile.existsSync() && await cachedFile.length() > 0) ||
+          (await DownloadService().savedEbookVersionRefs(widget.itemId))
+              .containsKey(ebookVersionKey(widget.ebookFile));
+      debugPrint('[EbookReader] onDevice=$onDevice item=${widget.itemId} '
+          'cache=${cachedFile.existsSync() ? 'yes' : 'no'} '
+          'ino=${widget.ebookFile['ino']}');
+      if (onDevice) {
+        final file = await NarrationService.instance
+            .readerFile(api, widget.itemId, widget.ebookFile, widget.title,
+                offline: offline);
+        _narrationLookup = _loadNarration(api, file);
+      } else {
+        _narrationLookup = _loadNarration(api, null);
+      }
       unawaited(_narrationLookup);
+      // Resolve the source while the server position is still being fetched.
+      // The probe is on the critical path to the first page; a slow or 404ing
+      // progress check used to sit in front of it and cost seconds (a fresh
+      // book's progress answer is a 404, by definition).
+      final previous = _openSource;
+      if (previous != null) {
+        _openSource = null;
+        await previous.release();
+      }
+      final source = await resolveEbookOpenSource(api, widget.itemId, widget.ebookFile, widget.title,
+          offline: offline);
+      // The one line that says which way the open went: streamed over HTTP
+      // Range, or a full copy on disk. Everything upstream (the gate, the
+      // probe, the cache checks) logs its own reason above this.
+      debugPrint('[EbookReader] source item=${widget.itemId}: '
+          '${source.streaming ? 'streamed (HTTP Range)' : 'file on disk'}');
+      // Record the open source immediately: the reads below can throw, and then
+      // the catch (or dispose) must release this file/stream rather than leak it.
+      _openSource = source;
       if (_otherAccount) {
         await _restoreOtherAccountSpot();
       } else {
-        unawaited(_rememberForOffline(api));
+        // Only a book with bytes on the device gets an offline record here.
+        // A streamed book kept nothing: its row showed without a badge, size
+        // or read action, because the block cache is not a copy the lists
+        // know. The resolver's own call below registers a downloaded book.
+        if (onDevice) unawaited(_rememberForOffline(api));
         await serverSpot;
         // Read while the book wrongly counted as another account's (its
         // account's address changed before downloads followed it): carry on
@@ -2236,15 +2291,6 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           }
         }
       }
-      final previous = _openSource;
-      if (previous != null) {
-        _openSource = null;
-        await previous.release();
-      }
-      final source = await resolveEbookOpenSource(api, widget.itemId, widget.ebookFile, widget.title);
-      // Record the open source immediately: the reads below can throw, and then
-      // the catch (or dispose) must release this file/stream rather than leak it.
-      _openSource = source;
       // A streamed book (HTTP Range) isn't on disk, so it must not be
       // registered as an offline download - and neither is another account's
       // download, whose place stays on this phone.
@@ -2931,6 +2977,42 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
 
   void _showChapterList() {
     final cs = Theme.of(context).colorScheme;
+    // Open with the list parked on the chapter the reader is actually in,
+    // instead of the top of the book every time.
+    final currentTitle = _currentChapterTitle?.trim();
+    final currentIdx = (currentTitle == null || currentTitle.isEmpty)
+        ? -1
+        : _chapters.indexWhere((c) => c.title.trim() == currentTitle);
+    final currentKey = GlobalKey(debugLabel: 'reader-chapter-current');
+    final chapterScroll = ScrollController();
+    // The menu builds on the frame after showAdaptiveActionMenu; jump once its
+    // rows are laid out. The list is built lazily, so the current chapter's row
+    // may not exist yet when it sits far down: jump near it by fraction first,
+    // then align exactly once its row has been built.
+    if (currentIdx >= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          void align() {
+            final rowCtx = currentKey.currentContext;
+            if (rowCtx != null) {
+              Scrollable.ensureVisible(rowCtx, alignment: 0.12);
+            }
+          }
+
+          align();
+          if (currentKey.currentContext != null ||
+              !chapterScroll.hasClients) {
+            return;
+          }
+          final pos = chapterScroll.position;
+          if (_chapters.isEmpty || pos.maxScrollExtent <= 0) return;
+          final estimate =
+              (currentIdx / _chapters.length) * pos.maxScrollExtent;
+          chapterScroll.jumpTo(estimate.clamp(0.0, pos.maxScrollExtent));
+          WidgetsBinding.instance.addPostFrameCallback((_) => align());
+        });
+      });
+    }
     showAdaptiveActionMenu(
       context: context,
       backgroundColor: cs.surface,
@@ -2948,13 +3030,31 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
             ),
             Flexible(
               child: ListView.builder(
+                controller: chapterScroll,
                 shrinkWrap: true,
                 itemCount: _chapters.length,
                 itemBuilder: (ctx, i) {
                   final ch = _chapters[i];
+                  // The chapter being read stands out: accent color, a play
+                  // marker and the badge - the list previously gave no sign
+                  // of where the reader actually was.
+                  final isCurrent = i == currentIdx;
                   return ListTile(
+                    key: i == currentIdx ? currentKey : null,
+                    leading: isCurrent
+                        ? Icon(Icons.play_arrow_rounded,
+                            size: 20, color: cs.primary)
+                        : null,
                     title: Text(ch.title.trim(), maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: cs.onSurface)),
+                        style: TextStyle(
+                            color: isCurrent ? cs.primary : cs.onSurface,
+                            fontWeight:
+                                isCurrent ? FontWeight.w600 : null)),
+                    trailing: isCurrent
+                        ? Text(AppLocalizations.of(ctx)!.readerCurrentChapter,
+                            style: TextStyle(
+                                fontSize: 12, color: cs.primary))
+                        : null,
                     dense: true,
                     onTap: () {
                       Navigator.pop(ctx);
@@ -2967,7 +3067,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
           ],
         ),
       ),
-    );
+    ).whenComplete(chapterScroll.dispose);
   }
 
   void _showSettingsSheet() {
@@ -5232,7 +5332,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   /// pipeline for lines, so the cache is shared with the player overlay. A
   /// book that isn't playing yet gets loaded and started - nobody presses
   /// read along on a book they don't want to hear.
-  Future<void> _loadNarration(ApiService api, File epub) async {
+  Future<void> _loadNarration(ApiService api, File? epub) async {
     try {
       final n = await NarrationService.instance.overlayFor(api, widget.itemId, epub: epub);
       if (n == null || !mounted) return;
@@ -5578,6 +5678,10 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
         }
         return;
       }
+      // A finger on the page is turning it. A swipe moves the page before
+      // the finger lifts, and following the voice in that moment pulled the
+      // page straight back, so it is the reader's until they let go.
+      if (!force && _curlPointer != null) return;
       final now = DateTime.now();
       if (!force && now.difference(_narrationTurnAt) < const Duration(milliseconds: 700)) return;
       if (_scroll && (where == 'after' || where == 'before' || where == 'low')) {
@@ -5647,9 +5751,15 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
     String id,
     double heard,
   ) async {
+    final n = _narration;
+    if (n == null) return null;
     final span = clip.end - clip.begin;
     if (span <= 1.0) return null;
-    final frac = ((heard - clip.begin) / span).clamp(0.0, 1.0);
+    // A clip's own times count from the start of its audio file, and [heard]
+    // from the start of the book, so the clip is placed on the book's
+    // timeline first. Without that every sentence past the first file looked
+    // finished the moment it began, and the page turned straight away.
+    final frac = ((heard - n.startOf(clip)) / span).clamp(0.0, 1.0);
     if (frac <= 0.05) return null;
     final raw = await wc.evaluateJavascript(
         source: 'window.__absorbMO ? __absorbMO.heard(${jsonEncode(clip.textHref)}, '
@@ -6541,6 +6651,7 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
       _readAlongSeenSince = null;
       return;
     }
+    if (_curlPointer != null) return;
     // A finger on a scrolling page is moving it; it is yours until you let go.
     final down = _touchDownAt;
     if (_scroll &&
@@ -7374,6 +7485,8 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
   }
 
   Widget _buildViewerArea(Widget viewer) {
+    final palette = _resolvePalette(context);
+    final fg = palette.fgColor;
     final frozen = _frozenViewerPadding();
     // With the bar pinned above the page, the bar already clears the cutout.
     final padding = _pinTop ? frozen.copyWith(top: 0) : frozen;
@@ -7403,11 +7516,51 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   _ptrDownX = null;
                   _ptrDownY = null;
                   if (_curlDragUp(e)) return;
+                  if (!_scroll && dx > 16 && dx > dy) _userMoved('swipe');
                   if (dx > 16 || dy > 16 || w <= 0) return;
                   final h = cons.maxHeight;
                   _readerTapAt(e.localPosition.dx / w, h > 0 ? e.localPosition.dy / h : 0.5, 'flutterPtr');
                 },
                 child: SizedBox.expand(child: viewer),
+              ),
+            ),
+          ),
+        ),
+        // Themed cover for the WebView's start-up: the view paints black
+        // until epub.js lays out the first page, and fetching that page over
+        // a stream takes a beat. Says where the open is headed instead of
+        // raw black, and drops once the first page actually displays.
+        AnimatedOpacity(
+          opacity: _webReady ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 260),
+          child: IgnorePointer(
+            ignoring: _webReady,
+            child: ColoredBox(
+              color: palette.bgColor,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // The app-wide spinner rather than a bare one: it turns
+                    // visibly, so "loading" and "stuck" stay distinguishable.
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: AdaptiveSpinner(
+                        strokeWidth: 2,
+                        color: fg.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      AppLocalizations.of(context)!.readerLocating,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: fg.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -8309,8 +8462,17 @@ class EbookReaderViewState extends State<EbookReaderView> with WidgetsBindingObs
                   });
                 }
               },
+              onInitialPositionLoaded: () {
+                // The resume page displayed (the plugin fires this from
+                // epub.js's "displayed" event): drop the placeholder even
+                // when no relocate follows it.
+                if (mounted && !_webReady) setState(() => _webReady = true);
+              },
               onRelocated: (value) {
                 if (!mounted) return;
+                // The first relocate lands the first page: drop the themed
+                // placeholder covering the WebView's black start-up.
+                if (!_webReady) setState(() => _webReady = true);
                 final landed = _curlLanded;
                 if (landed != null && !landed.isCompleted) landed.complete(true);
                 _readAlongTurnPending = null;

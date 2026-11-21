@@ -10434,9 +10434,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get statsYirLongestFinished => '听完最长的书';
 
   @override
-  String get removeFromNowPlaying => '从正在收听中移除';
-
-  @override
   String get speedPresetsHint => '点按 + 可将当前速度存为预设，长按预设可删除。';
 
   @override
@@ -10512,13 +10509,142 @@ class AppLocalizationsZh extends AppLocalizations {
   String get monthFullDec => '12月';
 
   @override
-  String get wordingClassicTitle => '经典用语';
+  String get wordingClassicTitle => '经典播放用语';
 
   @override
-  String get wordingClassicOnSubtitle => '使用\"播放\"、\"正在播放\"、\"已完成\"';
+  String get wordingClassicOnSubtitle => '使用“播放”“正在播放”“已完成”这类说法';
 
   @override
-  String get wordingClassicOffSubtitle => '使用\"收听\"、\"正在收听\"、\"已完全收听\"';
+  String get wordingClassicOffSubtitle => '使用“收听”“正在收听”“已完成”这类说法';
+
+  @override
+  String get classicAbsorb => '播放';
+
+  @override
+  String get classicAbsorbing => '播放中...';
+
+  @override
+  String get classicAbsorbAgain => '再次播放';
+
+  @override
+  String get classicDownloadToAbsorb => '下载后播放';
+
+  @override
+  String get classicFullyAbsorbed => '已完成';
+
+  @override
+  String get classicFullyAbsorbAction => '标记为已完成';
+
+  @override
+  String get classicAddToAbsorbing => '添加到正在播放';
+
+  @override
+  String get classicAbsorbNext => '接下来播放';
+
+  @override
+  String get classicAbsorbLast => '最后播放';
+
+  @override
+  String get classicAbsorbNextAdded => '已加入正在播放，排在下一位';
+
+  @override
+  String get classicRemoveFromAbsorbing => '从正在播放中移除';
+
+  @override
+  String get classicAddedToAbsorbing => '已添加到正在播放';
+
+  @override
+  String get classicRemovedFromAbsorbing => '已从正在播放中移除';
+
+  @override
+  String classicEpisodeListAddedToAbsorbing(String title) {
+    return '已将「$title」添加到正在播放';
+  }
+
+  @override
+  String classicPlaylistDetailAddedToAbsorbing(String title) {
+    return '已将「$title」添加到正在播放';
+  }
+
+  @override
+  String classicCollectionDetailAddedToAbsorbing(String title) {
+    return '已将「$title」添加到正在播放';
+  }
+
+  @override
+  String classicSectionDetailAddedToAbsorbing(String title) {
+    return '已将「$title」添加到正在播放';
+  }
+
+  @override
+  String get classicAbsorbingTitle => '正在播放';
+
+  @override
+  String get classicAppShellAbsorbingTab => '正在播放';
+
+  @override
+  String get classicStartScreenAbsorb => '正在播放';
+
+  @override
+  String get classicSectionAbsorbingCards => '播放器卡片';
+
+  @override
+  String get classicMergeLibraries => '统一正在播放';
+
+  @override
+  String get classicMergeLibrariesInfoTitle => '统一正在播放';
+
+  @override
+  String get classicMergeLibrariesInfoContent =>
+      '启用后，“正在播放”页面会将所有媒体库中的书籍和播客集中显示、统一排队。禁用时，该页面和手动队列仅限当前媒体库或媒体类型。';
+
+  @override
+  String get classicMergeLibrariesOnSubtitle => '正在播放页面显示来自所有媒体库的项目';
+
+  @override
+  String get classicMergeLibrariesOffSubtitle => '正在播放页面仅显示当前媒体库';
+
+  @override
+  String get classicAbsorbingNothingAbsorbingYet => '暂无正在播放的内容';
+
+  @override
+  String get classicMarkAsFullyAbsorbedQuestion => '标记为已完成？';
+
+  @override
+  String get classicFullyAbsorbSeries => '将系列全部标记为已完成？';
+
+  @override
+  String get classicWhenAbsorbed => '当播放完成时';
+
+  @override
+  String get classicWhenAbsorbedInfoTitle => '当播放完成时';
+
+  @override
+  String get classicWhenAbsorbedSubtitle => '一本书或一集播放完后，播放器卡片的处理方式';
+
+  @override
+  String get classicDeleteAbsorbedDownloads => '删除已完成的下载';
+
+  @override
+  String get classicDeleteAbsorbedDownloadsInfoTitle => '删除已完成的下载';
+
+  @override
+  String get classicLoginTagline => '开始聆听之旅';
+
+  @override
+  String get classicTipsSheetQuickAddAbsorbingTitle => '快速加入正在播放';
+
+  @override
+  String get classicTipsSheetQuickAddAbsorbingDesc =>
+      '在列表页（系列、作者、搜索结果）中向右滑动任意书籍，即可将其立即加入正在播放队列。';
+
+  @override
+  String get classicQueueModeInfoManualDesc =>
+      '正在播放中的项目就是你的手动队列。一项播放完成后，会自动播放下一个未完成的项目。在书籍或单集上使用“添加到正在播放”，然后在队列面板中调整顺序。';
+
+  @override
+  String get classicDesktopManualQueueHint =>
+      '在书籍或单集上使用“添加到正在播放”即可加入这里，按此顺序播放。';
 
   @override
   String get rotationLockTitle => '锁定屏幕旋转';
@@ -15536,11 +15662,23 @@ class AppLocalizationsZh extends AppLocalizations {
       'iOS glass for the tab bar, library pills and toasts';
 
   @override
-  String get materialExpressiveLabel => 'Material 3 Expressive';
+  String get materialExpressiveLabel => 'Expressive 风格';
 
   @override
-  String get materialExpressiveSubtitle =>
-      'Playful shapes in the tab bar, play button and switches';
+  String get materialExpressiveSubtitle => '更圆润的卡片与更活泼的控件造型';
+
+  @override
+  String get materialExpressiveInfoTitle => 'Expressive 风格';
+
+  @override
+  String get materialExpressiveInfoContent =>
+      '卡片圆角更大（24 → 34），章节、倍率、定时器、书签按钮改用新形状与按压回弹；设置里的开关、加载动画和卡片章节进度条同步换新。播放键保持原样式。';
+
+  @override
+  String get readerLocating => '正在定位上次阅读的位置…';
+
+  @override
+  String get readerCurrentChapter => '当前';
 
   @override
   String get appIconLabel => '应用图标';
@@ -15597,19 +15735,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get editServerAddressField => 'Server Address';
 
   @override
-  String get cardBackgroundSolid => 'Solid';
+  String get cardBackgroundSolid => '纯色';
 
   @override
-  String get cardSwipeStyle => 'Card swipe style';
+  String get cardSwipeStyle => '卡片滑动样式';
 
   @override
-  String get cardSwipeStyleClassic => 'Classic';
+  String get cardSwipeStyleClassic => '经典';
 
   @override
-  String get cardSwipeStyleCarousel => 'Carousel';
+  String get cardSwipeStyleCarousel => '轮播';
 
   @override
-  String get cardSwipeStyleStack => 'Stack';
+  String get cardSwipeStyleStack => '堆叠';
+
+  @override
+  String get cardDismissStyle => '卡片移除动画';
+
+  @override
+  String get cardDismissStyleClassic => '甩出';
+
+  @override
+  String get cardDismissStyleCarousel => '抽走';
+
+  @override
+  String get cardDismissStyleStack => '下沉';
 
   @override
   String get adminUsersPickLibrary =>
@@ -15617,58 +15767,54 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ebookSaveNarratedBody =>
-      'This EPUB has its narration built in, so the full file is large. Text only saves just the book\'s text and pictures, which is much smaller.';
+      '该 EPUB 内嵌了朗读音轨，完整文件较大。仅文本只保存书的文字和图片，体积小很多。';
 
   @override
-  String get ebookSaveTextOnly => 'Text only';
+  String get ebookSaveTextOnly => '仅文本';
 
   @override
-  String get ebookSaveWithNarration => 'With narration';
+  String get ebookSaveWithNarration => '含朗读';
 
   @override
-  String get boLibraryVisibilityTitle => 'Library visibility';
+  String get boLibraryVisibilityTitle => '资料库可见性';
 
   @override
   String get boLibraryVisibilityIntro =>
-      'Hide a library from any of these places. It stays in the library list, search and its own page. This is saved on your account, so the web app follows it too.';
+      '可在这里隐藏某个资料库，它仍会出现在资料库列表、搜索和自身页面中。该设置保存在账号上，网页版也会同步。';
 
   @override
-  String get boLibraryVisibilityShelves => 'Shelves';
+  String get boLibraryVisibilityShelves => '书架';
 
   @override
-  String get boLibraryVisibilityShelvesDesc =>
-      'Continue Reading, Continue Listening, Up Next in Series and Discover Something New.';
+  String get boLibraryVisibilityShelvesDesc => '继续阅读、继续收听、系列下一本和发现新内容。';
 
   @override
-  String get boLibraryVisibilitySeries => 'Series';
+  String get boLibraryVisibilitySeries => '系列';
 
   @override
-  String get boLibraryVisibilitySeriesDesc =>
-      'The Series page. A series split across libraries keeps the books from libraries still shown.';
+  String get boLibraryVisibilitySeriesDesc => '系列页面。跨资料库的系列会保留仍显示的资料库中的书。';
 
   @override
-  String get boLibraryVisibilityStats => 'Stats';
+  String get boLibraryVisibilityStats => '统计';
 
   @override
   String get boLibraryVisibilityStatsDesc =>
-      'Stats, reading history and Year in Review. Reading is still recorded, so showing the library again brings its numbers back.';
+      '统计、阅读记录和年度回顾。阅读仍会被记录，重新显示该资料库后数据会回来。';
 
   @override
-  String get boLibraryVisibilitySaveFailed =>
-      'Couldn\'t save library visibility';
+  String get boLibraryVisibilitySaveFailed => '无法保存资料库可见性';
 
   @override
-  String get readAlongPaused => 'Paused';
+  String get readAlongPaused => '已暂停';
 
   @override
-  String get readAlongPausedHint =>
-      'It keeps its place and starts again once resumed.';
+  String get readAlongPausedHint => '会保留当前进度，继续后接着读。';
 
   @override
-  String get readAlongPause => 'Pause';
+  String get readAlongPause => '暂停';
 
   @override
-  String get readAlongResume => 'Resume';
+  String get readAlongResume => '继续';
 
   @override
   String boQuickMatchStillRunning(int count) {
@@ -15680,62 +15826,58 @@ class AppLocalizationsZh extends AppLocalizations {
       'The server already has too many matches waiting. Try again once some finish.';
 
   @override
-  String get boNotifyStoryGuides => 'Story guides';
+  String get boNotifyStoryGuides => '故事导读';
 
   @override
-  String get boNotifyStoryGuidesDesc =>
-      'When a story guide you started building is ready or fails.';
+  String get boNotifyStoryGuidesDesc => '你开始生成的故事导读就绪或失败时通知。';
 
   @override
-  String get boNotifyBulkActions => 'Bulk actions';
+  String get boNotifyBulkActions => '批量操作';
 
   @override
-  String get boNotifyBulkActionsDesc =>
-      'When a bulk action you started finishes after you left it, stops, or is cut short by a restart.';
+  String get boNotifyBulkActionsDesc => '你发起的批量操作在你离开后完成、停止，或因重启而中断时通知。';
 
   @override
-  String get boEmailSendTextOnly =>
-      'Gets the text only EPUB, narration left out';
+  String get boEmailSendTextOnly => '发送仅文本 EPUB，不含朗读';
 
   @override
-  String get boPasswordSessionTitle => 'Sign in to continue';
+  String get boPasswordSessionTitle => '登录后继续';
 
   @override
   String get boPasswordSessionBody =>
-      'BookOrbit doesn\'t let an API key do this. Sign in once and Absorb keeps it for next time.';
+      'BookOrbit 不允许用 API Key 执行该操作。登录一次，Absorb 会为下次保留这次登录。';
 
   @override
-  String get boPasswordSessionSignIn => 'Sign in';
+  String get boPasswordSessionSignIn => '登录';
 
   @override
   String boPasswordSessionWith(String provider) {
-    return 'Sign in with $provider';
+    return '使用 $provider 登录';
   }
 
   @override
-  String get boPasswordSessionWrongPassword => 'That password didn\'t work';
+  String get boPasswordSessionWrongPassword => '密码不正确';
 
   @override
-  String get boPasswordSessionOtherAccount => 'That\'s a different account';
+  String get boPasswordSessionOtherAccount => '这是另一个账号';
 
   @override
-  String get boPasswordSessionFailed => 'Couldn\'t sign in';
+  String get boPasswordSessionFailed => '登录失败';
 
   @override
-  String get boPasswordSessionNoMethods =>
-      'This server has no password or single sign-on to sign in with';
+  String get boPasswordSessionNoMethods => '该服务器没有可用于登录的密码或单点登录方式';
 
   @override
-  String get boPasswordSessionUsed => 'Using your password sign-in';
+  String get boPasswordSessionUsed => '正在使用密码登录状态';
 
   @override
   String boPasswordSessionUsedWith(String provider) {
-    return 'Using your $provider sign-in';
+    return '正在使用 $provider 登录状态';
   }
 
   @override
-  String get boPasswordSessionNeeded => 'This needs a password sign-in';
+  String get boPasswordSessionNeeded => '此操作需要密码登录';
 
   @override
-  String get coverNotSavedYet => 'Tap Save to use this cover';
+  String get coverNotSavedYet => '点按“保存”后使用该封面';
 }

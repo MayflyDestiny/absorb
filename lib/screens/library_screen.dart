@@ -3808,10 +3808,10 @@ lib.registerHasCoverFromItem(id, r);
         children: [
           if (!flatNotifier.value)
             OverflowBox(
-              maxHeight: MediaQuery.of(context).size.height,
+              maxHeight: MediaQuery.sizeOf(context).height,
               alignment: Alignment.topCenter,
               child: SizedBox(
-                height: MediaQuery.of(context).size.height,
+                height: MediaQuery.sizeOf(context).height,
                 width: double.infinity,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -3996,8 +3996,8 @@ lib.registerHasCoverFromItem(id, r);
             (_tabController == null ? _podcastView == 0 : _currentTab == 0));
     final libraryName =
         lib.selectedLibrary?['name'] as String? ?? l.libraryFallback;
-    final topInset = MediaQuery.of(context).padding.top;
-    final screenH = MediaQuery.of(context).size.height;
+    final topInset = MediaQuery.paddingOf(context).top;
+    final screenH = MediaQuery.sizeOf(context).height;
     final headerBackground = flatNotifier.value
         ? ColoredBox(color: scaffoldBg)
         : ClipRect(

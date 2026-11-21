@@ -1455,6 +1455,13 @@ class PlayerSettings {
   static Future<bool> getCoverPlayButton() => _get('coverPlayButton', false);
   static Future<void> setCoverPlayButton(bool value) => _set('coverPlayButton', value, notify: true);
 
+  /// Whether book details look up and show the Audible rating. BookOrbit
+  /// sends ratings with the book, so this only governs the Audiobookshelf
+  /// live lookup.
+  static Future<bool> getShowAudibleRating() => _get('showAudibleRating', true);
+  static Future<void> setShowAudibleRating(bool value) =>
+      _set('showAudibleRating', value);
+
   /// Absorbing-card background style: 'blurred' (cover blur, default), 'gradient'
   /// (gradient from the extracted cover colors), or 'off' (plain theme surface).
   static Future<String> getCardBackground() async =>
@@ -1471,6 +1478,15 @@ class PlayerSettings {
   /// pile). Anything else is treated as classic.
   static Future<String> getCardSwipeStyle() => _get('cardSwipeStyle', 'classic');
   static Future<void> setCardSwipeStyle(String value) => _set('cardSwipeStyle', value, notify: true);
+
+  /// How a card leaves when it is removed from Absorbing: 'classic' (flung
+  /// away), 'carousel' (pinched into a sliver) or 'stack' (sinks back under).
+  /// Deliberately separate from [getCardSwipeStyle] - you may like the stack
+  /// feel while swiping and a plain fling on the way out.
+  static Future<String> getCardDismissStyle() =>
+      _get('cardDismissStyle', 'classic');
+  static Future<void> setCardDismissStyle(String value) =>
+      _set('cardDismissStyle', value, notify: true);
 
   // ── Self-signed certificates (global, not per-user) ──
 

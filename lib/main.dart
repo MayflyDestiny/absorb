@@ -48,6 +48,8 @@ import 'utils/app_platform.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/auth_loading_screen.dart';
+import 'widgets/expressive.dart';
+import 'widgets/bookorbit_password_session.dart';
 import 'widgets/beta_logging_notice.dart';
 import 'widgets/setup_link_login.dart';
 
@@ -187,6 +189,8 @@ Future<void> applyAppearanceFromPrefs() async {
   applyThemeMode(await PlayerSettings.getThemeMode());
   applyFlatBackground(await PlayerSettings.getFlatBackground());
   applyEinkModeTheme(await PlayerSettings.getEinkMode());
+  expressiveNotifier.value =
+      AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive();
   applyColorSource(await PlayerSettings.getColorSource());
   applyManualSeed(await PlayerSettings.getManualSeedColor());
   applyGradientIntensity(await PlayerSettings.getGradientIntensity());
@@ -221,6 +225,9 @@ void main() async {
   WindowsMediaControls.instance.start();
   BookOrbitApiService.placeReadingSpot = NarrationService.readingSpotSeconds;
   BookOrbitApiService.keptNarration = NarrationService.instance.localOverlay;
+  // BookOrbit needs the account password session for the actions an API key
+  // is not allowed to do; the hook has to be in place before any of them run.
+  wireBoPasswordSession();
   ApiService.pageReadElsewhere = NarrationService.pageReadElsewhere;
   try {
     await NarratedBooks.load().timeout(const Duration(seconds: 2));
@@ -253,6 +260,8 @@ void main() async {
     applyThemeMode(savedTheme);
     flatNotifier.value = await PlayerSettings.getFlatBackground();
     applyEinkModeTheme(await PlayerSettings.getEinkMode());
+    expressiveNotifier.value =
+        AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive();
     colorSourceNotifier.value = await PlayerSettings.getColorSource();
     manualSeedNotifier.value = Color(await PlayerSettings.getManualSeedColor());
     gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
@@ -747,6 +756,8 @@ class _AuthGateState extends State<AuthGate> {
     applyThemeMode(scopedTheme);
     flatNotifier.value = await PlayerSettings.getFlatBackground();
     applyEinkModeTheme(await PlayerSettings.getEinkMode());
+    expressiveNotifier.value =
+        AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive();
     colorSourceNotifier.value = await PlayerSettings.getColorSource();
     manualSeedNotifier.value = Color(await PlayerSettings.getManualSeedColor());
     gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
