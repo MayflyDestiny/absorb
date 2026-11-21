@@ -6,9 +6,14 @@ import '../l10n/app_localizations.dart';
 /// Absorbed"). Lives at app level so any widget rebuilds when it flips.
 final ValueNotifier<bool> classicWordingNotifier = ValueNotifier(false);
 
-/// Returns either the Absorb-branded localization or a plain-English
-/// equivalent depending on [classicWordingNotifier]. Only the English
-/// surface is overridden — translated locales keep their existing strings.
+/// Returns either the Absorb-branded localization or the plain player
+/// equivalent depending on [classicWordingNotifier].
+///
+/// Both vocabularies are localized: the classic strings live next to their
+/// themed counterparts in the ARB files (`classicAbsorb` beside `absorb`, and
+/// so on), so switching the setting never drops a locale back to English. A
+/// locale that has not translated the `classic*` keys yet falls back to the
+/// English template for those strings only, as everywhere else in the app.
 class Wording {
   final AppLocalizations _l;
   final bool classic;
@@ -23,89 +28,112 @@ class Wording {
       Wording._(l, classicWordingNotifier.value);
 
   // ── Card primary action ──
-  String get absorb => classic ? 'Play' : _l.absorb;
-  String get absorbing => classic ? 'Playing...' : _l.absorbing;
-  String get absorbAgain => classic ? 'Play Again' : _l.absorbAgain;
-  String get downloadToAbsorb => classic ? 'Download to Play' : _l.downloadToAbsorb;
-  String get fullyAbsorbed => classic ? 'Finished' : _l.fullyAbsorbed;
-  String get fullyAbsorbAction => classic ? 'Mark Finished' : _l.fullyAbsorbAction;
+  String get absorb => classic ? _l.classicAbsorb : _l.absorb;
+  String get absorbing => classic ? _l.classicAbsorbing : _l.absorbing;
+  String get absorbAgain => classic ? _l.classicAbsorbAgain : _l.absorbAgain;
+  String get downloadToAbsorb =>
+      classic ? _l.classicDownloadToAbsorb : _l.downloadToAbsorb;
+  String get fullyAbsorbed =>
+      classic ? _l.classicFullyAbsorbed : _l.fullyAbsorbed;
+  String get fullyAbsorbAction =>
+      classic ? _l.classicFullyAbsorbAction : _l.fullyAbsorbAction;
 
   // ── Now Playing list ──
-  String get addToAbsorbing => classic ? 'Add to Now Playing' : _l.addToAbsorbing;
-  String get absorbNext => classic ? 'Play Next' : _l.absorbNext;
-  String get absorbLast => classic ? 'Play Last' : _l.absorbLast;
-  String get absorbNextAdded => classic ? 'Up next in Now Playing' : _l.absorbNextAdded;
-  String get removeFromAbsorbing => classic ? 'Remove from Now Playing' : _l.removeFromAbsorbing;
-  String get addedToAbsorbing => classic ? 'Added to Now Playing' : _l.addedToAbsorbing;
-  String get removedFromAbsorbing => classic ? 'Removed from Now Playing' : _l.removedFromAbsorbing;
+  String get addToAbsorbing =>
+      classic ? _l.classicAddToAbsorbing : _l.addToAbsorbing;
+  String get absorbNext => classic ? _l.classicAbsorbNext : _l.absorbNext;
+  String get absorbLast => classic ? _l.classicAbsorbLast : _l.absorbLast;
+  String get absorbNextAdded =>
+      classic ? _l.classicAbsorbNextAdded : _l.absorbNextAdded;
+  String get removeFromAbsorbing =>
+      classic ? _l.classicRemoveFromAbsorbing : _l.removeFromAbsorbing;
+  String get addedToAbsorbing =>
+      classic ? _l.classicAddedToAbsorbing : _l.addedToAbsorbing;
+  String get removedFromAbsorbing =>
+      classic ? _l.classicRemovedFromAbsorbing : _l.removedFromAbsorbing;
 
-  String episodeListAddedToAbsorbing(String title) =>
-      classic ? 'Added "$title" to Now Playing' : _l.episodeListAddedToAbsorbing(title);
-  String playlistDetailAddedToAbsorbing(String title) =>
-      classic ? 'Added "$title" to Now Playing' : _l.playlistDetailAddedToAbsorbing(title);
-  String collectionDetailAddedToAbsorbing(String title) =>
-      classic ? 'Added "$title" to Now Playing' : _l.collectionDetailAddedToAbsorbing(title);
-  String sectionDetailAddedToAbsorbing(String title) =>
-      classic ? 'Added "$title" to Now Playing' : _l.sectionDetailAddedToAbsorbing(title);
+  String episodeListAddedToAbsorbing(String title) => classic
+      ? _l.classicEpisodeListAddedToAbsorbing(title)
+      : _l.episodeListAddedToAbsorbing(title);
+  String playlistDetailAddedToAbsorbing(String title) => classic
+      ? _l.classicPlaylistDetailAddedToAbsorbing(title)
+      : _l.playlistDetailAddedToAbsorbing(title);
+  String collectionDetailAddedToAbsorbing(String title) => classic
+      ? _l.classicCollectionDetailAddedToAbsorbing(title)
+      : _l.collectionDetailAddedToAbsorbing(title);
+  String sectionDetailAddedToAbsorbing(String title) => classic
+      ? _l.classicSectionDetailAddedToAbsorbing(title)
+      : _l.sectionDetailAddedToAbsorbing(title);
 
   // ── Navigation / sections ──
-  String get absorbingTitle => classic ? 'Now Playing' : _l.absorbingTitle;
-  String get appShellAbsorbingTab => classic ? 'Now Playing' : _l.appShellAbsorbingTab;
-  String get startScreenAbsorb => classic ? 'Now Playing' : _l.startScreenAbsorb;
-  String get sectionAbsorbingCards => classic ? 'Player Cards' : _l.sectionAbsorbingCards;
+  String get absorbingTitle =>
+      classic ? _l.classicAbsorbingTitle : _l.absorbingTitle;
+  String get appShellAbsorbingTab =>
+      classic ? _l.classicAppShellAbsorbingTab : _l.appShellAbsorbingTab;
+  String get startScreenAbsorb =>
+      classic ? _l.classicStartScreenAbsorb : _l.startScreenAbsorb;
+  String get sectionAbsorbingCards =>
+      classic ? _l.classicSectionAbsorbingCards : _l.sectionAbsorbingCards;
 
   // ── Unified Absorbing page setting ──
   String get mergeLibraries =>
-      classic ? 'Unified Now Playing' : _l.mergeLibraries;
+      classic ? _l.classicMergeLibraries : _l.mergeLibraries;
   String get mergeLibrariesInfoTitle =>
-      classic ? 'Unified Now Playing' : _l.mergeLibrariesInfoTitle;
+      classic ? _l.classicMergeLibrariesInfoTitle : _l.mergeLibrariesInfoTitle;
   String get mergeLibrariesInfoContent => classic
-      ? 'When enabled, Now Playing shows and queues books and podcast episodes from every library together. When disabled, the page and Manual queue stay within the current library or media type.'
+      ? _l.classicMergeLibrariesInfoContent
       : _l.mergeLibrariesInfoContent;
   String get mergeLibrariesOnSubtitle => classic
-      ? 'Show and queue items from all libraries together'
+      ? _l.classicMergeLibrariesOnSubtitle
       : _l.mergeLibrariesOnSubtitle;
   String get mergeLibrariesOffSubtitle => classic
-      ? 'Keep the page and Manual queue in the current library'
+      ? _l.classicMergeLibrariesOffSubtitle
       : _l.mergeLibrariesOffSubtitle;
 
   // ── Empty / placeholder ──
-  String get absorbingNothingAbsorbingYet =>
-      classic ? 'Nothing playing yet' : _l.absorbingNothingAbsorbingYet;
+  String get absorbingNothingAbsorbingYet => classic
+      ? _l.classicAbsorbingNothingAbsorbingYet
+      : _l.absorbingNothingAbsorbingYet;
 
   // ── Mark-finished dialogs ──
-  String get markAsFullyAbsorbedQuestion =>
-      classic ? 'Mark as finished?' : _l.markAsFullyAbsorbedQuestion;
+  String get markAsFullyAbsorbedQuestion => classic
+      ? _l.classicMarkAsFullyAbsorbedQuestion
+      : _l.markAsFullyAbsorbedQuestion;
   String get fullyAbsorbSeries =>
-      classic ? 'Mark series finished?' : _l.fullyAbsorbSeries;
+      classic ? _l.classicFullyAbsorbSeries : _l.fullyAbsorbSeries;
 
   // ── Settings labels ──
-  String get whenAbsorbed => classic ? 'When finished' : _l.whenAbsorbed;
-  String get whenAbsorbedInfoTitle => classic ? 'When Finished' : _l.whenAbsorbedInfoTitle;
+  String get whenAbsorbed =>
+      classic ? _l.classicWhenAbsorbed : _l.whenAbsorbed;
+  String get whenAbsorbedInfoTitle =>
+      classic ? _l.classicWhenAbsorbedInfoTitle : _l.whenAbsorbedInfoTitle;
   String get whenAbsorbedSubtitle => classic
-      ? 'What happens to the player card when a book or episode finishes'
+      ? _l.classicWhenAbsorbedSubtitle
       : _l.whenAbsorbedSubtitle;
   String get deleteAbsorbedDownloads =>
-      classic ? 'Delete finished downloads' : _l.deleteAbsorbedDownloads;
-  String get deleteAbsorbedDownloadsInfoTitle =>
-      classic ? 'Delete Finished Downloads' : _l.deleteAbsorbedDownloadsInfoTitle;
+      classic ? _l.classicDeleteAbsorbedDownloads : _l.deleteAbsorbedDownloads;
+  String get deleteAbsorbedDownloadsInfoTitle => classic
+      ? _l.classicDeleteAbsorbedDownloadsInfoTitle
+      : _l.deleteAbsorbedDownloadsInfoTitle;
 
   // ── Login ──
-  String get loginTagline => classic ? 'Start Listening' : _l.loginTagline;
+  String get loginTagline =>
+      classic ? _l.classicLoginTagline : _l.loginTagline;
 
   // ── Tips ──
-  String get tipsSheetQuickAddAbsorbingTitle =>
-      classic ? 'Quick Add to Now Playing' : _l.tipsSheetQuickAddAbsorbingTitle;
+  String get tipsSheetQuickAddAbsorbingTitle => classic
+      ? _l.classicTipsSheetQuickAddAbsorbingTitle
+      : _l.tipsSheetQuickAddAbsorbingTitle;
   String get tipsSheetQuickAddAbsorbingDesc => classic
-      ? 'Swipe right on any book in a list sheet (series, author, search results) to instantly add it to your Now Playing queue.'
+      ? _l.classicTipsSheetQuickAddAbsorbingDesc
       : _l.tipsSheetQuickAddAbsorbingDesc;
 
   // ── Queue mode info popup ──
   String get queueModeInfoManualDesc => classic
-      ? 'Items in Now Playing are your manual queue. When one finishes, the next unfinished item plays. Use Add to Now Playing on a book or episode, then reorder it in the Queue panel.'
+      ? _l.classicQueueModeInfoManualDesc
       : _l.queueModeInfoManualDesc;
 
   String get desktopManualQueueHint => classic
-      ? 'Use Add to Now Playing on a book or episode to put it here. Items play in this order.'
+      ? _l.classicDesktopManualQueueHint
       : _l.desktopAbsorbingQueueHint;
 }

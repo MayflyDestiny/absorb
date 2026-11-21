@@ -10780,9 +10780,6 @@ class AppLocalizationsEs extends AppLocalizations {
   String get statsYirLongestFinished => 'Longest finished';
 
   @override
-  String get removeFromNowPlaying => 'Remove from Now Playing';
-
-  @override
   String get speedPresetsHint =>
       'Tap + to save the current speed as a preset. Long-press a preset to remove it.';
 
@@ -10868,6 +10865,140 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get wordingClassicOffSubtitle =>
       'Using \"Absorb\", \"Absorbing\", \"Fully Absorbed\"';
+
+  @override
+  String get classicAbsorb => 'Play';
+
+  @override
+  String get classicAbsorbing => 'Playing...';
+
+  @override
+  String get classicAbsorbAgain => 'Play Again';
+
+  @override
+  String get classicDownloadToAbsorb => 'Download to Play';
+
+  @override
+  String get classicFullyAbsorbed => 'Finished';
+
+  @override
+  String get classicFullyAbsorbAction => 'Mark Finished';
+
+  @override
+  String get classicAddToAbsorbing => 'Add to Now Playing';
+
+  @override
+  String get classicAbsorbNext => 'Play Next';
+
+  @override
+  String get classicAbsorbLast => 'Play Last';
+
+  @override
+  String get classicAbsorbNextAdded => 'Up next in Now Playing';
+
+  @override
+  String get classicRemoveFromAbsorbing => 'Remove from Now Playing';
+
+  @override
+  String get classicAddedToAbsorbing => 'Added to Now Playing';
+
+  @override
+  String get classicRemovedFromAbsorbing => 'Removed from Now Playing';
+
+  @override
+  String classicEpisodeListAddedToAbsorbing(String title) {
+    return 'Added \"$title\" to Now Playing';
+  }
+
+  @override
+  String classicPlaylistDetailAddedToAbsorbing(String title) {
+    return 'Added \"$title\" to Now Playing';
+  }
+
+  @override
+  String classicCollectionDetailAddedToAbsorbing(String title) {
+    return 'Added \"$title\" to Now Playing';
+  }
+
+  @override
+  String classicSectionDetailAddedToAbsorbing(String title) {
+    return 'Added \"$title\" to Now Playing';
+  }
+
+  @override
+  String get classicAbsorbingTitle => 'Now Playing';
+
+  @override
+  String get classicAppShellAbsorbingTab => 'Now Playing';
+
+  @override
+  String get classicStartScreenAbsorb => 'Now Playing';
+
+  @override
+  String get classicSectionAbsorbingCards => 'Player Cards';
+
+  @override
+  String get classicMergeLibraries => 'Unified Now Playing';
+
+  @override
+  String get classicMergeLibrariesInfoTitle => 'Unified Now Playing';
+
+  @override
+  String get classicMergeLibrariesInfoContent =>
+      'When enabled, Now Playing shows and queues books and podcast episodes from every library together. When disabled, the page and Manual queue stay within the current library or media type.';
+
+  @override
+  String get classicMergeLibrariesOnSubtitle =>
+      'Show and queue items from all libraries together';
+
+  @override
+  String get classicMergeLibrariesOffSubtitle =>
+      'Keep the page and Manual queue in the current library';
+
+  @override
+  String get classicAbsorbingNothingAbsorbingYet => 'Nothing playing yet';
+
+  @override
+  String get classicMarkAsFullyAbsorbedQuestion => 'Mark as finished?';
+
+  @override
+  String get classicFullyAbsorbSeries => 'Mark series finished?';
+
+  @override
+  String get classicWhenAbsorbed => 'When finished';
+
+  @override
+  String get classicWhenAbsorbedInfoTitle => 'When Finished';
+
+  @override
+  String get classicWhenAbsorbedSubtitle =>
+      'What happens to the player card when a book or episode finishes';
+
+  @override
+  String get classicDeleteAbsorbedDownloads => 'Delete finished downloads';
+
+  @override
+  String get classicDeleteAbsorbedDownloadsInfoTitle =>
+      'Delete Finished Downloads';
+
+  @override
+  String get classicLoginTagline => 'Start Listening';
+
+  @override
+  String get classicTipsSheetQuickAddAbsorbingTitle =>
+      'Quick Add to Now Playing';
+
+  @override
+  String get classicTipsSheetQuickAddAbsorbingDesc =>
+      'Swipe right on any book in a list sheet (series, author, search results) to instantly add it to your Now Playing queue.';
+
+  @override
+  String get classicQueueModeInfoManualDesc =>
+      'Items in Now Playing are your manual queue. When one finishes, the next unfinished item plays. Use Add to Now Playing on a book or episode, then reorder it in the Queue panel.';
+
+  @override
+  String get classicDesktopManualQueueHint =>
+      'Use Add to Now Playing on a book or episode to put it here. Items play in this order.';
 
   @override
   String get rotationLockTitle => 'Lock rotation';
@@ -16105,11 +16236,24 @@ class AppLocalizationsEs extends AppLocalizations {
       'iOS glass for the tab bar, library pills and toasts';
 
   @override
-  String get materialExpressiveLabel => 'Material 3 Expressive';
+  String get materialExpressiveLabel => 'Expressive style';
 
   @override
   String get materialExpressiveSubtitle =>
-      'Playful shapes in the tab bar, play button and switches';
+      'Rounder cards and livelier controls';
+
+  @override
+  String get materialExpressiveInfoTitle => 'Expressive style';
+
+  @override
+  String get materialExpressiveInfoContent =>
+      'Rounds the player card\'s corners (24 → 34), gives the chapter, speed, timer and bookmark buttons their shaped, squishy press, and follows through in Settings switches, loading spinners and the card\'s chapter bar. The play button keeps its normal look.';
+
+  @override
+  String get readerLocating => 'Finding where you left off…';
+
+  @override
+  String get readerCurrentChapter => 'Current';
 
   @override
   String get appIconLabel => 'App icon';
@@ -16179,6 +16323,18 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get cardSwipeStyleStack => 'Stack';
+
+  @override
+  String get cardDismissStyle => 'Card removal animation';
+
+  @override
+  String get cardDismissStyleClassic => 'Fling';
+
+  @override
+  String get cardDismissStyleCarousel => 'Pull';
+
+  @override
+  String get cardDismissStyleStack => 'Sink';
 
   @override
   String get adminUsersPickLibrary =>

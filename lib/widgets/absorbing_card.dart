@@ -29,8 +29,9 @@ import 'card_edge_progress_bar.dart';
 import 'card_progress_bar.dart';
 import 'card_playback_controls.dart';
 import 'card_buttons.dart';
+import 'expressive.dart';
+import 'glass_look.dart';
 import '../services/chromecast_service.dart';
-import 'expanded_card.dart';
 import '../main.dart'
     show
         colorSourceNotifier,
@@ -39,6 +40,14 @@ import '../main.dart'
         manualColorScheme,
         snappyTransitionsNotifier;
 import 'stable_cached_network_image.dart';
+
+/// Backstop for a play request: the engine's own deadline is 45s, so anything
+/// still pending after this is stuck, not slow.
+const Duration _startBackstop = Duration(seconds: 60);
+
+/// Where this card is being shown: in the row on the Absorbing page, or as
+/// the full player on a route of its own (then it simply lays out at g = 1).
+enum AbsorbingCardPresentation { card, fullScreen }
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -49,13 +58,62 @@ class AbsorbingCard extends StatefulWidget {
   /// Hands the captured card to the screen, which starts the cross-fade when
   /// the PageView actually swaps in the next card.
   final void Function(ui.Image image, Rect rect)? onRemovalSnapshot;
+  final AbsorbingCardPresentation presentation;
   const AbsorbingCard({
     super.key,
     required this.item,
     required this.player,
     this.snapshotKey,
     this.onRemovalSnapshot,
+    this.presentation = AbsorbingCardPresentation.card,
   });
+
+  /// Cards currently shown in the row, so the shell can grow one into the full
+  /// player instead of opening a second copy of it.
+  static final Map<String, AbsorbingCardState> _shown =
+      <String, AbsorbingCardState>{};
+
+  /// Grow this book's card into the full player when the card is on screen.
+  /// Null otherwise; then [fullScreenRoute] slides a full-screen card up.
+  static PageRoute<void>? routeFromCard(String itemId, String? episodeId) {
+    final card = _shown[episodeId == null ? itemId : '$itemId-$episodeId'];
+    if (card == null) return null;
+    return card._openLiftRoute();
+  }
+
+  /// The card as the full player on its own, sliding up, for a book with no
+  /// card on the Absorbing page to grow out of.
+  static PageRoute<void> fullScreenRoute(
+    Map<String, dynamic> item,
+    AudioPlayerService player,
+  ) =>
+      PageRouteBuilder<void>(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 350),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, __, ___) => Material(
+          type: MaterialType.transparency,
+          child: AbsorbingCard(
+            item: item,
+            player: player,
+            presentation: AbsorbingCardPresentation.fullScreen,
+          ),
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          );
+        },
+      );
 
   @override
   State<AbsorbingCard> createState() => AbsorbingCardState();
@@ -528,6 +586,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
     ChromecastService().addListener(_onCastChanged);
     DownloadService().addListener(_onDownloadChanged);
     PlayerSettings.settingsChanged.addListener(_reloadButtonOrder);
+    expressiveNotifier.addListener(_onExpressiveChanged);
     _reloadButtonOrder();
     // AbsorbingScreen prewarms the first two cards' blurs before building them;
     // take a synchronous lease here so the very first frame is that blurred
@@ -560,6 +619,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _placeholderBlurLease = cachedLatest;
     } else {
       unawaited(_loadPlaceholderBlur());
+    }
+    _registerShown();
+    if (_fullScreen) {
+      _wasPlayingHere = _isActive && widget.player.hasBook;
+      widget.player.addListener(_onPlaybackMoved);
     }
   }
 
@@ -624,6 +688,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final bookSpeed = await PlayerSettings.getBookSpeed(_itemId);
     final speed = bookSpeed ?? await PlayerSettings.getDefaultSpeed();
     if (mounted && speed != _savedSpeed) setState(() => _savedSpeed = speed);
+  }
+
+  void _onExpressiveChanged() {
+    if (mounted) setState(() {});
   }
 
   void _reloadButtonOrder() {
@@ -1221,6 +1289,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
     super.didUpdateWidget(oldWidget);
     final oldId = oldWidget.item['id'] as String? ?? '';
     if (oldId != _itemId) {
+      _unregisterShown();
       // Item changed — reset all stale state
       _rawCoverScheme = null;
       _coverBrightness = null;
@@ -1262,7 +1331,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
 
   @override
   void dispose() {
+    _unregisterShown();
+    widget.player.removeListener(_onPlaybackMoved);
     PlayerSettings.settingsChanged.removeListener(_reloadButtonOrder);
+    expressiveNotifier.removeListener(_onExpressiveChanged);
     ChromecastService().removeListener(_onCastChanged);
     DownloadService().removeListener(_onDownloadChanged);
     widget.player.removeListener(_onSpeedMaybeChanged);
@@ -1275,6 +1347,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
     _blurLease?.release();
     _placeholderBlurLease?.release();
     _edgeBarExpanded.dispose();
+    _liftTick.dispose();
+    _warmShot?.dispose();
+    _warmShot = null;
     super.dispose();
   }
 
@@ -1506,6 +1581,22 @@ class AbsorbingCardState extends State<AbsorbingCard>
   @override
   Widget build(BuildContext context) {
     super.build(context); // required for AutomaticKeepAliveClientMixin
+    // While lifted, the body is being laid out in the overlay at the growing
+    // size; the slot keeps its place in the row, empty.
+    if (_lifted) {
+      // Rebuild the body over there on our behalf, after this frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _lifted) _liftTick.value++;
+      });
+      return const SizedBox.shrink();
+    }
+    // Keyed with [_bodyKey] so the lift can move this element into the overlay
+    // rather than rebuild it there: its state, image streams and scroll
+    // positions all come along.
+    return KeyedSubtree(key: _bodyKey, child: Builder(builder: _buildBody));
+  }
+
+  Widget _buildBody(BuildContext context) {
     // E-ink mode: the cover-derived palette renders as washed-out grey, so
     // the card sticks to the monochrome app theme.
     final cs =
@@ -1525,6 +1616,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
         : cs.surface;
     final accent = cs.primary;
     final l = AppLocalizations.of(context)!;
+    // 0 in its slot, 1 grown to the whole screen (see _CardLift).
+    final g = _growth(context);
+    final liftInsets = _liftInsets(context, g);
 
     final lib = context.watch<LibraryProvider>();
     final coverUrl = _resolveCoverUrl();
@@ -1590,24 +1684,41 @@ class AbsorbingCardState extends State<AbsorbingCard>
     return GestureDetector(
       onVerticalDragEnd: (details) {
         final vy = details.primaryVelocity ?? 0;
-        if (vy < -300) expandCard(context); // swipe up to expand
+        if (_fullScreen) {
+          // The full player on its own: a drag down dismisses it.
+          if (vy > 300) _closeLift();
+          return;
+        }
+        // Grown, a drag down puts the card back in its slot.
+        if (_lifted) {
+          if (vy > 300) _closeLift();
+          return;
+        }
+        if (vy < -300) expandCard(); // swipe up to expand
       },
       child: AnimatedContainer(
-        duration: _coverFadeDuration,
+        // While lifting, the corners are driven by the growth itself, so the
+        // radius has to follow every frame instead of easing toward it.
+        duration: g > 0 ? Duration.zero : _coverFadeDuration,
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          // Grown, the card's corners square off until it is the page itself.
+          borderRadius: BorderRadius.circular(
+            (softCardCorners ? 34 : 24) * (1 - g),
+          ),
           // 恢复原版：没有模糊图/封面时不画边线，避免占位阶段边线显得过亮；
           // 有了图片再淡入这条强调色边线。
           border: Border.all(
             color: hasCoverVisual
-                ? accent.withValues(alpha: 0.15)
+                ? accent.withValues(alpha: 0.15 * (1 - g))
                 : Colors.transparent,
             width: 1,
           ),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(23),
+          borderRadius: BorderRadius.circular(
+            (softCardCorners ? 33 : 23) * (1 - g),
+          ),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1626,6 +1737,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
               // Layer 1: Card background — blurred cover, color gradient, or plain surface
               if (_cardBackground == 'off')
                 ColoredBox(color: Theme.of(context).colorScheme.surface)
+              else if (_cardBackground == 'solid')
+                // 封面主色压暗/提亮后的单一表面色，不铺图。
+                ColoredBox(color: solidCoverBackground(accent, dark: isDark))
               else if (_cardBackground == 'gradient')
                 AnimatedContainer(
                   duration: _bgFadeDuration,
@@ -1684,7 +1798,14 @@ class AbsorbingCardState extends State<AbsorbingCard>
                         end: Alignment.bottomCenter,
                       // Lighter scrim over the gradient/off backgrounds so the cover
                       // tint reads through; the blurred photo still needs the heavier one.
-                      colors: _cardBackground == 'blurred'
+                      // The solid shade is already as dark as it should be.
+                      colors: _cardBackground == 'solid'
+                          ? const [
+                              Colors.transparent,
+                              Colors.transparent,
+                              Colors.transparent,
+                            ]
+                          : _cardBackground == 'blurred'
                           ? (isDark
                                 ? [
                                     Colors.black.withValues(alpha: 0.3),
@@ -1712,8 +1833,12 @@ class AbsorbingCardState extends State<AbsorbingCard>
                 ),
               ),
               ),
-              // Layer 3: Content
-              LayoutBuilder(
+              // Layer 3: Content. Grown toward the whole screen it keeps clear
+              // of the status and navigation bars, easing in as it reaches the
+              // edges.
+              Padding(
+                padding: liftInsets,
+                child: LayoutBuilder(
                 builder: (context, cardConstraints) {
                   final textScale = MediaQuery.textScalerOf(
                     context,
@@ -2514,22 +2639,51 @@ class AbsorbingCardState extends State<AbsorbingCard>
                     ],
                   );
                 },
+                ),
               ),
               // Edge progress bar (thin strip at top of card)
               if (showBookBar)
                 Positioned(
-                  top: 0,
+                  top: liftInsets.top,
                   left: 0,
                   right: 0,
                   child: CardEdgeProgressBar(
-                    player: widget.player,
-                    accent: accent,
+                    player: widget.player,                    accent: accent,
                     isActive: _isActive,
                     staticProgress: progress,
                     staticDuration: _effectiveDuration,
                     chapters: _chapters,
                     itemId: _itemId,
                     expandedNotifier: _edgeBarExpanded,
+                  ),
+                ),
+              // Grown, a chevron puts the card back in its slot; swiping down
+              // or the system back button do the same.
+              if (g > 0.02)
+                Positioned(
+                  // Below the edge progress bar's 28px touch target, so the
+                  // chevron neither covers it nor steals its drags.
+                  top: liftInsets.top + 34,
+                  right: 10,
+                  child: Opacity(
+                    opacity: g.clamp(0.0, 1.0),
+                    child: Pressable(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _closeLift,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black.withValues(alpha: 0.28),
+                        ),
+                        child: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 22,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -2692,23 +2846,150 @@ class AbsorbingCardState extends State<AbsorbingCard>
     return null;
   }
 
-  void expandCard(BuildContext context) {
+  // ─── Lift to the full screen ───────────────────────────────
+  // The full player is this card laid out at the whole screen: same widgets,
+  // same state, no second page to cross-fade into. That is what makes it grow
+  // without a step - the card is really laid out at whatever size it has
+  // reached, so the cover enlarges, the rows spread apart and the buttons
+  // travel down instead of being scaled up as a picture.
+
+  bool _lifted = false;
+  // The slot keeps the card on the frame the route is pushed, and hands the
+  // body over on the next one. One frame of overlap is invisible (both copies
+  // sit in the same rect at t=0) and it means there is never a frame where the
+  // card is nowhere, whatever order the overlay and the slot rebuild in.
+  bool _liftReady = false;
+  Rect? _liftFrom;
+  _CardLiftRoute? _liftRoute;
+  /// Identifies the body so the overlay can take this very element when the
+  /// card grows, instead of building a second copy of it.
+  final GlobalKey _bodyKey = GlobalKey(debugLabel: 'absorbing-card-body');
+  // Ticks so the body in the overlay rebuilds when the card would have: while
+  // lifted, our own build only returns an empty box.
+  final ValueNotifier<int> _liftTick = ValueNotifier<int>(0);
+
+  bool get _fullScreen =>
+      widget.presentation == AbsorbingCardPresentation.fullScreen;
+
+  /// 0 in its slot, 1 grown to the whole screen. Only the body inside the
+  /// lift host is ever under [_CardLift], so this needs no other gate.
+  double _growth(BuildContext context) =>
+      _fullScreen ? 1 : (_CardLift.maybeOf(context) ?? 0);
+
+  /// Grown, the content keeps clear of the status and navigation bars, easing
+  /// in as the card reaches the edges. Only the content is inset; the card's
+  /// own background still runs to the edges.
+  EdgeInsets _liftInsets(BuildContext context, double g) {
+    if (g <= 0) return EdgeInsets.zero;
+    final p = MediaQuery.paddingOf(context);
+    return EdgeInsets.fromLTRB(0, p.top * g, 0, p.bottom * g);
+  }
+
+  /// The registry key this card is filed under.
+  String get _shownKey =>
+      _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
+  String? _registeredShownKey;
+
+  void _registerShown() {
+    if (_fullScreen) return;
+    final key = _shownKey;
+    if (key == _registeredShownKey) return;
+    _unregisterShown();
+    AbsorbingCard._shown[key] = this;
+    _registeredShownKey = key;
+  }
+
+  void _unregisterShown() {
+    final key = _registeredShownKey;
+    if (key != null && AbsorbingCard._shown[key] == this) {
+      AbsorbingCard._shown.remove(key);
+    }
+    _registeredShownKey = null;
+  }
+
+  // Shown as the full player on its own, it follows playback the way a grown
+  // card does: the book leaving the player takes the full player with it.
+  bool _wasPlayingHere = false;
+
+  void _onPlaybackMoved() {
+    if (!_fullScreen) return;
+    final here = _isActive && widget.player.hasBook;
+    final left = _wasPlayingHere && !here;
+    _wasPlayingHere = here;
+    if (!left || !mounted) return;
+    final route = ModalRoute.of(context);
+    final nav = route?.navigator;
+    if (route == null || nav == null || !route.isActive) return;
+    nav.popUntil((r) => r == route);
+    if (route.isCurrent) nav.pop();
+  }
+
+  /// Where the card sits on screen, which it grows out of and shrinks back
+  /// into.
+  Rect? _slotRect() {
+    final boundary = widget.snapshotKey?.currentContext?.findRenderObject();
+    if (boundary is! RenderBox || !boundary.attached) return null;
+    // Measure both painted corners: the stack and carousel styles scale and
+    // shift their cards with ancestor transforms, and `size` alone would give
+    // the player a start rect a few percent too big.
+    final rect = Rect.fromPoints(
+      boundary.localToGlobal(Offset.zero),
+      boundary.localToGlobal(boundary.size.bottomRight(Offset.zero)),
+    );
+    return rect.isEmpty ? null : rect;
+  }
+
+  /// The route that grows this card into the full player, or null when the
+  /// card has no slot to grow out of.
+  PageRoute<void>? _openLiftRoute() {
+    if (_fullScreen || _lifted || _liftRoute != null) return null;
+    final from = _slotRect();
+    if (from == null) return null;
+    _liftFrom = from;
+    final route = _CardLiftRoute(card: this);
+    _liftRoute = route;
     AppShell.setExpandedOpen(true);
-    Navigator.of(context, rootNavigator: true)
-        .push(
-          ExpandedCardRoute(
-            child: ExpandedCard(
-              item: widget.item,
-              player: widget.player,
-              initialCoverScheme: _coverScheme,
-              initialBlurIdentity: _blurredCoverIdentity,
-              initialChapters: _fetchedChapters,
-              initialEbookFile: _ebookFile,
-              initialCardBackground: _cardBackground,
-            ),
-          ),
-        )
-        .then((_) => AppShell.setExpandedOpen(false));
+    // The route paints its first frame with the card still in its slot, then
+    // the slot empties and the overlay takes the body element over in the same
+    // frame. That way the hand-off can never leave a card-sized hole, and the
+    // card is still moved rather than rebuilt.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _liftRoute != route) return;
+      setState(() {
+        _lifted = true;
+        _liftReady = true;
+      });
+    });
+    return route;
+  }
+
+  void expandCard() {
+    if (_fullScreen) return;
+    final route = _openLiftRoute();
+    if (route == null) return;
+    Navigator.of(context, rootNavigator: true).push(route);
+  }
+
+  /// Back in its slot the moment the shrink ends, in the same frame the route
+  /// goes, so the card is never nowhere.
+  void _endLift() {
+    _liftRoute = null;
+    if (!mounted || !_lifted) return;
+    setState(() {
+      _lifted = false;
+      _liftReady = false;
+    });
+    AppShell.setExpandedOpen(false);
+  }
+
+  void _closeLift() {
+    if (_fullScreen) {
+      Navigator.of(context, rootNavigator: true).maybePop();
+      return;
+    }
+    final route = _liftRoute;
+    if (route == null || !route.isCurrent) return;
+    Navigator.of(context, rootNavigator: true).pop();
   }
 
   Future<void> _startPlayback() async {
@@ -2726,29 +3007,41 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final sw = Stopwatch()..start();
     // playItem's own `0ms` line already carries item, snapshot and in-flight
     // item state, so this tap does not need its own entry log.
-    final error = await widget.player.playItem(
-      api: api,
-      itemId: _itemId,
-      title: _title,
-      author: _author,
-      coverUrl: _coverUrl,
-      totalDuration: _effectiveDuration,
-      chapters: _chapters,
-      itemSnapshot: _fullItem,
-      episodeId: _episodeId,
-      episodeTitle: _recentEpisode?['title'] as String?,
-      libraryId: _resolveLibraryId(),
-      seriesId: seriesIdFromItem(widget.item),
-      fromUi: true,
-    );
+    final connectError = AppLocalizations.of(context)?.playerErrorConnect;
+    String? error;
+    try {
+      error = await widget.player.playItem(
+        api: api,
+        itemId: _itemId,
+        title: _title,
+        author: _author,
+        coverUrl: _coverUrl,
+        totalDuration: _effectiveDuration,
+        chapters: _chapters,
+        itemSnapshot: _fullItem,
+        episodeId: _episodeId,
+        episodeTitle: _recentEpisode?['title'] as String?,
+        libraryId: _resolveLibraryId(),
+        seriesId: seriesIdFromItem(widget.item),
+        fromUi: true,
+      ).timeout(_startBackstop);
+    } catch (e) {
+      // A start that throws - or never comes back - must not leave the play
+      // button spinning for good. That is what kept it loading after a failed
+      // resume until the card was rebuilt.
+      debugPrint(
+        '[StartTrace] card playItem failed after '
+        '${sw.elapsedMilliseconds}ms: $e',
+      );
+      error = connectError;
+    }
+    if (!mounted) return;
     debugPrint(
       '[StartTrace] card playItem returned ${sw.elapsedMilliseconds}ms '
       'error=$error',
     );
-    if (mounted) {
-      if (error != null) showErrorToast(context, error);
-      setState(() => _isStarting = false);
-    }
+    if (error != null) showErrorToast(context, error);
+    setState(() => _isStarting = false);
   }
 
   Future<void> _removeFromAbsorbing() async {
@@ -2756,10 +3049,18 @@ class AbsorbingCardState extends State<AbsorbingCard>
     debugPrint(
       '[RemoveTrace] card tap item=$_itemId current=${widget.player.currentItemId}',
     );
+    if (!mounted) return;
+    final lib = context.read<LibraryProvider>();
+    // Use compound key for podcast episodes
+    final key = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
+    // Put the card on its way first. Pausing and stopping the engine costs a
+    // beat, and the dismissal used to wait behind it, which is what read as
+    // the card hanging before it moved.
+    await _playRemovalSnapshot();
     Future<void>? stopFuture;
     if (widget.player.currentItemId == _itemId) {
       context.read<AuthProvider>().apiService?.cancelBackgroundItemTransfers();
-      await widget.player.pause();
+      unawaited(widget.player.pause());
       // Server progress sync/close still runs inside stop(), but the removal
       // is a local decision; don't make the list wait for the network. The
       // notification is retargeted to the first remaining book once stop()
@@ -2771,11 +3072,6 @@ class AbsorbingCardState extends State<AbsorbingCard>
         }),
       );
     }
-    if (!mounted) return;
-    final lib = context.read<LibraryProvider>();
-    // Use compound key for podcast episodes
-    final key = _episodeId != null ? '$_itemId-$_episodeId' : _itemId;
-    await _playRemovalSnapshot();
     await lib.removeFromAbsorbing(key);
     debugPrint(
       '[RemoveTrace] card local removal done ${sw.elapsedMilliseconds}ms',
@@ -2789,6 +3085,48 @@ class AbsorbingCardState extends State<AbsorbingCard>
         },
       ),
     );
+  }
+
+  // The card's own pixels, captured while it sits still, so a dismissal can
+  // start on the frame it is asked for instead of waiting on a GPU read-back
+  // (that wait is what made the card hang for a beat before it moved).
+  ui.Image? _warmShot;
+  Rect? _warmShotRect;
+  bool _warmShotBusy = false;
+
+  /// Captures this card's pixels ahead of a removal. Cheap to call often: it
+  /// captures once per layout and only again when the card has moved or
+  /// resized since.
+  Future<void> warmRemovalShot() async {
+    if (_warmShotBusy) return;
+    final boundary = widget.snapshotKey?.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary || !boundary.attached) return;
+    final rect = boundary.localToGlobal(Offset.zero) & boundary.size;
+    if (rect.isEmpty) return;
+    final warmed = _warmShotRect;
+    if (_warmShot != null &&
+        warmed != null &&
+        (warmed.topLeft - rect.topLeft).distance < 1.5 &&
+        (warmed.width - rect.width).abs() < 1.5 &&
+        (warmed.height - rect.height).abs() < 1.5) {
+      return;
+    }
+    _warmShotBusy = true;
+    try {
+      final dpr = MediaQuery.devicePixelRatioOf(context).clamp(1.0, 2.0);
+      final image = await boundary.toImage(pixelRatio: dpr.toDouble());
+      if (!mounted) {
+        image.dispose();
+        return;
+      }
+      _warmShot?.dispose();
+      _warmShot = image;
+      _warmShotRect = rect;
+    } catch (e) {
+      debugPrint('[RemoveTrace] warm snapshot failed: $e');
+    } finally {
+      _warmShotBusy = false;
+    }
   }
 
   /// Freeze the card into an overlay so it can drop out of the stack while
@@ -2808,6 +3146,22 @@ class AbsorbingCardState extends State<AbsorbingCard>
     // Only the card actually on screen needs the overlay; a neighbour's
     // off-screen rect would flash at the viewport edge.
     if (rect.center.dx < 0 || rect.center.dx > screen.width) return;
+    final sink = widget.onRemovalSnapshot;
+    final warm = _warmShot;
+    final warmed = _warmShotRect;
+    if (sink != null &&
+        warm != null &&
+        warmed != null &&
+        (warmed.topLeft - rect.topLeft).distance < 1.5 &&
+        (warmed.width - rect.width).abs() < 1.5 &&
+        (warmed.height - rect.height).abs() < 1.5) {
+      // Already captured: hand it over without touching the GPU, so the
+      // dismissal starts now instead of after a stall.
+      _warmShot = null;
+      _warmShotRect = null;
+      sink(warm, rect);
+      return;
+    }
     ui.Image image;
     try {
       final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -2818,7 +3172,6 @@ class AbsorbingCardState extends State<AbsorbingCard>
       debugPrint('[RemoveTrace] removal snapshot failed: $e');
       return;
     }
-    final sink = widget.onRemovalSnapshot;
     if (!mounted || sink == null) {
       image.dispose();
       return;
@@ -2930,12 +3283,17 @@ class CardDismissSnapshot extends StatefulWidget {
   final Future<void> start;
   final VoidCallback onDone;
 
+  /// 'classic', 'carousel' or 'stack': each swipe style throws the card away
+  /// its own way, matching how its cards move.
+  final String style;
+
   const CardDismissSnapshot({
     super.key,
     required this.image,
     required this.rect,
     required this.start,
     required this.onDone,
+    this.style = 'classic',
   });
 
   @override
@@ -2973,31 +3331,213 @@ class _CardDismissSnapshotState extends State<CardDismissSnapshot>
     return Positioned.fromRect(
       rect: widget.rect,
       child: IgnorePointer(
-        child: ClipRect(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              // iOS-style card stack dismissal: the old card drops out of
-              // its slot with a slight rotation while the next card (scaled
-              // up by the screen) takes its place underneath.
-              final t = Curves.easeInOutCubic.transform(_controller.value);
-              final drop = widget.rect.height * 0.92 * t;
-              return Opacity(
-                opacity: 1 - 0.55 * t,
-                child: Transform.translate(
-                  offset: Offset(0, drop),
-                  child: Transform.rotate(
-                    angle: 0.04 * t,
-                    alignment: Alignment.center,
-                    child: child,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final t = _controller.value;
+            // Each style leaves the way its cards move. Classic throws the
+            // card off the shelf, carousel pinches it into a sliver and takes
+            // it away, stack pushes it back under the card that takes over.
+            switch (widget.style) {
+              case 'carousel':
+                // One motion: the card is pulled out to the left, narrows from
+                // its right edge and fades a little as it goes, so it reads as
+                // being drawn into the slot beside it and is gone before the
+                // width reaches nothing.
+                final ease = Curves.easeInCubic.transform(t);
+                return Transform.translate(
+                  offset: Offset(-widget.rect.width * 0.28 * ease, 0),
+                  child: Opacity(
+                    // Fades on the same clock as the pull: the last sliver of
+                    // card dissolves instead of being cut off at zero width.
+                    opacity: (1 - 0.85 * ease).clamp(0.0, 1.0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: (widget.rect.width * (1 - ease))
+                            .clamp(0.0, widget.rect.width),
+                        height: widget.rect.height,
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.centerLeft,
+                            minWidth: widget.rect.width,
+                            maxWidth: widget.rect.width,
+                            minHeight: widget.rect.height,
+                            maxHeight: widget.rect.height,
+                            child: child,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              case 'stack':
+                final ease = Curves.easeOutCubic.transform(t);
+                return Opacity(
+                  opacity: (1 - 0.5 * t).clamp(0.0, 1.0),
+                  child: Transform.translate(
+                    offset: Offset(0, widget.rect.height * 0.32 * ease),
+                    child: Transform.scale(
+                      scale: 1 - 0.14 * ease,
+                      child: child,
+                    ),
+                  ),
+                );
+              default:
+                // Classic: flung off to the left, accelerating, with a little
+                // spin that follows the direction of travel.
+                final ease = Curves.easeInCubic.transform(t);
+                return Opacity(
+                  opacity: (1 - 0.3 * t).clamp(0.0, 1.0),
+                  child: Transform.translate(
+                    offset: Offset(
+                      -widget.rect.width * 0.62 * ease,
+                      widget.rect.height * 0.85 * ease,
+                    ),
+                    child: Transform.rotate(
+                      angle: -0.09 * ease,
+                      alignment: Alignment.center,
+                      child: child,
+                    ),
+                  ),
+                );
+            }
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(
+              (softCardCorners ? 34 : 24) * (1 - _controller.value),
+            ),
             child: RawImage(image: widget.image, fit: BoxFit.fill),
           ),
         ),
       ),
     );
   }
+}
+
+/// How far the lifted card has grown: 0 in its slot, 1 at the whole screen.
+class _CardLift extends InheritedWidget {
+  final double t;
+  const _CardLift({required this.t, required super.child});
+
+  static double? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_CardLift>()?.t;
+
+  @override
+  bool updateShouldNotify(_CardLift old) => old.t != t;
+}
+
+/// Lays the lifted card out at the size it has reached between its slot and
+/// the whole screen. It is really laid out at that size, so it is the card at
+/// the start and the full player at the end, with no step in between - the
+/// cover gets bigger, the rows spread out and the buttons travel down.
+class _CardLiftHost extends StatelessWidget {
+  final Animation<double> progress;
+  final AbsorbingCardState card;
+
+  const _CardLiftHost({required this.progress, required this.card});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      // The tick carries whatever would have rebuilt the card in its slot.
+      animation: Listenable.merge([progress, card._liftTick]),
+      builder: (context, _) {
+        final v = progress.value.clamp(0.0, 1.0);
+        // Growing eases in and out; shrinking moves quickly at first and
+        // slows as it sits down in the slot.
+        final t = progress.status == AnimationStatus.reverse
+            ? Curves.easeInCubic.transform(v)
+            : Curves.easeInOutCubicEmphasized.transform(v);
+        final full = Offset.zero & MediaQuery.sizeOf(context);
+        final from = card._liftFrom ?? full;
+        final shape = Rect.lerp(from, full, t)!;
+        if (shape.width <= 0 || shape.height <= 0) {
+          return const SizedBox.shrink();
+        }
+        return Stack(
+          children: [
+            Positioned.fromRect(
+              rect: shape,
+              // Lifted out of its page it needs a Material of its own, or text
+              // falls back to Flutter's yellow double-underlined warning look.
+              child: Material(
+                type: MaterialType.transparency,
+                child: _CardLift(
+                  t: t,
+                  // Nothing on the first frame: the card is still in its
+                  // slot then, and taking the element while the slot also
+                  // builds it is the one thing a GlobalKey cannot do. From the
+                  // second frame this is the slot's own body, moved over.
+                  child: card._liftReady
+                      ? KeyedSubtree(
+                          key: card._bodyKey,
+                          child: Builder(builder: card._buildBody),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The full player: the card, lifted and grown to fill the screen. Back, or a
+/// drag down, shrinks it back into its slot.
+class _CardLiftRoute extends PageRoute<void> {
+  final AbsorbingCardState card;
+
+  _CardLiftRoute({required this.card});
+
+  @override
+  Color? get barrierColor => null;
+  @override
+  String? get barrierLabel => null;
+  @override
+  bool get maintainState => true;
+  @override
+  bool get opaque => false;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 420);
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 300);
+
+  @override
+  void install() {
+    super.install();
+    animation!.addStatusListener((status) {
+      // Back in its slot at the end of the shrink, in the same frame the route
+      // goes: the body element returns to the slot, so the close never leaves
+      // an empty card behind.
+      if (status == AnimationStatus.dismissed) card._endLift();
+    });
+  }
+
+  @override
+  void dispose() {
+    // Safety net for a route taken away without the dismiss animation (the
+    // page being popped while grown, say): the slot takes the body back on the
+    // next frame instead of staying empty for good.
+    WidgetsBinding.instance.addPostFrameCallback((_) => card._endLift());
+    super.dispose();
+  }
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => _CardLiftHost(progress: animation, card: card);
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => child;
 }

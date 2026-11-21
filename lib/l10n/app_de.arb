@@ -4579,7 +4579,6 @@
   "statsYirTopMonth": "Top-Monat",
   "statsYirTopNarrator": "Top-Sprecher",
   "statsYirLongestFinished": "Längstes beendetes Buch",
-  "removeFromNowPlaying": "Aus „Aktuell läuft“ entfernen",
   "speedPresetsHint": "Tippe auf +, um die aktuelle Geschwindigkeit als Vorgabe zu speichern. Tippe eine Vorgabe lange an, um sie zu entfernen.",
   "monthShortJan": "Jan",
   "monthShortFeb": "Feb",
@@ -5223,7 +5222,7 @@
       }
     }
   },
-  "bookDockFileCount": "{count, plural, one {}=1{1 Datei} other{{count} Dateien}}",
+  "bookDockFileCount": "{count, plural, =1{1 Datei} other{{count} Dateien}}",
   "@bookDockFileCount": {
     "placeholders": {
       "count": {
@@ -5239,7 +5238,7 @@
       }
     }
   },
-  "bookDockChangedFields": "{count, plural, one {}=1{1 Feld} other{{count} Felder}}",
+  "bookDockChangedFields": "{count, plural, =1{1 Feld} other{{count} Felder}}",
   "@bookDockChangedFields": {
     "placeholders": {
       "count": {
@@ -5361,7 +5360,7 @@
       }
     }
   },
-  "bomatchNew": "{count, plural, one {{count} neu} =1{1 neu} other{{count} neue}}",
+  "bomatchNew": "{count, plural, =1{1 neu} other{{count} neue}}",
   "@bomatchNew": {
     "placeholders": {
       "count": {

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
@@ -34,36 +36,68 @@ void showChaptersSheet({
   }
 
   final sheetController = DraggableScrollableController();
+  // Built once and handed back unchanged on every rebuild. Rebuilding the
+  // body would re-run the header, the search field and every visible chapter
+  // row, and rebuilding the sheet itself would make DraggableScrollableSheet
+  // swap and dispose its extent. The keyboard moves the sheet with a
+  // transform (see the builder below), so nothing here ever relayouts.
+  Widget? sheetBody;
+  Widget? sheet;
   showModalBottomSheet(
     context: context, isScrollControlled: true, useSafeArea: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-      child: DraggableScrollableSheet(
-        controller: sheetController,
-        expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: false, maxChildSize: 0.8,
-        builder: (_, sc) => _ChaptersSheetBody(
-          sc: sc,
-          sheetController: sheetController,
-          accent: accent,
-          tt: tt,
-          chapters: chapters,
-          totalDuration: totalDuration,
-          isPlaybackActive: isPlaybackActive,
-          isCastingThis: isCastingThis,
-          displaySpeed: displaySpeed,
-          player: player,
-          itemId: itemId,
-          initialIndex: currentIdx,
-        ),
-      ),
-    ),
+    builder: (ctx) {
+      // Slide the sheet above the keyboard instead of resizing it. A resize
+      // re-lays-out and re-rasters the whole sheet on every frame of the
+      // keyboard animation, which reads as jank; the settings search is smooth
+      // precisely because its page does nothing while the keyboard animates.
+      // A translate only recomposites the sheet's (cached) layer.
+      final keyboard = MediaQuery.viewInsetsOf(ctx).bottom;
+      return LayoutBuilder(builder: (context, area) {
+        return AnimatedBuilder(
+          animation: sheetController,
+          child: RepaintBoundary(
+            child: sheet ??= DraggableScrollableSheet(
+              controller: sheetController,
+              expand: false, initialChildSize: 0.6, minChildSize: 0.05, snap: false, maxChildSize: 0.8,
+              builder: (_, sc) => sheetBody ??= _ChaptersSheetBody(
+                sc: sc,
+                accent: accent,
+                tt: tt,
+                chapters: chapters,
+                totalDuration: totalDuration,
+                isPlaybackActive: isPlaybackActive,
+                isCastingThis: isCastingThis,
+                displaySpeed: displaySpeed,
+                player: player,
+                itemId: itemId,
+                initialIndex: currentIdx,
+              ),
+            ),
+          ),
+          builder: (context, sheetChild) {
+            // Cap the shift by the room left above the sheet. The user may
+            // have dragged the sheet tall first; a fixed shift would then push
+            // its header past the top of the screen. Following the extent live
+            // keeps the header parked just under the top edge however tall the
+            // sheet has grown.
+            final extent =
+                sheetController.isAttached ? sheetController.size : 0.6;
+            final topEdge = area.maxHeight * (1 - extent);
+            final shift = math.min(keyboard, math.max(0.0, topEdge - 12));
+            return Transform.translate(
+              offset: Offset(0, -shift),
+              child: sheetChild,
+            );
+          },
+        );
+      });
+    },
   ).whenComplete(() => sheetController.dispose());
 }
 
 class _ChaptersSheetBody extends StatefulWidget {
   final ScrollController sc;
-  final DraggableScrollableController sheetController;
   final Color accent;
   final TextTheme tt;
   final List<dynamic> chapters;
@@ -77,7 +111,6 @@ class _ChaptersSheetBody extends StatefulWidget {
 
   const _ChaptersSheetBody({
     required this.sc,
-    required this.sheetController,
     required this.accent,
     required this.tt,
     required this.chapters,

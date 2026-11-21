@@ -1117,7 +1117,7 @@
   },
   "bookmarksSearchHint": "Поиск закладок",
   "bookmarksNoMatches": "По вашему запросу закладок не найдено",
-  "batchDownloadQueued": "{count, plural, one {Скачивается {count} книга} few {Скачиваются {count} книги} many {Скачиваются {count} книг} =1{Скачивается {count} книга} other{Скачиваются {count} книги}}",
+  "batchDownloadQueued": "{count, plural, few {Скачиваются {count} книги} many {Скачиваются {count} книг} =1{Скачивается {count} книга} other{Скачиваются {count} книги}}",
   "@batchDownloadQueued": {
     "placeholders": {
       "count": {
@@ -2266,7 +2266,7 @@
   "tipsSubtitle": "Получите максимум от Absorb",
   "adminTitle": "Админ сервера",
   "adminTasksTitle": "Активность сервера",
-  "adminTasksRunning": "{count, plural, =1{{count} задача выполняется} one{{count} задача выполняется} few{{count} задачи выполняются} many{{count} задач выполняются} other{{count} задачи выполняются}}",
+  "adminTasksRunning": "{count, plural, one{{count} задача выполняется} few{{count} задачи выполняются} many{{count} задач выполняются} other{{count} задачи выполняются}}",
   "@adminTasksRunning": {
     "placeholders": {
       "count": {
@@ -3509,7 +3509,7 @@
   "adminPodcastsDaySat": "Сбт",
   "adminPodcastsBack": "Назад ",
   "adminPodcastsDeleting": "Удаляется...",
-  "episodeListMarkedFinished": "{count, plural,  =1{{count} выпуск помечен как прослушанный} one{{count} выпуск помечен как прослушанный} few{{count} выпуска помечены как прослушанные} many{{count} выпусков помечены как прослушанные} other{{count} выпусков помечены как прослушанные}}",
+  "episodeListMarkedFinished": "{count, plural, one{{count} выпуск помечен как прослушанный} few{{count} выпуска помечены как прослушанные} many{{count} выпусков помечены как прослушанные} other{{count} выпусков помечены как прослушанные}}",
   "@episodeListMarkedFinished": {
     "placeholders": {
       "count": {
@@ -3517,7 +3517,7 @@
       }
     }
   },
-  "episodeListMarkedUnfinished": "{count, plural,  =1{{count} выпуск помечен как не прослушанный} one{{count} выпуск помечен как не прослушанный} few{{count} выпуска помечены как не прослушанные} many{{count} выпусков помечены как не прослушанные} other{{count} выпусков помечены как не прослушанные}}",
+  "episodeListMarkedUnfinished": "{count, plural, one{{count} выпуск помечен как не прослушанный} few{{count} выпуска помечены как не прослушанные} many{{count} выпусков помечены как не прослушанные} other{{count} выпусков помечены как не прослушанные}}",
   "@episodeListMarkedUnfinished": {
     "placeholders": {
       "count": {
@@ -3527,7 +3527,7 @@
   },
   "episodeListShowFinishedEpisodes": "Показать завершенные эпизоды",
   "episodeListHideFinishedEpisodes": "Скрыть завершенные эпизоды",
-  "episodeListEpisodeCount": "{count, plural, =1{{count} выпуск} one{{count} выпуск} few{{count} выпуска} many{{count} выпусков} other{{count} выпуска}}",
+  "episodeListEpisodeCount": "{count, plural, one{{count} выпуск} few{{count} выпуска} many{{count} выпусков} other{{count} выпуска}}",
   "@episodeListEpisodeCount": {
     "placeholders": {
       "count": {
@@ -3576,7 +3576,7 @@
       }
     }
   },
-  "seriesBooksBookCount": "{count, plural, =1{{count} книга} one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
+  "seriesBooksBookCount": "{count, plural, one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
   "@seriesBooksBookCount": {
     "placeholders": {
       "count": {
@@ -3686,7 +3686,7 @@
   "upcomingReleasesNotNow": "Не сейчас",
   "upcomingReleasesRescan": "Пересканировать",
   "upcomingReleasesRescanning": "Пересканирование...",
-  "upcomingReleasesFinishedAfterYears": "{count, plural, =1{{count} год} one{{count} год} few{{count} года} many{{count} лет} other{{count} годов}}",
+  "upcomingReleasesFinishedAfterYears": "{count, plural, one{{count} год} few{{count} года} many{{count} лет} other{{count} годов}}",
   "@upcomingReleasesFinishedAfterYears": {
     "placeholders": {
       "count": {
@@ -3694,7 +3694,7 @@
       }
     }
   },
-  "upcomingReleasesRemovedCount": "{count, plural, =1{{count} книга} one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
+  "upcomingReleasesRemovedCount": "{count, plural, one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
   "@upcomingReleasesRemovedCount": {
     "placeholders": {
       "count": {
@@ -3732,7 +3732,7 @@
   "bookCardDone": "Готово",
   "episodeRowToday": "Сегодня",
   "librarySearchResultsDone": "Готово",
-  "librarySearchResultsBookCount": "{count, plural, =1{{count} книга} one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
+  "librarySearchResultsBookCount": "{count, plural, one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
   "@librarySearchResultsBookCount": {
     "placeholders": {
       "count": {
@@ -3741,7 +3741,7 @@
     }
   },
   "libraryGridTilesDone": "Готово",
-  "seriesCardBookCount": "{count, plural, =1{{count} книга} one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
+  "seriesCardBookCount": "{count, plural, one{{count} книга} few{{count} книги} many{{count} книг} other{{count} книги}}",
   "@seriesCardBookCount": {
     "placeholders": {
       "count": {
@@ -3806,7 +3806,7 @@
   "chapterTitleHint": "Название главы",
   "adminLibrariesManage": "Библиотеки",
   "adminUploadFiles": "Файлы",
-  "adminUploadSelectedFiles": "{count, plural, =1{{count} файл} one{{count} файл} few{{count} файла} many{{count} файлов} other{{count} файла}}",
+  "adminUploadSelectedFiles": "{count, plural, one{{count} файл} few{{count} файла} many{{count} файлов} other{{count} файла}}",
   "@adminUploadSelectedFiles": {
     "placeholders": {
       "count": {
@@ -3829,7 +3829,7 @@
   "statsTopAuthors": "Топ авторы",
   "statsTopNarrators": "Топ чтецы",
   "statsTopGenres": "Топ жанры",
-  "libFolderCount": "{count, plural, =1{{count} папка} one{{count} папка} few{{count} папки} many{{count} папок} other{{count} папки}}",
+  "libFolderCount": "{count, plural, one{{count} папка} few{{count} папки} many{{count} папок} other{{count} папки}}",
   "@libFolderCount": {
     "placeholders": {
       "count": {
@@ -3881,7 +3881,7 @@
   "readerDownloadStarted": "Скачивание началось",
   "detailChaptersJumpTitle": "Перейти к этой главе?",
   "detailChaptersJump": "Перейти",
-  "detailChaptersFinished": "{count, plural, =1{{count} глава прослушана} one{{count} глава прослушана} few{{count} главы прослушанные} many{{count} глав прослушанные} other{{count} главы прослушаны}}",
+  "detailChaptersFinished": "{count, plural, one{{count} глава прослушана} few{{count} главы прослушанные} many{{count} глав прослушанные} other{{count} главы прослушаны}}",
   "@detailChaptersFinished": {
     "placeholders": {
       "count": {

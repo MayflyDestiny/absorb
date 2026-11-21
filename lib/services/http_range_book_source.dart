@@ -58,6 +58,11 @@ class HttpRangeBookSource implements BookSource {
             'content-range=$cr in ${sw.elapsedMilliseconds}ms');
       }
       if (res.statusCode != 206 || cr == null) {
+        // Loud on purpose: the fallback below downloads the whole file, and
+        // this line is how an environment (a proxy that strips Range, a
+        // wrong endpoint, an auth reject) gets diagnosed from the logs.
+        debugPrint('[HttpRange] probe not streamable: status=${res.statusCode} '
+            'content-range=$cr in ${sw.elapsedMilliseconds}ms');
         c.close();
         return null;
       }
@@ -71,7 +76,7 @@ class HttpRangeBookSource implements BookSource {
       }
       return HttpRangeBookSource._(c, url, headers ?? const {}, total);
     } catch (e) {
-      if (httpRangeDebugLog) debugPrint('[HttpRange] probe failed: $e');
+      debugPrint('[HttpRange] probe failed: $e');
       c.close();
       return null;
     }

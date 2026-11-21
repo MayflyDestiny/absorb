@@ -20,6 +20,7 @@ import '../utils/cover_accent.dart';
 import '../services/cover_blur_cache.dart';
 import '../services/cover_palette_cache.dart';
 import '../services/download_service.dart';
+import '../widgets/absorbing_card.dart';
 import '../widgets/stable_cached_network_image.dart'
     show stableCoverCacheKey, coverCacheIdentity;
 import '../main.dart'
@@ -73,7 +74,6 @@ import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 import '../services/android_auto_service.dart';
 import '../services/carplay_service.dart';
-import '../widgets/expanded_card.dart';
 import 'absorbing_screen.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -940,10 +940,11 @@ class _AppShellState extends State<AppShell>
     _expandedIsOpen = true;
     _syncPlayerOnScreen();
     final nav = Navigator.of(context, rootNavigator: true);
+    // The same card the user was looking at, grown into the full player; a
+    // full-screen card slides up only when there is no card to grow out of.
     await nav.push(
-      ExpandedCardRoute(
-        child: ExpandedCard(item: item, player: _player),
-      ),
+      AbsorbingCard.routeFromCard(itemId, _player.currentEpisodeId) ??
+          AbsorbingCard.fullScreenRoute(item, _player),
     );
     // Route was popped — expanded view closed
     _expandedIsOpen = false;
@@ -1060,20 +1061,6 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
-    // 页面坐标的底部是底栏上边缘；键盘与页面区域的实际重叠是
-    // viewInsets - 底栏高度。若把完整 viewInsets 交给页面，内层 Scaffold
-    // 会多缩一个底栏高度，浮动栏和键盘之间就留出一条黑色空带。
-    final mq = MediaQuery.of(context);
-    final isTablet = mq.size.shortestSide >= 600;
-    final navHeight =
-        (isTablet || mq.orientation == Orientation.portrait ? 80.0 : 56.0) +
-        mq.viewPadding.bottom;
-    final pageViewInsets = EdgeInsets.only(
-      top: mq.viewInsets.top,
-      left: mq.viewInsets.left,
-      right: mq.viewInsets.right,
-      bottom: math.max(0.0, mq.viewInsets.bottom - navHeight),
-    );
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -1110,8 +1097,12 @@ class _AppShellState extends State<AppShell>
         resizeToAvoidBottomInset: false,
         body: FadeTransition(
           opacity: _fadeController,
-          child: MediaQuery(
-            data: mq.copyWith(viewInsets: pageViewInsets),
+          // Pages see keyboard insets minus the nav bar (the full insets would
+          // make an inner Scaffold shrink one bar height too much and leave a
+          // black band above the keyboard). The scope is its own widget so a
+          // keyboard animation rebuilds only this wrapper, not the whole tab
+          // tree under it.
+          child: _PageInsetsScope(
             child: IndexedStack(
               index: _currentIndex,
               children: List<Widget>.generate(
@@ -1175,16 +1166,16 @@ class _AppShellState extends State<AppShell>
     }
     // On phone landscape, shrink the nav bar so it doesn't eat ~20% of the
     // shorter screen height. Tablets keep the full-size bar in any orientation.
-    final mq = MediaQuery.of(context);
-    final isTablet = mq.size.shortestSide >= 600;
+    final mqSize = MediaQuery.sizeOf(context);
+    final isTablet = mqSize.shortestSide >= 600;
     final isPhoneLandscape =
-        !isTablet && mq.orientation == Orientation.landscape;
+        !isTablet && MediaQuery.orientationOf(context) == Orientation.landscape;
     final lib = context.watch<LibraryProvider>();
     final podcastsShown = _podcastsShown(lib);
     final destinations = _buildDestinations(context, podcastsShown);
     final selectedDest = _selectedDest(lib, podcastsShown);
     final tabCount = destinations.length;
-    final tabWidth = mq.size.width / tabCount;
+    final tabWidth = mqSize.width / tabCount;
     final cs = Theme.of(context).colorScheme;
     final isEink = PlayerSettings.einkMode;
     // 只包图标的紧凑胶囊：宽度上限 64，槽位窄时按槽宽收缩，水平居中。
@@ -2218,4 +2209,32 @@ class _NavWavePainter extends CustomPainter {
   @override
   bool shouldRepaint(_NavWavePainter old) =>
       old.phase != phase || old.playing != playing || old.color != color;
+}
+
+/// Pages see keyboard insets minus the nav bar: the full insets would make an
+/// inner Scaffold shrink one bar height too much and leave a black band above
+/// the keyboard. In its own widget so a keyboard animation rebuilds only this
+/// wrapper — the tab tree under it stays untouched frame to frame.
+class _PageInsetsScope extends StatelessWidget {
+  final Widget child;
+  const _PageInsetsScope({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final isTablet = mq.size.shortestSide >= 600;
+    final navHeight =
+        (isTablet || mq.orientation == Orientation.portrait ? 80.0 : 56.0) +
+        mq.viewPadding.bottom;
+    final pageViewInsets = EdgeInsets.only(
+      top: mq.viewInsets.top,
+      left: mq.viewInsets.left,
+      right: mq.viewInsets.right,
+      bottom: math.max(0.0, mq.viewInsets.bottom - navHeight),
+    );
+    return MediaQuery(
+      data: mq.copyWith(viewInsets: pageViewInsets),
+      child: child,
+    );
+  }
 }

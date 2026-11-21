@@ -36,7 +36,7 @@ String localizedCardButtonLabel(AppLocalizations l, CardButtonDef def) {
     case 'history':
       return l.playbackHistory;
     case 'remove':
-      return classicWordingNotifier.value ? l.removeFromNowPlaying : l.removeFromAbsorbing;
+      return Wording.from(l).removeFromAbsorbing;
     case 'car':
       return l.carModeTitle;
     case 'notes':

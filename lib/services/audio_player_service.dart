@@ -633,6 +633,20 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           ProcessingState.completed: AudioProcessingState.completed,
         }[_player.processingState]!;
         if (_advanceBuffering) return AudioProcessingState.buffering;
+        // An idle player that still has a book loaded is "paused and ready",
+        // not "nothing to play". Reporting idle tore the media session down
+        // with it: after a long background the shade had no controls, and
+        // nothing brought them back until another book started. Paused keeps
+        // the session (and the notification) alive, which in turn is what
+        // keeps Android from stopping the player we would otherwise have to
+        // rebuild on the next play.
+        if (mapped == AudioProcessingState.idle &&
+            _service?._currentItemId != null) {
+          // audio_service has no "paused" state: paused is `ready` with
+          // playing=false, which is also the state that keeps the media
+          // notification alive.
+          return AudioProcessingState.ready;
+        }
         return mapped;
       }(),
       playing: _player.playing,
@@ -2564,6 +2578,10 @@ class AudioPlayerService extends ChangeNotifier {
   int? _skipEntryChapterIdx;
   bool _introSkippedThisEntry = false;
   bool _outroSkippedThisEntry = false;
+  // Logging throttle for the metadata-ahead-of-engine deferral: the 120ms
+  // watcher re-evaluates while deferred, and the same line every tick would
+  // flood the log for the whole tail of the file. One line per chapter.
+  int? _skipDeferLoggedChapterIdx;
 
   /// Fast poll (120ms) run while playback is inside the outro window. The
   /// shared position stream only evaluates the skip on a 500-1000ms cadence,
@@ -2905,7 +2923,13 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   bool get isLoadingOrBuffering {
-    if (_isLoadingNewItem || isStartInFlight) return true;
+    if (isStartInFlight) return true;
+    if (_isLoadingNewItem) {
+      // A load whose audio is already playing is doing bookkeeping, not
+      // loading. Keeping the spinner over audible playback is worse than
+      // dropping it a moment early.
+      return !(_player?.playing ?? false);
+    }
     final s = _player?.processingState;
     return s == ProcessingState.loading || s == ProcessingState.buffering;
   }
@@ -4022,7 +4046,27 @@ class AudioPlayerService extends ChangeNotifier {
             // intro pre-jump, or the new chapter's opening words play until
             // the 120ms watcher catches up. A seek-driven index change is
             // excluded by the null target; a natural auto-advance is not.
-            if (newChapterForAdvance &&
+            //
+            // A natural advance can also arrive with the chapter ALREADY
+            // pinned: on books whose metadata timeline runs ahead of the
+            // files, the position stream pins the next chapter the moment
+            // the metadata boundary is crossed, while the engine is still
+            // finishing the previous file's tail (the same observation the
+            // intro skip defers on). When the engine then rolls into the
+            // pinned chapter, newChapterForAdvance is false and the check
+            // below disarmed the pre-jump - the episode's first syllables
+            // leaked until the watcher's deferred seek landed. Treat an
+            // unpinned-intro natural advance as pre-jumpable too: a seek
+            // that is still settling, a fresh load and a recent user seek
+            // stay excluded, and an entry whose intro was already handled
+            // (the watcher raced ahead) does not re-jump.
+            final introSkipHandledForEntry = mappedChapter != null &&
+                _skipEntryChapterIdx == mappedChapter &&
+                _introSkippedThisEntry;
+            final naturalAdvanceIntoPinned = mappedChapter != null &&
+                mappedChapter == _lastNotifiedChapterIndex &&
+                !introSkipHandledForEntry;
+            if ((newChapterForAdvance || naturalAdvanceIntoPinned) &&
                 _lastSeekTargetSeconds == null &&
                 !_isLoadingNewItem &&
                 DateTime.now().difference(_lastUserSeekTime).inSeconds >= 3) {
@@ -5133,6 +5177,9 @@ class AudioPlayerService extends ChangeNotifier {
     // nothing is loaded, the session is live, we're offline, casting, or a
     // start is already loading; throttled to one attempt per cooldown.
     unawaited(service._prewarmSessionForPlay());
+    // The other half of the same problem: after a long pause Android rebuilds
+    // the source on the tap, so build it now while the app is coming back.
+    unawaited(service._prewarmEngineAfterLongPause());
     if (Platform.isIOS) unawaited(_logForegroundMemory());
     // Relative timing on foreground arrival is the second half of the
     // AA-disconnect fingerprint (variant 3): raw pause, then foreground
@@ -5349,8 +5396,14 @@ class AudioPlayerService extends ChangeNotifier {
         if (requestSeq != _playRequestSeq) return;
         // The start already finished; let its own result through.
         if (!_isLoadingNewItem) return;
-        // Audio is playing: never cut a start that succeeded.
-        if (_player?.playing ?? false) return;
+        // Audio is playing: never cut a start that succeeded. Release the
+        // caller instead of returning silently - a start whose future is still
+        // finishing its bookkeeping would otherwise leave the play button
+        // spinning for good.
+        if (_player?.playing ?? false) {
+          if (!deadline.isCompleted) deadline.complete(null);
+          return;
+        }
         final now = DateTime.now();
         // A source is loading, or this start's item/session body is still
         // receiving bytes. Give a bounded extra window instead of killing a
@@ -10125,33 +10178,85 @@ class AudioPlayerService extends ChangeNotifier {
     unawaited(_upgradeSourceToTokenlessSession());
   }
 
-  /// Rebuild the playing source with `/public/session/<id>/track/<n>` URLs.
-  /// Those carry no token (the unguessable session id is the credential), so
-  /// later files cannot expire mid-book. The session is the one already
-  /// opened for playback; its track list matches the source order.
-  Future<void> _upgradeSourceToTokenlessSession() async {
-    if (_tokenlessUpgradeInFlight) return;
-    final api = _api;
-    final sessionId = _playbackSessionId;
-    if (api == null || sessionId == null || _player == null) return;
-    if (_activeStreamUrls.isEmpty || _localSessionMode || _isLoadingNewItem) {
-      return;
+  /// While playing, rewrite the not-yet-played children of the active
+  /// concatenating source onto the session's tokenless URLs - in place,
+  /// through the dynamic playlist API (removeRange + insertAll), without
+  /// resetting the engine. The playing window keeps its already-validated
+  /// stream, and ExoPlayer/AVPlayer apply playlist edits strictly after it
+  /// seamlessly, so this costs nothing audible and a listener who never
+  /// pauses still rolls onto tokenless URLs before the next file request.
+  /// Past children stay untouched: rewriting them would shift the window
+  /// index the service tracks by hand, and their audio has already played;
+  /// a backward scrub into them after the baked token expires falls to the
+  /// stream-retry path. Returns false when in-place is not possible and
+  /// the caller should fall back to the pause-time full swap.
+  Future<bool> _refreshUpcomingChildrenTokenless(
+    ApiService api,
+    String sessionId,
+  ) async {
+    final source = _activeConcatSource;
+    if (source is! ConcatenatingAudioSource) return false;
+    final idx = _currentTrackIndex;
+    final childCount = source.children.length;
+    if (idx < 0 ||
+        idx + 1 >= childCount ||
+        childCount != _activeStreamUrls.length) {
+      return false;
     }
-    if (_isOfflineMode || _knownOffline || _manualOffline) return;
-    if (ChromecastService().isCasting) return;
-    if (!_activeStreamUrls.any((u) => u.contains('token='))) return;
-
-    if (_pendingSessionUpgrade != null) {
-      final wasPlaying = _player!.playing;
-      _tokenlessUpgradeInFlight = true;
-      try {
-        await _applyPendingSessionUpgrade(resumeAfter: wasPlaying);
-      } finally {
-        _tokenlessUpgradeInFlight = false;
-      }
-      return;
+    final audioHeaders = api.playbackSessionHeaders;
+    final newUrls = List<String>.from(_activeStreamUrls);
+    final newSources = <AudioSource>[];
+    for (var i = idx + 1; i < childCount; i++) {
+      final current = _activeStreamUrls[i];
+      if (!current.contains('token=')) continue; // already tokenless
+      final fullUrl = api.buildTrackUrl(
+        current,
+        sessionId: sessionId,
+        trackIndex: i,
+        playMethod: 0,
+      );
+      if (!fullUrl.contains('/public/session/')) return false;
+      newUrls[i] = fullUrl;
+      newSources.add(
+        AudioSource.uri(
+          Uri.parse(fullUrl),
+          headers: _withCacheKey(audioHeaders, _currentItemId, fullUrl),
+          options: mp3ExtractorOptions(),
+        ),
+      );
     }
+    if (newSources.isEmpty) return true; // nothing ahead needed refreshing
+    try {
+      // Insert first, remove the tokened tail second. If the insert fails,
+      // the engine simply keeps the old URLs (the stream-retry path covers
+      // that); if removal ran first and the insert then failed, the engine
+      // would find no next chapter at the boundary and end the book.
+      await source.insertAll(idx + 1, newSources);
+      await source.removeRange(
+        idx + 1 + newSources.length,
+        childCount + newSources.length,
+      );
+    } catch (e) {
+      // The URL bookkeeping must reflect what the engine actually plays:
+      // leave _activeStreamUrls untouched on failure so a later rotation
+      // or the pause-time swap sees the real (tokened) state.
+      debugPrint('[StreamUpgrade] In-place tokenless refresh failed: $e');
+      return false;
+    }
+    _activeStreamUrls = newUrls;
+    debugPrint(
+      '[StreamUpgrade] In-place tokenless refresh: ${newSources.length} '
+      'upcoming children from track ${idx + 1} (no engine reset)',
+    );
+    return true;
+  }
 
+  /// Build a pending upgrade from the currently active stream URLs so the
+  /// next pause can swap the source onto the session's tokenless URLs.
+  /// Keeps an already-stashed (real session) upgrade and returns true for
+  /// it; returns false when the server doesn't serve tokenless session URLs.
+  bool _stashSyntheticTokenlessUpgrade(ApiService api, String sessionId) {
+    if (_pendingSessionUpgrade != null) return true;
     final probe = api.buildTrackUrl(
       _activeStreamUrls.first,
       sessionId: sessionId,
@@ -10162,7 +10267,7 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint(
         '[StreamUpgrade] Tokenless session URLs unavailable - keeping token URLs',
       );
-      return;
+      return false;
     }
 
     final tracks = <Map<String, dynamic>>[];
@@ -10185,6 +10290,62 @@ class AudioPlayerService extends ChangeNotifier {
       'playMethod': 0,
     };
     _pendingUpgradeGeneration = _playbackGeneration;
+    return true;
+  }
+
+  /// Rebuild the playing source with `/public/session/<id>/track/<n>` URLs.
+  /// Those carry no token (the unguessable session id is the credential), so
+  /// later files cannot expire mid-book. The session is the one already
+  /// opened for playback; its track list matches the source order.
+  Future<void> _upgradeSourceToTokenlessSession() async {
+    if (_tokenlessUpgradeInFlight) return;
+    final api = _api;
+    final sessionId = _playbackSessionId;
+    if (api == null || sessionId == null || _player == null) return;
+    if (_activeStreamUrls.isEmpty || _localSessionMode || _isLoadingNewItem) {
+      return;
+    }
+    if (_isOfflineMode || _knownOffline || _manualOffline) return;
+    if (ChromecastService().isCasting) return;
+    if (!_activeStreamUrls.any((u) => u.contains('token='))) return;
+
+    if (_player!.playing) {
+      // Swapping the whole source resets the engine (idle -> loading), which
+      // punches an audible hole into the book even on a fast network - and
+      // on a flaky one the new source's first request can stall, leaving
+      // the listener in silence until the 15s swap timeout fires and the
+      // retry path rebuilds (a 17s outage in the field). Refresh the
+      // upcoming children in place instead: the dynamic playlist API edits
+      // windows strictly after the playing one seamlessly, so a listener
+      // who never pauses still rolls onto tokenless URLs. When in-place is
+      // not possible, hold for the next pause as before - the playing
+      // source's own request was validated when it opened, so its baked
+      // token outlives the current file.
+      if (await _refreshUpcomingChildrenTokenless(api, sessionId)) {
+        return;
+      }
+      final stashed = _stashSyntheticTokenlessUpgrade(api, sessionId);
+      debugPrint(
+        '[StreamUpgrade] Playing - tokenless swap held for the next pause '
+        '(pending=${stashed ? sessionId : 'unavailable'})',
+      );
+      return;
+    }
+
+    if (_pendingSessionUpgrade != null) {
+      final wasPlaying = _player!.playing;
+      _tokenlessUpgradeInFlight = true;
+      try {
+        await _applyPendingSessionUpgrade(resumeAfter: wasPlaying);
+      } finally {
+        _tokenlessUpgradeInFlight = false;
+      }
+      return;
+    }
+
+    if (!_stashSyntheticTokenlessUpgrade(api, sessionId)) {
+      return;
+    }
     _tokenlessUpgradeInFlight = true;
     final wasPlaying = _player!.playing;
     try {
@@ -12028,6 +12189,10 @@ class AudioPlayerService extends ChangeNotifier {
 
   DateTime? _lastPauseTime;
   bool _seekedWhilePaused = false;
+  // The foreground prewarm already rebuilt the engine for this pause, so the
+  // next play must not trigger the long-pause rebuild a second time.
+  bool _rebuiltDuringPause = false;
+  DateTime? _enginePrewarmAt;
   // Origin of the playItem in flight, read by the play paths to decide
   // whether to wait on the server's saved position. See playItem().
   bool _playFromUi = false;
@@ -12463,7 +12628,9 @@ class AudioPlayerService extends ChangeNotifier {
     final pausedFor = _lastPauseTime == null
         ? null
         : DateTime.now().difference(_lastPauseTime!);
-    final longPause = pausedFor != null && pausedFor >= _pauseStopTimeout;
+    final longPause = pausedFor != null &&
+        pausedFor >= _pauseStopTimeout &&
+        !_rebuiltDuringPause;
     // A failed decoder can leave the player idle; it is rebuilt all the same.
     bool canRebuild() =>
         (_playerBroken || _player?.processingState != ProcessingState.idle) &&
@@ -13425,6 +13592,77 @@ class AudioPlayerService extends ChangeNotifier {
     if (opened != null) _armPrewarmSessionClose(opened);
   }
 
+  /// Android cannot resume a source that sat paused past [_pauseStopTimeout]:
+  /// the first play rebuilds it, and the half second that takes is silence the
+  /// listener hears as "it loaded again". Spend that half second while they
+  /// are still reaching for the button instead - the book is loaded paused at
+  /// the spot they left it, so their tap just plays. A tap that lands while
+  /// this is still running is already handled by [_playRequestedDuringLoad].
+  Future<void> _prewarmEngineAfterLongPause() async {
+    if (!Platform.isAndroid) return;
+    final api = _api;
+    final itemId = _currentItemId;
+    final player = _player;
+    if (api == null || itemId == null || player == null) return;
+    if (player.playing || ChromecastService().isCasting) return;
+    if (_isLoadingNewItem || _recreatingSession) return;
+    if (_localSessionMode ||
+        _isOfflineMode ||
+        _knownOffline ||
+        _manualOffline) {
+      return;
+    }
+    final pausedAt = _lastPauseTime;
+    if (pausedAt == null) return;
+    final pausedFor = DateTime.now().difference(pausedAt);
+    // Only the window where a tap would rebuild anyway: sooner needs nothing,
+    // much later is far more likely to be browsing than a resume.
+    if (pausedFor < _pauseStopTimeout || pausedFor > _enginePrewarmWindow) {
+      return;
+    }
+    // The engine still holds its source, so there is nothing to warm.
+    if (player.processingState != ProcessingState.idle && !_playerBroken) {
+      return;
+    }
+    // One attempt per pause.
+    final last = _enginePrewarmAt;
+    if (last != null && !last.isBefore(pausedAt)) return;
+    _enginePrewarmAt = DateTime.now();
+    final startAt = _pausedAtS ?? _lastKnownPositionSec;
+    debugPrint(
+      '[Player] Foreground prewarm - rebuilding the paused source at '
+      '${startAt.toStringAsFixed(1)}s (paused ${pausedFor.inMinutes}min)',
+    );
+    try {
+      final error = await playItem(
+        api: api,
+        itemId: itemId,
+        title: _currentTitle ?? '',
+        author: _currentAuthor ?? '',
+        coverUrl: _currentCoverUrl,
+        totalDuration: _totalDuration,
+        chapters: _chapters,
+        startTime: startAt,
+        episodeId: _currentEpisodeId,
+        episodeTitle: _currentEpisodeTitle,
+        libraryId: _currentLibraryId,
+        seriesId: _currentSeriesId,
+        loadOnly: true,
+      );
+      if (error == null &&
+          _currentItemId == itemId &&
+          !(_player?.playing ?? false)) {
+        _rebuiltDuringPause = true;
+        debugPrint('[Player] Foreground prewarm done - play is instant now');
+      }
+    } catch (e) {
+      debugPrint('[Player] Foreground prewarm failed: $e');
+    }
+  }
+
+  /// How long after a pause the engine prewarm is still worth its work.
+  static const _enginePrewarmWindow = Duration(hours: 12);
+
   DateTime? _lastSessionPrewarmAt;
 
   /// Aligned with [_pauseStopTimeout]: a session that died of the pause timeout
@@ -13585,6 +13823,7 @@ class AudioPlayerService extends ChangeNotifier {
     _playVerifyTimer?.cancel();
     _wasPlayingBeforeInterrupt = false;
     _lastPauseTime = DateTime.now();
+    _rebuiltDuringPause = false;
     // Stamp BT-route observation for AA-disconnect phantom-click detection.
     // Fire-and-forget: pause shouldn't block on a native call.
     unawaited(
@@ -15413,6 +15652,27 @@ class AudioPlayerService extends ChangeNotifier {
         posSec >= chapterStart &&
         posSec - chapterStart < introSkip) {
       final target = chapterStart + introSkip;
+      // The server's chapter/track timeline can sit slightly ahead of the
+      // engine's real audio: per-file duration estimates run short, so the
+      // file timeline crosses into the next chapter while the engine is
+      // still playing the previous file's tail. Jumping now cuts real audio
+      // (half a sentence). Defer while the engine has not yet rolled into
+      // the track that holds the target - the 120ms watcher re-fires, and
+      // the skip lands the moment the engine arrives, with the tail heard
+      // first.
+      final engineTrack = _player?.currentIndex;
+      final targetTrack = _trackIndexForAbsolute(target);
+      if (engineTrack != null && engineTrack < targetTrack) {
+        if (_skipDeferLoggedChapterIdx != chapterIdx) {
+          _skipDeferLoggedChapterIdx = chapterIdx;
+          debugPrint(
+            '[ChapterSkip] metadata ahead of engine: pos=${posSec.toStringAsFixed(1)}s '
+            'chapter=$chapterIdx engineTrack=$engineTrack targetTrack=$targetTrack '
+            '- deferring intro skip until the current file ends',
+          );
+        }
+        return;
+      }
       // Mark handled regardless of whether we can jump, so the window is only
       // evaluated once per entry.
       _introSkippedThisEntry = true;

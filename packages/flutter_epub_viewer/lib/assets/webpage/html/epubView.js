@@ -1248,7 +1248,16 @@ function loadBook(data, cfi, initialXPath, manager, flow, spread, snap, allowScr
         return book.locations.length() ? null : fastGenerateLocations();
       });
     } else {
-      locationsReady = fastGenerateLocations();
+      // Walk the whole book for the index only once the first page is on
+      // screen. The walk requests every section, and epub.js serves those
+      // through the same pipeline the display needs: starting it here kept
+      // the resume page behind dozens of section fetches - seconds of black
+      // on a streamed book, and the whole file pulled before anything
+      // showed. The initial position below needs no index (the CFI is
+      // already displayed; a percent jump refreshes when the index lands).
+      locationsReady = (displayed || Promise.resolve())
+          .catch(function () {})
+          .then(function () { return fastGenerateLocations(); });
     }
     locationsReady.then(() => {
       // Handle initial position after locations are generated

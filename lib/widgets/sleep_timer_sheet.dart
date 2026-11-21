@@ -125,7 +125,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
         final isActive = sleep.isActive;
         final isEpisode = AudioPlayerService().currentEpisodeId != null;
 
-        final navBarPad = MediaQuery.of(context).viewPadding.bottom;
+        final navBarPad = MediaQuery.viewPaddingOf(context).bottom;
 
         return Container(
           padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + navBarPad),
@@ -615,6 +615,34 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
     final cs = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
     final player = AudioPlayerService();
+    // Open with the list parked on the chapter after the played progress
+    // instead of chapter 1 every time.
+    final pickerKey = GlobalKey(debugLabel: 'sleep-chapter-current');
+    // The dialog's first frame lands one frame from now; jump once its rows
+    // are laid out. The list is built lazily, so the current chapter's row may
+    // not exist yet when it sits far down: jump near it by fraction first,
+    // then align exactly once its row has been built.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        void align() {
+          final rowCtx = pickerKey.currentContext;
+          if (rowCtx != null) {
+            Scrollable.ensureVisible(rowCtx, alignment: 0.12);
+          }
+        }
+
+        align();
+        if (pickerKey.currentContext != null || !_chapterScroll.hasClients) {
+          return;
+        }
+        final pos = _chapterScroll.position;
+        if (chapters.isEmpty || pos.maxScrollExtent <= 0) return;
+        final estimate =
+            (_selectedChapterIndex / chapters.length) * pos.maxScrollExtent;
+        _chapterScroll.jumpTo(estimate.clamp(0.0, pos.maxScrollExtent));
+        WidgetsBinding.instance.addPostFrameCallback((_) => align());
+      });
+    });
     showDialog(
       context: context,
       builder: (dctx) => Dialog(
@@ -706,6 +734,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
                             : l.sleepTimerSheetSpecificPassedShort;
                         final selected = i == _selectedChapterIndex;
                         return Padding(
+                          key: i == _selectedChapterIndex ? pickerKey : null,
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Material(
                             color: selected

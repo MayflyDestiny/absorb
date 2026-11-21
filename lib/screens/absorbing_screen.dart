@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker, TickerCallback;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -18,6 +19,8 @@ import '../utils/cover_accent.dart';
 import '../widgets/absorb_page_header.dart';
 import '../main.dart' show flatNotifier, gradientIntensityNotifier, rootNavigatorKey;
 import '../widgets/absorbing_card.dart';
+import '../widgets/expressive.dart';
+import '../widgets/glass_look.dart';
 import '../widgets/offline_status_icon.dart';
 import '../widgets/overlay_toast.dart';
 import '../widgets/series_books_sheet.dart';
@@ -102,13 +105,22 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     duration: const Duration(milliseconds: 420),
     value: 1,
   );
-  late final Animation<double> _removalStageScale = Tween<double>(
-    begin: 0.94,
-    end: 1,
-  ).animate(CurvedAnimation(
-    parent: _removalStageController,
-    curve: Curves.easeOutCubic,
-  ));
+  // How far back the card taking over starts, which depends on the swipe
+  // style: the stack leaves the next card deepest, carousel hands over at full
+  // size, classic lifts it a touch.
+  late Animation<double> _removalStageScale = _stageScaleFor('classic');
+
+  Animation<double> _stageScaleFor(String style) {
+    final begin = switch (style) {
+      'stack' => 0.90,
+      'carousel' => 1.0,
+      _ => 0.96,
+    };
+    return Tween<double>(begin: begin, end: 1).animate(CurvedAnimation(
+      parent: _removalStageController,
+      curve: Curves.easeOutCubic,
+    ));
+  }
 
   /// The card snapshot is taken before the list removal. Insert it right away
   /// (identical pixels, invisible) so the next card can never flash at full
@@ -131,6 +143,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
       builder: (_) => CardDismissSnapshot(
         image: image,
         rect: rect,
+        style: _dismissStyle,
         start: start.future,
         onDone: () {
           if (entry.mounted) entry.remove();
@@ -166,6 +179,19 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     _pendingRemovalStarted = false;
   }
 
+  /// Captures the card the user is looking at while it sits still, so a
+  /// dismissal starts on the frame it is asked for instead of after a GPU
+  /// read-back.
+  void _warmVisibleShot() {
+    var key = _visibleCardKey;
+    if (key == null) {
+      final books = _getAbsorbingBooks(context.read<LibraryProvider>());
+      if (books.isEmpty) return;
+      key = _absorbingKey(books.first);
+    }
+    _cardKey(key).currentState?.warmRemovalShot();
+  }
+
   void _schedulePendingRemovalSnapshot() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startPendingRemovalSnapshot();
@@ -182,6 +208,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     // The next card sits under the snapshot; scale it up from the stack while
     // the old card drops away, matching the iOS card-stack dismissal.
     _removalStageController.forward();
+    // Warm the card that just took over, for the next removal.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _warmVisibleShot());
   }
 
 
@@ -195,6 +223,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
   String _podcastQueueMode = 'off';
   String? _queuePlaylistId;
   String? _queueCollectionName;
+  String _swipeStyle = 'classic';
+  String _dismissStyle = 'classic';
 
   @override
   void initState() {
@@ -204,9 +234,20 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     _player.addListener(_rebuild);
     _cast.addListener(_rebuild);
     PlayerSettings.settingsChanged.addListener(_loadQueueMode);
+    PlayerSettings.settingsChanged.addListener(_loadSwipeStyle);
+    PlayerSettings.settingsChanged.addListener(_loadDismissStyle);
+    // The card's corners (and the carousel clip around them) follow the
+    // Expressive look, which can be flipped from Settings while this page is
+    // still alive in the tab stack.
+    expressiveNotifier.addListener(_onExpressiveChanged);
     _restoreLastFinished();
     _loadMergeLibraries();
     _loadQueueMode();
+    _loadSwipeStyle();
+    _loadDismissStyle();
+    // Capture the first card once it is on screen, so the first removal is as
+    // quick as every one after it.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _warmVisibleShot());
   }
 
   Future<void> _restoreLastFinished() async {
@@ -219,6 +260,95 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
   Future<void> _loadMergeLibraries() async {
     final v = await PlayerSettings.getMergeAbsorbingLibraries();
     if (mounted && v != _mergeLibraries) setState(() => _mergeLibraries = v);
+  }
+
+  Future<void> _loadSwipeStyle() async {
+    final style = await PlayerSettings.getCardSwipeStyle();
+    if (!mounted || style == _swipeStyle) return;
+    setState(() => _swipeStyle = style);
+  }
+
+  /// How a removed card leaves, chosen on its own in Settings rather than
+  /// following the swipe style.
+  Future<void> _loadDismissStyle() async {
+    final style = await PlayerSettings.getCardDismissStyle();
+    if (!mounted || style == _dismissStyle) return;
+    setState(() {
+      _dismissStyle = style;
+      _removalStageScale = _stageScaleFor(style);
+    });
+  }
+
+  /// A card shaped for how far it is from the middle of the row, in the
+  /// chosen swipe style. [rawDist] is negative when it is to the right.
+  Widget _styleCard({
+    required double rawDist,
+    required double cardWidth,
+    required double hPad,
+    required double vPad,
+    required Widget child,
+  }) {
+    final distFromCenter = rawDist.abs();
+    final padding = EdgeInsets.symmetric(horizontal: hPad, vertical: vPad);
+    if (_swipeStyle == 'stack') {
+      final under = rawDist.clamp(0.0, 2.0);
+      final sink = Curves.easeOut.transform(under.clamp(0.0, 1.0));
+      return Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..translate(under * cardWidth - sink * 10, sink * 6, 0.0)
+          ..scale(1 - 0.07 * sink, 1 - 0.07 * sink, 1.0),
+        child: Padding(
+          padding: padding,
+          child: Opacity(opacity: 1 - 0.35 * sink, child: child),
+        ),
+      );
+    }
+    if (_swipeStyle == 'carousel') {
+      final open =
+          Curves.easeOut.transform((1.0 - distFromCenter).clamp(0.0, 1.0));
+      final full = cardWidth - hPad * 2;
+      final sliver = full * 0.22;
+      final width = sliver + (full - sliver) * open;
+      final alignment = rawDist > 0
+          ? Alignment.centerRight
+          : (rawDist < 0 ? Alignment.centerLeft : Alignment.center);
+      return Padding(
+        padding: padding,
+        child: Align(
+          alignment: alignment,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(softCardCorners ? 34 : 24),
+            child: SizedBox(
+              width: width,
+              height: double.infinity,
+              child: OverflowBox(
+                minWidth: full,
+                maxWidth: full,
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    final double scaleX;
+    if (distFromCenter >= 1.0) {
+      scaleX = 0.85;
+    } else {
+      final t = Curves.easeOut.transform(1.0 - distFromCenter);
+      scaleX = 0.85 + (t * 0.15);
+    }
+    final freedSpace = cardWidth - cardWidth * scaleX;
+    final direction = rawDist > 0 ? 1.0 : (rawDist < 0 ? -1.0 : 0.0);
+    final translateX = direction * freedSpace * 0.45;
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()
+        ..translate(translateX, 0.0, 0.0)
+        ..scale(scaleX, 1.0, 1.0),
+      child: Padding(padding: padding, child: child),
+    );
   }
 
   /// 首帧/切 tab 动画结束后，预热当前页 ±2 以及前方 +3..+6 的邻居；滑动到
@@ -496,6 +626,10 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     _player.removeListener(_rebuild);
     _cast.removeListener(_rebuild);
     PlayerSettings.settingsChanged.removeListener(_loadQueueMode);
+    PlayerSettings.settingsChanged.removeListener(_loadSwipeStyle);
+    PlayerSettings.settingsChanged.removeListener(_loadDismissStyle);
+    expressiveNotifier.removeListener(_onExpressiveChanged);
+    _frontMove.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -511,11 +645,101 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
   // Used during the slide-to-front animation so the user sees their book smoothly
   // slide to the beginning rather than the list instantly reordering underneath them.
   bool _suppressReorder = false;
+
+  // A book that starts playing travels up to the front of the row: it rides
+  // above the other cards, the ones it passes slide over a place to make
+  // room, and the row follows it there. Then the list takes its new order,
+  // with everything already where that puts it. The ticker keeps going when
+  // the full player covers the page, so the move is done behind it.
+  late final AnimationController _frontMove = AnimationController(
+    vsync: const _UncoveredTickerProvider(),
+    duration: const Duration(milliseconds: 560),
+  )
+    ..addListener(_followFrontMove)
+    ..addStatusListener((status) {
+      if (status == AnimationStatus.completed) _finishFrontMove();
+    });
+  String? _movingKey;
+  double _moveFromPage = 0;
+
+  double get _frontMoveT =>
+      _movingKey == null ? 0 : Curves.easeInOutCubic.transform(_frontMove.value);
+
+  /// The row's page right now, or null before it has been laid out.
+  double? get _livePage {
+    if (_pageController.hasClients &&
+        _pageController.positions.length == 1 &&
+        _pageController.position.haveDimensions) {
+      return _pageController.page ?? _pageController.initialPage.toDouble();
+    }
+    return null;
+  }
+
+  void _startFrontMove(String key, int fromIndex) {
+    if (_movingKey != null) {
+      // Another book started while one was still moving: that one lands
+      // first, then this one sets off.
+      _frontMove.stop();
+      _finishFrontMove(holdOrder: true);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActiveCard());
+      return;
+    }
+    _movingKey = key;
+    _moveFromPage = _livePage ?? fromIndex.toDouble();
+    _frontMove.forward(from: 0);
+    setState(() {});
+  }
+
+  /// Keeps the row under the travelling card: it scrolls toward the front by
+  /// however far the move has got.
+  void _followFrontMove() {
+    if (_movingKey == null || _moveFromPage <= 0 || !_pageController.hasClients) {
+      return;
+    }
+    if (_pageController.positions.length != 1) return;
+    final pos = _pageController.position;
+    if (!pos.haveDimensions) return;
+    pos.jumpTo(_moveFromPage *
+        (1 - _frontMoveT) *
+        pos.viewportDimension *
+        _pageController.viewportFraction);
+  }
+
+  void _finishFrontMove({bool holdOrder = false}) {
+    final key = _movingKey;
+    if (key == null) return;
+    _movingKey = null;
+    _suppressReorder = holdOrder;
+    if (!mounted) return;
+    context.read<LibraryProvider>().moveAbsorbingToFront(key);
+    if (_pageController.hasClients) _pageController.jumpToPage(0);
+    setState(() {});
+  }
+
+  /// A card with the keys its removal snapshot and expansion rely on.
+  Widget _cardFor(Map<String, dynamic> book) {
+    final key = _absorbingKey(book);
+    return RepaintBoundary(
+      key: _cardBoundaryKey(key),
+      child: AbsorbingCard(
+        key: _cardKey(key),
+        snapshotKey: _cardBoundaryKey(key),
+        onRemovalSnapshot: _acceptRemovalSnapshot,
+        item: book,
+        player: _player,
+      ),
+    );
+  }
+
   bool _mergeLibraries = false;
   bool? _lastSeenHasBook;
   bool? _lastSeenIsPlaying;
   bool? _lastSeenActiveSession;
   String? _lastSeenLibraryId;
+
+  void _onExpressiveChanged() {
+    if (mounted) setState(() {});
+  }
 
   void _rebuild() {
     if (!mounted) return;
@@ -554,12 +778,9 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
         // Persist so this item stays at front even if the app is killed
         _lastFinishedId = playingKey;
         ScopedPrefs.setString('absorbing_last_finished', playingKey);
-        // Suppress the list reorder if we're not already at page 0, so the
-        // animation slides the current view to the front instead of jumping.
-        final currentPage = _pageController.hasClients
-            ? (_pageController.page ?? 0).round()
-            : 0;
-        _suppressReorder = currentPage > 0;
+        // Hold the list order while the playing card travels to the front,
+        // so it moves there instead of popping into place.
+        _suppressReorder = _pageController.hasClients;
         if (!_suppressReorder) {
           // No animation needed — persist the move-to-front immediately.
           lib.moveAbsorbingToFront(playingKey);
@@ -593,9 +814,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
       lib.unblockFromAbsorbing(castKey);
       _lastFinishedId = castKey;
       ScopedPrefs.setString('absorbing_last_finished', castKey);
-      final currentPage = _pageController.hasClients
-          ? (_pageController.page ?? 0).round() : 0;
-      _suppressReorder = currentPage > 0;
+      _suppressReorder = _pageController.hasClients;
       if (!_suppressReorder) {
         lib.moveAbsorbingToFront(castKey);
       }
@@ -639,7 +858,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     final lib = context.read<LibraryProvider>();
     final books = _getAbsorbingBooks(lib);
     final idx = books.indexWhere((b) => _absorbingKey(b) == playingKey);
-    if (idx >= 0 && _pageController.hasClients) {
+    if (idx > 0 && _suppressReorder && _pageController.hasClients) {
+      // The playing card travels to the front above the row instead of the
+      // whole row sliding all the way back.
+      _startFrontMove(playingKey, idx);
+    } else if (idx >= 0 && _pageController.hasClients) {
       if (_suppressReorder) {
         // Animate from the current page to 0 while keeping the original list order.
         // After the animation lands at 0, release suppression so the list properly
@@ -898,13 +1121,17 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
     final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.watch<LibraryProvider>();
-    final mq = MediaQuery.of(context);
-    final isTablet = mq.size.shortestSide >= 600;
-    final isPhoneLandscape = !isTablet && mq.orientation == Orientation.landscape;
+    // Targeted reads: the whole-query form would rebuild this screen on every
+    // frame of a keyboard animation (the shell injects per-frame viewInsets),
+    // and the card row is far too heavy for that.
+    final mqSize = MediaQuery.sizeOf(context);
+    final mqOrientation = MediaQuery.orientationOf(context);
+    final isTablet = mqSize.shortestSide >= 600;
+    final isPhoneLandscape = !isTablet && mqOrientation == Orientation.landscape;
 
     // Swap the PageController when orientation changes so we can go nearly
     // edge-to-edge on phone landscape while keeping the side peek in portrait.
-    if (_lastOrientation != null && _lastOrientation != mq.orientation) {
+    if (_lastOrientation != null && _lastOrientation != mqOrientation) {
       final currentPage = _pageController.hasClients
           ? (_pageController.page ?? _pageController.initialPage.toDouble()).round()
           : 0;
@@ -915,7 +1142,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
       );
       WidgetsBinding.instance.addPostFrameCallback((_) => oldController.dispose());
     }
-    _lastOrientation = mq.orientation;
+    _lastOrientation = mqOrientation;
 
     // Reset carousel to first card when library changes
     if (lib.selectedLibraryId != _lastSeenLibraryId && _lastSeenLibraryId != null) {
@@ -1193,84 +1420,114 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
                             ),
                           )
                           : ScaleTransition(
-                          scale: _removalStageScale,
-                          child: PageView.builder(
-                          controller: _pageController,
-                          scrollDirection: Axis.horizontal,
-                          clipBehavior: Clip.none,
-                          // 提前构建邻页，滑动到下一张时卡片已经初始化过。
-                          allowImplicitScrolling: true,
-                          onPageChanged: (i) {
-                            if (i >= 0 && i < books.length) {
-                              _visibleCardKey = _absorbingKey(books[i]);
-                            }
-                            _prewarmAroundPage(i, books, lib);
-                          },
-                          physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
-                          itemCount: books.length,
-                          itemBuilder: (_, i) => LayoutBuilder(
-                            builder: (context, constraints) {
-                              final cardWidth = constraints.maxWidth;
-                              final vPad = isPhoneLandscape
-                                  ? 0.0
-                                  : (constraints.maxHeight * 0.01).clamp(2.0, 16.0);
-                              final hPad = isPhoneLandscape ? 0.0 : 4.0;
-                              return AnimatedBuilder(
-                                animation: _pageController,
-                                builder: (context, child) {
-                                  double distFromCenter = 0.0;
-                                  double rawDist = 0.0;
-                                  if (_pageController.hasClients && _pageController.positions.length == 1 && _pageController.position.haveDimensions) {
-                                    final page = _pageController.page ?? _pageController.initialPage.toDouble();
-                                    rawDist = page - i; // negative = card is to the right
-                                    distFromCenter = rawDist.abs();
-                                  }
-                                  final double scaleX;
-                                  if (distFromCenter >= 1.0) {
-                                    scaleX = 0.85;
-                                  } else {
-                                    // Use easeOut curve for smoother transition
-                                    final t = Curves.easeOut.transform(1.0 - distFromCenter);
-                                    scaleX = 0.85 + (t * 0.15); // 0.85 → 1.0
-                                  }
-                                  // Calculate how much space the squeeze frees up, then translate toward center
-                                  final squeezedWidth = cardWidth * scaleX;
-                                  final freedSpace = cardWidth - squeezedWidth;
-                                  // Pull card toward center by half the freed space
-                                  final direction = rawDist > 0 ? 1.0 : (rawDist < 0 ? -1.0 : 0.0);
-                                  final translateX = direction * freedSpace * 0.45;
-
-                                  return Transform(
-                                    alignment: Alignment.center,
-                                    transform: Matrix4.identity()
-                                      ..translate(translateX, 0.0, 0.0)
-                                      ..scale(scaleX, 1.0, 1.0),
-                                    child: Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-                                      child: child,
-                                    ),
+                              scale: _removalStageScale,
+                              child: LayoutBuilder(
+                                builder: (context, viewport) {
+                                  final cardWidth = viewport.maxWidth *
+                                      _pageController.viewportFraction;
+                                  final vPad = isPhoneLandscape
+                                      ? 0.0
+                                      : (viewport.maxHeight * 0.01)
+                                          .clamp(2.0, 16.0);
+                                  final hPad = isPhoneLandscape ? 0.0 : 4.0;
+                                  // Both the row and the card travelling to
+                                  // the front follow the page and the move.
+                                  final motion = Listenable.merge(
+                                      [_pageController, _frontMove]);
+                                  final movingIdx = _movingKey == null
+                                      ? -1
+                                      : books.indexWhere((b) =>
+                                          _absorbingKey(b) == _movingKey);
+                                  final row = PageView.builder(
+                                    controller: _pageController,
+                                    scrollDirection: Axis.horizontal,
+                                    clipBehavior: Clip.none,
+                                    // 提前构建邻页，滑动到下一张时卡片已经初始化过。
+                                    allowImplicitScrolling: true,
+                                    onPageChanged: (i) {
+                                      if (i >= 0 && i < books.length) {
+                                        _visibleCardKey =
+                                            _absorbingKey(books[i]);
+                                      }
+                                      _prewarmAroundPage(i, books, lib);
+                                      _warmVisibleShot();
+                                    },
+                                    physics: const PageScrollPhysics(
+                                        parent: ClampingScrollPhysics()),
+                                    itemCount: books.length,
+                                    itemBuilder: (_, i) {
+                                      // The moving card is painted above the
+                                      // row, so its slot here stays empty.
+                                      if (i == movingIdx) {
+                                        return const SizedBox.expand();
+                                      }
+                                      return AnimatedBuilder(
+                                        animation: motion,
+                                        builder: (context, child) {
+                                          // Cards the moving one has passed
+                                          // slide over a place to make room.
+                                          final shift =
+                                              movingIdx > 0 && i < movingIdx
+                                                  ? _frontMoveT
+                                                  : 0.0;
+                                          final page =
+                                              _livePage ?? (i + shift);
+                                          final card = _styleCard(
+                                            rawDist: page - (i + shift),
+                                            cardWidth: cardWidth,
+                                            hPad: hPad,
+                                            vPad: vPad,
+                                            child: child!,
+                                          );
+                                          return shift == 0
+                                              ? card
+                                              : Transform.translate(
+                                                  offset: Offset(
+                                                      shift * cardWidth, 0),
+                                                  child: card,
+                                                );
+                                        },
+                                        child: _cardFor(books[i]),
+                                      );
+                                    },
+                                  );
+                                  final moving =
+                                      movingIdx > 0 ? books[movingIdx] : null;
+                                  return Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Positioned.fill(child: row),
+                                      if (moving != null)
+                                        AnimatedBuilder(
+                                          animation: motion,
+                                          builder: (context, child) {
+                                            final at = movingIdx *
+                                                (1 - _frontMoveT);
+                                            final page = _livePage ?? at;
+                                            return Positioned(
+                                              left: (viewport.maxWidth -
+                                                          cardWidth) /
+                                                      2 +
+                                                  (at - page) * cardWidth,
+                                              top: 0,
+                                              width: cardWidth,
+                                              height: viewport.maxHeight,
+                                              child: _styleCard(
+                                                rawDist: page - at,
+                                                cardWidth: cardWidth,
+                                                hPad: hPad,
+                                                vPad: vPad,
+                                                child: child!,
+                                              ),
+                                            );
+                                          },
+                                          child: _cardFor(moving),
+                                        ),
+                                    ],
                                   );
                                 },
-                                child: RepaintBoundary(
-                                  key: _cardBoundaryKey(
-                                    _absorbingKey(books[i]),
-                                  ),
-                                  child: AbsorbingCard(
-                                    key: _cardKey(_absorbingKey(books[i])),
-                                    snapshotKey: _cardBoundaryKey(
-                                      _absorbingKey(books[i]),
-                                    ),
-                                    onRemovalSnapshot:
-                                        _acceptRemovalSnapshot,
-                                    item: books[i],
-                                    player: _player,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
+                              ),
+                            ),
             ),
           ],
         );
@@ -1307,9 +1564,8 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
 
   void _showReorderSheet(BuildContext context, LibraryProvider lib, List<Map<String, dynamic>> books) {
     final keys = books.map((b) => _absorbingKey(b)).toList();
-    final media = MediaQuery.of(context);
-    final needsMoreRoom = media.size.height < 600 ||
-        media.textScaler.scale(1) > 1.2;
+    final needsMoreRoom = MediaQuery.sizeOf(context).height < 600 ||
+        MediaQuery.textScalerOf(context).scale(1) > 1.2;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1897,7 +2153,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
-    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return Container(
       decoration: BoxDecoration(
@@ -2192,7 +2448,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(l.absorbingNothingAbsorbingYet,
+          child: Text(Wording.from(l).absorbingNothingAbsorbingYet,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
         ),
       );
@@ -2218,7 +2474,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(l.absorbingNothingAbsorbingYet,
+          child: Text(Wording.from(l).absorbingNothingAbsorbingYet,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
         ),
       );
@@ -2257,7 +2513,7 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(l.absorbingNothingAbsorbingYet,
+          child: Text(Wording.from(l).absorbingNothingAbsorbingYet,
               style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
         ),
       );
@@ -2674,4 +2930,14 @@ class _DragHandleState extends State<_DragHandle> with SingleTickerProviderState
       ),
     );
   }
+}
+
+/// Ticks even while the page is covered, unlike a State's own tickers, so a
+/// move started just before the full player opens over the page still
+/// finishes behind it.
+class _UncoveredTickerProvider implements TickerProvider {
+  const _UncoveredTickerProvider();
+
+  @override
+  Ticker createTicker(TickerCallback onTick) => Ticker(onTick);
 }

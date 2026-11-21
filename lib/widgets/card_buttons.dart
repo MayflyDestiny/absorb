@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'expressive.dart';
+import 'glass_look.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
@@ -74,15 +76,103 @@ class Pressable extends StatefulWidget {
   final VoidCallback? onLongPress;
   final HitTestBehavior? behavior;
   final Widget child;
-  const Pressable({super.key, this.onTap, this.onLongPress, this.behavior, required this.child});
+  /// Whether the Expressive squish applies. The card's play button opts out so
+  /// it keeps the same press feedback with the setting on or off.
+  final bool expressive;
+  const Pressable({super.key, this.onTap, this.onLongPress, this.behavior, this.expressive = true, required this.child});
   @override State<Pressable> createState() => _PressableState();
 }
 
 class _PressableState extends State<Pressable> {
   bool _pressed = false;
+  DateTime? _pressedAt;
+
+  void _press() {
+    _pressedAt = DateTime.now();
+    setState(() => _pressed = true);
+  }
+
+  // A quick tap lets go before the squish has shown, so the Expressive look
+  // holds it for a moment first.
+  void _release() {
+    final since = _pressedAt == null
+        ? const Duration(seconds: 1)
+        : DateTime.now().difference(_pressedAt!);
+    const hold = Duration(milliseconds: 90);
+    if (!((widget.expressive && expressiveNotifier.value) || glassLook) ||
+        since >= hold) {
+      setState(() => _pressed = false);
+      return;
+    }
+    Future.delayed(hold - since, () {
+      if (mounted) setState(() => _pressed = false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.expressive &&
+        expressiveNotifier.value &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      // Inside a connected row the row itself widens the pressed button (its
+      // flex grows, the neighbours give way). Squashing it wider on top of
+      // that painted it over its neighbour - chapters and timer over the one
+      // on their right, speed and bookmarks over the one on their left - so
+      // here it only squashes flat.
+      final inRow = ExpressiveGroupSlot.maybeOf(context) != null;
+      // Squashes flat and wide under the finger, then springs back past its
+      // resting size before settling.
+      return GestureDetector(
+        behavior: widget.behavior,
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        onTapDown: (_) => _press(),
+        onTapUp: (_) => _release(),
+        onTapCancel: _release,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: _pressed ? 1.0 : 0.0),
+          duration: Duration(milliseconds: _pressed ? 90 : 520),
+          curve: _pressed ? Curves.easeOut : Curves.elasticOut,
+          builder: (context, t, child) => Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.diagonal3Values(
+              inRow ? 1.0 : 1 + 0.08 * t,
+              1 - 0.14 * t,
+              1,
+            ),
+            child: Opacity(
+              opacity: (1 - 0.25 * t).clamp(0.0, 1.0),
+              child: child,
+            ),
+          ),
+          child: widget.child,
+        ),
+      );
+    }
+    if (glassLook && !MediaQuery.disableAnimationsOf(context)) {
+      // iOS glass: the button dips under the finger and springs back.
+      return GestureDetector(
+        behavior: widget.behavior,
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        onTapDown: (_) => _press(),
+        onTapUp: (_) => _release(),
+        onTapCancel: _release,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: _pressed ? 1.0 : 0.0),
+          duration: Duration(milliseconds: _pressed ? 90 : 480),
+          curve: _pressed ? Curves.easeOut : Curves.elasticOut,
+          builder: (context, t, child) => Transform.scale(
+            scale: 1 - 0.1 * t,
+            child: Opacity(
+              opacity: (1 - 0.2 * t).clamp(0.0, 1.0),
+              child: child,
+            ),
+          ),
+          child: widget.child,
+        ),
+      );
+    }
     return GestureDetector(
       behavior: widget.behavior,
       onTap: widget.onTap,
@@ -179,7 +269,9 @@ class CardWideButton extends StatelessWidget {
           color: highlighted
               ? _buttonFill(cs, _inkAccent(accent), 0.1, 0.12)
               : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: expressiveNotifier.value
+              ? cardButtonCorners(context, radius, round: highlighted)
+              : BorderRadius.circular(radius),
           border: Border.all(
               color: highlighted
                   ? _buttonEdge(_inkAccent(accent), 0.3, 1.0)
@@ -292,10 +384,11 @@ class CardSleepButtonInline extends StatelessWidget {
           label = l.timer;
         }
 
-        final h = compact ? 30.0 : (large ? 48.0 : 36.0);
+        // Same height as the other buttons: icon, padding and border.
+        final h = compact ? 31.0 : (large ? 50.0 : 38.0);
         final iconSz = compact ? 13.0 : (large ? 20.0 : 16.0);
         final fontSize = compact ? 10.0 : (large ? (active && isTime ? 15.0 : 14.0) : (active && isTime ? 13.0 : 12.0));
-        final radius = compact ? 10.0 : (large ? 16.0 : 14.0);
+        final radius = compact ? 10.0 : (large ? 14.0 : 12.0);
 
         return Pressable(
           onTap: isActive ? () {
@@ -308,7 +401,9 @@ class CardSleepButtonInline extends StatelessWidget {
               color: active
                   ? _buttonFill(cs, _inkAccent(accent), 0.1, 0.12)
                   : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
-              borderRadius: BorderRadius.circular(radius),
+              borderRadius: expressiveNotifier.value
+                  ? cardButtonCorners(context, radius)
+                  : BorderRadius.circular(radius),
               border: Border.all(color: active
                   ? _buttonEdge(_inkAccent(accent), 0.3, 1.0)
                   : _buttonEdge(cs.onSurface, 0.08, 0.55)),
@@ -320,7 +415,9 @@ class CardSleepButtonInline extends StatelessWidget {
                   child: Container(
                     decoration: BoxDecoration(
                       color: _inkAccent(accent).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(radius - 1),
+                      borderRadius: expressiveNotifier.value
+                          ? cardButtonCorners(context, radius - 1)
+                          : BorderRadius.circular(radius - 1),
                     ),
                   ),
                 ),
@@ -339,7 +436,7 @@ class CardSleepButtonInline extends StatelessWidget {
                     children: [
                       Icon(Icons.nightlight_round_outlined, size: iconSz,
                         color: active ? _inkAccent(accent) : (isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: _inkAlpha(0.24, 0.85)))),
-                      SizedBox(width: compact ? 4 : 8),
+                      const SizedBox(width: 6),
                       Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(
                         color: active ? _inkAccent(accent) : (isActive ? cs.onSurfaceVariant : cs.onSurface.withValues(alpha: _inkAlpha(0.24, 0.85))),
                         fontSize: fontSize,
@@ -428,10 +525,11 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
           color = cs.onSurfaceVariant;
         }
 
-        final h = widget.compact ? 30.0 : (widget.large ? 48.0 : 36.0);
+        // Same height as the other buttons: icon, padding and border.
+        final h = widget.compact ? 31.0 : (widget.large ? 50.0 : 38.0);
         final iconSz = widget.compact ? 13.0 : (widget.large ? 20.0 : 16.0);
         final fontSize = widget.compact ? 10.0 : (widget.large ? 14.0 : 12.0);
-        final radius = widget.compact ? 10.0 : (widget.large ? 16.0 : 14.0);
+        final radius = widget.compact ? 10.0 : (widget.large ? 14.0 : 12.0);
 
         return Pressable(
           onTap: () => _handleTap(context, dl),
@@ -442,7 +540,9 @@ class _CardDownloadButtonInlineState extends State<CardDownloadButtonInline> {
               color: downloaded
                   ? _buttonFill(cs, dlGreen, 0.1, 0.12)
                   : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
-              borderRadius: BorderRadius.circular(radius),
+              borderRadius: expressiveNotifier.value
+                  ? cardButtonCorners(context, radius)
+                  : BorderRadius.circular(radius),
               border: Border.all(color: downloaded
                   ? _buttonEdge(dlGreen, 0.3, 0.9)
                   : _buttonEdge(cs.onSurface, 0.08, 0.55)),
@@ -610,9 +710,9 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
     final cp = widget.compact;
     final lg = widget.large;
     final active = widget.isActive || _isCasting;
-    final iconSz = cp ? 13.0 : (lg ? 22.0 : 18.0);
-    final fontSize = cp ? 10.0 : (lg ? 14.0 : 12.0);
-    final vPad = cp ? 6.0 : (lg ? 12.0 : 8.0);
+    final h = cp ? 31.0 : (lg ? 50.0 : 38.0);
+    final iconSz = cp ? 13.0 : (lg ? 20.0 : 16.0);
+    final fontSize = cp ? 10.0 : (lg ? 13.0 : 11.0);
     final radius = cp ? 10.0 : (lg ? 14.0 : 12.0);
     final sh = widget.short;
     final label = cp ? (_count > 0 ? '$_count' : l.bookmark) : sh ? l.bookmarks : (_count > 0 ? l.bookmarksWithCount(_count) : l.bookmark);
@@ -620,10 +720,13 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
       onTap: () => _showBookmarks(context),
       onLongPress: active ? () => _quickAdd(context) : null,
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: vPad),
+        height: h,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: expressiveNotifier.value
+              ? cardButtonCorners(context, radius)
+              : BorderRadius.circular(radius),
           border: Border.all(color: _buttonEdge(cs.onSurface, 0.08, 0.55)),
         ),
         child: cp || widget.iconsOnly
@@ -632,7 +735,7 @@ class _CardBookmarkButtonInlineState extends State<CardBookmarkButtonInline> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.bookmark_outline_rounded, size: iconSz, color: cs.onSurfaceVariant),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(
                   color: cs.onSurfaceVariant, fontSize: fontSize, fontWeight: FontWeight.w500))),
               ],
@@ -718,10 +821,11 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
   @override Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final cast = ChromecastService();
-    final h = widget.compact ? 30.0 : (widget.large ? 48.0 : 36.0);
+    // Same height as the other buttons: icon, padding and border.
+    final h = widget.compact ? 31.0 : (widget.large ? 50.0 : 38.0);
     final iconSz = widget.compact ? 13.0 : (widget.large ? 20.0 : 16.0);
     final fontSize = widget.compact ? 10.0 : (widget.large ? 15.0 : 13.0);
-    final radius = widget.compact ? 10.0 : (widget.large ? 16.0 : 14.0);
+    final radius = widget.compact ? 10.0 : (widget.large ? 14.0 : 12.0);
     return ListenableBuilder(
       listenable: Listenable.merge([cast, widget.player]),
       builder: (context, _) {
@@ -751,7 +855,7 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.speed_rounded, size: iconSz, color: widget.accent),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text('${speedNow.toStringAsFixed(2)}x', style: TextStyle(
                 color: widget.accent, fontSize: fontSize, fontWeight: FontWeight.w700)),
             ],
@@ -767,7 +871,9 @@ class _CardSpeedButtonInlineState extends State<CardSpeedButtonInline> {
             height: h,
             decoration: BoxDecoration(
               color: _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
-              borderRadius: BorderRadius.circular(radius),
+              borderRadius: expressiveNotifier.value
+                  ? cardButtonCorners(context, radius)
+                  : BorderRadius.circular(radius),
               border: Border.all(color: _buttonEdge(cs.onSurface, 0.08, 0.55)),
             ),
             child: content,
@@ -860,7 +966,7 @@ class _CardSpeedSheetState extends State<CardSpeedSheet> {
   @override Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
-    final navBarPad = MediaQuery.of(context).viewPadding.bottom;
+    final navBarPad = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + navBarPad),
       decoration: BoxDecoration(color: Theme.of(context).bottomSheetTheme.backgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1571,7 +1677,7 @@ class _MoreMenuSheetState extends State<MoreMenuSheet> {
   Widget _buildEditMode(ColorScheme cs, TextTheme tt) {
     final l = AppLocalizations.of(context)!;
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.75),
       decoration: BoxDecoration(
         color: Theme.of(context).bottomSheetTheme.backgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -2044,30 +2150,36 @@ class CardActionDelegate {
       final rowSlots = ids.sublist(offset, (offset + rowLen).clamp(0, n));
       offset += rowLen;
 
-      Widget row = Row(children: [
-        for (int c = 0; c < rowSlots.length; c++) ...[
-          if (c > 0) const SizedBox(width: 8),
-          Expanded(
-            child: KeyedSubtree(
-              key: ValueKey('card-action-${rowSlots[c]}'),
-              child: rowSlots[c] == '_more'
-                  ? _buildInlineMoreButton(
-                      accent,
-                      compact: compact,
-                      short: short,
-                    )
-                  : buildCardButton(
-                      rowSlots[c],
-                      accent,
-                      tt,
-                      compact: compact,
-                      short: short,
-                      iconsOnly: iconsOnly,
-                    ),
-            ),
+      final slots = [
+        for (int c = 0; c < rowSlots.length; c++)
+          KeyedSubtree(
+            key: ValueKey('card-action-${rowSlots[c]}'),
+            child: rowSlots[c] == '_more'
+                ? _buildInlineMoreButton(
+                    accent,
+                    compact: compact,
+                    short: short,
+                  )
+                : buildCardButton(
+                    rowSlots[c],
+                    accent,
+                    tt,
+                    compact: compact,
+                    short: short,
+                    iconsOnly: iconsOnly,
+                  ),
           ),
-        ],
-      ]);
+      ];
+      // Expressive joins the buttons into one connected group and lets the
+      // one under the finger widen. Classic keeps the original separate pills.
+      Widget row = expressiveNotifier.value && slots.length > 1
+          ? ExpressiveButtonRow(children: slots)
+          : Row(children: [
+              for (int c = 0; c < slots.length; c++) ...[
+                if (c > 0) const SizedBox(width: 8),
+                Expanded(child: slots[c]),
+              ],
+            ]);
 
       // Center single-button rows at 1/3 width
       if (rowSlots.length == 1 && n == 1) {
@@ -2083,14 +2195,15 @@ class CardActionDelegate {
     final cs = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
     final large = MediaQuery.sizeOf(context).height > 700;
-    final h = compact ? 30.0 : (large ? 48.0 : 36.0);
+    // Same height as the other buttons: icon, padding and border.
+    final h = compact ? 31.0 : (large ? 50.0 : 38.0);
     final iconSz = compact ? 13.0 : (large ? 20.0 : 16.0);
     final fontSize = compact ? 10.0 : (large ? 13.0 : 11.0);
     final vPad = compact ? 8.0 : (large ? 14.0 : 10.0);
     final radius = compact ? 10.0 : (large ? 14.0 : 12.0);
     return ListenableBuilder(
       listenable: ChromecastService(),
-      builder: (_, __) {
+      builder: (slotContext, __) {
         final castActive = ChromecastService().isCasting &&
             !buttonOrder.take(visibleCount).contains('cast');
         final iconColor = castActive ? accent : cs.onSurfaceVariant;
@@ -2104,7 +2217,9 @@ class CardActionDelegate {
               color: castActive
                   ? _buttonFill(cs, _inkAccent(accent), 0.1, 0.12)
                   : _buttonFill(cs, cs.onSurface, 0.06, 0.03, neutral: true),
-              borderRadius: BorderRadius.circular(radius),
+              borderRadius: expressiveNotifier.value
+                  ? cardButtonCorners(slotContext, radius)
+                  : BorderRadius.circular(radius),
               border: Border.all(color: castActive
                   ? _buttonEdge(_inkAccent(accent), 0.3, 1.0)
                   : _buttonEdge(cs.onSurface, 0.08, 0.55)),
@@ -3562,7 +3677,7 @@ class _CardChapterSkipSheetState extends State<CardChapterSkipSheet> {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final l = AppLocalizations.of(context)!;
-    final navBarPad = MediaQuery.of(context).viewPadding.bottom;
+    final navBarPad = MediaQuery.viewPaddingOf(context).bottom;
     return Container(
       padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + navBarPad),
       decoration: BoxDecoration(

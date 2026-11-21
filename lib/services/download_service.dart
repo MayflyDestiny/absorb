@@ -6432,10 +6432,17 @@ Future<EbookOpenSource> resolveEbookOpenSource(
   Map<String, dynamic> ebookFile,
   String title, {
   bool needFile = false,
+  bool offline = false,
 }) async {
   final local =
       await resolveLocalEbookSource(itemId, ebookFile, needFile: needFile);
   if (local != null) return local;
+  if (offline) {
+    // Nothing on the device at all: say so instead of waiting on requests
+    // that can only fail out here.
+    throw StateError(
+        'the book is not on this device and the server is unreachable');
+  }
   // Nothing local: stream the book from the server over HTTP Range so it opens
   // without downloading it whole. Only EPUB genuinely streams - epub.js fetches
   // zip sections on demand. foliate-js (MOBI/AZW3/FB2/CBZ) downloads the whole
@@ -6460,7 +6467,10 @@ Future<EbookOpenSource?> _tryStreamingSource(
   Map<String, dynamic> ebookFile,
 ) async {
   final ino = ebookFile['ino']?.toString();
-  if (ino == null || ino.isEmpty) return null;
+  if (ino == null || ino.isEmpty) {
+    debugPrint('[EbookReader] stream skipped item=$itemId: ebookFile has no ino');
+    return null;
+  }
   final url = api.buildFileUrl(itemId, ino);
   final source = await HttpRangeBookSource.open(url, headers: api.mediaHeaders);
   if (source == null) {

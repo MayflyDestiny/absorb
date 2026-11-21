@@ -1120,6 +1120,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           final completedAll = filterByLibrary(
                             ds.downloadedItems,
                           );
+                          // Books whose ebook is on the device - cached or
+                          // exported - get the badge and the read button, and
+                          // their cached bytes count toward the row and
+                          // summary.
+                          final ebookIds = <String>{
+                            ...cachedEbookItemIdsSync(),
+                            ..._exportedEbookIds,
+                          };
                           // One row per book: download records, the ebooks the
                           // app keeps for offline reading, and cached copies no
                           // record lists. The first source to claim an id wins.
@@ -1127,7 +1135,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           final rows = <DownloadInfo>[
                             for (final r in <DownloadInfo>[
                               ...completedAll,
-                              ...filterByLibrary(ds.keptEbooks),
+                              // A kept-ebook record whose bytes are gone (a
+                              // cache cleared elsewhere, a pull that never
+                              // finished) would otherwise show as a bare row
+                              // without badge, size or read action.
+                              ...filterByLibrary(ds.keptEbooks)
+                                  .where((k) => ebookIds.contains(k.itemId)),
                               ...filterByLibrary(_ebookOnlyItems),
                             ])
                               if (seenIds.add(r.itemId)) r,
@@ -1135,13 +1148,6 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                           final completed = _sortedCompleted(
                             rows.where(_matchesQuery).toList(),
                           );
-                          // Books whose ebook is on the device - cached or
-                          // exported - get the badge and the read button, and
-                          // their cached bytes count toward the row and summary.
-                          final ebookIds = <String>{
-                            ...cachedEbookItemIdsSync(),
-                            ..._exportedEbookIds,
-                          };
                           int completedBytes = 0;
                           for (final d in rows) {
                             completedBytes += _fileSizes[d.itemId] ?? 0;

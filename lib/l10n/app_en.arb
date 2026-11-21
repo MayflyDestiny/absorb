@@ -6159,7 +6159,6 @@
   "statsYirTopMonth": "Top month",
   "statsYirTopNarrator": "Top narrator",
   "statsYirLongestFinished": "Longest finished",
-  "removeFromNowPlaying": "Remove from Now Playing",
   "speedPresetsHint": "Tap + to save the current speed as a preset. Long-press a preset to remove it.",
   "monthShortJan": "Jan",
   "monthShortFeb": "Feb",
@@ -6188,6 +6187,73 @@
   "wordingClassicTitle": "Classic wording",
   "wordingClassicOnSubtitle": "Using \"Play\", \"Now Playing\", \"Finished\"",
   "wordingClassicOffSubtitle": "Using \"Absorb\", \"Absorbing\", \"Fully Absorbed\"",
+  "classicAbsorb": "Play",
+  "classicAbsorbing": "Playing...",
+  "classicAbsorbAgain": "Play Again",
+  "classicDownloadToAbsorb": "Download to Play",
+  "classicFullyAbsorbed": "Finished",
+  "classicFullyAbsorbAction": "Mark Finished",
+  "classicAddToAbsorbing": "Add to Now Playing",
+  "classicAbsorbNext": "Play Next",
+  "classicAbsorbLast": "Play Last",
+  "classicAbsorbNextAdded": "Up next in Now Playing",
+  "classicRemoveFromAbsorbing": "Remove from Now Playing",
+  "classicAddedToAbsorbing": "Added to Now Playing",
+  "classicRemovedFromAbsorbing": "Removed from Now Playing",
+  "classicEpisodeListAddedToAbsorbing": "Added \"{title}\" to Now Playing",
+  "@classicEpisodeListAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "classicPlaylistDetailAddedToAbsorbing": "Added \"{title}\" to Now Playing",
+  "@classicPlaylistDetailAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "classicCollectionDetailAddedToAbsorbing": "Added \"{title}\" to Now Playing",
+  "@classicCollectionDetailAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "classicSectionDetailAddedToAbsorbing": "Added \"{title}\" to Now Playing",
+  "@classicSectionDetailAddedToAbsorbing": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "classicAbsorbingTitle": "Now Playing",
+  "classicAppShellAbsorbingTab": "Now Playing",
+  "classicStartScreenAbsorb": "Now Playing",
+  "classicSectionAbsorbingCards": "Player Cards",
+  "classicMergeLibraries": "Unified Now Playing",
+  "classicMergeLibrariesInfoTitle": "Unified Now Playing",
+  "classicMergeLibrariesInfoContent": "When enabled, Now Playing shows and queues books and podcast episodes from every library together. When disabled, the page and Manual queue stay within the current library or media type.",
+  "classicMergeLibrariesOnSubtitle": "Show and queue items from all libraries together",
+  "classicMergeLibrariesOffSubtitle": "Keep the page and Manual queue in the current library",
+  "classicAbsorbingNothingAbsorbingYet": "Nothing playing yet",
+  "classicMarkAsFullyAbsorbedQuestion": "Mark as finished?",
+  "classicFullyAbsorbSeries": "Mark series finished?",
+  "classicWhenAbsorbed": "When finished",
+  "classicWhenAbsorbedInfoTitle": "When Finished",
+  "classicWhenAbsorbedSubtitle": "What happens to the player card when a book or episode finishes",
+  "classicDeleteAbsorbedDownloads": "Delete finished downloads",
+  "classicDeleteAbsorbedDownloadsInfoTitle": "Delete Finished Downloads",
+  "classicLoginTagline": "Start Listening",
+  "classicTipsSheetQuickAddAbsorbingTitle": "Quick Add to Now Playing",
+  "classicTipsSheetQuickAddAbsorbingDesc": "Swipe right on any book in a list sheet (series, author, search results) to instantly add it to your Now Playing queue.",
+  "classicQueueModeInfoManualDesc": "Items in Now Playing are your manual queue. When one finishes, the next unfinished item plays. Use Add to Now Playing on a book or episode, then reorder it in the Queue panel.",
+  "classicDesktopManualQueueHint": "Use Add to Now Playing on a book or episode to put it here. Items play in this order.",
   "rotationLockTitle": "Lock rotation",
   "rotationLockOnSubtitle": "Screen stays in portrait",
   "rotationLockOffSubtitle": "Screen can rotate with the device",
@@ -9375,8 +9441,12 @@
   },
   "liquidGlassNavLabel": "Liquid Glass",
   "liquidGlassNavSubtitle": "iOS glass for the tab bar, library pills and toasts",
-  "materialExpressiveLabel": "Material 3 Expressive",
-  "materialExpressiveSubtitle": "Playful shapes in the tab bar, play button and switches",
+  "materialExpressiveLabel": "Expressive style",
+  "materialExpressiveSubtitle": "Rounder cards and livelier controls",
+  "materialExpressiveInfoTitle": "Expressive style",
+  "materialExpressiveInfoContent": "Rounds the player card's corners (24 → 34), gives the chapter, speed, timer and bookmark buttons their shaped, squishy press, and follows through in Settings switches, loading spinners and the card's chapter bar. The play button keeps its normal look.",
+  "readerLocating": "Finding where you left off…",
+  "readerCurrentChapter": "Current",
   "appIconLabel": "App icon",
   "appIconClassic": "Classic",
   "appIconAurora": "Aurora",
@@ -9406,6 +9476,10 @@
   "cardSwipeStyleClassic": "Classic",
   "cardSwipeStyleCarousel": "Carousel",
   "cardSwipeStyleStack": "Stack",
+  "cardDismissStyle": "Card removal animation",
+  "cardDismissStyleClassic": "Fling",
+  "cardDismissStyleCarousel": "Pull",
+  "cardDismissStyleStack": "Sink",
   "adminUsersPickLibrary": "Pick at least one library, or turn on access to all libraries",
   "ebookSaveNarratedBody": "This EPUB has its narration built in, so the full file is large. Text only saves just the book's text and pictures, which is much smaller.",
   "ebookSaveTextOnly": "Text only",
