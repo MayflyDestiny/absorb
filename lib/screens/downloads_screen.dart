@@ -1251,7 +1251,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                                   child: Text(
                                     l.downloadsDownloading,
                                     style: tt.labelMedium?.copyWith(
-                                      color: cs.primary,
+                                      color: cs.onSurfaceVariant,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),

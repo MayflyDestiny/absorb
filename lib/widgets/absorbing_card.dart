@@ -38,7 +38,9 @@ import '../main.dart'
         useColorEverywhereNotifier,
         manualSeedNotifier,
         manualColorScheme,
-        snappyTransitionsNotifier;
+        snappyTransitionsNotifier,
+        trueCoverColorsNotifier;
+import '../utils/app_platform.dart';
 import 'stable_cached_network_image.dart';
 
 /// Backstop for a play request: the engine's own deadline is 45s, so anything
@@ -48,6 +50,9 @@ const Duration _startBackstop = Duration(seconds: 60);
 /// Where this card is being shown: in the row on the Absorbing page, or as
 /// the full player on a route of its own (then it simply lays out at g = 1).
 enum AbsorbingCardPresentation { card, fullScreen }
+
+/// At or above this width the card lays its player out as a wide row.
+const double kAbsorbingDesktopRowLayoutWidth = 760;
 
 class AbsorbingCard extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -59,6 +64,9 @@ class AbsorbingCard extends StatefulWidget {
   /// the PageView actually swaps in the next card.
   final void Function(ui.Image image, Rect rect)? onRemovalSnapshot;
   final AbsorbingCardPresentation presentation;
+  /// A copy shown in Settings to look at, not the book's card on the
+  /// Absorbing page: it never stands in for that one.
+  final bool preview;
   const AbsorbingCard({
     super.key,
     required this.item,
@@ -66,6 +74,7 @@ class AbsorbingCard extends StatefulWidget {
     this.snapshotKey,
     this.onRemovalSnapshot,
     this.presentation = AbsorbingCardPresentation.card,
+    this.preview = false,
   });
 
   /// Cards currently shown in the row, so the shell can grow one into the full
@@ -123,6 +132,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
     with AutomaticKeepAliveClientMixin {
   ColorScheme? _rawCoverScheme;
   Brightness? _coverBrightness; // brightness used to generate _coverScheme
+  bool? _coverTrue; // the True cover colors setting it was made with
 
   /// Cover-derived scheme, unless a manual app color is set to apply everywhere.
   ColorScheme? get _coverScheme {
@@ -213,7 +223,9 @@ class AbsorbingCardState extends State<AbsorbingCard>
   bool _moreInline = false;
   bool _rectangleCovers = false;
   bool _coverPlayButton = false;
-  String _cardBackground = 'blurred';
+  // TVs get the plain cover color: the blurred cover is too much for their
+  // graphics to move smoothly.
+  String _cardBackground = AppPlatform.isTv ? 'solid' : 'blurred';
   // 背景模式是异步读取的；读出之前先按默认的 blurred 预热模糊图，保证冷启动
   // 第一帧的封面占位/背景尽快拿到落盘的模糊图。
   bool _cardBackgroundReady = false;
@@ -222,6 +234,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
       1.0; // elapsed/remaining/percent text size (GH #230)
   double _savedSpeed = 1.0; // per-book or default speed for inactive display
   final ValueNotifier<bool> _edgeBarExpanded = ValueNotifier(false);
+  final FocusNode _tvPlayFocus = FocusNode(debugLabel: 'card play');
 
   @override
   bool get wantKeepAlive => true;
@@ -619,6 +632,13 @@ class AbsorbingCardState extends State<AbsorbingCard>
       _placeholderBlurLease = cachedLatest;
     } else {
       unawaited(_loadPlaceholderBlur());
+
+    if (AppPlatform.isTv && _fullScreen) {
+      // Opened as the player on its own: the remote starts on play.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _tvPlayFocus.requestFocus();
+      });
+    }
     }
     _registerShown();
     if (_fullScreen) {
@@ -694,7 +714,13 @@ class AbsorbingCardState extends State<AbsorbingCard>
     if (mounted) setState(() {});
   }
 
+  String _buttonFill = PlayerSettings.cardButtonFill;
+
   void _reloadButtonOrder() {
+    // The buttons read the fill themselves; the card only has to redraw them.
+    if (mounted && PlayerSettings.cardButtonFill != _buttonFill) {
+      setState(() => _buttonFill = PlayerSettings.cardButtonFill);
+    }
     PlayerSettings.getCardButtonOrder().then((o) {
       if (mounted && o.join(',') != _buttonOrder.join(','))
         setState(() => _buttonOrder = o);
@@ -740,6 +766,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
         setState(() => _progressTextScale = v);
     });
     PlayerSettings.getCardBackground().then((v) {
+      if (AppPlatform.isTv) return;
       if (!mounted) return;
       if (v != _cardBackground) setState(() => _cardBackground = v);
       _cardBackgroundReady = true;
@@ -1332,6 +1359,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
   @override
   void dispose() {
     _unregisterShown();
+    _tvPlayFocus.dispose();
     widget.player.removeListener(_onPlaybackMoved);
     PlayerSettings.settingsChanged.removeListener(_reloadButtonOrder);
     expressiveNotifier.removeListener(_onExpressiveChanged);
@@ -1465,8 +1493,32 @@ class AbsorbingCardState extends State<AbsorbingCard>
     final coverIdentity = _coverProviderIdentity;
     if (provider == null || coverIdentity == null) return;
     final brightness = Theme.of(context).brightness;
-    if (_rawCoverScheme != null && _coverBrightness == brightness) return;
+    final trueColors = trueCoverColorsNotifier.value;
+    if (_rawCoverScheme != null && _coverBrightness == brightness && _coverTrue == trueColors) return;
     _coverBrightness = brightness;
+    _coverTrue = trueColors;
+    // True cover colors builds from the cover's own accent; the softer default
+    // keeps Material's read of the whole image.
+    if (trueColors) {
+      CoverAccents.seed(coverIdentity, provider)
+          .then((c) => c == null ? null : schemeFromCover(c, brightness))
+          .then((s) {
+            if (s == null) return;
+            if (mounted &&
+                _coverProviderIdentity == coverIdentity &&
+                _coverBrightness == brightness) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted &&
+                    _coverProviderIdentity == coverIdentity &&
+                    _coverBrightness == brightness) {
+                  setState(() => _rawCoverScheme = s);
+                }
+              });
+            }
+          })
+          .catchError((_) {});
+      return;
+    }
     final cached = CoverPaletteCache.instance.schemeFor(
       coverIdentity,
       brightness,
@@ -2891,7 +2943,7 @@ class AbsorbingCardState extends State<AbsorbingCard>
   String? _registeredShownKey;
 
   void _registerShown() {
-    if (_fullScreen) return;
+    if (_fullScreen || widget.preview) return;
     final key = _shownKey;
     if (key == _registeredShownKey) return;
     _unregisterShown();

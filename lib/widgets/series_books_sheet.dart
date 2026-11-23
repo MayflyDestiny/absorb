@@ -133,13 +133,13 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
         : CachedNetworkImageProvider(imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, url, headers: context.read<LibraryProvider>().mediaHeaders);
     final known = CoverAccents.known(url);
     if (known != null) {
-      _coverScheme = ColorScheme.fromSeed(seedColor: known, brightness: brightness);
+      _coverScheme = schemeFromCover(known, brightness);
       if (mounted) setState(() {});
       return;
     }
     CoverAccents.seed(url, provider).then((seed) {
       if (seed == null || !mounted) return;
-      setState(() => _coverScheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness));
+      setState(() => _coverScheme = schemeFromCover(seed, brightness));
     }).catchError((e) {
       debugPrint('[SeriesSheet] palette failed: $e');
     });
@@ -1678,7 +1678,7 @@ class _SeriesBooksSheetState extends State<SeriesBooksSheet> {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                       if (sequence != null && sequence.isNotEmpty)
-                        Text(l.bookNumber(sequence), style: tt.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600)),
+                        Text(l.bookNumber(sequence), style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
                       Text(bookTitle, maxLines: 2, overflow: TextOverflow.ellipsis,
                         style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
                       if (authorName.isNotEmpty) ...[

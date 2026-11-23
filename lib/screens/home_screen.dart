@@ -28,7 +28,7 @@ import '../widgets/shimmer.dart';
 import '../widgets/book_detail_sheet.dart';
 import '../widgets/card_buttons.dart';
 import '../widgets/episode_list_sheet.dart';
-import '../main.dart' show flatNotifier, gradientIntensityNotifier;
+import '../main.dart' show flatNotifier;
 import '../widgets/home_customize_sheet.dart';
 import '../widgets/stable_cached_network_image.dart'
     show coverCacheIdentity;
@@ -42,6 +42,8 @@ import '../widgets/section_labels.dart';
 import 'app_shell.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/duration_format.dart';
+import '../widgets/cover_glow.dart';
+import '../widgets/tints.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -416,10 +418,12 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           behavior: HitTestBehavior.opaque,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-            child: Row(children: [
-              Icon(icon, size: 16, color: cs.primary.withValues(alpha: 0.7)),
-              const SizedBox(width: 8),
-              Text(title,
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Text(
+                  title,
                   style: tt.titleSmall?.copyWith(
                     fontWeight: FontWeight.w500,
                     color: cs.onSurface.withValues(alpha: 0.8),
@@ -497,7 +501,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.watch<LibraryProvider>();
     final allLibraries = lib.libraries;
     final libraryName = lib.selectedLibrary?['name'] as String? ?? l.libraryFallback;
@@ -597,21 +600,20 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
                 ),
               ),
             ),
-      body: Container(
-        decoration: flatNotifier.value ? null : BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.22, 0.72, 1.0],
-            colors: [
-              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
-              cs.surface,
-              lowerFade,
-              scaffoldBg,
-            ],
-          ),
-        ),
-        child: SafeArea(
+      body: Stack(
+        children: [
+          if (!flatNotifier.value)
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _scrollController,
+                builder: (context, _) => CoverGlow(
+                  scrolled: _scrollController.hasClients
+                      ? _scrollController.offset
+                      : 0,
+                ),
+              ),
+            ),
+          SafeArea(
           child: NotificationListener<ScrollNotification>(
             onNotification: (n) {
               if (n is ScrollEndNotification) _revealDriver.settle();
@@ -913,6 +915,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           ),
           ),
         ),
+        ],
       ),
     );
   }
@@ -1115,7 +1118,9 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                 .clamp(0.0, 1.0));
     final Color cardBgTop = bgHsl != null
         ? bgHsl.withLightness(isDark ? 0.19 : 0.95).toColor()
-        : (isCurrentItem ? cs.primary.withValues(alpha: 0.08) : cs.surfaceContainerHigh);
+        : (isCurrentItem
+              ? cs.primary.withValues(alpha: Tints.faint)
+              : cs.surfaceContainerHigh);
     final Color cardBgBottom = bgHsl != null
         ? bgHsl.withLightness(isDark ? 0.11 : 0.88).toColor()
         : cardBgTop;

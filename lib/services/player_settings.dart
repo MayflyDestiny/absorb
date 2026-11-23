@@ -1047,6 +1047,13 @@ class PlayerSettings {
   static Future<void> setDuckBriefInterruptions(bool value) =>
       _set('duckBriefInterruptions', value, notify: true);
 
+  // Android only: keep playing when another app starts its own audio, instead
+  // of stopping for it. Calls and navigation prompts still pause or duck.
+  static Future<bool> getKeepPlayingWithOtherApps() =>
+      _get('keepPlayingWithOtherApps', false);
+  static Future<void> setKeepPlayingWithOtherApps(bool value) =>
+      _set('keepPlayingWithOtherApps', value, notify: true);
+
   // GH #371: start the last played book when the car (Android Auto or
   // CarPlay) connects and nothing is loaded yet. The warm case (session
   // alive but paused) belongs to the car system's own resume behavior; this
@@ -1542,6 +1549,7 @@ class PlayerSettings {
   static const settingsHiddenSectionsKey = 'settingsHiddenSections';
 
   static const defaultSettingsSectionOrder = <String>[
+    'General',
     'Playback',
     'Appearance',
     'Absorbing Cards',
@@ -1551,10 +1559,9 @@ class PlayerSettings {
     'Sleep Timer',
     'Downloads & Storage',
     'Library',
+    'Permissions',
+    'Issues & Support',
     'Advanced',
-    'About',
-    'Backup & Sync',
-    'All Bookmarks',
   ];
 
   static Future<List<String>> getSettingsSectionOrder() async {
@@ -1596,7 +1603,7 @@ class PlayerSettings {
 
   // ── Card button order ──
 
-  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'bookmarks', 'chapterskip', 'details', 'ebook', 'findinebook', 'lyrics', 'equalizer', 'cast', 'airplay', 'history', 'remove', 'car', 'notes', 'wake', 'download'];
+  static const defaultButtonOrder = ['chapters', 'speed', 'sleep', 'night', 'bookmarks', 'chapterskip', 'details', 'ebook', 'findinebook', 'lyrics', 'equalizer', 'cast', 'airplay', 'history', 'remove', 'car', 'notes', 'wake', 'download'];
 
   static Future<List<String>> getCardButtonOrder() async {
     final stored = await ScopedPrefs.getStringList('card_button_order');
@@ -1712,6 +1719,11 @@ class PlayerSettings {
   /// absorbing card background) instead of each book's cover color.
   static Future<bool> getUseColorEverywhere() => _get('useColorEverywhere', false);
   static Future<void> setUseColorEverywhere(bool v) => _set('useColorEverywhere', v);
+
+  /// Cover colors kept as close to the cover as the theme allows, instead of
+  /// the softer default.
+  static Future<bool> getTrueCoverColors() => _get('trueCoverColors', false);
+  static Future<void> setTrueCoverColors(bool v) => _set('trueCoverColors', v);
 
   /// Default start screen tab index: 0=Home, 1=Library, 2=Absorbing, 3=Stats, 4=Settings
   static Future<int> getStartScreen() => _get('startScreen', 2);

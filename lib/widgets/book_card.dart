@@ -12,6 +12,7 @@ import '../services/download_service.dart';
 import 'absorbing_shared.dart';
 import 'book_detail_sheet.dart';
 import 'episode_list_sheet.dart';
+import 'tints.dart';
 
 class BookCard extends StatelessWidget {
   final Map<String, dynamic> item;
@@ -117,7 +118,7 @@ class BookCard extends StatelessWidget {
                     ? Border.all(color: cs.primary, width: 3)
                     : null,
                 color: selected
-                    ? cs.primary.withValues(alpha: 0.18)
+                    ? cs.primary.withValues(alpha: Tints.soft)
                     : Colors.transparent,
               ),
             ),

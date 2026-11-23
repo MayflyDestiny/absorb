@@ -154,6 +154,93 @@ class AdaptiveSpinner extends StatelessWidget {
   }
 }
 
+/// A jelly squash-and-stretch when something becomes selected, so the change
+/// reads without a color flash. Used by the settings switches.
+class ExpressivePop extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const ExpressivePop({super.key, required this.active, required this.child});
+
+  @override
+  State<ExpressivePop> createState() => _ExpressivePopState();
+}
+
+class _ExpressivePopState extends State<ExpressivePop>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 620),
+    value: 1,
+  );
+
+  static final _wide = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(begin: 1.0, end: 1.24)
+          .chain(CurveTween(curve: Curves.easeOutCubic)),
+      weight: 22,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 1.24, end: 0.93)
+          .chain(CurveTween(curve: Curves.easeInOut)),
+      weight: 30,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 0.93, end: 1.0)
+          .chain(CurveTween(curve: Curves.easeOutBack)),
+      weight: 48,
+    ),
+  ]);
+  static final _tall = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(begin: 1.0, end: 0.8)
+          .chain(CurveTween(curve: Curves.easeOutCubic)),
+      weight: 22,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 0.8, end: 1.12)
+          .chain(CurveTween(curve: Curves.easeInOut)),
+      weight: 30,
+    ),
+    TweenSequenceItem(
+      tween: Tween(begin: 1.12, end: 1.0)
+          .chain(CurveTween(curve: Curves.easeOutBack)),
+      weight: 48,
+    ),
+  ]);
+
+  @override
+  void didUpdateWidget(ExpressivePop old) {
+    super.didUpdateWidget(old);
+    if (widget.active &&
+        !old.active &&
+        expressiveNotifier.value &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.diagonal3Values(
+            _wide.transform(_controller.value),
+            _tall.transform(_controller.value),
+            1,
+          ),
+          child: child,
+        ),
+        child: widget.child,
+      );
+}
+
 /// Where a button sits in a connected row, so it can round its outer corners
 /// and keep the ones facing its neighbours tight.
 class ExpressiveGroupSlot extends InheritedWidget {

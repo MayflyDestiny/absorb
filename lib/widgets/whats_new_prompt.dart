@@ -19,6 +19,9 @@ class WhatsNewPrompt {
   static const _lastBuildKey = 'whats_new_last_build';
   static const _isDevBuild = bool.fromEnvironment('DEV_BUILD');
 
+  static Future<void> setEnabled(bool value) =>
+      PlayerSettings.setShowWhatsNew(value);
+
   /// Call before [WelcomeSheet.showIfNeeded]: a fresh install hasn't seen the
   /// welcome yet, and that's how it's told apart from an update.
   static Future<void> showIfUpdated(BuildContext context) async {

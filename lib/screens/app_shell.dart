@@ -27,7 +27,7 @@ import '../main.dart'
     show
         snappyTransitionsNotifier,
         einkModeNotifier,
-        coverSchemeNotifier,
+        coverSeedNotifier,
         rootNavigatorKey,
         applyOrientationLock,
         applyEinkModeTheme;
@@ -811,7 +811,7 @@ class _AppShellState extends State<AppShell>
       brightness,
     );
     if (cachedScheme != null) {
-      coverSchemeNotifier.value = cachedScheme;
+      coverSeedNotifier.value = cachedScheme.primary;
       unawaited(
         PlayerSettings.setCoverSeedColor(cachedScheme.primary.toARGB32()),
       );
@@ -819,10 +819,7 @@ class _AppShellState extends State<AppShell>
     }
     final cachedAccent = CoverPaletteCache.instance.accentFor(identity);
     if (cachedAccent != null) {
-      coverSchemeNotifier.value = ColorScheme.fromSeed(
-        seedColor: cachedAccent,
-        brightness: brightness,
-      );
+      coverSeedNotifier.value = cachedAccent;
       unawaited(PlayerSettings.setCoverSeedColor(cachedAccent.toARGB32()));
       return true;
     }
@@ -845,11 +842,7 @@ class _AppShellState extends State<AppShell>
             return;
           }
           CoverPaletteCache.instance.storeAccent(identity, seedColor);
-          final scheme = ColorScheme.fromSeed(
-            seedColor: seedColor,
-            brightness: brightness,
-          );
-          coverSchemeNotifier.value = scheme;
+          coverSeedNotifier.value = seedColor;
           PlayerSettings.setCoverSeedColor(seedColor.toARGB32());
         })
         .catchError((_) {

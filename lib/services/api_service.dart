@@ -33,6 +33,7 @@ import 'server_notifications.dart';
 import 'server_backend.dart';
 import 'socket_service.dart';
 import '../models/auth_session.dart';
+import '../utils/app_platform.dart';
 import '../utils/server_url.dart';
 import '../utils/percent_escapes.dart';
 
@@ -192,6 +193,8 @@ enum _RefreshOutcome {
   refreshed,
   rejected,
   transientFailure,
+  // Not tried: the app is frozen in the background and the answer could be lost.
+  held,
 }
 
 enum PasswordChangeStatus {
@@ -352,6 +355,13 @@ class ApiService {
   VoidCallback? onAuthExpired;
 
   final Duration _refreshRetryDelay;
+
+  /// Set once the app has finished starting. Until then a stalled token
+  /// renewal would hold the splash screen, so it gives up after 15s; after,
+  /// a slow server gets longer, since a reply thrown away can cost the whole
+  /// session (BookOrbit ends it when a used renewal token comes back more
+  /// than 30s later).
+  static bool appReady = false;
 
   // Each ApiService instance already deduplicates its own refreshes. This lock
   // also serializes token rotation across the short-lived instances created by
@@ -1061,12 +1071,21 @@ class ApiService {
       return _refreshCompleter!.future;
     }
 
+    if (holdRefreshForNow?.call() == true) {
+      debugPrint('[API] Token refresh held until the app is back: backgrounded with nothing playing');
+      return _RefreshOutcome.held;
+    }
+
     debugPrint(
       '[API] Token refresh start: access=${tokenFp(_accessToken)} '
       'refresh=${tokenFp(_refreshToken)}',
     );
     _refreshCompleter = Completer<_RefreshOutcome>();
     final mutationLock = await _acquireTokenMutationLock();
+    Object? backgroundWork;
+    try {
+      backgroundWork = await beginBackgroundWork?.call();
+    } catch (_) {}
     try {
       if (await _adoptPersistedTokens()) {
         _refreshCompleter!.complete(_RefreshOutcome.refreshed);
@@ -1076,13 +1095,18 @@ class ApiService {
       for (var attempt = 0; attempt < 2; attempt++) {
         final refreshTokenSent = _refreshToken;
         if (refreshTokenSent == null) break;
+        var timedOut = false;
 
         try {
           // Timeout is load-bearing: this is awaited from tryRestoreSession via
           // the 401-retry path, and a stalled response here would otherwise hold
-          // the splash screen forever.
-          final response = await _sendRefresh(refreshTokenSent)
-              .timeout(const Duration(seconds: 15));
+          // the splash screen forever. Once the app is open, the first try
+          // stops at 25s so the second still goes out inside BookOrbit's 30s,
+          // where it hands back the same new pair if the first one landed.
+          final timeout = !appReady
+              ? const Duration(seconds: 15)
+              : Duration(seconds: attempt == 0 ? 25 : 30);
+          final response = await _sendRefresh(refreshTokenSent).timeout(timeout);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -1120,11 +1144,13 @@ class ApiService {
 
           debugPrint('[API] Token refresh failed: ${response.statusCode}');
         } catch (e) {
+          timedOut = e is TimeoutException;
           debugPrint('[API] Token refresh error: $e');
         }
 
         if (attempt == 0) {
-          await Future<void>.delayed(_refreshRetryDelay);
+          // After a timeout the clock on that 30s is already running: no wait.
+          if (!(timedOut && appReady)) await Future<void>.delayed(_refreshRetryDelay);
           if (await _adoptPersistedTokens()) {
             _refreshCompleter!.complete(_RefreshOutcome.refreshed);
             return _RefreshOutcome.refreshed;
@@ -1137,6 +1163,7 @@ class ApiService {
     } finally {
       _refreshCompleter = null;
       _releaseTokenMutationLock(mutationLock);
+      if (backgroundWork != null) endBackgroundWork?.call(backgroundWork);
     }
   }
 
@@ -1206,6 +1233,8 @@ class ApiService {
       case _RefreshOutcome.rejected:
         _preflightCooldownUntil = null;
         onAuthExpired?.call();
+      case _RefreshOutcome.held:
+        break;
       case _RefreshOutcome.transientFailure:
         _preflightCooldownUntil = DateTime.now().add(_preflightCooldown);
         debugPrint(
@@ -2813,10 +2842,21 @@ class ApiService {
   /// Expose clean base URL for audio player to build URLs
   String get cleanBaseUrl => _cleanBaseUrl;
 
+  /// The name sessions carry on the server. The TV and desktop apps say so,
+  /// the way the watch sends "Absorb Wear", so session lists can show which
+  /// one played.
+  static String get clientName {
+    if (AppPlatform.isTv) return 'Absorb TV';
+    if (AppPlatform.isWindows) return 'Absorb Windows';
+    if (AppPlatform.isMacOS) return 'Absorb Mac';
+    if (AppPlatform.isLinux) return 'Absorb Linux';
+    return 'Absorb';
+  }
+
   /// The device descriptor ABS attaches to playback sessions. Shared by the
   /// /play session calls and the client-owned local-session calls.
   Map<String, dynamic> get _deviceInfo => {
-        'clientName': 'Absorb',
+        'clientName': clientName,
         'clientVersion': appVersion,
         'deviceId': deviceId,
         'deviceName': '${deviceManufacturer.isNotEmpty ? "$deviceManufacturer " : ""}$deviceModel'.trim(),
@@ -3435,6 +3475,16 @@ class ApiService {
   /// The narration time of the page a narrated book was read to on another
   /// device, when that page is the newer place. Set by the app at start.
   static Future<double?> Function(String itemId, Map<String, dynamic> progress)? pageReadElsewhere;
+
+  /// iOS freezes a backgrounded app that isn't playing within seconds, often
+  /// with a refresh already sent. The server then retires the old refresh
+  /// token while the new pair never arrives, and after its ten minute grace
+  /// the next refresh signs the user out (GH #501). These are set by the app
+  /// on iOS: one asks for time to finish a refresh, the other says when a
+  /// refresh should wait for the app to come back instead.
+  static Future<Object?> Function()? beginBackgroundWork;
+  static void Function(Object? token)? endBackgroundWork;
+  static bool Function()? holdRefreshForNow;
 
   /// Audiobookshelf sees only the ebook in a narrated EPUB, so reading it in
   /// its web reader moves the page and leaves the audio behind. A newer page

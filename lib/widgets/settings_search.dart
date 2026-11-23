@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../screens/settings_search_index.dart';
-import 'collapsible_section.dart';
+import 'settings_tiles.dart';
 
 /// Filter and rank the search index for [query]. Every whitespace-separated
 /// word must appear somewhere in the entry (title, subtitles, or section
@@ -81,12 +81,12 @@ class SettingsSearchResults extends StatelessWidget {
             title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: e.extras.isEmpty
                 ? Text(e.sectionTitle,
-                    style: tt.bodySmall?.copyWith(color: cs.primary))
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))
                 : Text.rich(
                     TextSpan(children: [
                       TextSpan(
                           text: '${e.sectionTitle}  ·  ',
-                          style: TextStyle(color: cs.primary)),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                       TextSpan(text: e.extras.first),
                     ]),
                     maxLines: 2,
@@ -143,6 +143,8 @@ Future<void> highlightSettingInSection({
     final w = a.widget;
     if (w is SwitchListTile ||
         w is ListTile ||
+        w is SettingsTile ||
+        w is SettingsSliderTile ||
         w is CheckboxListTile ||
         w is RadioListTile) {
       target = a.renderObject ?? target;
@@ -151,7 +153,7 @@ Future<void> highlightSettingInSection({
     }
     // Stop climbing once we leave the section - keeps a missing tile
     // ancestor from selecting something huge.
-    return w is! CollapsibleSection;
+    return w is! SettingsGroup;
   });
   final box = target;
   if (box is! RenderBox || !box.attached) return;

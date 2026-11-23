@@ -17,7 +17,8 @@ import '../services/queue_download_policy.dart';
 import '../services/scoped_prefs.dart';
 import '../utils/cover_accent.dart';
 import '../widgets/absorb_page_header.dart';
-import '../main.dart' show flatNotifier, gradientIntensityNotifier, rootNavigatorKey;
+import '../main.dart' show flatNotifier, rootNavigatorKey;
+import '../widgets/cover_glow.dart';
 import '../widgets/absorbing_card.dart';
 import '../widgets/expressive.dart';
 import '../widgets/glass_look.dart';
@@ -31,6 +32,31 @@ import '../widgets/stable_cached_network_image.dart'
     show coverCacheIdentity;
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
+
+const double _kAbsorbingDesktopPanelRailWidth = 48;
+const double _kAbsorbingDesktopPanelDividerWidth = 1;
+const double _kAbsorbingDesktopPlayerHorizontalPadding = 24;
+
+double absorbingQueuePaneWidth(double paneWidth) =>
+    (paneWidth * 0.32).clamp(340.0, 400.0).toDouble();
+
+double absorbingDesktopPlayerLayoutWidth(double paneWidth) =>
+    (paneWidth -
+            absorbingQueuePaneWidth(paneWidth) -
+            _kAbsorbingDesktopPanelRailWidth -
+            _kAbsorbingDesktopPanelDividerWidth -
+            _kAbsorbingDesktopPlayerHorizontalPadding)
+        .clamp(0.0, double.infinity)
+        .toDouble();
+
+bool shouldUseCompactAbsorbingSidePanel(double paneWidth) =>
+    absorbingDesktopPlayerLayoutWidth(paneWidth) <
+    kAbsorbingDesktopRowLayoutWidth;
+
+bool shouldOpenAbsorbingSidePanelByDefault(double paneWidth) =>
+    !shouldUseCompactAbsorbingSidePanel(paneWidth);
+
+enum DesktopAbsorbingPanelTab { chapters, queue }
 
 class AbsorbingScreen extends StatefulWidget {
   const AbsorbingScreen({super.key});
@@ -1119,7 +1145,6 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.watch<LibraryProvider>();
     // Targeted reads: the whole-query form would rebuild this screen on every
     // frame of a keyboard animation (the shell injects per-frame viewInsets),
@@ -1193,21 +1218,11 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
     return Scaffold(
       backgroundColor: scaffoldBg,
       resizeToAvoidBottomInset: false,
-      body: Container(
-        decoration: flatNotifier.value ? null : BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.22, 0.72, 1.0],
-            colors: [
-              cs.primary.withValues(alpha: gradientIntensityNotifier.value),
-              cs.surface,
-              lowerFade,
-              scaffoldBg,
-            ],
-          ),
-        ),
-        child: SafeArea(
+      body: Stack(
+        children: [
+          if (!flatNotifier.value)
+            const Positioned.fill(child: CoverGlow()),
+          SafeArea(
         child: Builder(builder: (context) {
           final offlineIcon = OfflineStatusIcon(
             onTapWhenOnline: () {
@@ -1533,6 +1548,7 @@ class _AbsorbingScreenState extends State<AbsorbingScreen>
         );
         }),
       ),
+        ],
       ),
     );
   }
@@ -2448,8 +2464,10 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(Wording.from(l).absorbingNothingAbsorbingYet,
-              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+          child: Text(
+            Wording.from(l).absorbingNothingAbsorbingYet,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
         ),
       );
     }
@@ -2474,8 +2492,10 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(Wording.from(l).absorbingNothingAbsorbingYet,
-              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+          child: Text(
+            Wording.from(l).absorbingNothingAbsorbingYet,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
         ),
       );
     }
@@ -2513,8 +2533,10 @@ class _ReorderAbsorbingSheetState extends State<_ReorderAbsorbingSheet> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(Wording.from(l).absorbingNothingAbsorbingYet,
-              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+          child: Text(
+            Wording.from(l).absorbingNothingAbsorbingYet,
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+          ),
         ),
       );
     }

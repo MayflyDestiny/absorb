@@ -1,6 +1,5 @@
-import 'dart:io' show Platform;
+import '../utils/app_platform.dart';
 import 'package:flutter/widgets.dart';
-import '../build_info.dart';
 import '../l10n/app_localizations.dart';
 import '../services/wording.dart';
 
@@ -17,24 +16,23 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
   final w = Wording.of(context);
   return [
     // ── Appearance ──
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.languageLabel, [l.languageSystemDefault]),
+    SettingSearchEntry('General', l.sectionGeneral, l.languageLabel, [l.languageSystemDefault]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.themeLabel, [l.themeDark, l.themeLight, l.themeAuto]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.flatBackgroundLabel, [l.flatBackgroundSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.einkModeLabel, [l.einkModeSubtitle]),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.backgroundIntensityLabel, const []),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.colorSourceLabel, [l.colorSourceDynamic, l.colorSourceManual, l.colorSourceManualDescription, l.colorSourceCoverDescription, l.colorSourceCustom]),
+    SettingSearchEntry('Appearance', l.sectionAppearance, l.glowStrengthLabel, const []),
+    SettingSearchEntry('Appearance', l.sectionAppearance, l.appColorLabel, [l.appColorSoftCover, l.appColorTrueCover, l.appColorMine, l.appColorSoftCoverDescription, l.appColorTrueCoverDescription, l.appColorMineDescription, l.colorSourceCustom]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.useColorEverywhereLabel, [l.useColorEverywhereSubtitle]),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.startScreenLabel, [l.startScreenSubtitle, l.startScreenHome, l.startScreenLibrary, w.startScreenAbsorb, l.startScreenStats]),
+    SettingSearchEntry('General', l.sectionGeneral, l.startScreenLabel, [l.startScreenSubtitle, l.startScreenHome, l.startScreenLibrary, w.startScreenAbsorb, l.startScreenStats]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.progressTextSize, const []),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.disablePageFade, [l.disablePageFadeOnSubtitle, l.disablePageFadeOffSubtitle]),
+    SettingSearchEntry('General', l.sectionGeneral, l.disablePageFade, [l.disablePageFadeOnSubtitle, l.disablePageFadeOffSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.showSubtitles, [l.showSubtitlesOnSubtitle, l.showSubtitlesOffSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.rectangleBookCovers, [l.rectangleBookCoversOnSubtitle, l.rectangleBookCoversOffSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.coverSize, [l.coverSizeSubtitle, l.coverSizeSmall, l.coverSizeMedium, l.coverSizeLarge]),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.wordingClassicTitle, [l.wordingClassicOnSubtitle, l.wordingClassicOffSubtitle]),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.finishedBadgeMode, [l.finishedBadgeModeSubtitle, l.finishedBadgeModeText, l.finishedBadgeModeIcon, l.finishedBadgeModeOff]),
-    SettingSearchEntry('Appearance', l.sectionAppearance, l.cardButtonFill, [l.cardButtonFillSubtitle, l.cardButtonFillClear, l.cardButtonFillSubtle, l.cardButtonFillSolid]),
-    if (!(Platform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600))
-      SettingSearchEntry('Appearance', l.sectionAppearance, l.rotationLockTitle, [l.rotationLockOnSubtitle, l.rotationLockOffSubtitle]),
+    SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardButtonFill, [l.cardButtonFillSubtitle, l.cardButtonFillClear, l.cardButtonFillSubtle, l.cardButtonFillSolid]),
+    SettingSearchEntry('General', l.sectionGeneral, 'Classic wording', const ['Using "Play", "Now Playing", "Finished"', 'Using "Absorb", "Absorbing", "Fully Absorbed"']),
+    if (!(AppPlatform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600))
+      SettingSearchEntry('General', l.sectionGeneral, 'Lock rotation', const ['Screen stays in portrait', 'Screen can rotate with the device']),
 
     // ── Customize Stats ──
     SettingSearchEntry('Customize Stats', l.settingsCustomizeStats, l.settingsStatsTab, [l.settingsStatsTabDesc, l.settingsOpenStats]),
@@ -47,7 +45,8 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     // ── Absorbing Cards ──
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.fullScreenPlayer, [l.fullScreenPlayerOnSubtitle, l.fullScreenPlayerOffSubtitle]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.coverPlayPause, [l.coverPlayPauseOnSubtitle, l.coverPlayPauseOffSubtitle]),
-    SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardBackground, [l.cardBackgroundBlurred, l.cardBackgroundGradient, l.off]),
+    SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardBackground, [l.cardBackgroundBlurred, l.cardBackgroundGradient, l.off]),
+    SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardSwipeStyle, [l.cardSwipeStyleClassic, l.cardSwipeStyleCarousel, l.cardSwipeStyleStack]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardScrubbers, [l.cardScrubbersBothSubtitle, l.cardScrubbersChapterSubtitle, l.cardScrubbersLockedSubtitle]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.speedAdjustedTime, [l.speedAdjustedTimeOnSubtitle, l.speedAdjustedTimeOffSubtitle]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.keepScreenOnPlayer, [l.keepScreenOnPlayerSubtitle]),
@@ -58,12 +57,10 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
 
     // ── Playback ──
     SettingSearchEntry('Playback', l.sectionPlayback, l.defaultSpeed, [l.defaultSpeedSubtitle]),
-    SettingSearchEntry('Playback', l.sectionPlayback, l.bookFinishReminder, [l.bookFinishReminderSubtitle, l.bookFinishChime, l.bookFinishVoice, l.bookFinishVibrate, l.bookFinishReminderOnAutoAdvance, l.bookFinishActionClear, l.bookFinishActionHold, l.bookFinishActionReplay]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.resetSpeedPresets, [l.resetSpeedPresetsSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.skipBack, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.skipForward, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.chapterBarrierOnRewind, [l.chapterBarrierOnRewindOnSubtitle, l.chapterBarrierOnRewindOffSubtitle]),
-    SettingSearchEntry('Playback', l.sectionPlayback, l.chapterJumpEntry, [l.chapterJumpEntrySubtitle, l.prevChapterJumpBehavior, l.chaptersConfirmJump, l.chapterJumpAutoPlay, l.prevChapterJumpRestartSubtitle, l.prevChapterJumpDirectSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipButtons, [l.longSkipButtonsOnSubtitle, l.longSkipButtonsOffSubtitle]),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipBack, const []),
     SettingSearchEntry('Playback', l.sectionPlayback, l.longSkipForward, const []),
@@ -77,23 +74,25 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.chapterProgressInNotification, [l.chapterProgressInNotificationIos, l.chapterProgressOnSubtitle, l.chapterProgressOnSubtitleIos, l.chapterProgressOffSubtitle]),
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.nowPlayingText, [l.nowPlayingTextSubtitle, l.nowPlayingPiecePercent, l.nowPlayingPieceTimeLeft, l.nowPlayingPieceNarrator, l.nowPlayingPieceSeries]),
     SettingSearchEntry('Media Controls', l.sectionMediaControls, l.lockSeekBar, [l.lockSeekBarOnSubtitle, l.lockSeekBarOffSubtitle]),
-    if (Platform.isAndroid) ...[
-      SettingSearchEntry('Media Controls', l.sectionMediaControls, l.duckTitle, [l.duckOnSubtitle, l.duckOffSubtitle]),
+    if (AppPlatform.isAndroid) ...[
+      SettingSearchEntry('Media Controls', l.sectionMediaControls, 'Duck brief interruptions', const ['Notifications and prompts lower the volume instead of pausing', 'Notifications and prompts pause playback']),
       SettingSearchEntry('Media Controls', l.sectionMediaControls, l.speedBookmarkInControls, [l.speedBookmarkOnSubtitle, l.speedBookmarkOffSubtitle]),
     ],
 
     // ── Car ──
-    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar,
-        Platform.isIOS ? l.carConnectAutoplayIos : l.carConnectAutoplay,
-        [l.carConnectAutoplayOnSubtitle, l.carConnectAutoplayOffSubtitle]),
-    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.keepScreenOnCarMode, [l.keepScreenOnCarModeSubtitle]),
-    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carBookOrder, [l.title, l.author, l.dateAdded]),
-    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carBookOrderReverse, [l.carBookOrderReverseSubtitle]),
-    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carPodcastOrder, [l.title, l.dateAdded]),
-    SettingSearchEntry('Car', Platform.isIOS ? l.sectionCarIos : l.sectionCar, l.carEpisodesOldestFirst, [l.carEpisodesOldestFirstSubtitle]),
+    if (!AppPlatform.lacksPhonePlugins) ...[
+      SettingSearchEntry('Car', AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar,
+          AppPlatform.isIOS ? l.carConnectAutoplayIos : l.carConnectAutoplay,
+          [l.carConnectAutoplayOnSubtitle, l.carConnectAutoplayOffSubtitle]),
+      SettingSearchEntry('Car', AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar, l.keepScreenOnCarMode, [l.keepScreenOnCarModeSubtitle]),
+      SettingSearchEntry('Car', AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar, l.carBookOrder, [l.title, l.author, l.dateAdded]),
+      SettingSearchEntry('Car', AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar, l.carBookOrderReverse, [l.carBookOrderReverseSubtitle]),
+      SettingSearchEntry('Car', AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar, l.carPodcastOrder, [l.title, l.dateAdded]),
+      SettingSearchEntry('Car', AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar, l.carEpisodesOldestFirst, [l.carEpisodesOldestFirstSubtitle]),
+    ],
 
     // ── Siri ──
-    if (Platform.isIOS) ...[
+    if (AppPlatform.isIOS) ...[
       SettingSearchEntry('Siri', l.sectionSiri, l.siriUseWithSiri, [l.siriStatusAsk, 'Shortcuts', 'voice']),
       SettingSearchEntry('Siri', l.sectionSiri, l.siriThingsToSay, [l.siriExamples]),
     ],
@@ -117,16 +116,15 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     // ── Downloads & Storage ──
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.downloadOverWifiOnly, [l.downloadOverWifiOnSubtitle, l.downloadOverWifiOffSubtitle]),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.autoDownloadOnWifi, [l.autoDownloadOnWifiOnSubtitle, l.autoDownloadOnWifiOffSubtitle]),
-    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.autoSeriesDownloadTitle, [l.autoSeriesDownloadOnSubtitle, l.autoSeriesDownloadOffSubtitle]),
+    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, 'Auto-download series', const ['Starting a book in a series keeps the next books downloaded', 'Turn on series downloads yourself from the series menu']),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.concurrentDownloads, const []),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.autoDownload, [l.autoDownloadSubtitle]),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.keepNext, const []),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, w.deleteAbsorbedDownloads, [l.deleteAbsorbedOnSubtitle, l.deleteAbsorbedOffSubtitle]),
-    if (!Platform.isIOS)
+    if (!AppPlatform.isIOS)
       SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.downloadLocation, const []),
-    SettingSearchEntry('Manage Downloads', l.manageDownloads, l.manageDownloads, [l.manageDownloadsSubtitle]),
+    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.manageDownloads, const []),
     SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.streamingCache, [l.streamingCacheOffSubtitle, l.streamingCacheOff, l.clearCache]),
-    SettingSearchEntry('Downloads & Storage', l.sectionDownloadsAndStorage, l.clearCache, [l.clearCacheHint, l.cacheCovers, l.appCache, l.streamingCache, l.cacheExports, l.clearAllCaches]),
 
     // ── Library ──
     SettingSearchEntry('Library', l.sectionLibrary, l.settingsPodcastTab, [l.settingsPodcastTabDesc]),
@@ -138,40 +136,35 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Library', l.sectionLibrary, l.coverShapeLabel, [l.coverShapeDefault, l.coverShapeSquare, l.coverShapeRectangle]),
     SettingSearchEntry('Library', l.sectionLibrary, l.subtitleVisibilityLabel, [l.subtitleVisibilityDefault, l.subtitleVisibilityShow, l.subtitleVisibilityHide]),
     SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySkipOverride, [l.currentLibrarySkipOverrideOnSubtitle, l.currentLibrarySkipOverrideOffSubtitle]),
+    SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySpeedOverride, [l.currentLibrarySpeedOverrideOnSubtitle, l.currentLibrarySpeedOverrideOffSubtitle]),
     SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySkipBack, const []),
     SettingSearchEntry('Library', l.sectionLibrary, l.currentLibrarySkipForward, const []),
 
-    // ── Permissions (inside Advanced sheet) ──
-    SettingSearchEntry('Advanced', l.sectionPermissions, l.notifications, [l.notificationsSubtitle]),
-    if (Platform.isAndroid) ...[
-      SettingSearchEntry('Advanced', l.sectionPermissions, l.settingsEpisodeNotifs, [l.settingsEpisodeNotifsDesc]),
-      SettingSearchEntry('Advanced', l.sectionPermissions, l.unrestrictedBattery, [l.unrestrictedBatterySubtitle]),
+    // ── Permissions ──
+    SettingSearchEntry('Permissions', l.sectionPermissions, l.notifications, [l.notificationsSubtitle]),
+    if (AppPlatform.isAndroid) ...[
+      SettingSearchEntry('Permissions', l.sectionPermissions, l.settingsEpisodeNotifs, [l.settingsEpisodeNotifsDesc]),
+      SettingSearchEntry('Permissions', l.sectionPermissions, l.unrestrictedBattery, [l.unrestrictedBatterySubtitle]),
     ],
+
+    // ── Issues & Support ──
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.showTipsAgain, [l.showTipsAgainSubtitle]),
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.joinDiscord, [l.joinDiscordSubtitle]),
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.contact, [l.contactSubtitle]),
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.sendLogs, [l.sendLogsSubtitle]),
+    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.clearLogs, const []),
 
     // ── Advanced ──
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.navHoldSettingTitle, [l.navHoldSettingSubtitle]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.localServer, [l.localServerOnConnectedSubtitle, l.localServerOnRemoteSubtitle, l.localServerOffSubtitle, l.localServerUrlLabel]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.trustAllCertificates, [l.trustAllCertificatesOnSubtitle, l.trustAllCertificatesOffSubtitle]),
-    if (Platform.isAndroid)
+    if (AppPlatform.isAndroid)
       SettingSearchEntry('Advanced', l.sectionAdvanced, l.mp3IndexSeeking, [l.mp3IndexSeekingOnSubtitle, l.mp3IndexSeekingOffSubtitle]),
+    if (const bool.fromEnvironment('GITHUB_BUILD'))
+      SettingSearchEntry('Advanced', l.sectionAdvanced, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.adminRmab, [l.adminRmabConnected, l.adminRmabAskAdmin]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.transcriptionTitle, [l.transcriptionAdvancedSubtitle, l.syncReadingListening]),
-
-    // ── Backup & Sync / All Bookmarks ──
-    SettingSearchEntry('Backup & Sync', l.backupAndSync, l.backupAndSync, const []),
-    SettingSearchEntry('All Bookmarks', l.allBookmarks, l.allBookmarks, [l.allBookmarksSubtitle]),
-
-    // ── About ──
-    SettingSearchEntry('About', l.aboutSection, l.showTipsAgain, [l.showTipsAgainSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.sendLogs, [l.sendLogsSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.clearLogs, const []),
-    if (kUpdatesFromReleases)
-      SettingSearchEntry('About', l.aboutSection, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.autoCheckUpdate, [l.autoCheckUpdateOnSubtitle, l.autoCheckUpdateOffSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.showWhatsNewOnLaunch, [l.showWhatsNewOnLaunchOnSubtitle, l.showWhatsNewOnLaunchOffSubtitle]),
-    SettingSearchEntry('About', l.aboutSection, l.projectWebsite, const []),
-    SettingSearchEntry('About', l.aboutSection, l.openSourceLicenses, const []),
   ];
 }

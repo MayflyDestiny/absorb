@@ -15,12 +15,13 @@ import '../services/socket_service.dart';
 import '../services/download_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/json_file_cache.dart';
+import '../widgets/tints.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/library_picker_sheet.dart';
 import '../widgets/library_search_results.dart';
 import '../widgets/podcast_episode_feed.dart';
 import '../main.dart'
-    show flatNotifier, gradientIntensityNotifier, snappyTransitionsNotifier;
+    show flatNotifier, snappyTransitionsNotifier;
 import '../widgets/library_sort_filter_sheet.dart';
 import '../widgets/desktop_batch_actions.dart';
 import '../widgets/overlay_toast.dart';
@@ -52,6 +53,7 @@ import '../services/user_account_service.dart';
 import '../l10n/app_localizations.dart';
 import 'smart_scope_editor_screen.dart';
 import '../widgets/new_list_flow.dart';
+import '../widgets/cover_glow.dart';
 
 /// Responsive grid column count based on available width and the cover size
 /// setting; scales up on tablets/iPads.
@@ -3676,7 +3678,6 @@ lib.registerHasCoverFromItem(id, r);
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     // Watch LibraryProvider so this screen rebuilds when the active library
     // or its data changes; the actual lib object is consumed inside
     // _buildHeaderSliver via context.watch.
@@ -3813,23 +3814,7 @@ lib.registerHasCoverFromItem(id, r);
               child: SizedBox(
                 height: MediaQuery.sizeOf(context).height,
                 width: double.infinity,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: const [0.0, 0.22, 0.72, 1.0],
-                      colors: [
-                        cs.primary.withValues(
-                          alpha: gradientIntensityNotifier.value,
-                        ),
-                        cs.surface,
-                        lowerFade,
-                        scaffoldBg,
-                      ],
-                    ),
-                  ),
-                ),
+                child: const CoverGlow(),
               ),
             ),
           SafeArea(
@@ -3976,7 +3961,6 @@ lib.registerHasCoverFromItem(id, r);
     final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    final lowerFade = Color.lerp(cs.surface, scaffoldBg, 0.55) ?? scaffoldBg;
     final lib = context.watch<LibraryProvider>();
     final allLibraries = lib.libraries;
     final hasMultipleLibraries = allLibraries.length > 1;
@@ -4010,24 +3994,7 @@ lib.registerHasCoverFromItem(id, r);
                 child: SizedBox(
                   height: screenH,
                   width: double.infinity,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: scaffoldBg,
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: const [0.0, 0.22, 0.72, 1.0],
-                        colors: [
-                          cs.primary.withValues(
-                            alpha: gradientIntensityNotifier.value,
-                          ),
-                          cs.surface,
-                          lowerFade,
-                          scaffoldBg,
-                        ],
-                      ),
-                    ),
-                  ),
+                  child: ColoredBox(color: scaffoldBg, child: const CoverGlow()),
                 ),
               ),
             ),
@@ -4232,7 +4199,7 @@ lib.registerHasCoverFromItem(id, r);
           decoration: BoxDecoration(
             color: cs.surface.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.25)),
           ),
           child: Stack(
             key: _podcastPillBarKey,
@@ -4359,7 +4326,7 @@ lib.registerHasCoverFromItem(id, r);
               decoration: BoxDecoration(
                 color: cs.surface.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+                border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.25)),
               ),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
@@ -4503,9 +4470,9 @@ lib.registerHasCoverFromItem(id, r);
             decoration: BoxDecoration(
               color: cs.surface.withValues(alpha: 0.6),
               shape: BoxShape.circle,
-              border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
+              border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.25)),
             ),
-            child: Icon(Icons.settings_rounded, size: 16, color: cs.primary),
+            child: Icon(Icons.settings_rounded, size: 16, color: cs.onSurfaceVariant),
           ),
         ),
       ),
@@ -4550,7 +4517,7 @@ lib.registerHasCoverFromItem(id, r);
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: cs.tertiary.withValues(alpha: 0.12),
+                  color: cs.primary.withValues(alpha: Tints.soft),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -4559,7 +4526,7 @@ lib.registerHasCoverFromItem(id, r);
                     Icon(
                       Icons.filter_list_rounded,
                       size: 14,
-                      color: cs.tertiary,
+                      color: cs.primary,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -4567,13 +4534,13 @@ lib.registerHasCoverFromItem(id, r);
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: cs.tertiary,
+                        color: cs.primary,
                       ),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.close_rounded, size: 14, color: cs.tertiary),
+                    Icon(Icons.close_rounded, size: 14, color: cs.primary),
                   ],
                 ),
               ),
@@ -4588,7 +4555,7 @@ lib.registerHasCoverFromItem(id, r);
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: cs.tertiary.withValues(alpha: 0.12),
+                  color: cs.primary.withValues(alpha: Tints.soft),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -4597,7 +4564,7 @@ lib.registerHasCoverFromItem(id, r);
                     Icon(
                       Icons.filter_list_rounded,
                       size: 14,
-                      color: cs.tertiary,
+                      color: cs.primary,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -4605,13 +4572,13 @@ lib.registerHasCoverFromItem(id, r);
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: cs.tertiary,
+                        color: cs.primary,
                       ),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.close_rounded, size: 14, color: cs.tertiary),
+                    Icon(Icons.close_rounded, size: 14, color: cs.primary),
                   ],
                 ),
               ),
@@ -5211,7 +5178,7 @@ lib.registerHasCoverFromItem(id, r);
                 isPodcast ? l.librarySearchShows : l.librarySearchBooks,
                 style: tt.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: cs.primary,
+                  color: cs.onSurface,
                 ),
               ),
             ),
@@ -5240,7 +5207,7 @@ lib.registerHasCoverFromItem(id, r);
             l.librarySearchEpisodes,
             style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: cs.primary,
+              color: cs.onSurface,
             ),
           ),
         ),
@@ -5267,7 +5234,7 @@ lib.registerHasCoverFromItem(id, r);
             l.librarySearchSeries,
             style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: cs.primary,
+              color: cs.onSurface,
             ),
           ),
         ),
@@ -5298,7 +5265,7 @@ lib.registerHasCoverFromItem(id, r);
             l.librarySearchAuthors,
             style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: cs.primary,
+              color: cs.onSurface,
             ),
           ),
         ),
@@ -5331,7 +5298,7 @@ lib.registerHasCoverFromItem(id, r);
             l.libraryTabNarrators,
             style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: cs.primary,
+              color: cs.onSurface,
             ),
           ),
         ),
@@ -5356,7 +5323,7 @@ lib.registerHasCoverFromItem(id, r);
             l.librarySearchGenres,
             style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: cs.primary,
+              color: cs.onSurface,
             ),
           ),
         ),
@@ -5385,7 +5352,7 @@ lib.registerHasCoverFromItem(id, r);
             l.librarySearchTags,
             style: tt.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
-              color: cs.primary,
+              color: cs.onSurface,
             ),
           ),
         ),

@@ -1,7 +1,11 @@
 package com.barnabas.absorb
 
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.util.Rational
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
@@ -118,8 +122,51 @@ class MainActivity : AudioServiceActivity() {
         return super.provideFlutterEngine(context)
     }
 
+    // TV picture-in-picture: Home while a book plays shrinks the app into
+    // the corner window showing the cover. Never on phones.
+    private var autoPip = false
+    private var pipChannel: MethodChannel? = null
+
+    private fun canPip(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    private fun enterPip(): Boolean {
+        if (!canPip() || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(1, 1)).build())
+        } catch (e: Exception) {
+            Log.w("Absorb", "picture-in-picture refused: ${e.message}")
+            false
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (autoPip) enterPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipChannel?.invokeMethod("pipChanged", isInPictureInPictureMode)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        pipChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.barnabas.absorb/tv_pip").also {
+            it.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setAutoPip" -> {
+                        autoPip = call.arguments == true && canPip()
+                        result.success(autoPip)
+                    }
+                    "enter" -> result.success(enterPip())
+                    else -> result.notImplemented()
+                }
+            }
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.barnabas.absorb/app_icon")
             .setMethodCallHandler { call, result ->
@@ -402,6 +449,18 @@ class MainActivity : AudioServiceActivity() {
                     if (event.keyCode == KeyEvent.KEYCODE_PAGE_UP) "up" else "down")
             }
             return true
+        }
+        // On a TV a game controller's A is OK and B is Back, so it works on
+        // every screen the remote does (a Shield is often run by its controller).
+        val asRemote = when (event.keyCode) {
+            KeyEvent.KEYCODE_BUTTON_A -> KeyEvent.KEYCODE_DPAD_CENTER
+            KeyEvent.KEYCODE_BUTTON_B -> KeyEvent.KEYCODE_BACK
+            else -> null
+        }
+        if (asRemote != null && packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
+            return super.dispatchKeyEvent(KeyEvent(
+                event.downTime, event.eventTime, event.action, asRemote, event.repeatCount,
+                event.metaState, event.deviceId, event.scanCode, event.flags, event.source))
         }
         return super.dispatchKeyEvent(event)
     }

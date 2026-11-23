@@ -24,6 +24,7 @@ import '../widgets/rmab_config_sheet.dart'
 import '../widgets/series_books_sheet.dart';
 import '../widgets/stackable_sheet.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/tints.dart';
 
 class UpcomingReleasesScreen extends StatefulWidget {
   /// Opens the Scan series chooser as soon as the screen is up, for entry
@@ -207,7 +208,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                         height: 40,
                         decoration: BoxDecoration(
                           color: v == _finishedAfterYears
-                              ? cs.primary.withValues(alpha: 0.15)
+                              ? cs.primary.withValues(alpha: Tints.soft)
                               : cs.onSurface.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: v == _finishedAfterYears
@@ -229,7 +230,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
               const SizedBox(height: 16),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.visibility_off_rounded, color: cs.primary, size: 22),
+                leading: Icon(Icons.visibility_off_rounded, color: cs.onSurfaceVariant, size: 22),
                 title: Text(l.upcomingReleasesSkippedTitle,
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                 subtitle: _service.skippedCount == 0
@@ -247,7 +248,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
               if (_service.ignoredCount > 0)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.playlist_remove_rounded, color: cs.primary, size: 22),
+                  leading: Icon(Icons.playlist_remove_rounded, color: cs.onSurfaceVariant, size: 22),
                   title: Text(l.upcomingReleasesRemovedBooksTitle,
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                   subtitle: Text(l.upcomingReleasesRemovedCount(_service.ignoredCount),
@@ -261,7 +262,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                 ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.language_rounded, color: cs.primary, size: 22),
+                leading: Icon(Icons.language_rounded, color: cs.onSurfaceVariant, size: 22),
                 title: Text(l.audibleSeriesRegionTitle,
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                 subtitle: Text(ApiService.audibleRegions[_region] ?? _region.toUpperCase(),
@@ -309,12 +310,12 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: cs.primary.withValues(alpha: 0.08),
+          color: cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.2)),
         ),
         child: Row(children: [
-          Icon(icon, size: 24, color: cs.primary),
+          Icon(icon, size: 24, color: cs.onSurfaceVariant),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -385,7 +386,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
             if (report != null)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.receipt_long_rounded, color: cs.primary, size: 22),
+                leading: Icon(Icons.receipt_long_rounded, color: cs.onSurfaceVariant, size: 22),
                 title: Text(l.upcomingReleasesLastScanReport,
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                 subtitle: Text(
@@ -465,7 +466,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                 report.deep
                     ? l.upcomingReleasesReportFoundDeep(report.upcoming, report.recent, report.missing)
                     : l.upcomingReleasesReportFound(report.upcoming, report.recent),
-                color: cs.primary),
+                color: cs.onSurface),
               _reportRow(cs, Icons.help_outline_rounded,
                 l.upcomingReleasesReportUnmatched(report.unmatchedNames.length)),
               if (report.unmatchedNames.isNotEmpty)
@@ -559,7 +560,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
       extraActions: [
         if (seriesContext != null && seriesContext.seriesId.isNotEmpty)
           ListTile(
-            leading: Icon(Icons.collections_bookmark_rounded, color: cs.primary, size: 22),
+            leading: Icon(Icons.collections_bookmark_rounded, color: cs.onSurfaceVariant, size: 22),
             title: Text(l.upcomingReleasesOpenLibrarySeries,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             dense: true, visualDensity: VisualDensity.compact,
@@ -577,7 +578,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
             },
           ),
         ListTile(
-          leading: Icon(Icons.refresh_rounded, color: cs.primary, size: 22),
+          leading: Icon(Icons.refresh_rounded, color: cs.onSurfaceVariant, size: 22),
           title: Text(l.upcomingReleasesRescanReleaseDate, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
           dense: true, visualDensity: VisualDensity.compact,
           onTap: () {
@@ -587,7 +588,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
         ),
         if (showRequest)
           ListTile(
-            leading: Icon(Icons.menu_book_rounded, color: cs.primary, size: 22),
+            leading: Icon(Icons.menu_book_rounded, color: cs.onSurfaceVariant, size: 22),
             title: Text(_serverRequests ? l.breqRequest : l.rmabRequestCta,
                 style: const TextStyle(
                     fontSize: 14, fontWeight: FontWeight.w500)),
@@ -653,7 +654,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
             style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           ListTile(
-            leading: Icon(Icons.playlist_remove_rounded, color: cs.primary, size: 22),
+            leading: Icon(Icons.playlist_remove_rounded, color: cs.onSurfaceVariant, size: 22),
             title: Text(l.upcomingReleasesRemoveThisScan,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             subtitle: Text(l.upcomingReleasesRemoveThisScanDesc,
@@ -832,7 +833,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: cs.primary.withValues(alpha: 0.1),
+                        color: cs.primary.withValues(alpha: Tints.faint),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
                       ),
@@ -957,7 +958,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                         decoration: BoxDecoration(
-                          color: _sortByDate ? cs.primary.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.06),
+                          color: _sortByDate ? cs.primary.withValues(alpha: Tints.soft) : cs.onSurface.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(20),
                           border: _sortByDate ? Border.all(color: cs.primary.withValues(alpha: 0.3)) : null,
                         ),
@@ -1028,7 +1029,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.event_available_rounded, size: 48, color: cs.primary.withValues(alpha: 0.5)),
+            Icon(Icons.event_available_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
             Text(l.upcomingReleasesNoneFound, style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
               textAlign: TextAlign.center),
@@ -1128,7 +1129,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? cs.primary.withValues(alpha: 0.15) : cs.onSurface.withValues(alpha: 0.06),
+          color: selected ? cs.primary.withValues(alpha: Tints.soft) : cs.onSurface.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: selected ? cs.primary.withValues(alpha: 0.3) : cs.onSurface.withValues(alpha: 0.1)),
         ),
@@ -1150,7 +1151,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
             if (_service.isRunning) ...[
               const CircularProgressIndicator(strokeWidth: 2),
             ] else ...[
-              Icon(Icons.check_circle_outline_rounded, size: 48, color: cs.primary.withValues(alpha: 0.5)),
+              Icon(Icons.check_circle_outline_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
               const SizedBox(height: 12),
               Text(l.upcomingReleasesNoMissing,
                 style: tt.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
@@ -1300,8 +1301,8 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                       Positioned(top: 4, right: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(color: cs.tertiary.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(6)),
-                          child: Text(l.upcomingReleasesBadgeNew, style: TextStyle(color: cs.onTertiary, fontSize: 8, fontWeight: FontWeight.w700)),
+                          decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(6)),
+                          child: Text(l.upcomingReleasesBadgeNew, style: TextStyle(color: cs.onPrimary, fontSize: 8, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     if (selected)
@@ -1344,7 +1345,7 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                     children: [
                       // Series name label
                       Text(seriesName, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: tt.bodySmall?.copyWith(color: cs.primary, fontSize: 10, fontWeight: FontWeight.w600)),
+                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
                         style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface)),
@@ -1430,12 +1431,12 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.12),
+                  color: cs.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$totalCount',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: cs.primary),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: cs.onSurface),
                 ),
               ),
             ]),
@@ -1516,8 +1517,8 @@ class _UpcomingReleasesScreenState extends State<UpcomingReleasesScreen> {
                       Positioned(top: 4, right: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(color: cs.tertiary.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(6)),
-                          child: Text(l.upcomingReleasesBadgeNew, style: TextStyle(color: cs.onTertiary, fontSize: 8, fontWeight: FontWeight.w700)),
+                          decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(6)),
+                          child: Text(l.upcomingReleasesBadgeNew, style: TextStyle(color: cs.onPrimary, fontSize: 8, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     if (selected)
@@ -1683,7 +1684,7 @@ class _RemovedBooksSheetState extends State<_RemovedBooksSheet> {
 
     return ClipRect(child: Column(
       children: [
-        Icon(Icons.playlist_remove_rounded, size: 20, color: cs.primary),
+        Icon(Icons.playlist_remove_rounded, size: 20, color: cs.onSurfaceVariant),
         const SizedBox(height: 4),
         Text(l.upcomingReleasesRemovedBooksTitle,
           style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
@@ -1953,7 +1954,7 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
         title: Text(l.upcomingReleasesSetSeriesAsin),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(s.seriesName,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary)),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.onSurface)),
           const SizedBox(height: 8),
           Text(l.upcomingReleasesSetAsinInstructions,
             style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
@@ -2020,7 +2021,7 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
           const SizedBox(height: 12),
           if (s.audibleAsin.isNotEmpty)
             ListTile(
-              leading: Icon(Icons.travel_explore_rounded, color: cs.primary, size: 22),
+              leading: Icon(Icons.travel_explore_rounded, color: cs.onSurfaceVariant, size: 22),
               title: Text(l.seriesBooksFindMissingTitle,
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
               dense: true, visualDensity: VisualDensity.compact,
@@ -2030,7 +2031,7 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
               },
             ),
           ListTile(
-            leading: Icon(Icons.refresh_rounded, color: cs.primary, size: 22),
+            leading: Icon(Icons.refresh_rounded, color: cs.onSurfaceVariant, size: 22),
             title: Text(l.upcomingReleasesSkippedScanNow,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             dense: true, visualDensity: VisualDensity.compact,
@@ -2040,7 +2041,7 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
             },
           ),
           ListTile(
-            leading: Icon(Icons.link_rounded, color: cs.primary, size: 22),
+            leading: Icon(Icons.link_rounded, color: cs.onSurfaceVariant, size: 22),
             title: Text(l.upcomingReleasesSetSeriesAsin,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             dense: true, visualDensity: VisualDensity.compact,
@@ -2051,7 +2052,7 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
           ),
           ListTile(
             leading: Icon(isAlways ? Icons.check_circle_rounded : Icons.play_circle_outline_rounded,
-              color: cs.primary, size: 22),
+              color: isAlways ? cs.primary : cs.onSurfaceVariant, size: 22),
             title: Text(l.upcomingReleasesSkippedAlwaysScan,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             trailing: isAlways ? Icon(Icons.check_rounded, color: cs.primary, size: 18) : null,
@@ -2089,7 +2090,7 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
 
     return ClipRect(child: Column(
       children: [
-        Icon(Icons.visibility_off_rounded, size: 20, color: cs.primary),
+        Icon(Icons.visibility_off_rounded, size: 20, color: cs.onSurfaceVariant),
         const SizedBox(height: 4),
         Text(l.upcomingReleasesSkippedTitle,
           style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
@@ -2141,12 +2142,12 @@ class _SkippedSeriesSheetState extends State<_SkippedSeriesSheet> {
                   else ...[
                     IconButton(
                       tooltip: l.upcomingReleasesSkippedScanNow,
-                      icon: Icon(Icons.refresh_rounded, color: cs.primary),
+                      icon: Icon(Icons.refresh_rounded, color: cs.onSurfaceVariant),
                       onPressed: _bulkScanNow,
                     ),
                     IconButton(
                       tooltip: l.upcomingReleasesSkippedAlwaysScan,
-                      icon: Icon(Icons.check_circle_outline_rounded, color: cs.primary),
+                      icon: Icon(Icons.check_circle_outline_rounded, color: cs.onSurfaceVariant),
                       onPressed: () => _bulkOverride(always: true),
                     ),
                     IconButton(

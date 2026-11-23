@@ -1432,7 +1432,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get flatBackgroundLabel => '纯色背景';
 
   @override
-  String get flatBackgroundSubtitle => '移除背景渐变。深色模式下 OLED 屏幕为纯黑色。';
+  String get flatBackgroundSubtitle => '页面背后不再有辉光。深色模式下 OLED 屏幕为纯黑色。';
 
   @override
   String get einkModeLabel => '电子墨水屏模式';
@@ -15655,11 +15655,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get liquidGlassNavLabel => 'Liquid Glass';
+  String get liquidGlassNavLabel => '液态玻璃';
 
   @override
-  String get liquidGlassNavSubtitle =>
-      'iOS glass for the tab bar, library pills and toasts';
+  String get liquidGlassNavSubtitle => '为标签栏、媒体库胶囊和提示条启用 iOS 玻璃效果';
 
   @override
   String get materialExpressiveLabel => 'Expressive 风格';
@@ -15732,7 +15731,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get editServerAddressField => 'Server Address';
+  String get editServerAddressField => '服务器地址';
 
   @override
   String get cardBackgroundSolid => '纯色';
@@ -15762,8 +15761,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cardDismissStyleStack => '下沉';
 
   @override
-  String get adminUsersPickLibrary =>
-      'Pick at least one library, or turn on access to all libraries';
+  String get adminUsersPickLibrary => '请至少选择一个媒体库，或开启“访问全部媒体库”';
 
   @override
   String get ebookSaveNarratedBody =>
@@ -15818,12 +15816,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String boQuickMatchStillRunning(int count) {
-    return 'Still matching on the server ($count)';
+    return '服务器仍在匹配（$count）';
   }
 
   @override
-  String get boQuickMatchBusy =>
-      'The server already has too many matches waiting. Try again once some finish.';
+  String get boQuickMatchBusy => '服务器上等待匹配的任务过多，请等部分完成后再试。';
 
   @override
   String get boNotifyStoryGuides => '故事导读';
@@ -15880,4 +15877,386 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get coverNotSavedYet => '点按“保存”后使用该封面';
+
+  @override
+  String get tvSignInTitle => '用手机登录';
+
+  @override
+  String get tvSignInStep1 => '用手机摄像头对准此二维码';
+
+  @override
+  String get tvSignInStep2 => '点“在 Absorb 中打开”，然后点“登录电视”';
+
+  @override
+  String get tvSignInNeedsPhone => '手机上的 Absorb 需要已登录，并与这台电视连接同一 Wi-Fi。';
+
+  @override
+  String get tvSignInHere => '改为在电视上登录';
+
+  @override
+  String get tvSignInNoNetwork => '这台电视未连接网络。请连接 Wi-Fi 后用手机登录。';
+
+  @override
+  String get tvSignInRetry => '重试';
+
+  @override
+  String get tvHomeEmpty => '暂无继续收听的内容。去媒体库或搜索里找一本书，它会出现在这里。';
+
+  @override
+  String get signInTvTitle => '登录电视';
+
+  @override
+  String get signInTvKeyNote =>
+      '电视会获得一个名为 Absorb TV 的专属 API 密钥，之后可在“API 密钥”中删除。';
+
+  @override
+  String get signInTvPasswordNote => '输入密码为电视登录。密码会直接发送到电视，不会保存在这台手机上。';
+
+  @override
+  String get signInTvButton => '登录电视';
+
+  @override
+  String get signInTvDone => '电视已登录';
+
+  @override
+  String get signInTvNotSignedIn => '请先在这台手机上登录，然后重新扫描电视上的二维码。';
+
+  @override
+  String get signInTvRefused => '电视拒绝了这次请求。请重新扫描电视上的二维码。';
+
+  @override
+  String get signInTvBusy => '电视正在登录中';
+
+  @override
+  String get signInTvNoAnswer => '电视没有响应';
+
+  @override
+  String get signInTvUnreachable => '无法连接电视。请确认这台手机与电视在同一 Wi-Fi。';
+
+  @override
+  String get signInTvFailed => '电视登录失败';
+
+  @override
+  String get signInTvKeyFailed => '无法为电视创建密钥';
+
+  @override
+  String get signInTvKeyName => 'Absorb TV';
+
+  @override
+  String signInTvAs(String server, String username) {
+    return '$server（$username）';
+  }
+
+  @override
+  String get tvHome => '首页';
+
+  @override
+  String get tvLibrary => '媒体库';
+
+  @override
+  String get tvSearch => '搜索';
+
+  @override
+  String get tvLibraries => '媒体库';
+
+  @override
+  String get tvSortAdded => '最近添加';
+
+  @override
+  String get tvSortTitle => '标题';
+
+  @override
+  String get tvSortAuthor => '作者';
+
+  @override
+  String get tvNothingHere => '空空如也';
+
+  @override
+  String get tvSearchHint => '搜索此媒体库';
+
+  @override
+  String get tvPlay => '播放';
+
+  @override
+  String get tvContinue => '继续';
+
+  @override
+  String get tvNoAudio => '无音频';
+
+  @override
+  String get tvSignedInAs => '已登录';
+
+  @override
+  String get tvSignOut => '退出登录';
+
+  @override
+  String tvBookCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 本书',
+      one: '1 本书',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tvNowPlayingHint => '长按 OK 打开';
+
+  @override
+  String get tvStartOver => '从头开始';
+
+  @override
+  String get tvFinished => '已完成';
+
+  @override
+  String tvNarratedBy(String name) {
+    return '朗读者：$name';
+  }
+
+  @override
+  String tvTimeLeft(String time) {
+    return '剩余 $time';
+  }
+
+  @override
+  String get tvNightMode => '夜间模式';
+
+  @override
+  String get tvAccounts => '账号';
+
+  @override
+  String get tvLayoutHint => '长按 OK 拿起按钮，用上下键移动，再按 OK 放下';
+
+  @override
+  String get tvRead => '阅读';
+
+  @override
+  String get tvRefreshed => '已与服务器同步';
+
+  @override
+  String get tvStop => '停止';
+
+  @override
+  String tvSignOutQuestion(String name) {
+    return '在这台电视上退出 $name？';
+  }
+
+  @override
+  String get tvBooks => '图书';
+
+  @override
+  String get tvLists => '列表';
+
+  @override
+  String get tvMoreInSeries => '系列中的更多';
+
+  @override
+  String get tvPlayback => '播放';
+
+  @override
+  String tvSkipBack(int seconds) {
+    return '后退 $seconds 秒';
+  }
+
+  @override
+  String tvSkipForward(int seconds) {
+    return '前进 $seconds 秒';
+  }
+
+  @override
+  String get tvSleep => '睡眠';
+
+  @override
+  String get tvRewindOff => '恢复播放时不回退';
+
+  @override
+  String get tvAutoSleepOn => '自动睡眠定时已开启';
+
+  @override
+  String get tvAutoSleepOff => '自动睡眠定时已关闭';
+
+  @override
+  String get tvAutoNightOff => '睡眠定时器运行时不开夜间模式';
+
+  @override
+  String get tvAutoNightHint => '睡眠定时器运行时，遥控器静止达到设定时长后开启夜间模式。';
+
+  @override
+  String tvDefaultSpeed(String speed) {
+    return '新书默认速度 ${speed}x';
+  }
+
+  @override
+  String tvRewindOnResume(int seconds) {
+    return '恢复播放时回退 $seconds 秒';
+  }
+
+  @override
+  String tvSleepDefault(int minutes) {
+    return '睡眠定时 $minutes 分钟';
+  }
+
+  @override
+  String tvAutoSleepFrom(String time) {
+    return '从 $time 起';
+  }
+
+  @override
+  String tvAutoSleepUntil(String time) {
+    return '到 $time 止';
+  }
+
+  @override
+  String tvAutoNightAfter(int minutes) {
+    return '$minutes 分钟后开启夜间模式';
+  }
+
+  @override
+  String get tvLoginTitle => '在此电视上登录';
+
+  @override
+  String get tvLoginServerHint => '服务器地址，例如 192.168.1.10:13378';
+
+  @override
+  String get tvLoginUsername => '用户名';
+
+  @override
+  String get tvLoginFillIn => '请输入服务器地址和用户名';
+
+  @override
+  String tvPodcastCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个播客',
+      one: '1 个播客',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tvPodcastDetails => '播客详情';
+
+  @override
+  String get settingsGroupSpeed => '速度';
+
+  @override
+  String get settingsGroupSkipping => '跳章';
+
+  @override
+  String get settingsGroupRewind => '恢复播放回退';
+
+  @override
+  String playbackSummary(String speed, int back, int forward) {
+    return '${speed}x，后退 $back 秒，前进 $forward 秒';
+  }
+
+  @override
+  String get settingsGroupApp => '应用';
+
+  @override
+  String get settingsGroupLook => '外观';
+
+  @override
+  String get settingsGroupColor => '颜色';
+
+  @override
+  String get settingsGroupCoversAndText => '封面与文字';
+
+  @override
+  String get settingsGroupGoals => '目标';
+
+  @override
+  String get settingsGroupCharts => '图表';
+
+  @override
+  String get settingsGroupPlayer => '播放器';
+
+  @override
+  String get settingsGroupQueue => '队列';
+
+  @override
+  String get settingsGroupLockScreen => '通知与锁屏';
+
+  @override
+  String get settingsGroupSorting => '排序';
+
+  @override
+  String get settingsGroupSleepTriggers => '摇晃与按键';
+
+  @override
+  String get settingsGroupSleepEnd => '定时结束之后';
+
+  @override
+  String get settingsGroupSleepSchedule => '计划';
+
+  @override
+  String get settingsGroupDownloading => '下载';
+
+  @override
+  String get settingsGroupAutoDownloads => '自动下载';
+
+  @override
+  String get settingsGroupStorage => '存储';
+
+  @override
+  String get settingsGroupBrowsing => '浏览';
+
+  @override
+  String get settingsGroupBadges => '徽标与按钮';
+
+  @override
+  String get settingsGroupLibraries => '媒体库';
+
+  @override
+  String get settingsGroupHelp => '帮助';
+
+  @override
+  String get settingsGroupContact => '联系我们';
+
+  @override
+  String get settingsGroupLogs => '日志';
+
+  @override
+  String get settingsGroupConnection => '连接';
+
+  @override
+  String get settingsGroupTools => '工具';
+
+  @override
+  String get trueCoverColorsLabel => '真实封面颜色';
+
+  @override
+  String get trueCoverColorsSubtitle => '让每本书的颜色贴近其封面，而不是柔化处理';
+
+  @override
+  String get sectionGeneral => '通用';
+
+  @override
+  String get settingsGroupGlow => '辉光';
+
+  @override
+  String get glowStrengthLabel => '辉光强度';
+
+  @override
+  String get appColorLabel => '应用颜色';
+
+  @override
+  String get appColorSoftCover => '柔和封面色';
+
+  @override
+  String get appColorTrueCover => '真实封面色';
+
+  @override
+  String get appColorMine => '自定义颜色';
+
+  @override
+  String get appColorSoftCoverDescription => '跟随正在播放书的封面，并做柔和处理';
+
+  @override
+  String get appColorTrueCoverDescription => '跟随正在播放书的封面，贴近其真实颜色';
+
+  @override
+  String get appColorMineDescription => '使用你选定的单一颜色，不随播放内容变化';
 }

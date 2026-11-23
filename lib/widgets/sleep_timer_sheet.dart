@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'remote_tap.dart';
 import '../l10n/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../services/sleep_timer_service.dart';
+import '../utils/app_platform.dart';
+import 'tints.dart';
 
 // ═════════════════ SHARED SLEEP TIMER SHEET ═════════════════
 void showSleepTimerSheet(BuildContext context, Color accent) {
@@ -133,8 +136,8 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
             color: Theme.of(context).bottomSheetTheme.backgroundColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(
-              top: BorderSide(color: accent.withValues(alpha: 0.2), width: 1),
-            ),
+                top:
+                    BorderSide(color: cs.outlineVariant.withValues(alpha: 0.2), width: 1)),
           ),
           child: SingleChildScrollView(
             child: Column(
@@ -212,6 +215,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
                   // Rewind on sleep
                   _buildRewindSection(accent, tt, l),
 
+                if (!AppPlatform.lacksPhonePlugins && !AppPlatform.isTv) ...[
                   const SizedBox(height: 12),
                   Container(
                     height: 0.5,
@@ -222,6 +226,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
                   // Shake toggle
                   _buildShakeToggle(accent, tt, l),
                 ],
+              ],
               ],
             ),
           ),
@@ -360,14 +365,16 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
           ),
         ),
 
-        const SizedBox(height: 12),
-        Container(height: 0.5, color: cs.onSurface.withValues(alpha: 0.08)),
-        const SizedBox(height: 12),
-        _buildRewindSection(accent, tt, l),
+      const SizedBox(height: 12),
+      Container(height: 0.5, color: cs.onSurface.withValues(alpha: 0.08)),
+      const SizedBox(height: 12),
+      _buildRewindSection(accent, tt, l),
+      if (!AppPlatform.lacksPhonePlugins && !AppPlatform.isTv) ...[
         const SizedBox(height: 12),
         Container(height: 0.5, color: cs.onSurface.withValues(alpha: 0.08)),
         const SizedBox(height: 12),
         _buildShakeToggle(accent, tt, l),
+      ],
       ],
     );
   }
@@ -554,24 +561,17 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
           Text(
             _formatWallClock(endTime),
             style: TextStyle(
-              color: accent,
-              fontSize: 36,
-              fontWeight: FontWeight.w700,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            l.sleepTimerSheetSpecificCountdown(
-              _formatCountdown(Duration(seconds: realSecondsUntil.round())),
-            ),
-            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
-          ),
-        ] else
-          Text(
-            l.sleepTimerSheetSpecificAlreadyPassed,
-            style: TextStyle(color: cs.error, fontSize: 13),
-          ),
+                color: cs.onSurface,
+                fontSize: 36,
+                fontWeight: FontWeight.w700,
+                fontFeatures: const [FontFeature.tabularFigures()])),
+        const SizedBox(height: 4),
+        Text(
+            l.sleepTimerSheetSpecificCountdown(_formatCountdown(Duration(seconds: realSecondsUntil.round()))),
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+      ] else
+        Text(l.sleepTimerSheetSpecificAlreadyPassed,
+            style: TextStyle(color: cs.error, fontSize: 13)),
 
         const SizedBox(height: 16),
 
@@ -826,7 +826,7 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
     final cs = Theme.of(context).colorScheme;
     final selected = _tabIndex == index;
     return Expanded(
-      child: GestureDetector(
+      child: RemoteTap(
         onTap: () {
           setState(() => _tabIndex = index);
           PlayerSettings.setSleepTimerTab(index);
@@ -835,9 +835,8 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected
-                ? accent.withValues(alpha: 0.2)
-                : Colors.transparent,
+            color:
+                selected ? accent.withValues(alpha: Tints.strong) : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -1620,14 +1619,14 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
   Widget _circleButton(IconData icon, Color accent, VoidCallback? onTap) {
     final cs = Theme.of(context).colorScheme;
     final enabled = onTap != null;
-    return GestureDetector(
+    return RemoteTap(
       onTap: onTap,
       child: Container(
         width: 44,
         height: 44,
         decoration: BoxDecoration(
           color: enabled
-              ? accent.withValues(alpha: 0.12)
+              ? accent.withValues(alpha: Tints.soft)
               : cs.onSurface.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
@@ -1652,31 +1651,30 @@ class _SleepTimerSheetState extends State<SleepTimerSheet>
     VoidCallback onTap,
   ) {
     final cs = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: active
-              ? accent.withValues(alpha: 0.2)
-              : cs.onSurface.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
+    return RemoteTap(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
             color: active
-                ? accent.withValues(alpha: 0.4)
-                : cs.onSurface.withValues(alpha: 0.1),
+                ? accent.withValues(alpha: Tints.strong)
+                : cs.onSurface.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: active
+                    ? accent.withValues(alpha: 0.4)
+                    : cs.onSurface.withValues(alpha: 0.1)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? accent : cs.onSurfaceVariant,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+            ),
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? accent : cs.onSurfaceVariant,
-            fontSize: 13,
-            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ),
     );
   }
 }

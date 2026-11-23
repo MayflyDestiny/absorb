@@ -13,6 +13,7 @@ import 'package:app_links/app_links.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'l10n/app_localizations.dart';
 
 import 'package:device_info_plus/device_info_plus.dart';
@@ -43,6 +44,14 @@ import 'services/log_service.dart';
 import 'services/cover_cache_manager.dart';
 import 'services/quick_actions_service.dart';
 import 'services/setup_link_service.dart';
+import 'services/tv_pairing.dart';
+import 'screens/sign_in_tv_screen.dart';
+import 'tv/tv_focus_ring.dart';
+import 'utils/cover_accent.dart';
+import 'tv/tv_pip.dart';
+import 'tv/tv_shell.dart';
+import 'tv/tv_pair_screen.dart';
+import 'widgets/overlay_toast.dart';
 import 'services/wording.dart';
 import 'utils/app_platform.dart';
 import 'screens/login_screen.dart';
@@ -52,6 +61,7 @@ import 'widgets/expressive.dart';
 import 'widgets/bookorbit_password_session.dart';
 import 'widgets/beta_logging_notice.dart';
 import 'widgets/setup_link_login.dart';
+import 'services/app_icon_service.dart';
 
 /// Global notifier so any widget (e.g. settings) can change the theme instantly.
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
@@ -113,13 +123,39 @@ final ValueNotifier<bool> snappyTransitionsNotifier = ValueNotifier(false);
 final ValueNotifier<Locale?> localeNotifier = ValueNotifier(null);
 
 
-/// Cover-art-derived ColorScheme for the currently playing item.
-/// null when nothing is playing or cover hasn't loaded yet.
-final ValueNotifier<ColorScheme?> coverSchemeNotifier = ValueNotifier(null);
+/// The color picked from the playing item's cover, which the theme is built
+/// from. null when nothing is playing or the cover hasn't loaded yet.
+final ValueNotifier<Color?> coverSeedNotifier = ValueNotifier(null);
+
+/// Cover colors kept close to the cover instead of softened.
+final ValueNotifier<bool> trueCoverColorsNotifier = ValueNotifier(false);
 
 /// Whether to trust all certificates (for self-signed / custom CA setups).
 /// Checked dynamically by [_CertOverrides] when any HttpClient is created.
 bool trustAllCerts = false;
+
+/// Keeps iOS from freezing the app halfway through a token refresh, which
+/// loses the new pair and signs the user out later (GH #501).
+void _wireIosRefreshGuard() {
+  const channel = MethodChannel('com.barnabas.absorb/background');
+  ApiService.beginBackgroundWork = () async {
+    try {
+      return await channel.invokeMethod<int>('beginWork');
+    } catch (_) {
+      return null;
+    }
+  };
+  ApiService.endBackgroundWork = (token) {
+    channel.invokeMethod<void>('endWork', token).catchError((_) {});
+  };
+  ApiService.holdRefreshForNow = () {
+    final player = AudioPlayerService();
+    return player.isBackgrounded &&
+        !player.isPlaying &&
+        !CarPlayService().isConnected &&
+        !EpisodeNotificationService.backgroundCheckRunning;
+  };
+}
 
 /// Allows Dart's HTTP stack to trust user-installed / self-signed certificates.
 /// Android's network_security_config.xml only covers the native layer; Dart's
@@ -169,6 +205,7 @@ void applyColorSource(String value) => colorSourceNotifier.value = value;
 void applyManualSeed(int argb) => manualSeedNotifier.value = Color(argb);
 void applyGradientIntensity(double value) => gradientIntensityNotifier.value = value;
 void applyUseColorEverywhere(bool value) => useColorEverywhereNotifier.value = value;
+void applyTrueCoverColors(bool value) => trueCoverColorsNotifier.value = value;
 
 /// E-ink mode overrides the theme (light, flat, monochrome, no animations)
 /// without touching the user's saved appearance settings. The notifier drives
@@ -189,12 +226,14 @@ Future<void> applyAppearanceFromPrefs() async {
   applyThemeMode(await PlayerSettings.getThemeMode());
   applyFlatBackground(await PlayerSettings.getFlatBackground());
   applyEinkModeTheme(await PlayerSettings.getEinkMode());
-  expressiveNotifier.value =
-      AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive();
+  // A TV has only the Expressive look.
+  expressiveNotifier.value = AppPlatform.isTv ||
+      (AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive());
   applyColorSource(await PlayerSettings.getColorSource());
   applyManualSeed(await PlayerSettings.getManualSeedColor());
   applyGradientIntensity(await PlayerSettings.getGradientIntensity());
   applyUseColorEverywhere(await PlayerSettings.getUseColorEverywhere());
+  applyTrueCoverColors(await PlayerSettings.getTrueCoverColors());
   await applyOrientationLock();
 }
 
@@ -214,7 +253,11 @@ Future<void> applyOrientationLock() async {
         ]);
 }
 
-void main() async {
+void main(List<String> args) async {
+  // On Windows and Linux the single sign-on window draws its title bar with
+  // a second run of main, handed these args. Without this, that run started
+  // all of Absorb inside the sign-in window and the sign-in never finished.
+  if (runWebViewTitleBarWidget(args)) return;
   if (!AppPlatform.isWeb) HttpOverrides.global = _CertOverrides();
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   // Route covers through the app's cache manager: 2000-entry store (the
@@ -224,11 +267,11 @@ void main() async {
   ReadListenSync.instance.start();
   WindowsMediaControls.instance.start();
   BookOrbitApiService.placeReadingSpot = NarrationService.readingSpotSeconds;
-  BookOrbitApiService.keptNarration = NarrationService.instance.localOverlay;
-  // BookOrbit needs the account password session for the actions an API key
-  // is not allowed to do; the hook has to be in place before any of them run.
   wireBoPasswordSession();
+  unawaited(AppIconService.load());
+  BookOrbitApiService.keptNarration = NarrationService.instance.localOverlay;
   ApiService.pageReadElsewhere = NarrationService.pageReadElsewhere;
+  if (AppPlatform.isIOS) _wireIosRefreshGuard();
   try {
     await NarratedBooks.load().timeout(const Duration(seconds: 2));
   } catch (_) {}
@@ -248,6 +291,18 @@ void main() async {
     await applyOrientationLock().timeout(const Duration(seconds: 2));
   } catch (_) {}
 
+  // Known before the first frame: the app is laid out for a remote from the
+  // start on a TV.
+  if (AppPlatform.isAndroid) {
+    try {
+      final info = await DeviceInfoPlugin().androidInfo.timeout(const Duration(seconds: 2));
+      AppPlatform.isTv = info.systemFeatures.contains('android.software.leanback');
+    } catch (_) {}
+    // A TV has only the remote, so focus always shows, not only after the
+    // first key press as Flutter assumes.
+    if (AppPlatform.isTv) FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+  }
+
   // Load saved theme preference so we render the correct theme immediately
   try {
     var savedTheme = await PlayerSettings.getThemeMode();
@@ -260,12 +315,14 @@ void main() async {
     applyThemeMode(savedTheme);
     flatNotifier.value = await PlayerSettings.getFlatBackground();
     applyEinkModeTheme(await PlayerSettings.getEinkMode());
-    expressiveNotifier.value =
-        AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive();
+    // A TV has only the Expressive look.
+    expressiveNotifier.value = AppPlatform.isTv ||
+        (AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive());
     colorSourceNotifier.value = await PlayerSettings.getColorSource();
     manualSeedNotifier.value = Color(await PlayerSettings.getManualSeedColor());
     gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
     useColorEverywhereNotifier.value = await PlayerSettings.getUseColorEverywhere();
+    trueCoverColorsNotifier.value = await PlayerSettings.getTrueCoverColors();
     final savedLang = await PlayerSettings.getLanguage();
     if (savedLang.isNotEmpty) localeNotifier.value = Locale(savedLang);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
@@ -280,11 +337,7 @@ void main() async {
       final seedInt = await PlayerSettings.getCoverSeedColor();
       if (seedInt != null) {
         final seedColor = Color(seedInt);
-        coverSchemeNotifier.value = ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: parseThemeMode(await PlayerSettings.getThemeMode()) == ThemeMode.light
-              ? Brightness.light : Brightness.dark,
-        );
+        coverSeedNotifier.value = seedColor;
       }
     }
   } catch (_) {}
@@ -339,7 +392,8 @@ class AbsorbApp extends StatelessWidget {
         themeNotifier,
         flatNotifier,
         localeNotifier,
-        coverSchemeNotifier,
+        coverSeedNotifier,
+        trueCoverColorsNotifier,
         classicWordingNotifier,
         colorSourceNotifier,
         manualSeedNotifier,
@@ -361,7 +415,6 @@ class AbsorbApp extends StatelessWidget {
             (overrideLocale ?? WidgetsBinding.instance.platformDispatcher.locale)
                 .languageCode == 'ja';
         final cjkFallback = isJapanese ? const ['NotoSansJP'] : null;
-        final coverScheme = coverSchemeNotifier.value;
         final isManual = colorSourceNotifier.value == 'manual';
 
         // Set system chrome to match active theme
@@ -381,15 +434,17 @@ class AbsorbApp extends StatelessWidget {
         const defaultSeed = Color(0xFF7C6FBF); // deep muted purple
         final seedColor = isManual
             ? manualSeedNotifier.value
-            : (coverScheme?.primary ?? defaultSeed);
+            : (coverSeedNotifier.value ?? defaultSeed);
 
         // Manual presets use the vibrant variant so the app color closely
         // matches the chosen swatch. Flat mode also goes vibrant: with the
         // gradient glow gone, the accent color is the only place color shows,
         // so it needs to pop. Dynamic + non-flat keeps the softer default.
+        // True cover colors keeps the main color close to the cover.
         final variant = (isManual || isFlat)
             ? DynamicSchemeVariant.vibrant
             : DynamicSchemeVariant.tonalSpot;
+        final trueCover = !isManual && trueCoverColorsNotifier.value && coverSeedNotifier.value != null;
 
         ColorScheme darkScheme = isManual
             ? manualColorScheme(seedColor, Brightness.dark)
@@ -398,6 +453,8 @@ class AbsorbApp extends StatelessWidget {
                 brightness: Brightness.dark,
                 dynamicSchemeVariant: variant,
               );
+
+        if (trueCover) darkScheme = trueCoverScheme(seedColor, darkScheme);
 
         // Keep dark surfaces neutral so cards/sheets match the scaffold and
         // app bars; the seed color shows through the gradient glow and accents,
@@ -419,6 +476,8 @@ class AbsorbApp extends StatelessWidget {
                 brightness: Brightness.light,
                 dynamicSchemeVariant: variant,
               );
+
+        if (trueCover) lightScheme = trueCoverScheme(seedColor, lightScheme);
 
         // Same idea in light: neutral surfaces, color from the glow + accents.
         // Flat goes clean white.
@@ -482,6 +541,33 @@ class AbsorbApp extends StatelessWidget {
               debugShowCheckedModeBanner: false,
               scrollBehavior:
                   AppPlatform.lacksPhonePlugins ? const _AppScrollBehavior() : null,
+              // On a TV the arrows move between controls; a slider only takes
+              // them after OK, instead of keeping every arrow once reached.
+              // Material's focus highlight is a faint wash, invisible from
+              // the couch; a TV gets a strong one.
+              builder: AppPlatform.isTv
+                  ? (context, child) {
+                      final theme = Theme.of(context);
+                      return MediaQuery(
+                        data: MediaQuery.of(context).copyWith(navigationMode: NavigationMode.directional),
+                        child: Theme(
+                          data: theme.copyWith(focusColor: theme.colorScheme.onSurface.withValues(alpha: 0.32)),
+                          // The ring over everything shows where the remote is
+                          // on every standard control, sheets and dialogs too.
+                          // In the corner window it shows only the cover;
+                          // the app stays as it was underneath.
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable: TvPip.inPip,
+                            builder: (context, pip, _) => Stack(children: [
+                              Offstage(offstage: pip, child: TickerMode(enabled: !pip, child: child!)),
+                              if (!pip) const TvFocusRing(),
+                              if (pip) const Positioned.fill(child: TvPipView()),
+                            ]),
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
               locale: overrideLocale,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
@@ -675,6 +761,10 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   void _queueSetupLink(Uri uri) {
+    if (TvPairLink.isTvLink(uri)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openTvLink(uri));
+      return;
+    }
     if (!SetupLinkService.isSetupLink(uri)) return;
     if (_pendingSetupLink == uri || _activeSetupLink == uri) return;
     _pendingSetupLink = uri;
@@ -707,6 +797,24 @@ class _AuthGateState extends State<AuthGate> {
     await handleSetupLinkLogin(context, link);
   }
 
+  /// A TV's QR code, passed on by its page: sign that TV in to this account.
+  void _openTvLink(Uri uri) {
+    if (!mounted) return;
+    final link = TvPairLink.parse(uri);
+    final l = AppLocalizations.of(context)!;
+    if (link == null) {
+      showOverlayToast(context, l.setupLinkInvalid, icon: Icons.error_outline_rounded);
+      return;
+    }
+    if (!context.read<AuthProvider>().isAuthenticated) {
+      showOverlayToast(context, l.signInTvNotSignedIn, icon: Icons.tv_off_rounded);
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(builder: (_) => SignInTvScreen(link: link)),
+    );
+  }
+
   Future<void> _initServices() async {
     // Load device info before log service so the log header has the real
     // app version and device model instead of fallback values.
@@ -717,6 +825,7 @@ class _AuthGateState extends State<AuthGate> {
         ApiService.deviceManufacturer = info.manufacturer;
         ApiService.deviceModel = info.model;
         ApiService.deviceSdkInt = info.version.sdkInt;
+        AppPlatform.isTv = info.systemFeatures.contains('android.software.leanback');
       } else if (AppPlatform.isIOS) {
         final info = await DeviceInfoPlugin().iosInfo;
         ApiService.deviceManufacturer = 'Apple';
@@ -756,12 +865,14 @@ class _AuthGateState extends State<AuthGate> {
     applyThemeMode(scopedTheme);
     flatNotifier.value = await PlayerSettings.getFlatBackground();
     applyEinkModeTheme(await PlayerSettings.getEinkMode());
-    expressiveNotifier.value =
-        AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive();
+    // A TV has only the Expressive look.
+    expressiveNotifier.value = AppPlatform.isTv ||
+        (AppPlatform.isAndroid && await PlayerSettings.getMaterialExpressive());
     colorSourceNotifier.value = await PlayerSettings.getColorSource();
     manualSeedNotifier.value = Color(await PlayerSettings.getManualSeedColor());
     gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
     useColorEverywhereNotifier.value = await PlayerSettings.getUseColorEverywhere();
+    trueCoverColorsNotifier.value = await PlayerSettings.getTrueCoverColors();
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();
@@ -779,7 +890,10 @@ class _AuthGateState extends State<AuthGate> {
     } catch (_) {}
     // Background new-episode notifications: re-register the periodic job
     // (self-healing after OEM kills) and wire up notification taps.
-    if (!AppPlatform.lacksPhonePlugins) {
+    // A TV skips the phone-only extras below: episode alerts, the
+    // notification prompt, casting, Android Auto, home screen widgets and
+    // app icon shortcuts. Nothing on it would use them.
+    if (!AppPlatform.lacksPhonePlugins && !AppPlatform.isTv) {
       EpisodeNotificationService.syncRegistration();
       EpisodeNotificationService.initTapHandling();
     }
@@ -787,11 +901,7 @@ class _AuthGateState extends State<AuthGate> {
     {
       final seedInt = await PlayerSettings.getCoverSeedColor();
       if (seedInt != null) {
-        coverSchemeNotifier.value = ColorScheme.fromSeed(
-          seedColor: Color(seedInt),
-          brightness: parseThemeMode(scopedTheme) == ThemeMode.light
-              ? Brightness.light : Brightness.dark,
-        );
+        coverSeedNotifier.value = Color(seedInt);
       }
     }
 
@@ -845,7 +955,7 @@ class _AuthGateState extends State<AuthGate> {
     }
     debugPrint('[Init] AudioPlayerService done (${sw.elapsedMilliseconds}ms)');
 
-    if (!AppPlatform.lacksPhonePlugins) {
+    if (!AppPlatform.lacksPhonePlugins && !AppPlatform.isTv) {
       try {
         await Permission.notification.request();
       } catch (e) {
@@ -854,7 +964,7 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     // Initialize Chromecast (Android only)
-    if (AppPlatform.isAndroid) {
+    if (AppPlatform.isAndroid && !AppPlatform.isTv) {
       try {
         await ChromecastService().init();
       } catch (e) {
@@ -875,7 +985,7 @@ class _AuthGateState extends State<AuthGate> {
       // Watch for settings changes and pull the synced copy on the way in.
       await SettingsSyncService().startIfEnabled();
       unawaited(SettingsSyncService().onAppForegrounded());
-      if (AppPlatform.isAndroid) {
+      if (AppPlatform.isAndroid && !AppPlatform.isTv) {
         // Pre-populate Android Auto browse tree in background.
         Future.microtask(() => AndroidAutoService().refresh());
       }
@@ -883,7 +993,7 @@ class _AuthGateState extends State<AuthGate> {
         // Initialize CarPlay browse tree.
         CarPlayService().init();
       }
-      if (AppPlatform.isMobile) {
+      if (AppPlatform.isMobile && !AppPlatform.isTv) {
         // Initialize homescreen widget
         await HomeWidgetService().init();
       }
@@ -897,7 +1007,7 @@ class _AuthGateState extends State<AuthGate> {
       // (so we get real UIKit system icon types like `.play`, `.search`).
       // Depends on AudioPlayerService + HomeWidgetService so they're ready
       // when the shortcut handler fires.
-      if (!AppPlatform.lacksPhonePlugins) await QuickActionsService().init();
+      if (!AppPlatform.lacksPhonePlugins && !AppPlatform.isTv) await QuickActionsService().init();
     } catch (e) {
       debugPrint('[Init] Service init failed: $e');
     }
@@ -915,6 +1025,12 @@ class _AuthGateState extends State<AuthGate> {
 
     if (auth.isLoading) {
       return const AuthLoadingScreen();
+    }
+
+    if (AppPlatform.isTv) {
+      return auth.isAuthenticated
+          ? TvShell(key: ValueKey(UserAccountService().activeScopeKey))
+          : const TvPairScreen();
     }
 
     if (auth.isAuthenticated || auth.isSignedOut) {
