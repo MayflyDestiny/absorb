@@ -6021,7 +6021,7 @@ abstract class AppLocalizations {
   /// No description provided for @clearCacheSheetTitle.
   ///
   /// In en, this message translates to:
-  /// **'Clear cache'**
+  /// **'Cache cleanup'**
   String get clearCacheSheetTitle;
 
   /// No description provided for @clearCacheSheetSubtitle.
@@ -6057,7 +6057,7 @@ abstract class AppLocalizations {
   /// No description provided for @clearAllCaches.
   ///
   /// In en, this message translates to:
-  /// **'Clear all'**
+  /// **'Cache cleanup'**
   String get clearAllCaches;
 
   /// No description provided for @clearAllCachesConfirm.
@@ -27554,7 +27554,7 @@ abstract class AppLocalizations {
   /// No description provided for @cardDismissStyle.
   ///
   /// In en, this message translates to:
-  /// **'Card removal animation'**
+  /// **'Card dismiss style'**
   String get cardDismissStyle;
 
   /// No description provided for @cardDismissStyleClassic.
@@ -28468,6 +28468,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'One color you pick, whatever is playing'**
   String get appColorMineDescription;
+
+  /// No description provided for @keepPlayingWithOtherAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Play with other audio'**
+  String get keepPlayingWithOtherAudio;
+
+  /// No description provided for @keepPlayingWithOtherAudioOnSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keeps playing when another app starts its own audio'**
+  String get keepPlayingWithOtherAudioOnSubtitle;
+
+  /// No description provided for @keepPlayingWithOtherAudioOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pauses when another app starts its own audio'**
+  String get keepPlayingWithOtherAudioOffSubtitle;
+
+  /// No description provided for @iconColorsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Icon colors'**
+  String get iconColorsLabel;
+
+  /// No description provided for @iconColorsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the app accent color for icons in stats and settings.'**
+  String get iconColorsSubtitle;
 }
 
 class _AppLocalizationsDelegate

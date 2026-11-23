@@ -82,6 +82,31 @@ class AudioPlayer {
     }
   }
 
+  /// Best-effort native cache prefetch for a chapter switch. Fills the same
+  /// ExoPlayer cache key the player uses, so the later seek can read the
+  /// prefetched prefix instead of waiting for it over the network. No-op on
+  /// platforms without the native cache.
+  static Future<void> prefetchToCache({
+    required String url,
+    Map<String, String>? headers,
+    required String cacheKey,
+    int bytes = 2 * 1024 * 1024,
+  }) async {
+    if (!Platform.isAndroid) return;
+    await _mainChannel.invokeMethod('prefetchToCache', {
+      'url': url,
+      'headers': headers,
+      'cacheKey': cacheKey,
+      'bytes': bytes,
+    });
+  }
+
+  /// Stop a prefetch started by [prefetchToCache] at its next chunk.
+  static Future<void> cancelPrefetch() async {
+    if (!Platform.isAndroid) return;
+    await _mainChannel.invokeMethod('cancelPrefetch');
+  }
+
   /// The user agent to set on all HTTP requests.
   final String? _userAgent;
 

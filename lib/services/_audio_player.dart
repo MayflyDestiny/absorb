@@ -166,4 +166,24 @@ class AudioPlayer {
     if (AppPlatform.isIOS) return;
     await ja.AudioPlayer.clearStreamingCache();
   }
+
+  static Future<void> prefetchToCache({
+    required String url,
+    Map<String, String>? headers,
+    required String cacheKey,
+    int bytes = 2 * 1024 * 1024,
+  }) async {
+    if (AppPlatform.isIOS) return;
+    await ja.AudioPlayer.prefetchToCache(
+      url: url,
+      headers: headers,
+      cacheKey: cacheKey,
+      bytes: bytes,
+    );
+  }
+
+  static Future<void> cancelCachePrefetch() async {
+    if (AppPlatform.isIOS) return;
+    await ja.AudioPlayer.cancelPrefetch();
+  }
 }

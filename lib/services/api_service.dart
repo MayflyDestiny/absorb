@@ -3995,6 +3995,12 @@ class ApiService {
   static final Map<String, _BackgroundItemTransfer> _backgroundItemTransfers =
       {};
 
+  /// Set by the playback service: returns true while a start/seek/steady-play
+  /// settle window means the pipe belongs to audio. A multi-MB background item
+  /// read that starts here would otherwise queue the first audio bytes or a
+  /// chapter's target Range behind it.
+  static bool Function()? backgroundItemFetchPaused;
+
   void cancelBackgroundItemTransfers({String? keepItemId}) {
     if (_backgroundItemTransfers.isEmpty) return;
     final cancelled = <String>[];
@@ -4028,6 +4034,11 @@ class ApiService {
   /// time; returns null when another item is already in flight. Successful
   /// payloads land in the same disk cache as [getLibraryItem].
   Future<Map<String, dynamic>?> fetchLibraryItemBackground(String itemId) {
+    final paused = backgroundItemFetchPaused;
+    if (paused != null && paused()) {
+      debugPrint('[BgTrace] background fetch paused for playback $itemId');
+      return Future.value(null);
+    }
     final existing = _backgroundItemTransfers[itemId];
     if (existing != null) {
       debugPrint('[BgTrace] background fetch reuse $itemId');

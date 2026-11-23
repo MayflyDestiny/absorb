@@ -918,10 +918,11 @@ class AbsorbingCardState extends State<AbsorbingCard>
           return;
         }
       }
-      // Never start a multi-MB network read while a playback start is loading
-      // or buffering; retry once the pipe is free.
-      if (widget.player.isLoadingOrBuffering) {
-        debugPrint('[BgTrace] card refetch wait (player loading) item=$_itemId');
+      // Never start a multi-MB network read while playback owns the pipe
+      // (start, buffer, seek, or the short settle window after them); retry
+      // once audio is stable or paused.
+      if (!widget.player.backgroundItemFetchAllowed) {
+        debugPrint('[BgTrace] card refetch wait (audio busy) item=$_itemId');
         _scheduleRefetchWhenIdle(
           forceChapters: forceChapters,
           serverUpdatedAt: serverUpdatedAt,
@@ -953,8 +954,8 @@ class AbsorbingCardState extends State<AbsorbingCard>
       // begin, hand the pipe over and retry when it goes idle.
       await Future<void>.delayed(_startQuietWindow);
       if (!mounted) return;
-      if (widget.player.isLoadingOrBuffering) {
-        debugPrint('[BgTrace] card refetch defer (start began) item=$_itemId');
+      if (!widget.player.backgroundItemFetchAllowed) {
+        debugPrint('[BgTrace] card refetch defer (audio busy) item=$_itemId');
         _scheduleRefetchWhenIdle(
           forceChapters: forceChapters,
           serverUpdatedAt: serverUpdatedAt,
@@ -1136,12 +1137,14 @@ class AbsorbingCardState extends State<AbsorbingCard>
     int? serverUpdatedAt,
     bool allowBackgroundFetch = false,
   }) {
-    if (_refetchRetryScheduled || _refetchIdleRetries >= 12) return;
+    // A chapter seek restarts the settle window, so keep retrying well past
+    // the old one-minute cap; the card may stay audio-busy for a while.
+    if (_refetchRetryScheduled || _refetchIdleRetries >= 60) return;
     _refetchRetryScheduled = true;
     Future<void>.delayed(const Duration(seconds: 5), () {
       _refetchRetryScheduled = false;
       if (!mounted) return;
-      if (widget.player.isLoadingOrBuffering) {
+      if (!widget.player.backgroundItemFetchAllowed) {
         _refetchIdleRetries++;
         _scheduleRefetchWhenIdle(
           forceChapters: forceChapters,
@@ -3056,9 +3059,6 @@ class AbsorbingCardState extends State<AbsorbingCard>
       setState(() => _isStarting = false);
       return;
     }
-    final sw = Stopwatch()..start();
-    // playItem's own `0ms` line already carries item, snapshot and in-flight
-    // item state, so this tap does not need its own entry log.
     final connectError = AppLocalizations.of(context)?.playerErrorConnect;
     String? error;
     try {
@@ -3081,17 +3081,10 @@ class AbsorbingCardState extends State<AbsorbingCard>
       // A start that throws - or never comes back - must not leave the play
       // button spinning for good. That is what kept it loading after a failed
       // resume until the card was rebuilt.
-      debugPrint(
-        '[StartTrace] card playItem failed after '
-        '${sw.elapsedMilliseconds}ms: $e',
-      );
+      debugPrint('[Player] Card playback start failed: $e');
       error = connectError;
     }
     if (!mounted) return;
-    debugPrint(
-      '[StartTrace] card playItem returned ${sw.elapsedMilliseconds}ms '
-      'error=$error',
-    );
     if (error != null) showErrorToast(context, error);
     setState(() => _isStarting = false);
   }

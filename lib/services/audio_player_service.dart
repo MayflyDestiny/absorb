@@ -1718,7 +1718,15 @@ class AudioPlayerService extends ChangeNotifier {
   factory AudioPlayerService() => _instance;
   AudioPlayerService._() {
     ApiService.addTokenRefreshListener(_onApiTokenRefreshed);
+    ProgressSyncService.presenceSessionBlocked = _presenceBlockedByPlayback;
+    ApiService.backgroundItemFetchPaused = () => !backgroundItemFetchAllowed;
   }
+
+  bool _presenceBlockedByPlayback() =>
+      _currentItemId != null &&
+      (_fullSessionInFlight > 0 ||
+          _playbackSessionId != null ||
+          _sourceSessionId != null);
 
   /// Called when a book completes naturally (before player state is cleared).
   /// Register via [setOnBookFinishedCallback]. Used by LibraryProvider to
@@ -1860,6 +1868,9 @@ class AudioPlayerService extends ChangeNotifier {
   ApiService? _api;
   ApiService? get currentApi => _api;
   String? _playbackSessionId;
+  // A full /play is opening behind playback. Presence stats must not open a
+  // second session while this is in flight: the server closes the older one.
+  int _fullSessionInFlight = 0;
 
   /// The server session this phone is playing on, so its own syncs echoed
   /// back over the socket can be told apart from another device's.
@@ -2085,6 +2096,14 @@ class AudioPlayerService extends ChangeNotifier {
   int _streamRetryCount = 0;
   static const _maxStreamRetries = 3;
   bool _retryInProgress = false;
+  // The failed file's absolute position while a retry waits. ExoPlayer has
+  // already moved to the next file, but that is not the user's place: pinning
+  // this keeps UI/notification on the failed chapter and stops a pause from
+  // saving the next chapter's start.
+  double? _retryAnchorSec;
+  bool _retryUserPaused = false;
+  bool _retryResumeRequested = false;
+  bool _retrySourceStarting = false;
   // ── Stuck position detection (xHE-AAC/USAC iOS seek failures) ──
   Timer? _stuckCheckTimer;
   double _stuckCheckLastPosition = -1;
@@ -2500,67 +2519,6 @@ class AudioPlayerService extends ChangeNotifier {
     if (_chapters.isNotEmpty) _startChapterSkipWatch();
   }
 
-  // TEMP latency diagnostics helper.
-  void _startTraceLog(String message) {
-    final sw = _startTrace;
-    if (sw == null) return;
-    debugPrint('[StartTrace] ${sw.elapsedMilliseconds}ms $message');
-  }
-
-  Timer? _firstByteTimer;
-
-  /// Latency diagnostics, quiet by design: a start that behaves prints
-  /// nothing (the trace already records its cost). Only a start still waiting
-  /// after [_slowStartMs] reports, once when it turns slow and once when it
-  /// ends - enough to tell "the request never opened" (buffer parked at zero
-  /// the whole wait) from "opened but slow" (buffer crawls) without putting
-  /// four lines in every log for a 400ms start.
-  static const _slowStartMs = 1200;
-
-  void _watchFirstBytes(String stage) {
-    _firstByteTimer?.cancel();
-    final trace = _startTrace;
-    if (trace == null) return;
-    final generation = _playbackGeneration;
-    final fromMs = trace.elapsedMilliseconds;
-    var firstAudioAtMs = -1;
-    var slowReported = false;
-    var nextReportAtMs = _slowStartMs;
-    _firstByteTimer = Timer.periodic(const Duration(milliseconds: 250), (t) {
-      if (generation != _playbackGeneration) {
-        t.cancel();
-        return;
-      }
-      final p = _player;
-      if (p == null) {
-        t.cancel();
-        return;
-      }
-      final elapsed = trace.elapsedMilliseconds - fromMs;
-      final buffered = p.bufferedPosition.inMilliseconds;
-      final posMs = p.position.inMilliseconds;
-      if (firstAudioAtMs < 0 && buffered > posMs + 250) firstAudioAtMs = elapsed;
-      final playing = p.playing;
-      if (elapsed >= nextReportAtMs) {
-        slowReported = true;
-        nextReportAtMs = elapsed + 2000;
-        debugPrint(
-          '[StartDiag] ${elapsed}ms still waiting ($stage) '
-          'state=${p.processingState} buf=${buffered}ms pos=${posMs}ms',
-        );
-      }
-      if (playing || elapsed > 15000) {
-        t.cancel();
-        if (!slowReported) return;
-        final first = firstAudioAtMs < 0 ? 'none' : '${firstAudioAtMs}ms';
-        debugPrint(
-          '[StartDiag] slow start ${elapsed}ms ($stage): '
-          'audio ahead at $first, buf=${buffered}ms',
-        );
-      }
-    });
-  }
-
   /// The chapter index of the current skip "entry". When playback crosses into
   /// a different chapter (prev/next nav, or re-entering an already-played
   /// chapter) this changes, which resets the two skip flags below so the
@@ -2582,9 +2540,6 @@ class AudioPlayerService extends ChangeNotifier {
   /// brings the worst case down to ~one poll interval.
   Timer? _chapterSkipWatchTimer;
   bool _chapterSkipWatchBusy = false;
-
-  // TEMP latency diagnostics: remove after the start/remove investigation.
-  Stopwatch? _startTrace;
 
   /// Pending `/play` requests owned by the current start. Closing the client
   /// aborts a stale request when the user switches books or stops.
@@ -2734,6 +2689,7 @@ class AudioPlayerService extends ChangeNotifier {
   /// a slow load and flickers when the real position catches up.
   double get chapterResolvePosSec {
     if (_isLoadingNewItem) return activeSeekTarget ?? _pendingStartSec;
+    if (_retryAnchorSec != null) return _retryAnchorSec!;
     final t = activeSeekTarget;
     if (t != null) return t;
     final p = position.inMilliseconds / 1000.0;
@@ -2916,6 +2872,41 @@ class AudioPlayerService extends ChangeNotifier {
     }
     final s = _player?.processingState;
     return s == ProcessingState.loading || s == ProcessingState.buffering;
+  }
+
+  /// How long the pipe stays audio-only after a start or seek. A multi-MB
+  /// card/backfill item read is allowed to resume only once playback has been
+  /// running steadily for this long (or the user has paused), so it cannot
+  /// queue the first bytes or a chapter target Range behind its body.
+  static const _backgroundFetchSettle = Duration(seconds: 20);
+
+  /// True when low-priority item GETs may use the network again. The
+  /// preference is deliberate: while audio is starting, buffering, seeking or
+  /// freshly playing, a background item read can own the tunnel for seconds.
+  bool get backgroundItemFetchAllowed {
+    if (_currentItemId == null) return true;
+    if (isStartInFlight || isLoadingOrBuffering) return false;
+    // Paused means the pipe is free again, even if the last seek was recent.
+    if (!isPlaying) return true;
+    final now = DateTime.now();
+    final startedAt = _playStartAt;
+    if (startedAt != null &&
+        now.difference(startedAt) < _backgroundFetchSettle) {
+      return false;
+    }
+    final lastSeek = _lastSeekTime;
+    if (lastSeek != null &&
+        now.difference(lastSeek) < _backgroundFetchSettle) {
+      return false;
+    }
+    // An automatic chapter/file advance also leaves the next file loading;
+    // keep the pipe audio-only for the same settle window.
+    final lastAdvance = _lastIndexAdvanceTime;
+    if (lastAdvance != null &&
+        now.difference(lastAdvance) < _backgroundFetchSettle) {
+      return false;
+    }
+    return true;
   }
 
   bool get isOfflineMode => _isOfflineMode;
@@ -3757,6 +3748,10 @@ class AudioPlayerService extends ChangeNotifier {
     if (_isLoadingNewItem) {
       return Duration(milliseconds: (_pendingStartSec * 1000).round());
     }
+    final retryAnchor = _retryAnchorSec;
+    if (retryAnchor != null) {
+      return Duration(milliseconds: (retryAnchor * 1000).round());
+    }
     final held = _heldPausedSpot;
     if (held != null) return Duration(milliseconds: (held * 1000).round());
     final trackRelative = _player!.position;
@@ -3774,6 +3769,10 @@ class AudioPlayerService extends ChangeNotifier {
   Stream<Duration> get absolutePositionStream {
     if (_player == null) return const Stream.empty();
     return _player!.positionStream.map((trackRelative) {
+      final retryAnchor = _retryAnchorSec;
+      if (retryAnchor != null) {
+        return Duration(milliseconds: (retryAnchor * 1000).round());
+      }
       if (_trackStartOffsets.length <= 1)
         return trackRelative; // single file, no offset
       final trackIdx = _currentTrackIndex;
@@ -3977,6 +3976,7 @@ class AudioPlayerService extends ChangeNotifier {
           debugPrint(
             '[PreBuffer] currentIndex=$index crossed book boundary at $_currentBookTrackCount',
           );
+          if (!_isLoadingNewItem) _api?.cancelBackgroundItemTransfers();
           _onAutoQueueAdvanced();
           return;
         }
@@ -3985,6 +3985,7 @@ class AudioPlayerService extends ChangeNotifier {
           final clamped = index.clamp(0, _trackStartOffsets.length - 2);
           if (clamped != _currentTrackIndex) {
             _lastIndexAdvanceTime = DateTime.now();
+            if (!_isLoadingNewItem) _api?.cancelBackgroundItemTransfers();
             _pendingTrackAdvanceRefresh = true;
             debugPrint(
               '[Player] Track index advance: $_currentTrackIndex -> $clamped',
@@ -4176,6 +4177,10 @@ class AudioPlayerService extends ChangeNotifier {
     bool chapterJump = false,
   }) async {
     if (_player == null) return;
+    // A seek makes the target Range the highest-priority transfer. Drop a
+    // low-priority item body already on the wire instead of letting it share
+    // the tunnel; a start still loading keeps its own item fetch for reuse.
+    if (!_isLoadingNewItem) _api?.cancelBackgroundItemTransfers();
     // Await a pending pause-time swap before seeking so the seek doesn't race
     // the engine swap (same guard the upstream seek path applies).
     final swap = _pauseSwap;
@@ -4199,16 +4204,27 @@ class AudioPlayerService extends ChangeNotifier {
     _parkedAtBoundary = false;
     _parkedBoundaryChapterIdx = null;
 
-    // A fresh session used to be adopted here (a seek is interrupted audio, so
-    // a rebuild could ride it) - but every chapter switch or scrub target
-    // would then tear down and re-prepare the whole concatenated source before
-    // audio lands, which is exactly the first-switch stall on a slow link.
-    // Seek on the current source first so audio starts immediately; the
-    // tokenless swap waits for the next pause, or the dead-source/retry paths.
-    debugPrint(
-      '[Player] Seek while a session upgrade is pending - deferring the swap '
-      'to a pause (${_pendingSessionUpgrade?['id'] ?? 'none'})',
-    );
+    // A seek already interrupts audio, so upstream adopts a waiting finished
+    // download or tokenless session here: the rebuild rides the interruption
+    // and lands directly at the target, using that session's own track order.
+    if (_pendingLocalSwapKey != null) {
+      final resume = _player!.playing;
+      if (await _applyPendingLocalSwap(
+        seekToSeconds: absoluteSeconds,
+        resumeAfter: resume,
+      )) {
+        return;
+      }
+    }
+    if (_pendingSessionUpgrade != null) {
+      final resume = _player!.playing;
+      if (await _applyPendingSessionUpgrade(
+        seekToSeconds: absoluteSeconds,
+        resumeAfter: resume,
+      )) {
+        return;
+      }
+    }
 
     // Incomplete download: there's no audio past the decoded end, so clamp the
     // target there instead of letting the player report a phantom position
@@ -5170,7 +5186,7 @@ class AudioPlayerService extends ChangeNotifier {
           arm(const Duration(seconds: 10));
           return;
         }
-        debugPrint('[StartTrace] UI start timed out - aborting');
+        debugPrint('[Player] UI start timed out - aborting');
         cancelStartForTimeout();
         if (!deadline.isCompleted) deadline.complete(timeoutError);
       });
@@ -5558,17 +5574,12 @@ class AudioPlayerService extends ChangeNotifier {
     api.cancelBackgroundItemTransfers(
       keepItemId: inFlightItemFetch != null ? itemId : null,
     );
-    // TEMP latency diagnostics.
-    _startTrace = Stopwatch()..start();
+    // A chapter warm-up for the old book must not share the pipe with this
+    // start; a later manual chapter jump will start a fresh one.
+    _cancelCachePrefetch();
     _startSourceRequestedGeneration = null;
     _startProgressGeneration = null;
     _lastStartProgressAt = null;
-    debugPrint(
-      '[StartTrace] 0ms playItem item=$itemId ep=$episodeId fromUi=$fromUi '
-      'snapshot=${itemSnapshot != null} '
-      'inFlightItem=${inFlightItemFetch != null} '
-      'downloaded=${_downloadService.isDownloaded(itemId)}',
-    );
     if (clearPauseRequest) _pauseRequested = false;
     _finishedHeld = false;
     _playFromUi = fromUi;
@@ -5873,7 +5884,6 @@ class AudioPlayerService extends ChangeNotifier {
         _handler?.updateChaptersQueue(stream.chapters);
       }
       if (inFlightItemFetch != null) api.cancelBackgroundItemTransfer(itemId);
-      _startTraceLog('path=local-narration');
       result = await _playFromLocal(
         progressKey,
         title,
@@ -5889,7 +5899,6 @@ class AudioPlayerService extends ChangeNotifier {
       );
     } else if (_downloadService.isDownloaded(progressKey)) {
       if (inFlightItemFetch != null) api.cancelBackgroundItemTransfer(itemId);
-      _startTraceLog('path=local');
       result = await _playFromLocal(
         progressKey,
         title,
@@ -5982,10 +5991,66 @@ class AudioPlayerService extends ChangeNotifier {
           cachedSession = null;
         }
       }
+      // Prefer a tokenless start when the cached track list came from a full
+      // server session: its index fields are the server's own order. This
+      // avoids both the seek-time source rebuild and token expiry without
+      // downloading the full /play body again.
+      var tokenlessCacheHandled = false;
+      if (cachedSession != null &&
+          cacheSource == 'cached-session' &&
+          _canUseCachedTokenless(cachedSession) &&
+          !_offline &&
+          !_manualOffline &&
+          !ChromecastService().isCasting &&
+          !(loadOnly && _currentItemId != null && _currentItemId != itemId)) {
+        // A background expanded-item fetch is multi-MB and would compete with
+        // the first tokenless audio bytes.
+        if (inFlightItemFetch != null) {
+          api.cancelBackgroundItemTransfer(itemId);
+        }
+        _fullSessionInFlight++;
+        String? tokenlessSessionId;
+        try {
+          tokenlessSessionId = await _openPresenceSession(
+            api,
+            itemId,
+            episodeId,
+          );
+        } finally {
+          if (_fullSessionInFlight > 0) _fullSessionInFlight--;
+        }
+        if (tokenlessSessionId != null) {
+          result = await _playFromSessionCache(
+            api,
+            itemId,
+            title,
+            author,
+            coverUrl,
+            totalDuration,
+            chapters,
+            startTime,
+            cachedSession,
+            localTimestampAtStart,
+            playbackGeneration,
+            forceStartTime,
+            null,
+            null,
+            loadOnly,
+            tokenlessSessionId,
+          );
+          if (result == null) {
+            tokenlessCacheHandled = true;
+          } else {
+            // The presence session did not yield a playable source; close it
+            // and let the normal cached/full fallback take over.
+            unawaited(api.closePlaybackSession(tokenlessSessionId));
+          }
+        }
+      }
       if (cachedSession != null) {
+        if (!tokenlessCacheHandled) {
         // The cached start is instant; the item fetch is not needed.
         if (inFlightItemFetch != null) api.cancelBackgroundItemTransfer(itemId);
-        _startTraceLog('path=$cacheSource');
         // Race the real session against the cache. When the server answers
         // inside the window (LAN, good WiFi) the play starts through the
         // fresh path with tokenless session URLs - immune to token expiry -
@@ -6023,6 +6088,12 @@ class AudioPlayerService extends ChangeNotifier {
                     timeout: const Duration(seconds: 40),
                   )
                 : null);
+        if (pendingSession != null) {
+          _fullSessionInFlight++;
+          pendingSession.whenComplete(() {
+            if (_fullSessionInFlight > 0) _fullSessionInFlight--;
+          });
+        }
         // Only a request opened here may be held back by the gate; a shared one
         // is already downloading for another caller.
         final ownsPendingSession = sharedInFlight == null && pendingSession != null;
@@ -6109,6 +6180,7 @@ class AudioPlayerService extends ChangeNotifier {
             );
           }
         }
+      }
       } else {
         // A cold continue-listening entry has no disk session or item. When
         // the screen that started the play already holds the item (the card
@@ -6124,7 +6196,6 @@ class AudioPlayerService extends ChangeNotifier {
           if (inFlightItemFetch != null) {
             api.cancelBackgroundItemTransfer(itemId);
           }
-          _startTraceLog('path=snapshot');
           // The snapshot already carries the tracks. Do not start /play here:
           // one source path at a time, and the background refresh can open the
           // session after audio has started.
@@ -6167,7 +6238,6 @@ class AudioPlayerService extends ChangeNotifier {
           if (inFlightItemFetch != null) {
             // An item read is already consuming the pipe. Use it instead of
             // adding /play on top of it.
-            _startTraceLog('path=item-only prefetch=true');
             result = await _playFromItemOnly(
               api,
               itemId,
@@ -6187,7 +6257,6 @@ class AudioPlayerService extends ChangeNotifier {
           } else if (compressionSupported) {
             // Compressed servers make /play cheap and give us a public
             // session track; do not also fetch the item.
-            _startTraceLog('path=server-only');
             result = await _playFromServer(
               api,
               itemId,
@@ -6204,7 +6273,6 @@ class AudioPlayerService extends ChangeNotifier {
             // Uncompressed servers still return multi-MB /play JSON; start
             // from the item only, and fall back to /play only if that path
             // fails.
-            _startTraceLog('path=item-only prefetch=false');
             result = await _playFromItemOnly(
               api,
               itemId,
@@ -7053,8 +7121,6 @@ class AudioPlayerService extends ChangeNotifier {
         return _abandonStart(null, null, 'local, before loading the source');
       }
       _resetPreBufferState();
-      _startTraceLog('setAudioSource start (local)');
-      _watchFirstBytes('local');
       _markStartSourceRequested(gen);
       final decoded = await _player!.setAudioSource(
         source,
@@ -7062,7 +7128,6 @@ class AudioPlayerService extends ChangeNotifier {
         initialPosition: initialPosition,
         itemId: rawItemId,
       );
-      _startTraceLog('setAudioSource done (local)');
       if (_startSuperseded(gen)) {
         return _abandonStart(null, null, 'local, after loading the source');
       }
@@ -7403,18 +7468,32 @@ class AudioPlayerService extends ChangeNotifier {
   ConcatenatingAudioSource _buildTrackSource(
     ApiService api,
     List<dynamic> audioTracks,
-    String itemId,
-  ) {
+    String itemId, {
+    String? sessionId,
+    int? playMethod,
+  }) {
     final audioHeaders = api.playbackSessionHeaders;
     final trackSources = <AudioSource>[];
-    for (final t in audioTracks) {
-      final track = t as Map<String, dynamic>;
+    for (var i = 0; i < audioTracks.length; i++) {
+      final track = audioTracks[i] as Map<String, dynamic>;
       final contentUrl = track['contentUrl'] as String? ?? '';
-      final fullUrl = api.buildTrackUrl(contentUrl);
+      final fullUrl = api.buildTrackUrl(
+        contentUrl,
+        sessionId: sessionId,
+        // Use the server session's own index, not the list position: the
+        // first full-session track is index 1 on this server.
+        trackIndex: sessionId == null
+            ? null
+            : (track['index'] as num?)?.toInt() ?? i,
+        playMethod: playMethod,
+      );
+      final ino = RegExp(
+        r'/file/([^/?#]+)',
+      ).firstMatch(contentUrl)?.group(1);
       trackSources.add(
         AudioSource.uri(
           Uri.parse(fullUrl),
-          headers: _withCacheKey(audioHeaders, itemId, fullUrl),
+          headers: _withCacheKey(audioHeaders, itemId, fullUrl, ino: ino),
           options: mp3ExtractorOptions(),
         ),
       );
@@ -7441,6 +7520,7 @@ class AudioPlayerService extends ChangeNotifier {
     Future<Map<String, dynamic>?>? pendingSession,
     NetBodyGate? sessionGate,
     bool loadOnly = false,
+    String? tokenlessSessionId,
   ]) async {
     // The session request still in flight is handed to nobody on this route;
     // close it when it lands so the server is not left with a stray one.
@@ -7462,16 +7542,34 @@ class AudioPlayerService extends ChangeNotifier {
     if (_startSuperseded(playbackGeneration)) {
       dropPendingSession();
       releaseDeferredSession();
-      return _abandonStart(null, null, 'before the cached start');
+      return _abandonStart(
+        tokenlessSessionId != null ? api : null,
+        tokenlessSessionId,
+        'before the cached start',
+      );
     }
-    debugPrint('[Player] Playing from session cache');
+    final tokenless = tokenlessSessionId != null;
+    debugPrint(
+      tokenless
+          ? '[Player] Playing tokenless from cached server tracks'
+          : '[Player] Playing from session cache',
+    );
     final episodeIdAtStart = _currentEpisodeId;
     _isOfflineMode = false;
-    _playbackSessionId =
-        null; // No server session yet; _refreshServerSession will set it
+    // Cached session tracks are HTTP URLs in both forms (public session or a
+    // tokened item file). Without this the offline guard and chapter prefetch
+    // both treated the source as local and silently skipped their work.
+    _sourceIsNetwork = true;
+    _localSessionMode = false;
+    // The presence session is already live on the tokenless route; the
+    // tokenized route lets _refreshServerSession open one in the background.
+    _playbackSessionId = tokenlessSessionId;
 
     final offlineError = _abortIfOffline();
     if (offlineError != null) {
+      if (tokenlessSessionId != null) {
+        unawaited(api.closePlaybackSession(tokenlessSessionId));
+      }
       releaseDeferredSession();
       return offlineError;
     }
@@ -7510,27 +7608,41 @@ class AudioPlayerService extends ChangeNotifier {
 
     var authRetried = false;
     try {
-      // The URLs below are rebuilt with the current token; refresh a
-      // known-expired one first so the first file request is not sent with a
-      // credential we already know is dead. Capped: a weak link must still
-      // yield to the 401 retry instead of holding the start for a refresh
-      // timeout.
-      try {
-        await api.ensureMediaTokenFresh().timeout(_tokenPreflightCap);
-      } catch (e) {
-        debugPrint(
-          '[Player] Token pre-flight did not finish - starting with the '
-          'current token: $e',
-        );
+      // The tokenless route has no URL credential to refresh. The tokenized
+      // route re-signs a known-expired token before its first file request.
+      if (!tokenless) {
+        try {
+          await api.ensureMediaTokenFresh().timeout(_tokenPreflightCap);
+        } catch (e) {
+          debugPrint(
+            '[Player] Token pre-flight did not finish - starting with the '
+            'current token: $e',
+          );
+        }
       }
       if (_startSuperseded(playbackGeneration)) {
         dropPendingSession();
         releaseDeferredSession();
-        return _abandonStart(null, null, 'cached start, before a token check');
+        return _abandonStart(
+          tokenless ? api : null,
+          tokenlessSessionId,
+          'cached start, before a token check',
+        );
       }
       _buildTrackOffsets(audioTracks);
-      var source = _buildTrackSource(api, audioTracks, itemId);
-      _captureStreamUrls(audioTracks, api);
+      var source = _buildTrackSource(
+        api,
+        audioTracks,
+        itemId,
+        sessionId: tokenlessSessionId,
+        playMethod: tokenless ? 0 : null,
+      );
+      _captureStreamUrls(
+        audioTracks,
+        api,
+        sessionId: tokenlessSessionId,
+        playMethod: tokenless ? 0 : null,
+      );
 
       await _configureAudioSession();
       try {
@@ -7545,8 +7657,8 @@ class AudioPlayerService extends ChangeNotifier {
         dropPendingSession();
         releaseDeferredSession();
         return _abandonStart(
-          null,
-          null,
+          tokenless ? api : null,
+          tokenlessSessionId,
           'cached start, before loading the source',
         );
       }
@@ -7580,8 +7692,6 @@ class AudioPlayerService extends ChangeNotifier {
 
       Future<void> loadSource() async {
         _resetPreBufferState();
-        _startTraceLog('setAudioSource start (session-cache)');
-        _watchFirstBytes('session-cache');
         _markStartSourceRequested(playbackGeneration);
         await _player!.setAudioSource(
           source,
@@ -7594,7 +7704,11 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         await loadSource();
       } catch (e) {
-        if (authRetried || !PlaybackErrorPolicy.isAuthError(e)) rethrow;
+        // A tokenless source has no credential to refresh; a 401/404 here
+        // means the session/proxy is bad and must fall back normally.
+        if (tokenless || authRetried || !PlaybackErrorPolicy.isAuthError(e)) {
+          rethrow;
+        }
         authRetried = true;
         debugPrint(
           '[Player] Cached session 401 - refreshing the token and retrying '
@@ -7623,7 +7737,6 @@ class AudioPlayerService extends ChangeNotifier {
         _captureStreamUrls(audioTracks, api);
         await loadSource();
       }
-      _startTraceLog('setAudioSource done (session-cache)');
       _activeConcatSource = source;
       _currentBookTrackCount = source.length;
 
@@ -7656,7 +7769,11 @@ class AudioPlayerService extends ChangeNotifier {
       if (_startSuperseded(playbackGeneration)) {
         dropPendingSession();
         releaseDeferredSession();
-        return _abandonStart(null, null, 'cached start, before play');
+        return _abandonStart(
+          tokenless ? api : null,
+          tokenlessSessionId,
+          'cached start, before play',
+        );
       }
       _cachedStartReconcileGeneration = playbackGeneration;
       if (loadOnly) {
@@ -7673,6 +7790,21 @@ class AudioPlayerService extends ChangeNotifier {
       _scheduleAudioDiagnostics('cached-session');
       notifyListeners();
       _setupSync();
+      if (tokenless) {
+        // Keep the server-order cache fresh so the next start stays on the
+        // no-swap tokenless path instead of expiring after 45 minutes.
+        unawaited(
+          SessionCache.save(
+            itemId: itemId,
+            episodeId: episodeIdAtStart,
+            audioTracks: audioTracks,
+            chapters: chapters,
+            totalDuration: totalDuration,
+            serverOrder: true,
+            playMethod: 0,
+          ),
+        );
+      }
       if (sessionGate != null) {
         Future.delayed(const Duration(seconds: 1), () {
           if (_playbackGeneration != playbackGeneration) return;
@@ -7686,21 +7818,25 @@ class AudioPlayerService extends ChangeNotifier {
       final sleepTimer = SleepTimerService();
       sleepTimer.resetDismiss();
       sleepTimer.checkAutoSleep();
-      // Refresh server session in background - gets fresh session ID and
-      // handles cross-client progress sync without blocking playback start
-      final progressKey = episodeIdAtStart != null
-          ? '$itemId-$episodeIdAtStart'
-          : itemId;
-      _refreshServerSession(
-        api,
-        itemId,
-        episodeIdAtStart: episodeIdAtStart,
-        progressKey: progressKey,
-        localTimestampAtStart: localTimestampAtStart,
-        localTimeAtStart: startTime,
-        playbackGeneration: playbackGeneration,
-        pendingSession: pendingSession,
-      );
+      // A tokenless source already owns its live session. Opening a full /play
+      // here would close it and download the track list again.
+      if (!tokenless) {
+        // Refresh server session in background - gets fresh session ID and
+        // handles cross-client progress sync without blocking start.
+        final progressKey = episodeIdAtStart != null
+            ? '$itemId-$episodeIdAtStart'
+            : itemId;
+        _refreshServerSession(
+          api,
+          itemId,
+          episodeIdAtStart: episodeIdAtStart,
+          progressKey: progressKey,
+          localTimestampAtStart: localTimestampAtStart,
+          localTimeAtStart: startTime,
+          playbackGeneration: playbackGeneration,
+          pendingSession: pendingSession,
+        );
+      }
       return null;
     } catch (e, stack) {
       debugPrint('[Player] Cached session play error: $e\n$stack');
@@ -7712,7 +7848,11 @@ class AudioPlayerService extends ChangeNotifier {
       if (_startSuperseded(playbackGeneration)) {
         dropPendingSession();
         releaseDeferredSession();
-        return _abandonStart(null, null, 'cached start, load interrupted');
+        return _abandonStart(
+          tokenless ? api : null,
+          tokenlessSessionId,
+          'cached start, load interrupted',
+        );
       }
       // Cache was stale or invalid - clear it and signal fallback
       SessionCache.clear(itemId: itemId, episodeId: episodeIdAtStart);
@@ -7788,6 +7928,44 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Open a playback session and read only its id, so the cached server-side
+  /// audioTracks can be addressed tokenlessly without downloading /play.
+  /// Only a cache saved from a full server session carries the server's own
+/// track indexes; a manifest/item-derived cache uses local list positions.
+  /// Mixing those with a new presence session is exactly how a chapter gains
+  /// a one-track offset.
+  bool _canUseCachedTokenless(Map<String, dynamic> cached) {
+    if (cached['serverOrder'] != true) return false;
+    if ((cached['playMethod'] as num?)?.toInt() != 0) return false;
+    final tracks = cached['audioTracks'] as List<dynamic>?;
+    if (tracks == null || tracks.isEmpty) return false;
+    for (final raw in tracks) {
+      if (raw is! Map<String, dynamic>) return false;
+      if (raw['index'] is! num) return false;
+    }
+    return true;
+  }
+
+  Future<String?> _openPresenceSession(
+    ApiService api,
+    String itemId,
+    String? episodeId,
+  ) async {
+    final client = http.Client();
+    try {
+      return await api.startPlaybackSessionPresence(
+        itemId,
+        client,
+        episodeId: episodeId,
+      );
+    } catch (e) {
+      debugPrint('[Player] Presence head failed: $e');
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   /// Re-create the server playback session in the background after starting
   /// playback from cache. Gets a fresh session ID so progress syncing works,
   /// and handles cross-client progress (seek to server position if ahead).
@@ -7817,22 +7995,10 @@ class AudioPlayerService extends ChangeNotifier {
         );
         return;
       }
-      // A session-less source needs no full /play: a presence-only session
-      // registers it as active (the multi-MB track list is dropped). A /play
-      // already racing from the start is closed when it lands.
-      if (_currentItemId == itemId &&
-          _currentEpisodeId == episodeIdAtStart &&
-          _sourceSessionless) {
-        final racing = pendingSession;
-        if (racing != null) {
-          racing.then((s) {
-            final id = s?['id'] as String?;
-            if (id != null) unawaited(api.closePlaybackSession(id));
-          }).catchError((Object _) {});
-        }
-        await _ensureStatsSessionForSessionlessSource();
-        return;
-      }
+      // Cached starts carry tokenized direct-file URLs. Open the full session
+      // anyway (upstream's slow-server path): its own audioTracks are the
+      // authoritative order for the tokenless swap at the next pause/seek.
+      _fullSessionInFlight++;
       final progressRequest = api.getItemProgress(progressKey);
       // The race in playItem may already have a POST in flight - consume it
       // rather than opening a second session.
@@ -7879,16 +8045,29 @@ class AudioPlayerService extends ChangeNotifier {
         );
       }
       if (audioTracks != null && audioTracks.isNotEmpty) {
+        final playMethod = (sessionData['playMethod'] as num?)?.toInt();
         SessionCache.save(
           itemId: itemId,
           episodeId: _currentEpisodeId,
           audioTracks: audioTracks,
           chapters: sessionChapters.isNotEmpty ? sessionChapters : _chapters,
           totalDuration: sessionDur > 0 ? sessionDur : _totalDuration,
+          serverOrder: true,
+          playMethod: playMethod,
         );
-        // The playing source still carries the cached tokened URLs; hold this
-        // session so the next pause or seek can swap to its tokenless URLs.
-        _stashSessionUpgrade(sessionData);
+        if (playMethod == 0) {
+          // The cache now carries the server's authoritative track order.
+          // Keep the current tokenized source running and let the NEXT start
+          // build a tokenless source from it: no seek-time 1122-track rebuild
+          // and no 15s swap on a slow link.
+          debugPrint(
+            '[StreamUpgrade] Server-order cache seeded - next start will be '
+            'tokenless; keeping the current source (no swap now)',
+          );
+        } else {
+          // Old/transcode session: keep upstream's swap behavior.
+          _stashSessionUpgrade(sessionData);
+        }
       }
 
       // Audio is already running from the cached start; the server's saved
@@ -7919,6 +8098,7 @@ class AudioPlayerService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Player] Background session refresh failed: $e');
     } finally {
+      if (_fullSessionInFlight > 0) _fullSessionInFlight--;
       if (_cachedStartReconcileGeneration == playbackGeneration) {
         _cachedStartReconcileGeneration = null;
       }
@@ -7957,10 +8137,6 @@ class AudioPlayerService extends ChangeNotifier {
       try {
         item = await prefetchedItem.timeout(_startItemFetchTimeout);
       } on TimeoutException {
-        _startTraceLog(
-          'item prefetch exceeded ${_startItemFetchTimeout.inSeconds}s - '
-          'cancelling before /play',
-        );
         api.cancelBackgroundItemTransfer(itemId);
       } catch (e) {
         debugPrint('[Player] Item-only fetch failed: $e');
@@ -8017,10 +8193,6 @@ class AudioPlayerService extends ChangeNotifier {
         '[Player] Item-only path did not start ($result) - trying /play sequentially',
       );
     } else {
-      _startTraceLog(
-        'item-only had no usable item (${_startItemFetchTimeout.inSeconds}s '
-        'budget) - trying /play sequentially',
-      );
     }
     return _playFromServer(
       api,
@@ -8449,8 +8621,6 @@ class AudioPlayerService extends ChangeNotifier {
         return _abandonStart(api, ownSessionId, 'before loading the source');
       }
       _resetPreBufferState();
-      _startTraceLog('setAudioSource start (stream)');
-      _watchFirstBytes('stream');
       _markStartSourceRequested(gen);
       await _player!.setAudioSource(
         source,
@@ -8458,7 +8628,6 @@ class AudioPlayerService extends ChangeNotifier {
         initialPosition: initialPosition,
         itemId: _currentItemId,
       );
-      _startTraceLog('setAudioSource done (stream)');
       if (_startSuperseded(gen)) {
         return _abandonStart(api, ownSessionId, 'after loading the source');
       }
@@ -8516,6 +8685,8 @@ class AudioPlayerService extends ChangeNotifier {
         audioTracks: audioTracks,
         chapters: chapters,
         totalDuration: totalDuration,
+        serverOrder: true,
+        playMethod: sessionPlayMethod,
       );
       return null;
     } catch (e, stack) {
@@ -8835,8 +9006,6 @@ class AudioPlayerService extends ChangeNotifier {
       Future<void> loadSource() async {
         _resetPreBufferState();
         _markStartSourceRequested(gen);
-        _startTraceLog('setAudioSource start (direct-files)');
-        _watchFirstBytes('direct-files');
         await _player!.setAudioSource(
           source,
           initialIndex: landing.index,
@@ -9688,6 +9857,10 @@ class AudioPlayerService extends ChangeNotifier {
     _eqSessionSub = null;
     _streamRetryCount = 0;
     _retryInProgress = false;
+    _retryAnchorSec = null;
+    _retryUserPaused = false;
+    _retryResumeRequested = false;
+    _retrySourceStarting = false;
 
     _stuckCheckTimer?.cancel();
     _stuckCheckTimer = null;
@@ -10097,6 +10270,8 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _retryInProgress = true;
+    _retryUserPaused = false;
+    _retryResumeRequested = false;
     _streamRetryCount++;
     final delay = Duration(seconds: 1 << (_streamRetryCount - 1)); // 1s, 2s, 4s
     final failedIndex = PlaybackErrorPolicy.sourceErrorIndex(error);
@@ -10170,6 +10345,14 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
 
+    // Pin the failed position while a slow token refresh runs. ExoPlayer has
+    // already auto-advanced; progress/title/pause must not read that next file.
+    if (retryPos > 0 || failedIndex != null) {
+      _retryAnchorSec = retryPos;
+      _initChapterInfo(retryPos);
+      _repushNotifiedMediaItem(positionSec: retryPos);
+    }
+
     // A stream error usually means the cached-session URLs went bad (expired
     // baked token, dead public session). Drop the cache entry so the rebuild
     // takes the fresh-session path - tokenless public URLs with a
@@ -10208,24 +10391,34 @@ class AudioPlayerService extends ChangeNotifier {
         await api.ensureMediaTokenFresh(force: true);
       } catch (_) {}
     }
-    final ok = await playItem(
-      api: api,
-      itemId: itemId,
-      title: title,
-      author: author,
-      coverUrl: coverUrl,
-      totalDuration: totalDuration,
-      chapters: chapters,
-      startTime: retryPos,
-      forceStartTime: hasKnownPos,
-      clearPauseRequest: !wasPaused,
-      episodeId: episodeId,
-      episodeTitle: episodeTitle,
-      libraryId: libraryId,
-      seriesId: null,
-    );
-
-    _retryInProgress = false;
+    final keepPaused =
+        _retryUserPaused || (wasPaused && !_retryResumeRequested);
+    String? ok;
+    _retrySourceStarting = true;
+    try {
+      ok = await playItem(
+        api: api,
+        itemId: itemId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        totalDuration: totalDuration,
+        chapters: chapters,
+        startTime: retryPos,
+        forceStartTime: hasKnownPos,
+        clearPauseRequest: !keepPaused,
+        episodeId: episodeId,
+        episodeTitle: episodeTitle,
+        libraryId: libraryId,
+        seriesId: null,
+      );
+    } finally {
+      _retrySourceStarting = false;
+      _retryAnchorSec = null;
+      _retryUserPaused = false;
+      _retryResumeRequested = false;
+      _retryInProgress = false;
+    }
     if (ok == null) {
       debugPrint('[Player] Retry succeeded');
     } else {
@@ -11544,6 +11737,9 @@ class AudioPlayerService extends ChangeNotifier {
   /// target until the engine catches up, and never let a paused engine's
   /// backward glitch replace the last known position unless the user sought.
   Duration get _positionForProgressSave {
+    if (_retryAnchorSec != null) {
+      return Duration(milliseconds: (_retryAnchorSec! * 1000).round());
+    }
     final live = position;
     final liveSec = live.inMilliseconds / 1000.0;
     final target = activeSeekTarget;
@@ -11968,6 +12164,19 @@ class AudioPlayerService extends ChangeNotifier {
       debugPrint(
         '[Service] play() — a start is still loading; will play when it lands',
       );
+      _playRequestedDuringLoad = true;
+      return;
+    }
+    // The engine auto-advanced to the next file while the stream retry waits
+    // for a token refresh. Resuming now would skip the failed file's tail.
+    if (_retryInProgress && !_retrySourceStarting) {
+      debugPrint(
+        '[Service] play() — stream retry is in flight at '
+        '${_retryAnchorSec?.toStringAsFixed(1) ?? '?'}s; it will resume the '
+        'failed file',
+      );
+      _retryUserPaused = false;
+      _retryResumeRequested = true;
       _playRequestedDuringLoad = true;
       return;
     }
@@ -12924,7 +13133,11 @@ class AudioPlayerService extends ChangeNotifier {
   /// per-session sync work as before. Falls back to the client-owned local
   /// session when the head can't be read.
   Future<void> _ensureStatsSessionForSessionlessSource() async {
-    if (_playbackSessionId != null || _localSessionAccounting) return;
+    if (_playbackSessionId != null ||
+        _localSessionAccounting ||
+        _fullSessionInFlight > 0) {
+      return;
+    }
     final api = _api;
     final itemId = _currentItemId;
     if (api == null || itemId == null || !_sourceSessionless) return;
@@ -13100,10 +13313,11 @@ class AudioPlayerService extends ChangeNotifier {
   Map<String, String> _withCacheKey(
     Map<String, String> headers,
     String? itemId,
-    String url,
-  ) {
+    String url, {
+    String? ino,
+  }) {
     if (itemId == null || itemId.isEmpty) return headers;
-    final ino = RegExp(r'/file/([^/?#]+)').firstMatch(url)?.group(1);
+    ino ??= RegExp(r'/file/([^/?#]+)').firstMatch(url)?.group(1);
     if (ino == null || ino.isEmpty) return headers;
     final key = '$itemId|$ino';
     // Log the book once, not once per file: every track has its own ino, so
@@ -13511,6 +13725,10 @@ class AudioPlayerService extends ChangeNotifier {
     final sw = Stopwatch()..start();
     debugPrint('[RemoveTrace] pause entry');
     _markPauseRequested();
+    if (_retryInProgress) {
+      _retryUserPaused = true;
+      _retryResumeRequested = false;
+    }
     // Any pause other than our own offline auto-pause is the user taking over,
     // so a reconnect must not resume for them.
     _pausedForOffline = false;
@@ -14996,6 +15214,74 @@ class AudioPlayerService extends ChangeNotifier {
     return target;
   }
 
+  static const int _chapterPrefetchBytes = 512 * 1024;
+
+  void _cancelCachePrefetch() {
+    unawaited(
+      AudioPlayer.cancelCachePrefetch().catchError((Object _) {}),
+    );
+  }
+
+  /// Manual chapter switches land near the start of a file the player has not
+  /// read yet. Fill that file's cache prefix in the background now, keyed the
+  /// same way as the player source, so the seek can read cached spans instead
+  /// of waiting for the same bytes. Best-effort and never blocks the seek.
+  void _prefetchChapterIntro(int chapterIdx, double targetSec) {
+    if (!AppPlatform.isAndroid) return;
+    // Latest chapter target wins. Also stops a warm-up for a target the
+    // listener left when this call ends up not needing a prefetch.
+    _cancelCachePrefetch();
+    if (_offline || _isOfflineMode || !_sourceIsNetwork) {
+      return;
+    }
+    if (ChromecastService().isCasting) {
+      return;
+    }
+    final targetTrack = _trackIndexForAbsolute(targetSec);
+    if (targetTrack < 0) {
+      return;
+    }
+    final currentTrack = _player?.currentIndex;
+    if (currentTrack != null && targetTrack == currentTrack) {
+      return;
+    }
+    final itemId = _currentItemId;
+    final tracks = _lastSourceTracks;
+    if (itemId == null ||
+        tracks == null ||
+        targetTrack >= tracks.length ||
+        targetTrack >= _activeStreamUrls.length) {
+      return;
+    }
+    final raw = tracks[targetTrack];
+    if (raw is! Map<String, dynamic>) {
+      return;
+    }
+    final contentUrl = raw['contentUrl'] as String? ?? '';
+    final ino = RegExp(
+      r'/file/([^/?#]+)',
+    ).firstMatch(contentUrl)?.group(1);
+    final url = _activeStreamUrls[targetTrack];
+    if (ino == null || ino.isEmpty || url.isEmpty) {
+      return;
+    }
+    final key = '$itemId|$ino';
+    debugPrint(
+      '[SeekTrace] prefetch chapter=$chapterIdx track=$targetTrack '
+      'bytes=$_chapterPrefetchBytes key=$key',
+    );
+    unawaited(
+      AudioPlayer.prefetchToCache(
+        url: url,
+        headers: _activeStreamHeaders,
+        cacheKey: key,
+        bytes: _chapterPrefetchBytes,
+      ).catchError((Object e) {
+        debugPrint('[SeekTrace] prefetch failed: $e');
+      }),
+    );
+  }
+
   /// The single landing point for deliberate chapter navigation (chapter list
   /// tap, previous/next chapter): the intro-skip target when the chapter's
   /// setting arms it, the chapter's own start otherwise. Callers keep their own
@@ -15017,6 +15303,9 @@ class AudioPlayerService extends ChangeNotifier {
     // One line every landing makes the caller and the regression amount
     // explicit - a "random" backward jump has to name its path in the log.
     final from = chapterResolvePosSec;
+    // Manual chapter navigation only (this function's callers); the target is
+    // the intro-skip point when armed, otherwise the chapter's own start.
+    _prefetchChapterIntro(chapterIdx, preJump ?? startSec);
     debugPrint(
       '[Service] Chapter land ($source) → chapter $chapterIdx '
       'from ${from.toStringAsFixed(1)}s '
@@ -15551,9 +15840,10 @@ class AudioPlayerService extends ChangeNotifier {
         _playbackGeneration != stopGeneration ||
         _currentItemId != stopItemId ||
         _currentEpisodeId != stopEpisodeId;
-    // Background item reads (prewarm/refetch/backfill) must not hold the pipe
-    // while the session sync and close POSTs below run.
+    // Background item reads (prewarm/refetch/backfill) and chapter prefetch
+    // must not hold the pipe while the session sync and close POSTs below run.
     _api?.cancelBackgroundItemTransfers();
+    _cancelCachePrefetch();
     _cancelPendingSessionClients();
     debugPrint('[RemoveTrace] stop transfers canceled ${sw.elapsedMilliseconds}ms');
     _pausedForOffline = false;
@@ -15693,7 +15983,6 @@ class AudioPlayerService extends ChangeNotifier {
     _prewarmSessionCloseTimer?.cancel();
     _stuckCheckTimer?.cancel();
     _playVerifyTimer?.cancel();
-    _firstByteTimer?.cancel();
     _indexSub?.cancel();
     _player?.dispose();
     super.dispose();

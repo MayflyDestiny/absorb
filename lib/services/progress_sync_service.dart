@@ -17,6 +17,10 @@ class ProgressSyncService {
   factory ProgressSyncService() => _instance;
   ProgressSyncService._();
 
+  /// The player owns a live session or is opening one. Opening a presence
+  /// session here would close the session the audio/tokenless source uses.
+  static bool Function()? presenceSessionBlocked;
+
   StreamSubscription? _connectivitySub;
   bool _isOnline = true;
   bool _isFlushing = false;
@@ -820,6 +824,14 @@ class ProgressSyncService {
             '[Sync] Offline listening for $itemId held at ${seconds}s '
             '(flush at ${_offlineFlushMinSeconds}s or after '
             '${_offlineFlushMaxAge.inMinutes}min)',
+          );
+          continue;
+        }
+
+        if (presenceSessionBlocked?.call() ?? false) {
+          debugPrint(
+            '[Sync] Presence session blocked by the player session/full '
+            'session request - ledger kept for $itemId',
           );
           continue;
         }

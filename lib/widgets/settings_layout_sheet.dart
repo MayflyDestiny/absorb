@@ -61,6 +61,8 @@ class SettingsLayoutSheet extends StatefulWidget {
 
 IconData settingsSectionIcon(String id) {
   switch (id) {
+    case 'General':
+      return Icons.settings_outlined;
     case 'Playback':
       return Icons.play_circle_outline_rounded;
     case 'Appearance':
@@ -98,6 +100,8 @@ IconData settingsSectionIcon(String id) {
 
 String settingsSectionTitle(String id, AppLocalizations l) {
   switch (id) {
+    case 'General':
+      return l.sectionGeneral;
     case 'Playback':
       return l.sectionPlayback;
     case 'Appearance':

@@ -11,6 +11,7 @@ import 'package:background_downloader/background_downloader.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart' show AudioPlayer;
 import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/auth_provider.dart';
 import 'open_source_licenses_screen.dart';
 import '../providers/library_provider.dart';
@@ -67,7 +68,7 @@ import '../utils/app_platform.dart';
 import '../utils/desktop_workspace.dart';
 import '../services/native_tab_bar.dart';
 import '../widgets/desktop_wheel_scroll_region.dart';
-import '../widgets/whats_new_prompt.dart';
+import '../utils/icon_colors.dart';
 import '../utils/share_origin.dart';
 import '../widgets/settings_search.dart';
 import '../widgets/settings_tiles.dart';
@@ -238,7 +239,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _isDevBuild = bool.fromEnvironment('DEV_BUILD');
   // Distribution label shown next to the version. The F-Droid build passes
   // no define, so it falls through here.
-  static String get _flavorLabel => _isDevBuild
+  bool _isDevFlavor = false;
+  String get _flavorLabel => (_isDevFlavor || _isDevBuild)
       ? 'Dev'
       : _isGithubBuild ? 'GitHub' : _isPlayStoreBuild ? 'Play Store' : 'F-Droid';
 
@@ -375,6 +377,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _flatBackground = false;
   bool _einkMode = false;
   bool _materialExpressive = false;
+  bool _coloredIcons = coloredIconsNotifier.value;
   String _colorSource = 'dynamic';
   int _manualSeed = 0xFF7C6FBF;
   double _gradientIntensity = 0.06;
@@ -577,11 +580,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted && info.packageName.endsWith('.dev')) {
+        setState(() => _isDevFlavor = true);
+      }
+    });
     AppIconService.load();
     PlayerSettings.getMaterialExpressive().then((v) {
       if (mounted && v != _materialExpressive) {
         setState(() => _materialExpressive = v);
       }
+    });
+    PlayerSettings.getColoredIcons().then((v) {
+      coloredIconsNotifier.value = v;
+      if (mounted && v != _coloredIcons) setState(() => _coloredIcons = v);
     });
     PlayerSettings.getCardSwipeStyle().then((v) {
       if (mounted && v != _cardSwipeStyle) {
@@ -1838,73 +1850,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return total;
   }
 
-  /// One place to clear the app's caches, by category.
-
-  String _cardDismissStyleLabel(AppLocalizations l) => switch (_cardDismissStyle) {
-        'carousel' => l.cardDismissStyleCarousel,
-        'stack' => l.cardDismissStyleStack,
-        _ => l.cardDismissStyleClassic,
-      };
-
-  Future<void> _pickCardDismissStyle() async {
-    final l = AppLocalizations.of(context)!;
-    final chosen = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          for (final v in const ['classic', 'carousel', 'stack'])
-            ListTile(
-              title: Text(switch (v) {
-                'carousel' => l.cardDismissStyleCarousel,
-                'stack' => l.cardDismissStyleStack,
-                _ => l.cardDismissStyleClassic,
-              }),
-              trailing: _cardDismissStyle == v
-                  ? Icon(Icons.check_rounded, color: Theme.of(ctx).colorScheme.primary)
-                  : null,
-              onTap: () => Navigator.pop(ctx, v),
-            ),
-        ]),
-      ),
-    );
-    if (chosen == null || chosen == _cardDismissStyle) return;
-    setState(() => _cardDismissStyle = chosen);
-    PlayerSettings.setCardDismissStyle(chosen);
-  }
-
-  String _finishedBadgeModeLabel(AppLocalizations l) => switch (_finishedBadgeMode) {
-        'icon' => l.finishedBadgeModeIcon,
-        'off' => l.finishedBadgeModeOff,
-        _ => l.finishedBadgeModeText,
-      };
-
-  Future<void> _pickFinishedBadgeMode() async {
-    final l = AppLocalizations.of(context)!;
-    final chosen = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          for (final v in const ['text', 'icon', 'off'])
-            ListTile(
-              title: Text(switch (v) {
-                'icon' => l.finishedBadgeModeIcon,
-                'off' => l.finishedBadgeModeOff,
-                _ => l.finishedBadgeModeText,
-              }),
-              trailing: _finishedBadgeMode == v
-                  ? Icon(Icons.check_rounded, color: Theme.of(ctx).colorScheme.primary)
-                  : null,
-              onTap: () => Navigator.pop(ctx, v),
-            ),
-        ]),
-      ),
-    );
-    if (chosen == null || chosen == _finishedBadgeMode) return;
-    setState(() => _finishedBadgeMode = chosen);
-    PlayerSettings.setFinishedBadgeMode(chosen);
-  }
 
   Future<void> _openSettingsLayoutSheet() async {
     await SettingsLayoutSheet.show(
@@ -3187,14 +3132,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // is what the desktop sidebar lists.
     final destinations = <_SettingsSectionDestination>[
       _SettingsSectionDestination('General', Icons.settings_outlined, l.sectionGeneral),
+      _SettingsSectionDestination('Playback', Icons.play_circle_outline_rounded, l.sectionPlayback),
       _SettingsSectionDestination('Appearance', Icons.palette_outlined, l.sectionAppearance),
       _SettingsSectionDestination('Absorbing Cards', Icons.style_rounded, Wording.of(context).sectionAbsorbingCards),
+      _SettingsSectionDestination('Media Controls', Icons.dvr_rounded, l.sectionMediaControls),
+      _SettingsSectionDestination('Car', Icons.directions_car_rounded, AppPlatform.isIOS ? l.sectionCarIos : l.sectionCar),
       _SettingsSectionDestination('Customize Stats', Icons.bar_chart_rounded, l.settingsCustomizeStats),
-      _SettingsSectionDestination('Playback', Icons.play_circle_outline_rounded, l.sectionPlayback),
       _SettingsSectionDestination('Sleep Timer', Icons.bedtime_outlined, l.sectionSleepTimer),
+      _SettingsSectionDestination('Downloads & Storage', Icons.download_outlined, l.sectionDownloadsAndStorage),
       _SettingsSectionDestination('Library', Icons.auto_stories_outlined, l.sectionLibrary),
-      _SettingsSectionDestination('Issues & Support', Icons.support_agent_rounded, l.sectionIssuesAndSupport),
       _SettingsSectionDestination('Advanced', Icons.tune_rounded, l.sectionAdvanced),
+      _SettingsSectionDestination('About', Icons.info_outline_rounded, l.aboutSection),
     ];
     return Scaffold(
       body: Stack(
@@ -3262,6 +3210,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       }),
                     ),
                   const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.tune_rounded, size: 20),
+                    color: cs.onSurfaceVariant,
+                    tooltip: l.customizeSettings,
+                    onPressed: _openSettingsLayoutSheet,
+                  ),
                 ]),
               ),
             ),
@@ -3426,7 +3380,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           child: Row(
                             children: [
-                              Icon(Icons.admin_panel_settings_rounded, color: cs.onSurfaceVariant, size: 22),
+                              Icon(Icons.admin_panel_settings_rounded, color: _settingsIconColor(cs), size: 22),
                               const SizedBox(width: 14),
                               Expanded(child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3470,7 +3424,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           child: Row(
                             children: [
-                              Icon(Icons.admin_panel_settings_rounded, color: cs.onSurfaceVariant, size: 22),
+                              Icon(Icons.admin_panel_settings_rounded, color: _settingsIconColor(cs), size: 22),
                               const SizedBox(width: 14),
                               Expanded(child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3497,7 +3451,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
 
-                const SizedBox(height: 20),
+                // ── Manage Downloads ──
+                if (!isDesktopSettings)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Material(
+                      color: cs.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const DownloadsScreen())),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          child: Row(
+                            children: [
+                              Icon(Icons.download_rounded, color: _settingsIconColor(cs), size: 22),
+                              const SizedBox(width: 14),
+                              Expanded(child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(l.manageDownloads, style: tt.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600)),
+                                  Text(l.manageDownloadsSubtitle,
+                                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                                ],
+                              )),
+                              Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 12),
 
                 // Sections follow the saved layout order; sections the app
                 // adds later (or old names like About) fall into place.
@@ -3507,16 +3495,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       key: _keyFor('General'),
                       icon: Icons.settings_outlined,
                       title: l.sectionGeneral,
-                      summary: _languageDisplayName(_language, l),
                       onTap: () => _openSection('General'),
                     ),
                     'Appearance': SettingsSectionTile(
                       key: _keyFor('Appearance'),
                       icon: Icons.palette_outlined,
                       title: l.sectionAppearance,
-                      summary: _einkMode
-                          ? l.einkModeLabel
-                          : '${switch (_themeMode) { 'light' => l.themeLight, 'system' => l.themeAuto, _ => l.themeDark }}, ${_appColorName(l)}',
                       onTap: () => _openSection('Appearance'),
                     ),
                     'Absorbing Cards': SettingsSectionTile(
@@ -3535,7 +3519,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       key: _keyFor('Playback'),
                       icon: Icons.play_circle_outline_rounded,
                       title: l.sectionPlayback,
-                      summary: l.playbackSummary(_speedLabel(_defaultSpeed), _backSkip, _forwardSkip),
+                      trailing: _playbackSummaryChips(l),
                       onTap: () => _openSection('Playback'),
                     ),
                     if (!isDesktopSettings)
@@ -3578,18 +3562,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: l.sectionLibrary,
                       onTap: () => _openSection('Library'),
                     ),
-                    if (!isDesktopSettings)
-                      'Permissions': SettingsSectionTile(
-                        key: _keyFor('Permissions'),
-                        icon: Icons.shield_outlined,
-                        title: l.sectionPermissions,
-                        onTap: () => _openSection('Permissions'),
-                      ),
-                    'Issues & Support': SettingsSectionTile(
-                      key: _keyFor('Issues & Support'),
-                      icon: Icons.support_agent_rounded,
-                      title: l.sectionIssuesAndSupport,
-                      onTap: () => _openSection('Issues & Support'),
+                    'About': SettingsSectionTile(
+                      key: _keyFor('About'),
+                      icon: Icons.info_outline_rounded,
+                      title: l.aboutSection,
+                      onTap: () => _openSection('About'),
                     ),
                     'Advanced': SettingsSectionTile(
                       key: _keyFor('Advanced'),
@@ -3601,7 +3578,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final order = <String>[];
                   for (final id in _sectionOrder) {
                     if (_hiddenSections.contains(id)) continue;
-                    final mapped = id == 'About' ? 'Issues & Support' : id;
+                    final mapped = id;
                     if (tiles.containsKey(mapped) && !order.contains(mapped)) {
                       order.add(mapped);
                     }
@@ -3609,69 +3586,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   for (final id in tiles.keys) {
                     if (!order.contains(id)) order.add(id);
                   }
+                  if (tiles.containsKey('General') &&
+                      !_hiddenSections.contains('General')) {
+                    order.remove('General');
+                    order.insert(0, 'General');
+                  }
                   return [
                     for (final id in order) ...[
                       tiles[id]!,
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                     ],
                   ];
                 }(),
 
-                // ── Support the Dev ──
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      Card(
-                        color: cs.surfaceContainerHigh,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        clipBehavior: Clip.antiAlias,
-                        child: ListTile(
-                          leading: Icon(Icons.coffee_rounded,
-                              color: Colors.amber.shade600),
-                          title: Text(l.supportTheDev),
-                          subtitle: Text(l.buyMeACoffee,
-                              style: tt.bodySmall
-                                  ?.copyWith(color: cs.onSurfaceVariant)),
-                          trailing: Icon(Icons.favorite_rounded,
-                              size: 18, color: Colors.amber.shade600),
-                          onTap: () => launchUrl(
-                              Uri.parse(
-                                  'https://www.buymeacoffee.com/BarnabasApps'),
-                              mode: LaunchMode.externalApplication),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
                 // ── Backup and sync ──
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Card(
-                    elevation: 0,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Material(
                     color: cs.surfaceContainerHigh,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    child: ListTile(
-                      leading: Icon(Icons.cloud_sync_rounded, color: cs.onSurfaceVariant),
-                      title: Text(l.backupAndSync),
-                      subtitle: Text(_backupSyncStatus(l),
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
                       onTap: () async {
                         await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const BackupSyncScreen()));
                         if (mounted) await _refreshSyncStatus();
                       },
-                      // Shortcut for the impatient: push straight from here
-                      // rather than opening the screen for one button. Only
-                      // offered while sync is on, since there is nowhere to
-                      // send it otherwise.
                       onLongPress: _syncOn ? () => _uploadSyncNow(l) : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        child: Row(
+                          children: [
+                            Icon(Icons.cloud_sync_rounded, color: _settingsIconColor(cs), size: 22),
+                            const SizedBox(width: 14),
+                            Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(l.backupAndSync, style: tt.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600)),
+                                Text(_backupSyncStatus(l),
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              ],
+                            )),
+                            Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -3680,23 +3640,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // ── All Bookmarks ──
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Card(
-                    elevation: 0,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: Material(
                     color: cs.surfaceContainerHigh,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    child: ListTile(
-                      leading: Icon(Icons.bookmarks_rounded, color: cs.onSurfaceVariant),
-                      title: Text(l.allBookmarks),
-                      subtitle: Text(l.allBookmarksSubtitle,
-                        style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
                       onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const BookmarksScreen())),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        child: Row(
+                          children: [
+                            Icon(Icons.bookmarks_rounded, color: _settingsIconColor(cs), size: 22),
+                            const SizedBox(width: 14),
+                            Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(l.allBookmarks, style: tt.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600)),
+                                Text(l.allBookmarksSubtitle,
+                                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                              ],
+                            )),
+                            Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
+
+                const SizedBox(height: 12),
 
                 // ── Version Info ──
                 Center(child: Row(
@@ -3726,8 +3701,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 )),
 
-                if (_isGithubBuild) ...[
-                  const SizedBox(height: 4),
+                if (kUpdatesFromReleases || _isDevBuild || _isDevFlavor) ...[
                   Center(child: TextButton.icon(
                     onPressed: () async {
                       final result = await UpdateCheckerService.check(force: true, includePreReleases: _includePreReleases);
@@ -3739,6 +3713,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       }
                       await UpdateDialog.show(context, result.info!);
                     },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                     icon: const Icon(Icons.system_update_rounded, size: 16),
                     label: Text(l.checkForUpdate),
                   )),
@@ -3772,6 +3752,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 1.00 reads as 1, 1.50 as 1.5.
   String _speedLabel(double speed) => speed.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
 
+  Color _settingsIconColor(ColorScheme cs) =>
+      coloredIconsNotifier.value ? cs.primary : cs.onSurfaceVariant;
+
+  /// The Playback section's at-a-glance settings, as small icon chips rather
+  /// than a sentence that reflows with every change.
+  Widget _playbackSummaryChips(AppLocalizations l) {
+    final cs = Theme.of(context).colorScheme;
+    Widget chip(IconData icon, String text, String tooltip) => Tooltip(
+          message: tooltip,
+          child: Container(
+            margin: const EdgeInsets.only(right: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: cs.onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 12, color: cs.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Text(text,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: cs.onSurfaceVariant)),
+            ]),
+          ),
+        );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 150),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          chip(Icons.speed_rounded, '${_speedLabel(_defaultSpeed)}x', l.defaultSpeed),
+          chip(Icons.replay_rounded, '${_backSkip}s', l.skipBack),
+          chip(Icons.forward_rounded, '${_forwardSkip}s', l.skipForward),
+        ]),
+      ),
+    );
+  }
+
   /// A section's page title and what goes on it.
   (String, List<Widget> Function(BuildContext))? _sectionPage(String id) {
     final l = AppLocalizations.of(context)!;
@@ -3788,7 +3809,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Downloads & Storage' => (l.sectionDownloadsAndStorage, _downloadsGroups),
       'Library' => (l.sectionLibrary, _libraryGroups),
       'Permissions' => (l.sectionPermissions, _permissionsGroups),
-      'Issues & Support' => (l.sectionIssuesAndSupport, _issuesGroups),
+      'About' => (l.aboutSection, _aboutGroups),
       'Advanced' => (l.sectionAdvanced, _advancedGroups),
       _ => null,
     };
@@ -3848,12 +3869,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     PlayerSettings.setTrueCoverColors(choice == 'true');
     applyTrueCoverColors(choice == 'true');
   }
-
-  String _appColorName(AppLocalizations l) => switch (_appColor) {
-        'mine' => l.appColorMine,
-        'true' => l.appColorTrueCover,
-        _ => l.appColorSoftCover,
-      };
 
   List<Widget> _generalGroups(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -3969,10 +3984,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             } : null,
           ),
           SettingsSwitchTile(
-            title: 'Classic wording',
+            title: l.wordingClassicTitle,
             subtitle: _classicWording
-                  ? 'Using "Play", "Now Playing", "Finished"'
-                  : 'Using "Absorb", "Absorbing", "Fully Absorbed"',
+                  ? l.wordingClassicOnSubtitle
+                  : l.wordingClassicOffSubtitle,
             value: _classicWording,
             onChanged: _loaded ? (v) {
               setState(() => _classicWording = v);
@@ -3984,10 +3999,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // apps, so the lock can't work there - hide it on iPad.
           if (!(AppPlatform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600)) ...[
             SettingsSwitchTile(
-              title: 'Lock rotation',
+              title: l.rotationLockTitle,
               subtitle: _lockPortrait
-                    ? 'Screen stays in portrait'
-                    : 'Screen can rotate with the device',
+                    ? l.rotationLockOnSubtitle
+                    : l.rotationLockOffSubtitle,
               value: _lockPortrait,
               onChanged: _loaded ? (v) {
                 setState(() => _lockPortrait = v);
@@ -4039,6 +4054,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+          SettingsSwitchTile(
+            title: l.iconColorsLabel,
+            subtitle: l.iconColorsSubtitle,
+            value: _coloredIcons,
+            onChanged: _loaded ? (v) {
+              setState(() => _coloredIcons = v);
+              PlayerSettings.setColoredIcons(v);
+              coloredIconsNotifier.value = v;
+            } : null,
           ),
           if (AppPlatform.isAndroid)
             SettingsSwitchTile(
@@ -4196,6 +4221,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() => _rectangleCovers = v);
               PlayerSettings.setRectangleCovers(v);
             } : null,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(l.finishedBadgeMode, style: tt.titleSmall),
+              const SizedBox(height: 8),
+              SizedBox(width: double.infinity, child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(value: 'text', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.finishedBadgeModeText, maxLines: 1))),
+                  ButtonSegment(value: 'icon', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.finishedBadgeModeIcon, maxLines: 1))),
+                  ButtonSegment(value: 'off', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.finishedBadgeModeOff, maxLines: 1))),
+                ],
+                selected: {_finishedBadgeMode},
+                onSelectionChanged: _loaded ? (s) {
+                  if (s.isEmpty) return;
+                  setState(() => _finishedBadgeMode = s.first);
+                  PlayerSettings.setFinishedBadgeMode(s.first);
+                } : null,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              )),
+            ]),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -4499,14 +4546,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SettingsGroup(
         label: l.settingsGroupLook,
         children: [
-          SettingsTile(
-            icon: Icons.animation_rounded,
-            title: l.cardDismissStyle,
-            subtitle: _cardDismissStyleLabel(l),
-            trailing: Icon(Icons.chevron_right_rounded,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-            onTap: _pickCardDismissStyle,
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -4515,15 +4554,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SizedBox(width: double.infinity, child: SegmentedButton<String>(
                 showSelectedIcon: false,
                 segments: [
-                  ButtonSegment(value: 'classic', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardSwipeStyleClassic, maxLines: 1))),
-                  ButtonSegment(value: 'carousel', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardSwipeStyleCarousel, maxLines: 1))),
-                  ButtonSegment(value: 'stack', label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardSwipeStyleStack, maxLines: 1))),
+                  ButtonSegment(value: 'classic', icon: const Icon(Icons.swipe_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardSwipeStyleClassic, maxLines: 1))),
+                  ButtonSegment(value: 'carousel', icon: const Icon(Icons.view_carousel_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardSwipeStyleCarousel, maxLines: 1))),
+                  ButtonSegment(value: 'stack', icon: const Icon(Icons.layers_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardSwipeStyleStack, maxLines: 1))),
                 ],
                 selected: {_cardSwipeStyle},
                 onSelectionChanged: _loaded ? (s) {
                   if (s.isEmpty) return;
                   setState(() => _cardSwipeStyle = s.first);
                   PlayerSettings.setCardSwipeStyle(s.first);
+                } : null,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              )),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(l.cardDismissStyle, style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+              const SizedBox(height: 8),
+              SizedBox(width: double.infinity, child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(value: 'classic', icon: const Icon(Icons.swipe_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardDismissStyleClassic, maxLines: 1))),
+                  ButtonSegment(value: 'carousel', icon: const Icon(Icons.view_carousel_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardDismissStyleCarousel, maxLines: 1))),
+                  ButtonSegment(value: 'stack', icon: const Icon(Icons.layers_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.cardDismissStyleStack, maxLines: 1))),
+                ],
+                selected: {_cardDismissStyle},
+                onSelectionChanged: _loaded ? (s) {
+                  if (s.isEmpty) return;
+                  setState(() => _cardDismissStyle = s.first);
+                  PlayerSettings.setCardDismissStyle(s.first);
                 } : null,
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
               )),
@@ -4746,17 +4807,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SizedBox(width: double.infinity, child: SegmentedButton<String>(
                   showSelectedIcon: false,
                   segments: [
-                    ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
-                    ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
-                    ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeAuto))),
+                    ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff, style: tt.labelMedium))),
+                    ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, style: tt.labelMedium))),
+                    ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeAuto, style: tt.labelMedium))),
                     if (!context.read<AuthProvider>().isBookOrbit || _mergedQueueMode == 'playlist')
-                      ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
+                      ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, style: tt.labelMedium))),
                   ],
                   selected: {_mergedQueueMode},
                   onSelectionChanged: _loaded
                       ? (s) { if (s.isNotEmpty) _setMergedQueueMode(s.first); }
                       : null,
-                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 4)),
+                  ),
                 )),
               ] else ...[
                 // Separate controls per type
@@ -4765,17 +4830,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SizedBox(width: double.infinity, child: SegmentedButton<String>(
                   showSelectedIcon: false,
                   segments: [
-                    ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
-                    ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
-                    ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeSeriesLabel))),
+                    ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff, style: tt.labelMedium))),
+                    ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, style: tt.labelMedium))),
+                    ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeSeriesLabel, style: tt.labelMedium))),
                     if (!context.read<AuthProvider>().isBookOrbit || _bookQueueMode == 'playlist')
-                      ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
+                      ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, style: tt.labelMedium))),
                   ],
                   selected: {_bookQueueMode},
                   onSelectionChanged: _loaded
                       ? (s) { if (s.isNotEmpty) _setBookQueueMode(s.first); }
                       : null,
-                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 4)),
+                  ),
                 )),
                 if (lib.libraries.any((lib) => lib['mediaType'] == 'podcast')) ...[
                   const SizedBox(height: 8),
@@ -4784,17 +4853,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SizedBox(width: double.infinity, child: SegmentedButton<String>(
                     showSelectedIcon: false,
                     segments: [
-                      ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff))),
-                      ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual))),
-                      ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeShowLabel))),
+                      ButtonSegment(value: 'off', icon: const Icon(Icons.stop_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeOff, style: tt.labelMedium))),
+                      ButtonSegment(value: 'manual', icon: const Icon(Icons.queue_music_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeManual, style: tt.labelMedium))),
+                      ButtonSegment(value: 'auto_next', icon: const Icon(Icons.skip_next_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModeShowLabel, style: tt.labelMedium))),
                       if (!context.read<AuthProvider>().isBookOrbit || _podcastQueueMode == 'playlist')
-                        ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 18), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist))),
+                        ButtonSegment(value: 'playlist', icon: const Icon(Icons.playlist_play_rounded, size: 15), label: FittedBox(fit: BoxFit.scaleDown, child: Text(l.queueModePlaylist, style: tt.labelMedium))),
                     ],
                     selected: {_podcastQueueMode},
                     onSelectionChanged: _loaded
                         ? (s) { if (s.isNotEmpty) _setPodcastQueueMode(s.first); }
                         : null,
-                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 4)),
+                  ),
                   )),
                 ],
               ],
@@ -4901,10 +4974,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // player's two extra slots. iOS uses CarPlay's own buttons.
           if (AppPlatform.isAndroid) ...[
             SettingsSwitchTile(
-              title: 'Duck brief interruptions',
+              title: l.duckTitle,
               subtitle: _duckBriefInterruptions
-                    ? 'Notifications and prompts lower the volume instead of pausing'
-                    : 'Notifications and prompts pause playback',
+                    ? l.duckOnSubtitle
+                    : l.duckOffSubtitle,
               value: _duckBriefInterruptions,
               onChanged: _loaded ? (v) {
                 setState(() => _duckBriefInterruptions = v);
@@ -4912,10 +4985,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               } : null,
             ),
             SettingsSwitchTile(
-              title: 'Play with other audio',
+              title: l.keepPlayingWithOtherAudio,
               subtitle: _keepPlayingWithOtherApps
-                    ? 'Keeps playing when another app starts its own audio'
-                    : 'Pauses when another app starts its own audio',
+                    ? l.keepPlayingWithOtherAudioOnSubtitle
+                    : l.keepPlayingWithOtherAudioOffSubtitle,
               value: _keepPlayingWithOtherApps,
               onChanged: _loaded ? (v) {
                 setState(() => _keepPlayingWithOtherApps = v);
@@ -5512,10 +5585,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           SettingsSwitchTile(
-            title: 'Auto-download series',
+            title: l.autoSeriesDownloadTitle,
             subtitle: _autoSeriesDownloadDefault
-                  ? 'Starting a book in a series keeps the next books downloaded'
-                  : 'Turn on series downloads yourself from the series menu',
+                  ? l.autoSeriesDownloadOnSubtitle
+                  : l.autoSeriesDownloadOffSubtitle,
             value: _autoSeriesDownloadDefault,
             onChanged: _loaded ? (v) {
               setState(() => _autoSeriesDownloadDefault = v);
@@ -5523,12 +5596,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             } : null,
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Text(l.keepNext, style: tt.bodyMedium?.copyWith(color: cs.onSurface)),
+                  Text(l.keepNext, style: tt.titleSmall),
                   _infoIcon(l.keepNextInfoTitle, l.keepNextInfoContent),
                 ]),
                 const SizedBox(height: 8),
@@ -5570,17 +5643,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SettingsGroup(
         label: l.settingsGroupStorage,
         children: [
-          SettingsTile(
-            icon: Icons.cleaning_services_rounded,
-            title: l.clearAllCaches,
-            subtitle: l.clearCacheHint,
-            trailing: Icon(Icons.chevron_right_rounded,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+          ListTile(
+            leading: Icon(Icons.cleaning_services_rounded, color: _settingsIconColor(cs)),
+            title: Text(l.clearAllCaches),
+            subtitle: Text(
+              l.clearCacheHint,
+              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            isThreeLine: true,
+            titleAlignment: ListTileTitleAlignment.center,
+            trailing: const Icon(Icons.chevron_right),
             onTap: _showClearCacheSheet,
           ),
           if (!AppPlatform.isIOS && _canPickDownloadLocation)
           ListTile(
-            leading: Icon(Icons.folder_outlined, color: cs.onSurfaceVariant),
+            leading: Icon(Icons.folder_outlined, color: _settingsIconColor(cs)),
             title: Text(l.downloadLocation),
             subtitle: Text(
               _downloadLocationLabel,
@@ -5591,26 +5670,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _pickDownloadLocation(context, cs, tt),
           ),
-          if (_totalDownloadSizeBytes > 0 || _deviceTotalBytes > 0) ...[
-            ListTile(
-              leading: Icon(Icons.data_usage_rounded, color: cs.onSurfaceVariant),
-              title: Text(l.storageUsed),
-              subtitle: Text(
-                [
-                  if (_totalDownloadSizeBytes > 0) l.storageUsedByDownloads(_formatBytes(_totalDownloadSizeBytes)),
-                  if (_deviceTotalBytes > 0) l.storageFreeOfTotal(_formatBytes(_deviceAvailableBytes), _formatBytes(_deviceTotalBytes)),
-                ].join('\n'),
-                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              isThreeLine: _totalDownloadSizeBytes > 0 && _deviceTotalBytes > 0,
+          if (_totalDownloadSizeBytes > 0 || _deviceTotalBytes > 0)
+            SettingsTile(
+              icon: Icons.data_usage_rounded,
+              title: l.storageUsed,
+              subtitle: [
+                if (_totalDownloadSizeBytes > 0) l.storageUsedByDownloads(_formatBytes(_totalDownloadSizeBytes)),
+                if (_deviceTotalBytes > 0) l.storageFreeOfTotal(_formatBytes(_deviceAvailableBytes), _formatBytes(_deviceTotalBytes)),
+              ].join('\n'),
             ),
-          ],
-          SettingsTile(
-            icon: Icons.storage_rounded,
-            title: l.manageDownloads,
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const DownloadsScreen())),
-          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -5709,10 +5777,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               orElse: () => podcastLibs.first,
             )['name'] as String? ?? '';
             return Column(children: [
-              SwitchListTile.adaptive(
-                title: Text(l.settingsPodcastTab),
-                subtitle: Text(l.settingsPodcastTabDesc,
-                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              SettingsSwitchTile(
+                title: l.settingsPodcastTab,
+                subtitle: l.settingsPodcastTabDesc,
                 value: _podcastTabEnabled,
                 onChanged: _loaded ? (v) async {
                   var libId = _podcastTabLibraryId;
@@ -5940,18 +6007,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
         ],
       ),
-      SettingsGroup(
-        children: [
-          SettingsTile(
-            icon: Icons.check_circle_outline_rounded,
-            title: l.finishedBadgeMode,
-            subtitle: _finishedBadgeModeLabel(l),
-            trailing: Icon(Icons.chevron_right_rounded,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-            onTap: _pickFinishedBadgeMode,
-          ),
-        ],
-      ),
     ];
   }
 
@@ -6013,15 +6068,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _issuesGroups(BuildContext context) {
+  List<Widget> _aboutGroups(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
     final l = AppLocalizations.of(context)!;
     final auth = context.watch<AuthProvider>();
     return [
       SettingsGroup(
-        label: l.settingsGroupHelp,
+        label: l.aboutSection,
         children: [
+          SettingsTile(
+            icon: Icons.tag_outlined,
+            title: _versionLine(l),
+            subtitle: auth.serverVersion != null
+                ? l.appVersionServerSuffix(auth.serverVersion!)
+                : null,
+          ),
           SettingsTile(
             icon: Icons.lightbulb_outline_rounded,
             title: l.showTipsAgain,
@@ -6031,27 +6092,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (!mounted) return;
               showOverlayToast(context, l.tipsRestored,
                   icon: Icons.lightbulb_outline_rounded);
-              // Re-trigger the welcome dialog without an app
-              // restart. resetAll() already cleared the flag.
+              // Re-trigger the welcome dialog without an app restart.
               WelcomeSheet.showIfNeeded(context);
             },
           ),
-          SwitchListTile.adaptive(
-            secondary: Icon(Icons.new_releases_outlined, color: cs.onSurfaceVariant),
-            title: Text(l.settingsWhatsNew),
-            subtitle: Text(l.settingsWhatsNewSubtitle,
-                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          if (kUpdatesFromReleases)
+            SettingsSwitchTile(
+              title: l.includePreReleases,
+              subtitle: _includePreReleases
+                  ? l.includePreReleasesOnSubtitle
+                  : l.includePreReleasesOffSubtitle,
+              value: _includePreReleases,
+              onInfo: () => _showInfo(
+                  l.preReleaseUpdatesInfoTitle,
+                  l.preReleaseUpdatesInfoContent),
+              onChanged: _loaded
+                  ? (v) async {
+                      setState(() => _includePreReleases = v);
+                      await PlayerSettings.setIncludePreReleases(v);
+                    }
+                  : null,
+            ),
+          SettingsSwitchTile(
+            title: l.autoCheckUpdate,
+            subtitle: _autoCheckUpdate
+                ? l.autoCheckUpdateOnSubtitle
+                : l.autoCheckUpdateOffSubtitle,
+            value: _autoCheckUpdate,
+            onChanged: _loaded
+                ? (v) {
+                    setState(() => _autoCheckUpdate = v);
+                    PlayerSettings.setAutoCheckUpdate(v);
+                  }
+                : null,
+          ),
+          SettingsSwitchTile(
+            title: l.showWhatsNewOnLaunch,
+            subtitle: _showWhatsNew
+                ? l.showWhatsNewOnLaunchOnSubtitle
+                : l.showWhatsNewOnLaunchOffSubtitle,
             value: _showWhatsNew,
-            onChanged: (v) {
-              setState(() => _showWhatsNew = v);
-              WhatsNewPrompt.setEnabled(v);
-            },
+            onChanged: _loaded
+                ? (v) {
+                    setState(() => _showWhatsNew = v);
+                    PlayerSettings.setShowWhatsNew(v);
+                  }
+                : null,
           ),
         ],
       ),
       SettingsGroup(
-        label: l.settingsGroupContact,
+        label: l.settingsGroupHelp,
         children: [
+          SettingsTile(
+            icon: Icons.description_outlined,
+            title: l.openSourceLicenses,
+            trailing: Icon(Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => OpenSourceLicensesScreen(appVersion: _appVersion))),
+          ),
+          SettingsTile(
+            icon: Icons.language_outlined,
+            title: l.projectWebsite,
+            trailing: Icon(Icons.open_in_new_rounded,
+                size: 18, color: cs.onSurfaceVariant),
+            onTap: () => launchUrl(
+                Uri.parse('https://github.com/MayflyDestiny/absorb'),
+                mode: LaunchMode.externalApplication),
+          ),
           SettingsTile(
             icon: Icons.bug_report_outlined,
             title: l.bugsAndFeatureRequests,
@@ -6059,29 +6168,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: Icon(Icons.open_in_new_rounded,
                 size: 18, color: cs.onSurfaceVariant),
             onTap: () => launchUrl(
-                Uri.parse('https://github.com/pounat/absorb/issues'),
+                Uri.parse('https://github.com/MayflyDestiny/absorb/issues'),
                 mode: LaunchMode.externalApplication),
-          ),
-          SettingsTile(
-            icon: Icons.discord,
-            title: l.joinDiscord,
-            subtitle: l.joinDiscordSubtitle,
-            trailing: Icon(Icons.open_in_new_rounded,
-                size: 18, color: cs.onSurfaceVariant),
-            onTap: () => launchUrl(
-                Uri.parse('https://discord.gg/vkEg8w7RUd'),
-                mode: LaunchMode.externalApplication),
-          ),
-          SettingsTile(
-            icon: Icons.email_outlined,
-            title: l.contact,
-            subtitle: l.contactSubtitle,
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () {
-              LogService().contactEmail(
-                serverVersion: auth.serverVersion,
-              );
-            },
           ),
         ],
       ),
@@ -6091,20 +6179,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SettingsSwitchTile(
             title: l.enableLogging,
             subtitle: _loggingEnabled
-                  ? l.enableLoggingOnSubtitle
-                  : l.enableLoggingOffSubtitle,
+                ? l.enableLoggingOnSubtitle
+                : l.enableLoggingOffSubtitle,
             value: _loggingEnabled,
-            onChanged: _loaded ? (v) {
-              setState(() => _loggingEnabled = v);
-              PlayerSettings.setLoggingEnabled(v);
-              showOverlayToast(
-                context,
-                v
-                    ? l.loggingEnabledSnackbar
-                    : l.loggingDisabledSnackbar,
-                icon: Icons.article_outlined,
-              );
-            } : null,
+            onChanged: _loaded
+                ? (v) {
+                    setState(() => _loggingEnabled = v);
+                    PlayerSettings.setLoggingEnabled(v);
+                    showOverlayToast(
+                      context,
+                      v ? l.loggingEnabledSnackbar : l.loggingDisabledSnackbar,
+                      icon: Icons.article_outlined,
+                    );
+                  }
+                : null,
           ),
           if (_loggingEnabled && LogService().enabled) ...[
             SettingsTile(
@@ -6164,59 +6252,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l = AppLocalizations.of(context)!;
     final auth = context.watch<AuthProvider>();
     return [
-      SettingsGroup(
-        label: l.settingsGroupTools,
-        children: [
-          SettingsSwitchTile(
-            title: l.autoCheckUpdate,
-            subtitle: _autoCheckUpdate
-                ? l.autoCheckUpdateOnSubtitle
-                : l.autoCheckUpdateOffSubtitle,
-            value: _autoCheckUpdate,
-            onChanged: _loaded
-                ? (v) {
-                    setState(() => _autoCheckUpdate = v);
-                    PlayerSettings.setAutoCheckUpdate(v);
-                  }
-                : null,
-          ),
-          SettingsTile(
-            icon: Icons.cloud_download_outlined,
-            title: l.githubProxyTitle,
-            subtitle: _githubProxyEnabled
-                ? (_githubProxyUrl.isNotEmpty
-                    ? _githubProxyUrl
-                    : l.githubProxyEnabledLabel)
-                : null,
-            onTap: () async {
-              await showGithubProxySheet(context);
-              if (!mounted) return;
-              final enabled = await PlayerSettings.getGithubProxyEnabled();
-              if (!mounted) return;
-              setState(() => _githubProxyEnabled = enabled);
-            },
-          ),
-          SettingsTile(
-            icon: Icons.dashboard_customize_outlined,
-            title: l.customizeSettings,
-            onTap: _openSettingsLayoutSheet,
-          ),
-          SettingsTile(
-            icon: Icons.description_outlined,
-            title: l.openSourceLicenses,
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => OpenSourceLicensesScreen(appVersion: _appVersion))),
-          ),
-          SettingsTile(
-            icon: Icons.language_outlined,
-            title: l.projectWebsite,
-            trailing: Icon(Icons.open_in_new_rounded,
-                size: 18, color: cs.onSurfaceVariant),
-            onTap: () => launchUrl(
-                Uri.parse('https://github.com/MayflyDestiny/absorb')),
-          ),
-        ],
-      ),
       SettingsGroup(
         label: l.settingsGroupConnection,
         children: [
@@ -6309,34 +6344,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
               } : null,
             ),
           ],
-          if (_isGithubBuild) ...[
-            SettingsSwitchTile(
-              title: l.includePreReleases,
-              subtitle: _includePreReleases
-                    ? l.includePreReleasesOnSubtitle
-                    : l.includePreReleasesOffSubtitle,
-              value: _includePreReleases,
-              onInfo: () => _showInfo(l.preReleaseUpdatesInfoTitle, l.preReleaseUpdatesInfoContent),
-              onChanged: _loaded ? (v) async {
-                setState(() => _includePreReleases = v);
-                await PlayerSettings.setIncludePreReleases(v);
-              } : null,
-            ),
-          ],
+          SettingsSwitchTile(
+            title: l.alignChaptersTracks,
+            subtitle: _alignChaptersTracks
+                ? l.alignChaptersTracksOnSubtitle
+                : l.alignChaptersTracksOffSubtitle,
+            value: _alignChaptersTracks,
+            onInfo: () => _showInfo(
+                l.alignChaptersTracksInfoTitle,
+                l.alignChaptersTracksInfoContent),
+            onChanged: _loaded
+                ? (v) {
+                    setState(() => _alignChaptersTracks = v);
+                    PlayerSettings.setAlignChaptersTracks(v);
+                  }
+                : null,
+          ),
         ],
       ),
       SettingsGroup(
         label: l.settingsGroupTools,
         children: [
-          if (_bookRequestsOn) ...[
-            SettingsTile(
-              icon: Icons.playlist_add_rounded,
-              title: l.breqTitle,
-              subtitle: l.breqSettingsSubtitle,
-              trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-              onTap: () => BookRequestsScreen.open(context, openList: true),
-            ),
-          ],
+          SettingsTile(
+            icon: Icons.cloud_download_outlined,
+            title: l.githubProxyTitle,
+            subtitle: _githubProxyEnabled && _githubProxyUrl.isNotEmpty
+                ? '${l.githubProxySubtitle} · $_githubProxyUrl'
+                : l.githubProxySubtitle,
+            trailing: Icon(Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            onTap: () async {
+              await showGithubProxySheet(context);
+              if (!mounted) return;
+              final enabled = await PlayerSettings.getGithubProxyEnabled();
+              if (!mounted) return;
+              setState(() => _githubProxyEnabled = enabled);
+            },
+          ),
           SettingsTile(
             icon: Icons.menu_book_rounded,
             title: l.adminRmab,
@@ -6356,6 +6400,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const TranscriptionSettingsScreen())),
           ),
+          ],
+          SettingsTile(
+            icon: Icons.shield_outlined,
+            title: l.sectionPermissions,
+            subtitle: l.sectionPermissionsSubtitle,
+            trailing: Icon(Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            onTap: () => _openSection('Permissions'),
+          ),
+          if (_bookRequestsOn) ...[
+            SettingsTile(
+              icon: Icons.playlist_add_rounded,
+              title: l.breqTitle,
+              subtitle: l.breqSettingsSubtitle,
+              trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+              onTap: () => BookRequestsScreen.open(context, openList: true),
+            ),
           ],
         ],
       ),
@@ -6553,6 +6614,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+          SettingsTile(
+            icon: Icons.skip_previous_rounded,
+            title: l.chapterJumpEntry,
+            subtitle: l.chapterJumpEntrySubtitle,
+            trailing: Icon(Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            onTap: _openChapterJumpSheet,
+          ),
+          SettingsTile(
+            icon: Icons.flag_outlined,
+            title: l.bookFinishReminder,
+            subtitle: l.bookFinishReminderSubtitle,
+            trailing: Icon(Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            onTap: _openBookFinishSheet,
+          ),
         ],
       ),
       SettingsGroup(
@@ -6621,48 +6698,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
-        ],
-      ),
-      SettingsGroup(
-        label: l.settingsGroupSkipping,
-        children: [
-          SettingsTile(
-            icon: Icons.skip_previous_rounded,
-            title: l.chapterJumpEntry,
-            subtitle: l.chapterJumpEntrySubtitle,
-            trailing: Icon(Icons.chevron_right_rounded,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-            onTap: _openChapterJumpSheet,
-          ),
-          SettingsSwitchTile(
-            title: l.alignChaptersTracks,
-            subtitle: _alignChaptersTracks
-                ? l.alignChaptersTracksOnSubtitle
-                : l.alignChaptersTracksOffSubtitle,
-            value: _alignChaptersTracks,
-            onInfo: () => _showInfo(
-                l.alignChaptersTracksInfoTitle,
-                l.alignChaptersTracksInfoContent),
-            onChanged: _loaded
-                ? (v) {
-                    setState(() => _alignChaptersTracks = v);
-                    PlayerSettings.setAlignChaptersTracks(v);
-                  }
-                : null,
-          ),
-        ],
-      ),
-      SettingsGroup(
-        label: l.settingsGroupPlayer,
-        children: [
-          SettingsTile(
-            icon: Icons.flag_outlined,
-            title: l.bookFinishReminder,
-            subtitle: l.bookFinishReminderSubtitle,
-            trailing: Icon(Icons.chevron_right_rounded,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
-            onTap: _openBookFinishSheet,
-          ),
         ],
       ),
     ];
@@ -7636,7 +7671,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(2)))),
         const SizedBox(height: 8),
         ListTile(
-          leading: Icon(Icons.dns_rounded, color: cs.onSurfaceVariant),
+          leading: Icon(Icons.dns_rounded, color: _settingsIconColor(cs)),
           title: Text(l.editServerConnectionAction),
           onTap: () { Navigator.pop(ctx); _editServerConnection(context, account); }),
             ListTile(

@@ -54,6 +54,7 @@ import 'tv/tv_pair_screen.dart';
 import 'widgets/overlay_toast.dart';
 import 'services/wording.dart';
 import 'utils/app_platform.dart';
+import 'utils/icon_colors.dart';
 import 'screens/login_screen.dart';
 import 'screens/app_shell.dart';
 import 'widgets/auth_loading_screen.dart';
@@ -234,6 +235,7 @@ Future<void> applyAppearanceFromPrefs() async {
   applyGradientIntensity(await PlayerSettings.getGradientIntensity());
   applyUseColorEverywhere(await PlayerSettings.getUseColorEverywhere());
   applyTrueCoverColors(await PlayerSettings.getTrueCoverColors());
+  coloredIconsNotifier.value = await PlayerSettings.getColoredIcons();
   await applyOrientationLock();
 }
 
@@ -323,6 +325,7 @@ void main(List<String> args) async {
     gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
     useColorEverywhereNotifier.value = await PlayerSettings.getUseColorEverywhere();
     trueCoverColorsNotifier.value = await PlayerSettings.getTrueCoverColors();
+    coloredIconsNotifier.value = await PlayerSettings.getColoredIcons();
     final savedLang = await PlayerSettings.getLanguage();
     if (savedLang.isNotEmpty) localeNotifier.value = Locale(savedLang);
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
@@ -873,6 +876,7 @@ class _AuthGateState extends State<AuthGate> {
     gradientIntensityNotifier.value = await PlayerSettings.getGradientIntensity();
     useColorEverywhereNotifier.value = await PlayerSettings.getUseColorEverywhere();
     trueCoverColorsNotifier.value = await PlayerSettings.getTrueCoverColors();
+    coloredIconsNotifier.value = await PlayerSettings.getColoredIcons();
     snappyTransitionsNotifier.value = await PlayerSettings.getSnappyTransitions();
     classicWordingNotifier.value = await PlayerSettings.getClassicWording();
     PlayerSettings.showExplicitBadge = await PlayerSettings.getShowExplicitBadge();

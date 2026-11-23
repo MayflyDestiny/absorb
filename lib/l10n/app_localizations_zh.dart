@@ -3297,7 +3297,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get clearCacheHint => '封面、进度、流媒体和残留文件，可分别清理。';
 
   @override
-  String get clearCacheSheetTitle => '清除缓存';
+  String get clearCacheSheetTitle => '缓存清理';
 
   @override
   String get clearCacheSheetSubtitle => '选择要清理的内容。之后使用时会自动重新生成。';
@@ -3315,7 +3315,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cacheStreamingHint => '近期流式播放的音频和电子书页面块会缓存到本地避免重复下载。';
 
   @override
-  String get clearAllCaches => '全部清除';
+  String get clearAllCaches => '缓存清理';
 
   @override
   String get clearAllCachesConfirm => '要清除全部缓存吗？它们会在使用时自动重新生成。';
@@ -15749,7 +15749,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cardSwipeStyleStack => '堆叠';
 
   @override
-  String get cardDismissStyle => '卡片移除动画';
+  String get cardDismissStyle => '卡片移除样式';
 
   @override
   String get cardDismissStyleClassic => '甩出';
@@ -16252,11 +16252,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appColorMine => '自定义颜色';
 
   @override
-  String get appColorSoftCoverDescription => '跟随正在播放书的封面，并做柔和处理';
+  String get appColorSoftCoverDescription => '跟随当前播放书籍的封面，并做柔和处理';
 
   @override
-  String get appColorTrueCoverDescription => '跟随正在播放书的封面，贴近其真实颜色';
+  String get appColorTrueCoverDescription => '跟随当前播放书籍的封面，贴近其真实颜色';
 
   @override
   String get appColorMineDescription => '使用你选定的单一颜色，不随播放内容变化';
+
+  @override
+  String get keepPlayingWithOtherAudio => '与其他音频同时播放';
+
+  @override
+  String get keepPlayingWithOtherAudioOnSubtitle => '其他应用开始播放音频时继续播放';
+
+  @override
+  String get keepPlayingWithOtherAudioOffSubtitle => '其他应用开始播放音频时暂停';
+
+  @override
+  String get iconColorsLabel => '图标颜色';
+
+  @override
+  String get iconColorsSubtitle => '使用应用强调色显示统计和设置中的图标。';
 }

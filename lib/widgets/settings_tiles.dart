@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'expressive.dart';
+import '../utils/icon_colors.dart';
 
 /// A settings section's row on the main settings list: the section's icon on
 /// a tinted tile, its name, and a line of what it's set to now. Opens the
@@ -9,6 +10,7 @@ class SettingsSectionTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? summary;
+  final Widget? trailing;
   final VoidCallback onTap;
 
   const SettingsSectionTile({
@@ -16,6 +18,7 @@ class SettingsSectionTile extends StatelessWidget {
     required this.icon,
     required this.title,
     this.summary,
+    this.trailing,
     required this.onTap,
   });
 
@@ -39,14 +42,20 @@ class SettingsSectionTile extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(12),
+              ValueListenableBuilder<bool>(
+                valueListenable: coloredIconsNotifier,
+                builder: (context, colored, _) => Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colored
+                        ? cs.primary.withValues(alpha: 0.12)
+                        : cs.onSurface.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon,
+                      color: colored ? cs.primary : cs.onSurface, size: 22),
                 ),
-                child: Icon(icon, color: cs.onSurface, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -67,6 +76,10 @@ class SettingsSectionTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ],
               Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
             ],
           ),
@@ -157,7 +170,7 @@ class SettingsGroup extends StatelessWidget {
     final n = children.length;
     if (n == 0) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -224,7 +237,12 @@ class SettingsTile extends StatelessWidget {
         child: Row(
           children: [
             if (icon != null) ...[
-              Icon(icon, color: cs.onSurfaceVariant, size: 22),
+              ValueListenableBuilder<bool>(
+                valueListenable: coloredIconsNotifier,
+                builder: (context, colored, _) => Icon(icon,
+                    color: colored ? cs.primary : cs.onSurfaceVariant,
+                    size: 22),
+              ),
               const SizedBox(width: 16),
             ],
             Expanded(

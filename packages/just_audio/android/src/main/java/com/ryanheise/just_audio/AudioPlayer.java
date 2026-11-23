@@ -50,6 +50,7 @@ import androidx.media3.exoplayer.dash.DashMediaSource; // Deprecated
 import androidx.media3.exoplayer.hls.HlsMediaSource; // Deprecated
 import androidx.media3.exoplayer.trackselection.TrackSelectionArray;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.cache.Cache;
@@ -95,6 +96,8 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     // cached spans survive a token re-sign instead of becoming a new entry.
     private static final String CACHE_KEY_HEADER = "X-Absorb-Cache-Key";
     private static File sCacheDir;
+    // Latest prefetch wins; an older one stops at its next chunk.
+    private static volatile int sPrefetchGeneration;
 
     @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
     static synchronized void configureCache(Context context, long maxBytes) {
@@ -120,6 +123,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
     @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
     static synchronized void releaseCache() {
+        sPrefetchGeneration++;
         if (sCache != null) {
             try { sCache.release(); } catch (Exception e) { /* ignore */ }
             sCache = null;
@@ -129,12 +133,96 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
     @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
     static synchronized void clearCache() {
+        sPrefetchGeneration++;
         if (sCache != null) {
             for (String key : new java.util.HashSet<>(sCache.getKeys())) {
                 sCache.removeResource(key);
             }
             Log.d(TAG, "Streaming cache cleared");
         }
+    }
+
+    /// Best-effort chapter prefetch into the shared streaming cache. The
+    /// player's later seek at the same URL and cache key can then read the
+    /// prefetched prefix instead of waiting for the same bytes over HTTP.
+    @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
+    static void prefetchToCache(
+        Context context,
+        String url,
+        Map<String, String> headers,
+        String cacheKey,
+        long bytes
+    ) {
+        if (sCache == null || url == null || url.isEmpty() || bytes <= 0) {
+            return;
+        }
+        final int generation = ++sPrefetchGeneration;
+        final Context appContext = context.getApplicationContext();
+        new Thread(() -> {
+            DataSource source = null;
+            final String path = Uri.parse(url).getPath();
+            final long startedAt = System.currentTimeMillis();
+            try {
+                Map<String, String> requestHeaders = headers == null
+                    ? new HashMap<>()
+                    : new HashMap<>(headers);
+                requestHeaders.remove(CACHE_KEY_HEADER);
+                requestHeaders.remove(CACHE_KEY_HEADER.toLowerCase());
+                requestHeaders.remove(BYPASS_CACHE_HEADER);
+                requestHeaders.remove(BYPASS_CACHE_HEADER.toLowerCase());
+                DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
+                    .setUserAgent("Absorb")
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(30000)
+                    .setReadTimeoutMs(30000);
+                if (!requestHeaders.isEmpty()) {
+                    http.setDefaultRequestProperties(requestHeaders);
+                }
+                CacheDataSource.Factory cacheFactory = new CacheDataSource.Factory()
+                    .setCache(sCache)
+                    .setUpstreamDataSourceFactory(new DefaultDataSource.Factory(appContext, http))
+                    .setCacheWriteDataSinkFactory(
+                        new CacheDataSink.Factory()
+                            .setCache(sCache)
+                            .setFragmentSize(256 * 1024))
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
+                if (cacheKey != null && !cacheKey.isEmpty()) {
+                    final String key = cacheKey;
+                    cacheFactory.setCacheKeyFactory(dataSpec -> key);
+                }
+                source = cacheFactory.createDataSource();
+                DataSpec spec = new DataSpec.Builder()
+                    .setUri(Uri.parse(url))
+                    .setPosition(0)
+                    .setLength(bytes)
+                    .setKey(cacheKey == null ? "" : cacheKey)
+                    .build();
+                source.open(spec);
+                byte[] buffer = new byte[64 * 1024];
+                long total = 0;
+                while (generation == sPrefetchGeneration) {
+                    int read = source.read(buffer, 0, buffer.length);
+                    if (read == -1) break;
+                    total += read;
+                    if (total >= bytes) break;
+                }
+            } catch (Exception e) {
+                android.util.Log.w(TAG, "Prefetch failed after "
+                    + (System.currentTimeMillis() - startedAt) + "ms for "
+                    + path + ": " + e.getMessage());
+            } finally {
+                if (source != null) {
+                    try { source.close(); } catch (Exception ignored) {}
+                }
+            }
+        }, "AbsorbChapterPrefetch").start();
+    }
+
+    /// Stop any in-flight chapter prefetch at its next chunk read. A new
+    /// play start gets the tunnel instead of a warm-up for a chapter the
+    /// listener is leaving.
+    static void cancelPrefetch() {
+        sPrefetchGeneration++;
     }
 
     private final Context context;

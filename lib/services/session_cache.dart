@@ -70,6 +70,8 @@ class SessionCache {
     required List<dynamic> audioTracks,
     required List<dynamic> chapters,
     required double totalDuration,
+    bool serverOrder = false,
+    int? playMethod,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -78,6 +80,11 @@ class SessionCache {
         'chapters': chapters,
         'totalDuration': totalDuration,
         'savedAt': DateTime.now().millisecondsSinceEpoch,
+        // audioTracks came from a full server session, so their index fields
+        // are the authoritative public-session track indexes (not local list
+        // positions). Only such a cache may drive a tokenless start.
+        'serverOrder': serverOrder,
+        if (playMethod != null) 'playMethod': playMethod,
       };
       await prefs.setString(_key(itemId, episodeId), jsonEncode(data));
     } catch (e) {

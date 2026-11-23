@@ -78,6 +78,25 @@ public class MainMethodCallHandler implements MethodCallHandler {
             result.success(null);
             break;
         }
+        case "prefetchToCache": {
+            String url = call.argument("url");
+            Map<String, String> headers = call.argument("headers");
+            String cacheKey = call.argument("cacheKey");
+            Number bytes = call.argument("bytes");
+            AudioPlayer.prefetchToCache(
+                applicationContext,
+                url,
+                headers,
+                cacheKey,
+                bytes == null ? 0L : bytes.longValue());
+            result.success(null);
+            break;
+        }
+        case "cancelPrefetch": {
+            AudioPlayer.cancelPrefetch();
+            result.success(null);
+            break;
+        }
 
         default:
             result.notImplemented();

@@ -1425,9 +1425,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       setState(() => _isLoading = false);
       return;
     }
-    final sw = Stopwatch()..start();
-    debugPrint('[StartTrace] home tap item=$itemId');
-
     // Check if this is a podcast with a recentEpisode
     final recentEpisode = widget.item['recentEpisode'] as Map<String, dynamic>?;
 
@@ -1455,11 +1452,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
                       as num?)
                   ?.toDouble() ??
               0;
-      debugPrint(
-        '[StartTrace] home podcast prep ${sw.elapsedMilliseconds}ms '
-        'inFlight=${api.backgroundItemFetchFor(itemId) != null}',
-      );
-
       final error = await widget.player.playItem(
         api: api,
         itemId: itemId,
@@ -1474,10 +1466,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         episodeTitle: episodeTitle,
         libraryId: widget.item['libraryId'] as String?,
         fromUi: true,
-      );
-      debugPrint(
-        '[StartTrace] home podcast playItem returned '
-        '${sw.elapsedMilliseconds}ms error=$error',
       );
       if (mounted) {
         if (error != null) showErrorToast(context, error);
@@ -1576,12 +1564,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
         0;
 
     // Start playback
-    debugPrint(
-      '[StartTrace] home book prep ${sw.elapsedMilliseconds}ms '
-      'chapters=${chapters.length} snapshot=${itemSnapshot != null} '
-      'inFlight=${api.backgroundItemFetchFor(itemId) != null} '
-      'local=${downloads.isDownloaded(itemId)}',
-    );
     final error = await widget.player.playItem(
       api: api,
       itemId: itemId,
@@ -1594,10 +1576,6 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       startTime: savedStart,
       libraryId: libraryId,
       fromUi: true,
-    );
-    debugPrint(
-      '[StartTrace] home book playItem returned '
-      '${sw.elapsedMilliseconds}ms error=$error',
     );
     if (error != null && mounted) showErrorToast(context, error);
     if (error == null && widget.player.chapters.isEmpty) {
@@ -1623,18 +1601,20 @@ class _ContinueListeningCardState extends State<_ContinueListeningCard> {
       try {
         final player = AudioPlayerService();
         final wait = Stopwatch()..start();
-        while (wait.elapsedMilliseconds < 30000 &&
-            player.isLoadingOrBuffering) {
+        while (wait.elapsedMilliseconds < 60000 &&
+            !player.backgroundItemFetchAllowed) {
           await Future<void>.delayed(const Duration(milliseconds: 500));
           if (player.currentItemId != itemId) return;
         }
-        if (player.currentItemId != itemId || player.isLoadingOrBuffering) {
+        if (player.currentItemId != itemId ||
+            !player.backgroundItemFetchAllowed) {
           return;
         }
         debugPrint('[BgTrace] backfill start settled $itemId');
         // Give the first seconds of audio room before the bulk read.
         await Future<void>.delayed(const Duration(seconds: 2));
-        if (player.currentItemId != itemId || player.isLoadingOrBuffering) {
+        if (player.currentItemId != itemId ||
+            !player.backgroundItemFetchAllowed) {
           return;
         }
         // The start's item leg may already have written the item cache; use

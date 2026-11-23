@@ -3429,7 +3429,7 @@ class AppLocalizationsRu extends AppLocalizations {
       'Covers, progress, streaming and leftovers. Clear each separately.';
 
   @override
-  String get clearCacheSheetTitle => 'Clear cache';
+  String get clearCacheSheetTitle => 'Cache cleanup';
 
   @override
   String get clearCacheSheetSubtitle =>
@@ -3451,7 +3451,7 @@ class AppLocalizationsRu extends AppLocalizations {
       'Recently streamed audio and ebook page blocks are cached locally to avoid re-downloading.';
 
   @override
-  String get clearAllCaches => 'Clear all';
+  String get clearAllCaches => 'Cache cleanup';
 
   @override
   String get clearAllCachesConfirm =>
@@ -16386,7 +16386,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cardSwipeStyleStack => 'Stack';
 
   @override
-  String get cardDismissStyle => 'Card removal animation';
+  String get cardDismissStyle => 'Card dismiss style';
 
   @override
   String get cardDismissStyleClassic => 'Fling';
@@ -16919,4 +16919,22 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get appColorMineDescription =>
       'One color you pick, whatever is playing';
+
+  @override
+  String get keepPlayingWithOtherAudio => 'Play with other audio';
+
+  @override
+  String get keepPlayingWithOtherAudioOnSubtitle =>
+      'Keeps playing when another app starts its own audio';
+
+  @override
+  String get keepPlayingWithOtherAudioOffSubtitle =>
+      'Pauses when another app starts its own audio';
+
+  @override
+  String get iconColorsLabel => 'Icon colors';
+
+  @override
+  String get iconColorsSubtitle =>
+      'Use the app accent color for icons in stats and settings.';
 }

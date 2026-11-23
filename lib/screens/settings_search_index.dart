@@ -30,9 +30,9 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     SettingSearchEntry('Appearance', l.sectionAppearance, l.rectangleBookCovers, [l.rectangleBookCoversOnSubtitle, l.rectangleBookCoversOffSubtitle]),
     SettingSearchEntry('Appearance', l.sectionAppearance, l.coverSize, [l.coverSizeSubtitle, l.coverSizeSmall, l.coverSizeMedium, l.coverSizeLarge]),
     SettingSearchEntry('Absorbing Cards', w.sectionAbsorbingCards, l.cardButtonFill, [l.cardButtonFillSubtitle, l.cardButtonFillClear, l.cardButtonFillSubtle, l.cardButtonFillSolid]),
-    SettingSearchEntry('General', l.sectionGeneral, 'Classic wording', const ['Using "Play", "Now Playing", "Finished"', 'Using "Absorb", "Absorbing", "Fully Absorbed"']),
+    SettingSearchEntry('General', l.sectionGeneral, l.wordingClassicTitle, [l.wordingClassicOnSubtitle, l.wordingClassicOffSubtitle]),
     if (!(AppPlatform.isIOS && MediaQuery.sizeOf(context).shortestSide >= 600))
-      SettingSearchEntry('General', l.sectionGeneral, 'Lock rotation', const ['Screen stays in portrait', 'Screen can rotate with the device']),
+      SettingSearchEntry('General', l.sectionGeneral, l.rotationLockTitle, [l.rotationLockOnSubtitle, l.rotationLockOffSubtitle]),
 
     // ── Customize Stats ──
     SettingSearchEntry('Customize Stats', l.settingsCustomizeStats, l.settingsStatsTab, [l.settingsStatsTabDesc, l.settingsOpenStats]),
@@ -148,13 +148,11 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     ],
 
     // ── Issues & Support ──
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.showTipsAgain, [l.showTipsAgainSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.joinDiscord, [l.joinDiscordSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.contact, [l.contactSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.sendLogs, [l.sendLogsSubtitle]),
-    SettingSearchEntry('Issues & Support', l.sectionIssuesAndSupport, l.clearLogs, const []),
+    SettingSearchEntry('About', l.aboutSection, l.showTipsAgain, [l.showTipsAgainSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.bugsAndFeatureRequests, [l.bugsAndFeatureRequestsSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.enableLogging, [l.enableLoggingOnSubtitle, l.enableLoggingOffSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.sendLogs, [l.sendLogsSubtitle]),
+    SettingSearchEntry('About', l.aboutSection, l.clearLogs, const []),
 
     // ── Advanced ──
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.navHoldSettingTitle, [l.navHoldSettingSubtitle]),
@@ -163,7 +161,7 @@ List<SettingSearchEntry> settingsSearchEntries(BuildContext context) {
     if (AppPlatform.isAndroid)
       SettingSearchEntry('Advanced', l.sectionAdvanced, l.mp3IndexSeeking, [l.mp3IndexSeekingOnSubtitle, l.mp3IndexSeekingOffSubtitle]),
     if (const bool.fromEnvironment('GITHUB_BUILD'))
-      SettingSearchEntry('Advanced', l.sectionAdvanced, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
+      SettingSearchEntry('About', l.aboutSection, l.includePreReleases, [l.includePreReleasesOnSubtitle, l.includePreReleasesOffSubtitle]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.adminRmab, [l.adminRmabConnected, l.adminRmabAskAdmin]),
     SettingSearchEntry('Advanced', l.sectionAdvanced, l.transcriptionTitle, [l.transcriptionAdvancedSubtitle, l.syncReadingListening]),
   ];

@@ -15,6 +15,7 @@ import '../services/device_time_zone.dart';
 import '../services/scoped_prefs.dart';
 import '../services/user_account_service.dart';
 import '../utils/desktop_workspace.dart';
+import '../utils/icon_colors.dart';
 import '../widgets/absorb_page_header.dart';
 import '../widgets/adaptive_modal.dart';
 import '../widgets/finished_books_this_year_sheet.dart';
@@ -91,10 +92,12 @@ class _StatsScreenState extends State<StatsScreen>
   bool _hasMoreSessions = true;
   bool _isLoadingMoreSessions = false;
   final ScrollController _scrollController = ScrollController();
+  final MenuController _yearMenu = MenuController();
 
   @override
   void initState() {
     super.initState();
+    coloredIconsNotifier.addListener(_onColoredIconsChanged);
     _animController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1200));
     _animValue =
@@ -145,6 +148,7 @@ class _StatsScreenState extends State<StatsScreen>
 
   @override
   void dispose() {
+    coloredIconsNotifier.removeListener(_onColoredIconsChanged);
     _scrollController.removeListener(_onScroll);
     PlayerSettings.settingsChanged.removeListener(_onSettingsChanged);
     _scrollController.dispose();
@@ -181,6 +185,10 @@ class _StatsScreenState extends State<StatsScreen>
   }
 
   void _onSettingsChanged() => _loadGoalSettings();
+
+  void _onColoredIconsChanged() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _loadGoalSettings() async {
     final minutes = <String, int>{
@@ -560,12 +568,14 @@ class _StatsScreenState extends State<StatsScreen>
               cs,
               Icons.local_fire_department_rounded,
               l.statsScreenStreakDays(streak),
-              l.statsCurrentStreak),
-          _statCard(tt, cs, Icons.emoji_events_rounded, l.statsScreenStreakDays(longestStreak), l.statsBestStreak),
-          _statCard(tt, cs, Icons.menu_book_rounded, '$_booksFinished', l.statsBooksFinished),
+              l.statsCurrentStreak,
+              accent: Colors.orange),
+          _statCard(tt, cs, Icons.emoji_events_rounded, l.statsScreenStreakDays(longestStreak), l.statsBestStreak, accent: Colors.amber.shade600),
+          _statCard(tt, cs, Icons.menu_book_rounded, '$_booksFinished', l.statsBooksFinished, accent: Colors.green),
           if (_episodesFinished > 0)
-            _statCard(tt, cs, Icons.podcasts_rounded, '$_episodesFinished', l.statsEpisodesFinished),
+            _statCard(tt, cs, Icons.podcasts_rounded, '$_episodesFinished', l.statsEpisodesFinished, accent: Colors.purple),
           _statCard(tt, cs, Icons.auto_stories_rounded, '$_booksFinishedThisYear', l.statsBooksThisYear,
+              accent: Colors.teal,
               onTap: _booksFinishedThisYear > 0
                   ? () async {
                       await showFinishedBooksThisYearSheet(context);
@@ -578,14 +588,15 @@ class _StatsScreenState extends State<StatsScreen>
                   : null),
           if (_episodesFinishedThisYear > 0)
             _statCard(tt, cs, Icons.graphic_eq_rounded, '$_episodesFinishedThisYear',
-                l.statsEpisodesThisYear),
-          _statCard(tt, cs, Icons.calendar_today_rounded, '$activeDays', l.statsDaysActive),
+                l.statsEpisodesThisYear, accent: Colors.deepPurple),
+          _statCard(tt, cs, Icons.calendar_today_rounded, '$activeDays', l.statsDaysActive, accent: cs.primary),
           _statCard(tt, cs, Icons.speed_rounded,
-              _formatDuration(avgDaily), l.statsDailyAverage),
+              _formatDuration(avgDaily), l.statsDailyAverage, accent: cs.tertiary),
           if (_timeSavedSeconds >= 60)
             _statCard(tt, cs, Icons.fast_forward_rounded,
                 _formatDuration(_timeSavedSeconds),
                 l.statsTimeSavedLabel,
+                accent: Colors.cyan,
                 subtitle: _timeSavedSince != null
                     ? l.statsTimeSavedSince(
                         MaterialLocalizations.of(context).formatMediumDate(_timeSavedSince!))
@@ -1006,7 +1017,7 @@ class _StatsScreenState extends State<StatsScreen>
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Icon(Icons.schedule_rounded, size: 18, color: cs.onSurfaceVariant),
+            child: Icon(Icons.schedule_rounded, size: 18, color: coloredIconsNotifier.value ? cs.tertiary : cs.onSurfaceVariant),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1227,7 +1238,7 @@ class _StatsScreenState extends State<StatsScreen>
         for (final s in sorted) ...[
           const SizedBox(height: 10),
           Row(children: [
-            Icon(_sourceIcon(s['bucket']), size: 16, color: cs.onSurfaceVariant),
+            Icon(_sourceIcon(s['bucket']), size: 16, color: coloredIconsNotifier.value ? cs.primary.withValues(alpha: 0.7) : cs.onSurfaceVariant),
             const SizedBox(width: 10),
             Expanded(
               child: Text(_sourceName(s['bucket']),
@@ -1294,24 +1305,104 @@ class _StatsScreenState extends State<StatsScreen>
     final years = [for (var y = thisYear; y >= thisYear - 6; y--) y];
     final header = Row(children: [
       Expanded(child: _sectionTitle(tt, cs, l.statsYearInReview)),
-      Container(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(10),
+      MenuAnchor(
+        controller: _yearMenu,
+        alignmentOffset: const Offset(0, 6),
+        style: MenuStyle(
+          alignment: AlignmentDirectional.bottomEnd,
+          backgroundColor: WidgetStatePropertyAll(cs.surfaceContainerHigh),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          elevation: const WidgetStatePropertyAll(8),
+          padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.3)),
+          )),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<int>(
-            value: _yirYear,
-            isDense: true,
-            borderRadius: BorderRadius.circular(12),
-            style: tt.bodyMedium?.copyWith(color: cs.onSurface),
-            items: [
-              for (final y in years) DropdownMenuItem(value: y, child: Text('$y')),
-            ],
-            onChanged: (y) {
-              if (y != null && y != _yirYear) _loadYearReview(y);
-            },
+        menuChildren: [
+          for (final y in years)
+            SizedBox(
+              width: 96,
+              child: MenuItemButton(
+                onPressed: () {
+                  _yearMenu.close();
+                  if (y != _yirYear) _loadYearReview(y);
+                },
+                style: MenuItemButton.styleFrom(
+                  backgroundColor: y == _yirYear
+                      ? cs.primary.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  foregroundColor: y == _yirYear ? cs.primary : cs.onSurface,
+                  overlayColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  minimumSize: const Size(96, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Row(children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: y == _yirYear
+                        ? Icon(Icons.check_rounded, size: 16, color: cs.primary)
+                        : null,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$y',
+                    style: tt.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: y == _yirYear
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: y == _yirYear ? cs.primary : cs.onSurface,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+        ],
+        builder: (context, controller, _) => InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: Container(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: ExcludeSemantics(
+              child: ExcludeFocus(
+                child: IgnorePointer(
+                  child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: _yirYear,
+                    isDense: true,
+                    borderRadius: BorderRadius.circular(12),
+                    style: tt.bodyMedium?.copyWith(color: cs.onSurface),
+                    selectedItemBuilder: (context) => [
+                      for (final y in years)
+                        Text('$y',
+                            style: tt.bodyMedium
+                                ?.copyWith(color: cs.onSurface)),
+                    ],
+                    items: [
+                      for (final y in years)
+                        DropdownMenuItem<int>(
+                          value: y,
+                          child: Text('$y'),
+                        ),
+                    ],
+                    onChanged: (_) {},
+                  ),
+                ),
+              ),
+              ),
+            ),
           ),
         ),
       ),
@@ -1372,32 +1463,32 @@ class _StatsScreenState extends State<StatsScreen>
       final readSeconds = (d['bookOrbitReadingTime'] as num?)?.toDouble();
       if (readSeconds != null) {
         body.add(Row(children: [
-          Expanded(child: _statCard(tt, cs, Icons.headphones_rounded, _formatDuration(totalSeconds), l.statsScreenListened)),
+          Expanded(child: _statCard(tt, cs, Icons.headphones_rounded, _formatDuration(totalSeconds), l.statsScreenListened, accent: cs.primary)),
           const SizedBox(width: 8),
-          Expanded(child: _statCard(tt, cs, Icons.auto_stories_rounded, _formatDuration(readSeconds), l.statsYearRead)),
+          Expanded(child: _statCard(tt, cs, Icons.auto_stories_rounded, _formatDuration(readSeconds), l.statsYearRead, accent: Colors.teal)),
         ]));
         body.add(const SizedBox(height: 8));
         body.add(Row(children: [
-          Expanded(child: _statCard(tt, cs, Icons.menu_book_rounded, '$finished', l.statsYirBooksFinished)),
+          Expanded(child: _statCard(tt, cs, Icons.menu_book_rounded, '$finished', l.statsYirBooksFinished, accent: Colors.green)),
           const SizedBox(width: 8),
-          Expanded(child: _statCard(tt, cs, Icons.play_circle_outline_rounded, '$sessions', l.statsYirSessions)),
+          Expanded(child: _statCard(tt, cs, Icons.play_circle_outline_rounded, '$sessions', l.statsYirSessions, accent: cs.tertiary)),
         ]));
         body.add(const SizedBox(height: 8));
         body.add(Row(children: [
-          Expanded(child: _statCard(tt, cs, Icons.calendar_today_rounded, '${(d['bookOrbitActiveDays'] as num?)?.toInt() ?? 0}', l.statsDaysActive)),
+          Expanded(child: _statCard(tt, cs, Icons.calendar_today_rounded, '${(d['bookOrbitActiveDays'] as num?)?.toInt() ?? 0}', l.statsDaysActive, accent: cs.primary)),
           const Expanded(child: SizedBox.shrink()),
         ]));
       } else {
         body.add(Row(children: [
-          Expanded(child: _statCard(tt, cs, Icons.headphones_rounded, _formatDuration(totalSeconds), l.statsScreenListened)),
+          Expanded(child: _statCard(tt, cs, Icons.headphones_rounded, _formatDuration(totalSeconds), l.statsScreenListened, accent: cs.primary)),
           const SizedBox(width: 8),
-          Expanded(child: _statCard(tt, cs, Icons.menu_book_rounded, '$finished', l.statsYirBooksFinished)),
+          Expanded(child: _statCard(tt, cs, Icons.menu_book_rounded, '$finished', l.statsYirBooksFinished, accent: Colors.green)),
         ]));
         body.add(const SizedBox(height: 8));
         body.add(Row(children: [
-          Expanded(child: _statCard(tt, cs, Icons.play_circle_outline_rounded, '$sessions', l.statsYirSessions)),
+          Expanded(child: _statCard(tt, cs, Icons.play_circle_outline_rounded, '$sessions', l.statsYirSessions, accent: cs.tertiary)),
           const SizedBox(width: 8),
-          Expanded(child: _statCard(tt, cs, Icons.library_books_rounded, '$listened', l.statsYirBooksListened)),
+          Expanded(child: _statCard(tt, cs, Icons.library_books_rounded, '$listened', l.statsYirBooksListened, accent: Colors.teal)),
         ]));
       }
       body.add(const SizedBox(height: 14));
@@ -1440,7 +1531,7 @@ class _StatsScreenState extends State<StatsScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       child: LayoutBuilder(builder: (context, c) => Row(children: [
-        Icon(icon, size: 18, color: cs.onSurfaceVariant),
+        Icon(icon, size: 18, color: coloredIconsNotifier.value ? cs.primary.withValues(alpha: 0.7) : cs.onSurfaceVariant),
         const SizedBox(width: 12),
         // A long label gives way before it pushes the value off the card.
         ConstrainedBox(
@@ -1868,7 +1959,11 @@ class _StatsScreenState extends State<StatsScreen>
 
   Widget _statCard(TextTheme tt, ColorScheme cs, IconData icon,
       String value, String label,
-      {VoidCallback? onTap, String? subtitle, Widget? trailing}) {
+      {Color? accent,
+      VoidCallback? onTap,
+      String? subtitle,
+      Widget? trailing}) {
+    final tint = coloredIconsNotifier.value ? accent : null;
     final isTappable = onTap != null;
     final card = Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
@@ -1883,10 +1978,18 @@ class _StatsScreenState extends State<StatsScreen>
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
+            color: tint == null
+                ? cs.surfaceContainerHighest
+                : tint.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: cs.onSurfaceVariant, size: 18),
+          child: Icon(
+            icon,
+            color: tint == null
+                ? cs.onSurfaceVariant
+                : tint.withValues(alpha: 0.8),
+            size: 18,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(

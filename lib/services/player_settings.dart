@@ -1559,9 +1559,8 @@ class PlayerSettings {
     'Sleep Timer',
     'Downloads & Storage',
     'Library',
-    'Permissions',
-    'Issues & Support',
     'Advanced',
+    'About',
   ];
 
   static Future<List<String>> getSettingsSectionOrder() async {
@@ -1719,6 +1718,10 @@ class PlayerSettings {
   /// absorbing card background) instead of each book's cover color.
   static Future<bool> getUseColorEverywhere() => _get('useColorEverywhere', false);
   static Future<void> setUseColorEverywhere(bool v) => _set('useColorEverywhere', v);
+
+  /// Accent-colored icons in stats and settings instead of neutral gray.
+  static Future<bool> getColoredIcons() => _get('coloredIcons', true);
+  static Future<void> setColoredIcons(bool v) => _set('coloredIcons', v);
 
   /// Cover colors kept as close to the cover as the theme allows, instead of
   /// the softer default.
