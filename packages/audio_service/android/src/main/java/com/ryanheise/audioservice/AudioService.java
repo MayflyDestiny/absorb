@@ -5,6 +5,7 @@ import android.app.ApplicationExitInfo;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.service.notification.StatusBarNotification;
 import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Context;
@@ -109,6 +110,10 @@ public class AudioService extends MediaBrowserServiceCompat {
             | PlaybackStateCompat.ACTION_SET_CAPTIONING_ENABLED;
 
     static AudioService instance;
+    // Absorb patch: kept across onDestroy() so a request that arrives after the
+    // service was recycled (ROM cleanup) can still start it again. The service
+    // itself can't be used as the Context once it is destroyed.
+    static Context appContext;
     private static PendingIntent contentIntent;
     private static ServiceListener listener;
     private static List<MediaSessionCompat.QueueItem> queue = new ArrayList<>();
@@ -539,6 +544,7 @@ public class AudioService extends MediaBrowserServiceCompat {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        appContext = getApplicationContext();
         readLastExit();
         // Absorb patch: if this is a recreated service (a previous instance's
         // onDestroy nulled the listener), re-register the existing handler so
@@ -1017,6 +1023,60 @@ public class AudioService extends MediaBrowserServiceCompat {
     private void internalStartForeground() {
         startForeground(NOTIFICATION_ID, buildNotification());
         notificationCreated = true;
+    }
+
+    /**
+     * Absorb patch: force the media notification back onto the foreground
+     * service. setState()/setMetadata() only *update* an existing record, so
+     * once the system removed it (ROM background cleanup, doze) nothing
+     * re-creates it: audio keeps playing while the shade stays empty.
+     * startForeground() is idempotent and re-posts the same notification.
+     *
+     * Note it only helps a *missing* record. A card the user swiped off leaves
+     * the record in place (which is why "ok" comes back) while SystemUI keeps
+     * the item dismissed; that case is handled on the Dart side by
+     * republishing a paused state just before returning to playing.
+     *
+     * Reports what actually happened rather than what was attempted: "ok" is
+     * only returned when the notification is really in the active list, so a
+     * caller can tell "we re-posted it" from "the system accepted and dropped
+     * it" (key-level suppression, channel blocked).
+     *
+     * @return ok | ok-not-visible | no-session | fail:*
+     */
+    public String restoreNotification() {
+        if (mediaSession == null) return "no-session";
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) createChannel();
+            if (!mediaSession.isActive()) mediaSession.setActive(true);
+            if (contentIntent != null) mediaSession.setSessionActivity(contentIntent);
+            ContextCompat.startForegroundService(this, new Intent(AudioService.this, AudioService.class));
+            internalStartForeground();
+        } catch (Exception e) {
+            Log.w("AudioService", "restoreNotification failed", e);
+            return "fail:" + e.getClass().getSimpleName();
+        }
+        if (!notificationVisible()) return "ok-not-visible";
+        return "ok";
+    }
+
+    /**
+     * Whether our notification is in the NotificationManager's active list.
+     * This is the only honest answer to "did the card come back": startForeground
+     * returning normally says nothing when the system suppresses the key or the
+     * channel is blocked.
+     */
+    private boolean notificationVisible() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+        try {
+            for (StatusBarNotification sbn : getNotificationManager().getActiveNotifications()) {
+                if (sbn.getId() == NOTIFICATION_ID) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            // Never let a diagnostic change behaviour: unknown reads as visible.
+            return true;
+        }
     }
 
     private void acquireWakeLock() {

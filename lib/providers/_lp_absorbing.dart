@@ -2415,7 +2415,7 @@ mixin _AbsorbingMixin on ChangeNotifier, _StateMixin, _CoreMixin {
     final nextSeq = candidates.keys.toList()..sort();
     skippedFinished.sort();
     debugPrint('[Queue] Up next in series after seq $currentSeq: '
-        '${nextSeq.isEmpty ? 'nothing' : 'seq ${nextSeq.first} "${_entryTitle(candidates[nextSeq.first]!)}"'} '
+        '${nextSeq.isEmpty ? 'nothing' : 'seq ${nextSeq.first} title="${_entryTitle(candidates[nextSeq.first]!)}"'} '
         '(server list=$usedServerList, finished skipped: '
         '${skippedFinished.isEmpty ? 'none' : skippedFinished.take(8).join(', ')})');
     if (candidates.isEmpty) return null;

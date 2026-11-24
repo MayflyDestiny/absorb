@@ -218,7 +218,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           }
         }
         if (name != null && name.isNotEmpty) {
-          debugPrint('[AutoDL] Resolved $id -> $kind "$name"');
+          debugPrint('[AutoDL] Resolved $id -> $kind title="$name"');
           _rememberRollingDownloadSource(id, name: name, kind: kind);
           resolvedAny = true;
         } else {
@@ -1344,7 +1344,19 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
             debugPrint('[Progress] locallyFinished before cleanup: $_locallyFinishedItems');
           }
           if (_localProgressOverrides.isNotEmpty) {
-            debugPrint('[Progress] localOverrides before cleanup: ${_localProgressOverrides.keys.toList()}');
+            final overrides = _localProgressOverrides.keys.toList();
+            // Count + a sample instead of the whole list: this fires on every
+            // foreground and the full form is 20+ UUIDs (~600 chars). What the
+            // line is for is "did cleanup leak / is the set growing", which the
+            // count answers; every id only when it looks abnormal.
+            debugPrint(
+              '[Progress] localOverrides ${overrides.length}: '
+              '${overrides.take(3).join(', ')}'
+              '${overrides.length > 3 ? ', …' : ''}',
+            );
+            if (overrides.length > 40) {
+              debugPrint('[Progress] localOverrides FULL: $overrides');
+            }
           }
           _locallyFinishedItems.removeWhere((key) {
             final serverData = _progressMap[key];
@@ -2987,8 +2999,12 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       _mergeProgressShelves(sections);
       await (this as _AbsorbingMixin)._updateAbsorbingCache();
       notifyListeners();
-      debugPrint(
-          '[Library] refreshProgressShelves reason=$reason sections=${sections.length}');
+      // Silent on success - the matching [NET] GET line already proves the
+      // request landed. An empty result is the case worth a line: the shelf the
+      // user is about to look at would be blank.
+      if (sections.isEmpty) {
+        debugPrint('[Library] refreshProgressShelves empty ($reason)');
+      }
     } catch (e) {
       debugPrint('[Library] refreshProgressShelves error ($reason): $e');
     }
@@ -4317,6 +4333,33 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
   // Alpha [QueueDL]: every exit from this function used to be silent, so a
   // queue auto-download that never fired looked identical to one that never
   // ran. Each return now names the gate that stopped it. Strip before beta.
+  //
+  // The "queue mode is off" gate is the one that repeats: it answers the same
+  // thing on every check (a couple of lines every ~10s while paused). It is
+  // collapsed to one line per 5 min carrying the repeat count - "never started,
+  // because queue mode is off" stays visible without the spool.
+  int _queueDlOffRepeats = 0;
+  DateTime? _queueDlOffLastLogAt;
+
+  void _logQueueDlOff(
+    String key,
+    bool isPodcastKey,
+    String bookMode,
+    String podcastMode,
+  ) {
+    _queueDlOffRepeats++;
+    final now = DateTime.now();
+    final last = _queueDlOffLastLogAt;
+    if (last != null && now.difference(last).inMinutes < 5) return;
+    final repeats = _queueDlOffRepeats > 1 ? ' ×$_queueDlOffRepeats' : '';
+    debugPrint(
+      '[QueueDL] off$repeats (key=$key isPodcast=$isPodcastKey '
+      'book=$bookMode podcast=$podcastMode)',
+    );
+    _queueDlOffRepeats = 0;
+    _queueDlOffLastLogAt = now;
+  }
+
   Future<void> _checkQueueAutoDownloads(String playingKey) async {
     try {
       final self = this as LibraryProvider;
@@ -4368,7 +4411,6 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
         return true;
       }
 
-      debugPrint('[QueueDL] check start key=$playingKey');
       if (stop('start')) return;
       final isPodcastKey = playingKey.length > 36;
       final bookMode = await PlayerSettings.getBookQueueMode();
@@ -4379,8 +4421,7 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
       if (stop('read merge setting')) return;
       final queueMode = isPodcastKey ? podcastMode : bookMode;
       if (queueMode == 'off') {
-        debugPrint(
-            '[QueueDL] stop: queue mode is off (isPodcastKey=$isPodcastKey book=$bookMode podcast=$podcastMode)');
+        _logQueueDlOff(playingKey, isPodcastKey, bookMode, podcastMode);
         return;
       }
       final queueSourceId = queueMode == 'playlist'

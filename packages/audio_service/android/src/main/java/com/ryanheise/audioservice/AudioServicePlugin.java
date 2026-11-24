@@ -1062,6 +1062,30 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
                     result.success(null);
                     break;
                 }
+                // Absorb patch: the Dart side asks for a forced re-post when the
+                // media card has vanished while playback stayed alive. Returns a
+                // status string so the caller's log says which failure it was
+                // instead of failing silently inside a notification update.
+                case "restoreNotification": {
+                    if (AudioService.instance != null) {
+                        result.success(AudioService.instance.restoreNotification());
+                    } else if (AudioService.appContext != null) {
+                        // Service recycled (ROM cleanup): start the component again
+                        // so onCreate() rebuilds the MediaSession. A plain
+                        // startService - startForegroundService would demand
+                        // startForeground() within 5s, which nothing guarantees here.
+                        try {
+                            AudioService.appContext.startService(new Intent(
+                                    AudioService.appContext, AudioService.class));
+                            result.success("restarted");
+                        } catch (Exception e) {
+                            result.success("restart-failed:" + e.getClass().getSimpleName());
+                        }
+                    } else {
+                        result.success("no-context");
+                    }
+                    break;
+                }
                 case "stopService": {
                     if (AudioService.instance != null) {
                         AudioService.instance.stop();

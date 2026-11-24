@@ -820,10 +820,9 @@ class SleepTimerService extends ChangeNotifier {
   Future<void> checkAutoSleep() async {
     if (_autoSleepSettings == null) await loadAutoSleepSettings();
     final settings = _autoSleepSettings;
-    if (settings == null || !settings.enabled) {
-      debugPrint('[SleepTimer] checkAutoSleep: disabled or no settings');
-      return;
-    }
+    // Disabled is the normal state for most people, and this runs on every
+    // play/resume/foreground: stay silent rather than repeat one line each time.
+    if (settings == null || !settings.enabled) return;
 
     final inWindow = settings.isInWindow();
     debugPrint('[SleepTimer] checkAutoSleep: inWindow=$inWindow isActive=$isActive dismissed=$_autoSleepDismissed autoStarted=$_autoStarted');

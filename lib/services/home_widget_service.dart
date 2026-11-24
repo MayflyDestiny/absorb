@@ -1170,9 +1170,9 @@ class HomeWidgetService {
     if (!force && _lastStatsFetch != null) {
       final since = DateTime.now().difference(_lastStatsFetch!);
       if (since < _statsThrottle) {
-        debugPrint(
-          '[StatsWidget] Skipping refresh: ${since.inSeconds}s since last (throttle=${_statsThrottle.inSeconds}s)',
-        );
+        // Deliberately silent: "throttled" is the normal answer for most calls
+        // and says nothing happened. The refreshes that do run, and the ones
+        // that fail, still log.
         return;
       }
     }

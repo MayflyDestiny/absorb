@@ -379,7 +379,6 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   DateTime _lastPlaybackStateUpdate = DateTime.now();
   bool? _lastPlaying;
   ProcessingState? _lastProcessingState;
-
   // Brief "Saved" flash on the Android Auto bookmark button after a save.
   bool _bookmarkSavedFlash = false;
   Timer? _bookmarkFlashTimer;
@@ -827,11 +826,42 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     // listener still wants the card, so put a paused one back; in the
     // background leave it alone and let the foreground path restore it.
     final service = _service;
-    if (service != null &&
+    final canRestore =
+        service != null &&
         service._currentItemId != null &&
-        !service._isBackgrounded) {
+        !service._isBackgrounded;
+    if (canRestore) {
       service._restoreMediaSession(reason: 'handler-stop');
+    } else {
+      // Nothing puts the card back until the next foreground, and that is the
+      // window where "audio plays, shade stays empty" used to happen. Say so:
+      // without this line a swipe left no trace in the log at all.
+      debugPrint(
+        '[Handler] stop() - media card left dismissed '
+        '(bg=${service?._isBackgrounded}, hasItem=${service?._currentItemId != null})',
+      );
     }
+  }
+
+  /// The user (or the ROM) dismissed the media card. The base handler answers
+  /// by calling [stop]; log it first, otherwise a swipe is invisible in an
+  /// exported log and the "card never came back" report cannot be traced.
+  ///
+  /// Deliberately NOT [stop]: stop() drops the source, so the next Play has to
+  /// rebuild and re-push everything. Keeping it means a resume is the plain
+  /// PAUSED -> PLAYING flip the resume path already publishes.
+  ///
+  /// This callback is NOT a reliable "the card was swiped" signal: it answers
+  /// the notification delete intent, which Android 13+ does not send for the
+  /// SystemUI media card (measured: zero deliveries across four exported logs
+  /// in which the card was swiped repeatedly). Recovery does not depend on it -
+  /// see the quick-resume blip in the resume path.
+  @override
+  Future<void> onNotificationDeleted() async {
+    debugPrint('[Handler] onNotificationDeleted - media card dismissed');
+    // Not stop(): dropping the source would force the next Play to rebuild and
+    // re-push everything. Recovery lives in the resume path and never waits on
+    // this callback firing.
   }
 
   /// Dismiss the media notification after the user removed the current book
@@ -1686,7 +1716,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     }
 
     debugPrint(
-      '[Handler] Android Auto play: "${entry.title}" by ${entry.author}',
+      '[Handler] Android Auto play: title="${entry.title}" author="${entry.author}"',
     );
 
     // Always generate a fresh HTTP cover URL for Now Playing — api is
@@ -1868,6 +1898,10 @@ class AudioPlayerService extends ChangeNotifier {
   ApiService? _api;
   ApiService? get currentApi => _api;
   String? _playbackSessionId;
+  // A pause-timeout close is in flight: the id is still set (the sync below
+  // needs it) but the session is on its way out, so the foreground refresh must
+  // not read it as "still alive" and skip its recovery branch.
+  bool _sessionClosing = false;
   // A full /play is opening behind playback. Presence stats must not open a
   // second session while this is in flight: the server closes the older one.
   int _fullSessionInFlight = 0;
@@ -3644,12 +3678,22 @@ class AudioPlayerService extends ChangeNotifier {
     if (info != null) debugPrint('[Init] Previous process exit: $info');
   }
 
+  /// Values (minus position/buffer) of the last AudioDiag line actually
+  /// printed, so the intermediate samples can stay silent while nothing moves.
+  String? _lastAudioDiagSignature;
+
   Future<void> _logAudioDiagnostics(String stage) async {
     try {
       final p = _player;
       final pos = p?.position;
       final dur = p?.duration;
       final buffered = p?.bufferedPosition;
+      // Eight hex chars tell two books apart and keep this 290-char sample
+      // readable; the full UUID is already in [Handler] mediaItem.add.
+      final itemId = _currentItemId;
+      final shortId = itemId == null
+          ? 'null'
+          : (itemId.length <= 8 ? itemId : itemId.substring(0, 8));
       final pieces = <String>[
         'stage=$stage',
         'playing=${p?.playing}',
@@ -3659,8 +3703,8 @@ class AudioPlayerService extends ChangeNotifier {
         'pos=${pos != null ? "${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
         'dur=${dur != null ? "${(dur.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
         'buf=${buffered != null ? "${(buffered.inMilliseconds / 1000.0).toStringAsFixed(1)}s" : "null"}',
-        'item=$_currentItemId',
-        'ep=$_currentEpisodeId',
+        'item=$shortId',
+        if (_currentEpisodeId != null) 'ep=$_currentEpisodeId',
       ];
 
       if (Platform.isAndroid) {
@@ -3707,6 +3751,21 @@ class AudioPlayerService extends ChangeNotifier {
         }
       }
 
+      // Sampling budget: t0 and t10s always land (start fingerprint + settled
+      // state); the intermediate t3s only when something actually moved.
+      // A stuck route/volume shows up in the t0 vs t10s pair anyway.
+      final signature = pieces
+          .where(
+            (s) =>
+                !s.startsWith('stage=') &&
+                !s.startsWith('pos=') &&
+                !s.startsWith('dur=') &&
+                !s.startsWith('buf='),
+          )
+          .join(' ');
+      final edge = stage.endsWith(':t0') || stage.endsWith(':t10s');
+      if (!edge && signature == _lastAudioDiagSignature) return;
+      _lastAudioDiagSignature = signature;
       debugPrint('[AudioDiag] ${pieces.join(' ')}');
     } catch (e) {
       debugPrint('[AudioDiag] log failed: $e');
@@ -3715,13 +3774,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Schedule a sequence of diagnostic snapshots after starting playback so
   /// we can see whether state advanced as expected ("playing then
-  /// position-stuck-at-0" is a classic no-sound fingerprint).
+  /// position-stuck-at-0" is a classic no-sound fingerprint). t0 is the start
+  /// fingerprint, t10s the settled one, t3s the midpoint; the old t1s sample
+  /// was dropped - its route always reads `[none]` because the output is still
+  /// being picked, so it repeated the same story 1s earlier.
   void _scheduleAudioDiagnostics(String startStage) {
     _logAudioDiagnostics('$startStage:t0');
-    Future.delayed(
-      const Duration(seconds: 1),
-      () => _logAudioDiagnostics('$startStage:t1s'),
-    );
     Future.delayed(
       const Duration(seconds: 3),
       () => _logAudioDiagnostics('$startStage:t3s'),
@@ -4266,25 +4324,30 @@ class AudioPlayerService extends ChangeNotifier {
 
     // Debug aid: log the chapter the seek lands in so a slow buffering switch
     // (stale position until ready) can be verified against the log.
+    // Which chapter the target lands in is logged on the seek line below
+    // instead of on its own, so one resume costs one line rather than two.
+    // Bounds only: the title is the user's own content and must not travel in
+    // a log they might share.
+    String? chapterRange;
     if (_chapters.isNotEmpty) {
       for (final ch0 in _chapters) {
         final m = ch0 as Map<String, dynamic>;
         final s = (m['start'] as num?)?.toDouble() ?? 0;
         final e = (m['end'] as num?)?.toDouble() ?? _totalDuration;
         if (absoluteSeconds >= s && absoluteSeconds < e) {
-          // Chapter bounds only: the title is the user's own content and must
-          // not travel in a log they might share.
-          debugPrint(
-            '[Player] Seek chapter → ${s.toStringAsFixed(0)}s'
-            '–${e.toStringAsFixed(0)}s',
-          );
+          chapterRange = '${s.toStringAsFixed(0)}s–${e.toStringAsFixed(0)}s';
           break;
         }
       }
     }
+    final chapterSuffix = chapterRange == null ? '' : ' chapter=$chapterRange';
 
     if (_trackStartOffsets.length <= 1) {
       // Single file — seek directly
+      debugPrint(
+        '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s'
+        '$chapterSuffix',
+      );
       await _player!
           .seek(Duration(milliseconds: (absoluteSeconds * 1000).round()))
           .timeout(_seekCap, onTimeout: _seekTimedOut);
@@ -4305,7 +4368,7 @@ class AudioPlayerService extends ChangeNotifier {
     debugPrint(
       '[Player] Seek ${absoluteSeconds.toStringAsFixed(1)}s -> track $target '
       'at ${localOffset.toStringAsFixed(1)}s '
-      '(${_trackStartOffsets.length - 1} tracks)',
+      '(${_trackStartOffsets.length - 1} tracks)$chapterSuffix',
     );
     // Update index BEFORE seeking so positionStream events use the right offset
     _currentTrackIndex = target;
@@ -5010,7 +5073,8 @@ class AudioPlayerService extends ChangeNotifier {
         );
       } catch (_) {}
     }
-    final sessionAlive = service._playbackSessionId != null;
+    final sessionAlive =
+        service._playbackSessionId != null && !service._sessionClosing;
     debugPrint(
       '[MediaSession] Foregrounded - refreshing (playing=${service.isPlaying}, session=$sessionAlive, item=${service._currentItemId})',
     );
@@ -9422,6 +9486,16 @@ class AudioPlayerService extends ChangeNotifier {
   /// whose notification survives a long background.
   void _restoreMediaSession({required String reason}) {
     if (_currentItemId == null) return;
+    // No line of its own: the push already logs as [Handler] mediaItem.add and
+    // the native answer comes back as restoreNotification(...) → …. One
+    // foreground refresh used to cost three lines to say that.
+    _pushCurrentMediaSession();
+    _ensureNotificationVisible(reason);
+  }
+
+  /// The media item + playback state push on its own, without the notification
+  /// re-post: also used by the retry that follows a service restart.
+  void _pushCurrentMediaSession() {
     final chapterTitle =
         _lastNotifiedChapterIndex >= 0 && _chapters.isNotEmpty
         ? (_chapters[_lastNotifiedChapterIndex] as Map<String, dynamic>)['title']
@@ -9436,7 +9510,36 @@ class AudioPlayerService extends ChangeNotifier {
       chapter: chapterTitle,
     );
     _handler?.refreshPlaybackState();
-    debugPrint('[MediaSession] Re-pushed media item and playback state ($reason)');
+  }
+
+  /// Both pushes above only *update* the notification record. When the system
+  /// removed the media card (ROM background cleanup / doze) there is nothing to
+  /// update: audio keeps playing and the shade stays empty until the app is
+  /// restarted, because the only code that re-creates the notification lives on
+  /// the native side. Ask it for a forced startForeground(), and when it answers
+  /// "restarted" the service was gone - the push we just made went to the dead
+  /// instance, so repeat it once against the fresh one.
+  void _ensureNotificationVisible(String reason, {bool retried = false}) {
+    if (!Platform.isAndroid) return;
+    AudioPlayerHandler._nativeHandlerChannel.invokeMethod<String>(
+      'restoreNotification',
+    ).then((r) {
+      debugPrint('[MediaSession] restoreNotification($reason) → $r');
+      if (r != 'restarted' || retried) return;
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (_currentItemId == null || _isBackgrounded) return;
+        // The fresh instance has no metadata yet, so push the item first. Then
+        // ask for the notification again: a push alone cannot create one while
+        // paused, because updateNotification() is gated on notificationCreated
+        // and a brand-new service has never posted. retried caps this at one
+        // extra attempt.
+        _pushCurrentMediaSession();
+        _ensureNotificationVisible(reason, retried: true);
+        debugPrint('[MediaSession] Re-pushed after service restart ($reason)');
+      });
+    }).catchError((e) {
+      debugPrint('[MediaSession] restoreNotification failed: $e');
+    });
   }
 
   void _pushMediaItem(
@@ -9449,13 +9552,11 @@ class AudioPlayerService extends ChangeNotifier {
     int? coverCacheBust,
     double? positionSec,
   }) {
-    // Alpha [PodDur]: trace every push-site. We want to see which callers
-    // pass only the parent itemId (missing -episodeId suffix) and/or a zero
-    // duration, so we can pinpoint what to fix for the AA podcast progress
-    // bar. Includes the current _totalDuration so "stale 0" paths are visible.
-    debugPrint(
-      '[PodDur] _pushMediaItem: itemId=$itemId ep=$_currentEpisodeId argDur=${totalDuration.toStringAsFixed(1)}s _totalDuration=${_totalDuration.toStringAsFixed(1)}s',
-    );
+    // [PodDur] used to log its own line here. Folded into the
+    // '[Handler] mediaItem.add' line below: that one already carries item,
+    // title, dur, chapter and art, and the only extra piece this site had -
+    // "argDur vs _totalDuration" - is now appended there but ONLY when the
+    // two disagree (the stale-0 / wrong-duration case it was written for).
     // Android: Always use content:// URI for Now Playing artwork - some OEMs
     // (e.g. Vivo) don't load HTTP URLs in MediaSession. The CoverContentProvider
     // handles both downloaded and streamed covers.
@@ -9776,9 +9877,16 @@ class AudioPlayerService extends ChangeNotifier {
     // Alpha: confirms MediaItem metadata flowing to MediaSession for GH #172
     // (BT car display stuck on prior chapter). If this fires with fresh
     // artist/chapter text but the car still shows old, the issue is downstream
-    // of audio_service's MediaSession push.
+    // of audio_service's MediaSession push. Carries the old [PodDur] fields:
+    // ep=, and argDur vs _totalDuration - but only when they disagree, which is
+    // the stale-0 / wrong-duration case that trace existed to catch.
+    final durMismatch = (totalDuration - _totalDuration).abs() >= 0.05;
     debugPrint(
-      '[Handler] mediaItem.add: item=$itemId title="${labels.title}" artist="${labels.subtitle}" dur=${displayDuration.round()}s chapter=$chapter hasHandler=${_handler != null} art=${coverUrl == null
+      '[Handler] mediaItem.add: item=$itemId'
+      '${_currentEpisodeId != null ? ' ep=$_currentEpisodeId' : ''}'
+      ' title="${labels.title}" artist="${labels.subtitle}" dur=${displayDuration.round()}s'
+      ' chapter=${chapter == null || chapter.isEmpty ? 'none' : '"$chapter"'}'
+      ' hasHandler=${_handler != null} art=${coverUrl == null
           ? 'none'
           : coverUrl.startsWith('content:')
           ? 'content'
@@ -9786,7 +9894,8 @@ class AudioPlayerService extends ChangeNotifier {
           ? 'file'
           : coverUrl.startsWith('http')
           ? 'http'
-          : 'other'}',
+          : 'other'}'
+      '${durMismatch ? ' ⚠argDur=${totalDuration.toStringAsFixed(1)}s≠_totalDuration=${_totalDuration.toStringAsFixed(1)}s' : ''}',
     );
     _handler!.mediaItem.add(
       MediaItem(
@@ -10741,7 +10850,8 @@ class AudioPlayerService extends ChangeNotifier {
 
           if (chapterIdx >= 0 && chapterIdx != _lastNotifiedChapterIndex) {
             debugPrint(
-              '[Battery] Chapter change: idx=$chapterIdx "$chapterTitle" at ${posSec.toStringAsFixed(1)}s',
+              '[Battery] Chapter change: idx=$chapterIdx chapterTitle="$chapterTitle" '
+              'at ${posSec.toStringAsFixed(1)}s',
             );
             _lastNotifiedChapterIndex = chapterIdx;
             _currentChapterStart = chapterStart;
@@ -12859,10 +12969,51 @@ class AudioPlayerService extends ChangeNotifier {
     // fresh PlaybackState push (which flips the session from paused to playing and
     // re-enters the foreground) and re-push the media item metadata.
     _handler?.refreshPlaybackState();
+    // A card swiped away while paused only comes back when SystemUI sees a
+    // *new* playback land after it has finished settling that dismissal. A
+    // quick pause/play - swipe the card off, hit play a second later - falls
+    // inside that window, so the playing flip above is dropped and the shade
+    // stays empty until the user pauses and plays once more by hand. Give it a
+    // settled second chance for that case only: republish the paused state and
+    // return to playing 120ms later. Audio is untouched - only the state we
+    // report dips, and only for a resume this fast.
+    final quickResume =
+        pausedFor != null && pausedFor < const Duration(seconds: 5);
     Future.delayed(const Duration(milliseconds: 500), () {
-      _handler?.refreshPlaybackState();
+      final h = _handler;
+      if (h == null) return;
+      if (!quickResume || !h.playbackState.value.playing) {
+        h.refreshPlaybackState();
+        return;
+      }
+      h.playbackState.add(
+        h.playbackState.value.copyWith(
+          playing: false,
+          processingState: AudioProcessingState.ready,
+        ),
+      );
+      Future.delayed(const Duration(milliseconds: 120), () {
+        if (_currentItemId == null) return;
+        _handler?.refreshPlaybackState();
+        // Only the completion is logged: it is the one that proves the blip ran
+        // to the end. If the listener pauses again inside the 500ms window no
+        // blip happens and there is nothing to report.
+        debugPrint(
+          '[MediaSession] quick-resume blip (paused ${pausedFor.inSeconds}s)',
+        );
+      });
     });
-    if (_currentItemId != null && _currentTitle != null) {
+    // This call compensates for one specific thing: a pause long enough for
+    // Doze to throttle the just_audio event stream, so playing=true may never
+    // reach the MediaSession on its own. On a short pause the player reports
+    // it by itself, so re-posting the notification there is pure overhead -
+    // and it lands ~1ms before the playing flip, which is one more reason the
+    // system sees an item update instead of a new playback. Mainstream players
+    // never re-push metadata on resume; we now only do it when the pause was
+    // long enough to need it.
+    final metadataRepushNeeded =
+        pausedFor == null || pausedFor >= const Duration(seconds: 90);
+    if (metadataRepushNeeded && _currentItemId != null && _currentTitle != null) {
       _repushNotifiedMediaItem();
     }
     // Any paused seek up to this instant belonged to this resume (a socket
@@ -13723,7 +13874,6 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> pause() async {
     final sw = Stopwatch()..start();
-    debugPrint('[RemoveTrace] pause entry');
     _markPauseRequested();
     if (_retryInProgress) {
       _retryUserPaused = true;
@@ -13802,9 +13952,11 @@ class AudioPlayerService extends ChangeNotifier {
     if (manualOffline || _knownOffline) return;
 
     if (!_isOfflineMode && _playbackSessionId != null) {
-      debugPrint('[RemoveTrace] pause sync start ${sw.elapsedMilliseconds}ms');
+      final syncStart = sw.elapsedMilliseconds;
       await _syncToServer(pos);
-      debugPrint('[RemoveTrace] pause sync done ${sw.elapsedMilliseconds}ms');
+      debugPrint(
+        '[RemoveTrace] pause sync ${sw.elapsedMilliseconds - syncStart}ms',
+      );
     } else if (!_isOfflineMode && _currentItemId != null && _api != null) {
       final syncKey = _currentEpisodeId != null
           ? '$_currentItemId-$_currentEpisodeId'
@@ -13839,12 +13991,19 @@ class AudioPlayerService extends ChangeNotifier {
       // would otherwise inflate server listening stats by up to 300s.
       if (_playbackSessionId != null && _api != null) {
         _logEvent(PlaybackEventType.sessionEnd, detail: 'pause timeout');
+        // Flag it before the first await: the id stays set until the close
+        // returns (the sync reads it), but from here on it must not count as a
+        // live session for the foreground refresh.
+        _sessionClosing = true;
         try {
           await _syncToServer(position, timeListenedOverride: 0);
           debugPrint('[Player] Closing session (pause timeout)');
           await _api!.closePlaybackSession(_playbackSessionId!);
-        } catch (_) {}
-        _playbackSessionId = null;
+        } catch (_) {
+        } finally {
+          _playbackSessionId = null;
+          _sessionClosing = false;
+        }
       }
       // Cancel sleep timer
       if (SleepTimerService().isActive) {
@@ -15845,7 +16004,6 @@ class AudioPlayerService extends ChangeNotifier {
     _api?.cancelBackgroundItemTransfers();
     _cancelCachePrefetch();
     _cancelPendingSessionClients();
-    debugPrint('[RemoveTrace] stop transfers canceled ${sw.elapsedMilliseconds}ms');
     _pausedForOffline = false;
     _pauseStopTimer?.cancel();
     _pauseStopTimer = null;
@@ -15858,11 +16016,12 @@ class AudioPlayerService extends ChangeNotifier {
         '[Player] Saving on stop: ${(pos.inMilliseconds / 1000.0).toStringAsFixed(1)}s',
       );
       await _saveProgressLocal(pos);
-      debugPrint('[RemoveTrace] stop local save ${sw.elapsedMilliseconds}ms');
       // Credit the final playing tail before the push/close below. Skipped when
       // stopped from a paused state so the idle span isn't counted.
       if (wasPlaying) await _accrueListening(pos);
-      debugPrint('[RemoveTrace] stop accrue ${sw.elapsedMilliseconds}ms');
+      debugPrint(
+        '[RemoveTrace] stop local save+accrue ${sw.elapsedMilliseconds}ms',
+      );
     }
     if (newerStartOwnsPlayback()) {
       debugPrint('[Player] stop abandoned before sync - a newer start owns playback');
@@ -15887,19 +16046,22 @@ class AudioPlayerService extends ChangeNotifier {
       // so the wall-clock diff doesn't inflate server listening stats.
       if (stopSessionId != null && stopApi != null) {
         _logEvent(PlaybackEventType.sessionEnd, detail: 'stop');
-        debugPrint('[RemoveTrace] stop sync start ${sw.elapsedMilliseconds}ms');
+        final syncStart = sw.elapsedMilliseconds;
         await _syncToServer(
           stopPosition,
           timeListenedOverride: wasPlaying ? null : 0,
         );
-        debugPrint('[RemoveTrace] stop sync done ${sw.elapsedMilliseconds}ms');
+        final syncMs = sw.elapsedMilliseconds - syncStart;
         try {
           debugPrint('[Player] Closing session (stop)');
           await stopApi.closePlaybackSession(stopSessionId);
           debugPrint(
-            '[RemoveTrace] stop session close done ${sw.elapsedMilliseconds}ms',
+            '[RemoveTrace] stop sync ${syncMs}ms + close '
+            '${sw.elapsedMilliseconds - syncStart - syncMs}ms',
           );
-        } catch (_) {}
+        } catch (_) {
+          debugPrint('[RemoveTrace] stop sync ${syncMs}ms (close failed)');
+        }
       } else if (stopItemId != null && stopApi != null) {
         await _progressSync.syncToServer(api: stopApi, itemId: stopItemId);
       }

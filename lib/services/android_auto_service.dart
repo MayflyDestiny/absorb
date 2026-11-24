@@ -1429,7 +1429,9 @@ class AndroidAutoService {
         ));
       }
 
-      debugPrint('[AutoBrowse] Fetched ${items.length} episodes for "$showTitle"');
+      debugPrint(
+        '[AutoBrowse] Fetched ${items.length} episodes for title="$showTitle"',
+      );
       return items;
     } catch (e) {
       debugPrint('[AutoBrowse] Error fetching show episodes: $e');

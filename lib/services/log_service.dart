@@ -255,8 +255,12 @@ class LogService {
   );
 
   /// Sanitize a single log message: mask URLs, sensitive query params, bare
-  /// key=value pairs that look like credentials, and the user's own library
-  /// content (book, chapter and author names).
+  /// key=value pairs that look like credentials. Library content (book,
+  /// chapter and author names) is left as-is by explicit decision: masking it
+  /// by character set erased localised diagnostics and Chinese device names
+  /// while missing Hangul/kana, and masking it by field name still required
+  /// every log site to use the right key. The trade-off is that an exported log
+  /// does carry what the user was listening to.
   static String _sanitize(String message) {
     var result = _sanitizeUrls(message);
     // Mask standalone sensitive key=value pairs not inside URLs
@@ -268,26 +272,7 @@ class LogService {
       ),
       (m) => '${m.group(1)}=***',
     );
-    return _maskLibraryContent(result);
-  }
-
-  /// Book titles, chapter titles and author names are the user's own library,
-  /// not diagnostics: a log sent to support must not carry what they are
-  /// listening to. Two shapes cover it - the quoted `title="…"` /
-  /// `artist="…"` / `author="…"` fields, and any CJK text, which in this app's
-  /// English log can only come from content or a localised server message.
-  /// Item ids stay intact: they are the key support needs to correlate a
-  /// problem, and they are not credentials.
-  static String _maskLibraryContent(String content) {
-    var result = content.replaceAllMapped(
-      RegExp(
-        r'\b(title|artist|album|author|subtitle|bookName)\s*=\s*"[^"]*"',
-        caseSensitive: false,
-      ),
-      (m) => '${m.group(1)}="***"',
-    );
-    result = result.replaceAll(RegExp(r'"[^"]*[\u3400-\u9fff][^"]*"'), '"***"');
-    return result.replaceAll(RegExp(r'[\u3400-\u9fff\uf900-\ufaff]+'), '***');
+    return result;
   }
 
   /// Sanitize URLs in log content, replacing server hosts with a connection
