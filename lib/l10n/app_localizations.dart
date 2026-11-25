@@ -1092,6 +1092,12 @@ abstract class AppLocalizations {
   /// **'Books'**
   String get librarySearchBooks;
 
+  /// No description provided for @librarySearchItemRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'This title is no longer on the server. It has been removed from your search results - pull to refresh the library to re-sync.'**
+  String get librarySearchItemRemoved;
+
   /// No description provided for @librarySearchShows.
   ///
   /// In en, this message translates to:

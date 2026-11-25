@@ -535,6 +535,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get librarySearchBooks => '书籍';
 
   @override
+  String get librarySearchItemRemoved => '这本书在服务器上已不存在，已从搜索结果中移除。下拉刷新书库即可重新同步。';
+
+  @override
   String get librarySearchShows => '播客';
 
   @override

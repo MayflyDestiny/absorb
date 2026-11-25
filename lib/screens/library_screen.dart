@@ -488,6 +488,11 @@ class LibraryScreenState extends State<LibraryScreen>
     });
   }
 
+  /// 同一 query 30 秒内复用上一次的服务端结果：在搜索框里改一个字再改回来
+  /// 是最常见的手势，每次重打一遍全表扫描既慢又压服务器。
+  static const Duration _searchCacheTtl = Duration(seconds: 30);
+  final Map<String, _SearchCacheEntry> _searchCache = {};
+
   List<dynamic> _searchBookResults = [];
   List<dynamic> _searchSeriesResults = [];
   List<dynamic> _searchAuthorResults = [];
@@ -732,6 +737,18 @@ class LibraryScreenState extends State<LibraryScreen>
     _loadBookRequests();
     SocketService().addAuthorsChangedListener(_onAuthorsChanged);
     SocketService().addItemRemovedListener(_onItemRemoved);
+    BookSearchIndex().addForgottenListener(_onSearchItemForgotten);
+  }
+
+  // 打开即自愈：详情层确认条目已被服务器删除后，搜索结果里的幻影同步移除，
+  // 用户不用再搜一次才能看到它消失。
+  void _onSearchItemForgotten(String itemId) {
+    if (!mounted) return;
+    setState(() {
+      _searchBookResults.removeWhere(
+        (r) => ((r['libraryItem'] as Map<String, dynamic>?)?['id']) == itemId,
+      );
+    });
   }
 
   // A book deleted on the server or added to a library out of Book Dock
@@ -1847,6 +1864,7 @@ class LibraryScreenState extends State<LibraryScreen>
   void dispose() {
     SocketService().removeAuthorsChangedListener(_onAuthorsChanged);
     SocketService().removeItemRemovedListener(_onItemRemoved);
+    BookSearchIndex().removeForgottenListener(_onSearchItemForgotten);
     _cacheRefreshTimer?.cancel();
     _loadRetryTimer?.cancel();
     _authorsRefreshDebounce?.cancel();
@@ -3229,11 +3247,66 @@ lib.registerHasCoverFromItem(id, r);
     final api = auth.apiService;
     if (api == null || lib.selectedLibraryId == null) return;
 
-    setState(() => _isSearching = true);
     final gen = ++_searchGen;
     final isPodcast = lib.isPodcastLibrary;
     final libId = lib.selectedLibraryId!;
+
+    // 30 秒内搜过同一个词：直接复用，连索引都不用碰。
+    final cached = _searchCache[query];
+    if (cached != null &&
+        DateTime.now().difference(cached.at) <= _searchCacheTtl) {
+      if (mounted && gen == _searchGen) {
+        setState(() {
+          _searchBookResults = cached.books;
+          _searchSeriesResults = cached.series;
+          _searchAuthorResults = cached.authors;
+          _isSearching = false;
+          _hasSearched = true;
+        });
+      }
+      return;
+    }
+
+    // 书籍有本地索引、系列/作者有过滤器列表时，这次搜索没有一项需要服务端：
+    // /search 会把这个库的所有条目整包返回（实测 6.2 MB），下载加上 jsonDecode
+    // 恰好卡在用户敲字的那一下，而结果里用到的只有名称。
+    //
+    // 会话内第一次搜索先花一次探针确认索引没落后（limit=1，实测 7.2 KB /
+    // 约 250 ms；服务端认 updatedAt 排序时直接跳过）。之后每次搜索都不再发。
+    if (!isPodcast) {
+      await BookSearchIndex().ensureFresh(api, libId);
+      if (!mounted || gen != _searchGen) return;
+    }
+    if (!isPodcast &&
+        _tryLocalSearch(libId: libId, query: query, api: api, gen: gen)) {
+      return;
+    }
+
+    // 冷启动后的第一次搜索：索引还是空的。先把索引建起来——服务端 /search 在
+    // 这种情况下返回的同样是整库，把同样的数据下两遍没有意义——建好就本地作答。
+    // 只有超大库（不索引）、分页失败（截断）才继续走下面的服务端路径。
+    if (!isPodcast) {
+      // 建索引要翻完整个库，这段时间没有结果可显示，得让转圈出现，否则用户
+      // 会以为按了没反应。
+      setState(() => _isSearching = true);
+      await BookSearchIndex().ensureIndex(api, libId);
+      if (!mounted || gen != _searchGen) return;
+      if (_tryLocalSearch(libId: libId, query: query, api: api, gen: gen)) {
+        return;
+      }
+    }
+
+    setState(() => _isSearching = true);
+    final localIndex = BookSearchIndex();
+    debugPrint(
+      '[Search] server fallback: podcast=$isPodcast '
+      'indexReady=${localIndex.isReady(libId)} '
+      'truncated=${localIndex.isTruncated(libId)} '
+      'filters=${_availableSeriesFilters.length}/'
+      '${_availableAuthorFilters.length}',
+    );
     Map<String, dynamic>? result;
+    final sw = Stopwatch()..start();
     _searchInFlight = true;
     try {
       result = await api.searchLibrary(libId, query);
@@ -3249,6 +3322,11 @@ lib.registerHasCoverFromItem(id, r);
     // cleared: leave whatever is showing alone.
     if (!mounted || gen != _searchGen) return;
     final data = result;
+    debugPrint(
+      '[Search] source=server ok=${data != null} '
+      'books=${((data?[isPodcast ? 'podcast' : 'book']) as List?)?.length ?? 0} '
+      'ms=${sw.elapsedMilliseconds}',
+    );
     if (data != null) {
       setState(() {
         if (isPodcast) {
@@ -3281,6 +3359,8 @@ lib.registerHasCoverFromItem(id, r);
         _isSearching = false;
         _hasSearched = true;
       });
+
+      _cacheSearch(query);
 
       // Client-side narrator filter (ABS search endpoint doesn't return narrators)
       if (!isPodcast) {
@@ -3345,6 +3425,94 @@ lib.registerHasCoverFromItem(id, r);
         setState(() => _searchBookResults = books);
       }
     }
+  }
+
+  /// Books, series, authors, tags and genres answered entirely from memory.
+  /// Returns false when the index can't stand in for the server: not built yet,
+  /// truncated (a page failed mid-build, so the server sees books it doesn't),
+  /// or the filter lists the library uses for its chips aren't loaded yet.
+  bool _tryLocalSearch({
+    required String libId,
+    required String query,
+    required dynamic api,
+    required int gen,
+  }) {
+    if (!mounted || gen != _searchGen) return false;
+    final index = BookSearchIndex();
+    if (!index.isReady(libId) || index.isTruncated(libId)) return false;
+    if (_availableSeriesFilters.isEmpty || _availableAuthorFilters.isEmpty) {
+      return false;
+    }
+    var books = index
+        .search(libId, query)
+        .map(
+          (h) => <String, dynamic>{
+            'libraryItem': h.item,
+            '_titleMatch': h.titleMatch,
+          },
+        )
+        .toList();
+    if (_hideEbookOnly) {
+      books = books
+          .where(
+            (r) => !PlayerSettings.isEbookOnly(
+              r['libraryItem'] as Map<String, dynamic>,
+            ),
+          )
+          .toList();
+    }
+    setState(() {
+      _searchBookResults = books;
+      _applyLocalSeriesAndAuthors(query);
+      _applyLocalTagAndGenre(query);
+      _isSearching = false;
+      _hasSearched = true;
+    });
+    _cacheSearch(query);
+    debugPrint(
+      '[Search] source=local books=${books.length} '
+      'series=${_searchSeriesResults.length} '
+      'authors=${_searchAuthorResults.length} '
+      'tags=${_searchTagResults.length} '
+      'genres=${_searchGenreResults.length}',
+    );
+    unawaited(_searchNarrators(query, libId, api));
+    return true;
+  }
+
+  /// 系列与作者直接来自库里已有的过滤器列表（名称 + id，且已落盘缓存）：
+  /// 服务端对名称做的就是包含匹配，本地给出的答案是同一个，只是不用为了
+  /// 它去下一份整库的 payload。
+  void _applyLocalSeriesAndAuthors(String query) {
+    final q = query.toLowerCase();
+    _searchSeriesResults = _availableSeriesFilters
+        .where((s) => (s['name'] ?? '').toLowerCase().contains(q))
+        .map((s) => <String, dynamic>{'id': s['id'], 'name': s['name']})
+        .toList();
+    _searchAuthorResults = _availableAuthorFilters
+        .where((a) => (a['name'] ?? '').toLowerCase().contains(q))
+        .map((a) => <String, dynamic>{'id': a['id'], 'name': a['name']})
+        .toList();
+  }
+
+  void _applyLocalTagAndGenre(String query) {
+    final q = query.toLowerCase();
+    _searchTagResults =
+        _availableTags.where((t) => t.toLowerCase().contains(q)).toList();
+    _searchGenreResults =
+        _availableGenres.where((g) => g.toLowerCase().contains(q)).toList();
+  }
+
+  /// 记住一次成功的服务端搜索，供 30 秒内的重复 query 复用。
+  void _cacheSearch(String query) {
+    final now = DateTime.now();
+    _searchCache.removeWhere((_, e) => now.difference(e.at) > _searchCacheTtl);
+    _searchCache[query] = _SearchCacheEntry(
+      books: _searchBookResults,
+      series: _searchSeriesResults,
+      authors: _searchAuthorResults,
+      at: now,
+    );
   }
 
   Future<void> _searchNarrators(
@@ -4711,6 +4879,22 @@ lib.registerHasCoverFromItem(id, r);
       }
     });
     await _loadPage();
+    _syncSearchIndex();
+  }
+
+  /// 用户主动刷新的时刻，把搜索索引整库重建一遍。
+  ///
+  /// 下拉表达的是"我现在就要最新的"，而探针只看总数、增量只看最近改动，都看不见
+  /// 改名、改标签、删一本又加一本（总数不变）。所以这里走
+  /// [BookSearchIndex.refresh] 整库重拉，代价是页数 × 100 条的流量。
+  ///
+  /// 它只影响下一次搜索的结果，不影响正在刷的这张列表，所以不等它、也不拦
+  /// 刷新指示器。
+  void _syncSearchIndex() {
+    final api = context.read<AuthProvider>().apiService;
+    final libId = context.read<LibraryProvider>().selectedLibraryId;
+    if (api == null || libId == null) return;
+    unawaited(BookSearchIndex().refresh(api, libId));
   }
 
   Future<void> _refreshSeries() async {
@@ -4721,11 +4905,13 @@ lib.registerHasCoverFromItem(id, r);
       _isLoadingSeriesPage = false;
     });
     await _loadSeriesPage();
+    _syncSearchIndex();
   }
 
   Future<void> _refreshAuthors() async {
     _resetAuthors();
     await _loadAuthors();
+    _syncSearchIndex();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -5442,4 +5628,19 @@ lib.registerHasCoverFromItem(id, r);
       ],
     );
   }
+}
+
+/// 一次服务端搜索的结果快照，供 [_LibraryScreenState._searchCache] 复用。
+class _SearchCacheEntry {
+  const _SearchCacheEntry({
+    required this.books,
+    required this.series,
+    required this.authors,
+    required this.at,
+  });
+
+  final List<dynamic> books;
+  final List<dynamic> series;
+  final List<dynamic> authors;
+  final DateTime at;
 }

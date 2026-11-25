@@ -309,6 +309,7 @@
   "libraryNoNarratorsFound": "未找到旁白",
   "libraryNoResults": "未找到结果",
   "librarySearchBooks": "书籍",
+  "librarySearchItemRemoved": "这本书在服务器上已不存在，已从搜索结果中移除。下拉刷新书库即可重新同步。",
   "librarySearchShows": "播客",
   "librarySearchEpisodes": "单集",
   "librarySearchSeries": "系列",

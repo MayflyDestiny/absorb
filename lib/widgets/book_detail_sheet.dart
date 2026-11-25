@@ -56,6 +56,7 @@ import '../services/inflight_temp_writes.dart';
 import '../services/progress_sync_service.dart';
 import '../services/metadata_override_service.dart';
 import '../services/socket_service.dart';
+import '../services/book_search_index.dart';
 import '../main.dart' show rootNavigatorKey, colorSourceNotifier, useColorEverywhereNotifier, manualSeedNotifier, manualColorScheme;
 import '../screens/app_shell.dart';
 import '../screens/book_edit_screen.dart';
@@ -667,6 +668,22 @@ class _BookDetailSheetContentState extends State<_BookDetailSheetContent> with S
       try {
         final item = await api.getLibraryItem(widget.itemId);
         debugPrint('[BookDetail] server fetch done in ${DateTime.now().difference(loadStart).inMilliseconds}ms (item=${item != null ? "ok" : "null"})');
+        // 打开即自愈：索引里残留的条目，服务器已经不存在（404）。剔除它并告诉
+        // 用户发生了什么、该怎么办。网络失败在这里不是 404，不会误伤。
+        if (item == null && mounted && !lib.isOffline) {
+          final missing = await api.isItemMissing(widget.itemId);
+          if (missing && mounted) {
+            BookSearchIndex().forgetItem(widget.itemId);
+            if (!mounted) return;
+            final l = AppLocalizations.of(context)!;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(l.librarySearchItemRemoved),
+              duration: const Duration(seconds: 4),
+            ));
+            if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+            return;
+          }
+        }
         if (item != null && mounted) {
           // Apply local metadata overrides
           final overrideService = MetadataOverrideService();

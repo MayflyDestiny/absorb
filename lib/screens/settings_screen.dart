@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'stats_screen.dart';
 import 'bookorbit_library_visibility_screen.dart';
 import 'package:flutter/services.dart';
@@ -3702,6 +3701,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 )),
 
                 if (kUpdatesFromReleases || _isDevBuild || _isDevFlavor) ...[
+                  // 版本号与「检查更新」按钮之间留出呼吸感（按钮自身只有
+                  // vertical:2 的内边距，叠在一起会显得贴在一起）。
+                  const SizedBox(height: 8),
                   Center(child: TextButton.icon(
                     onPressed: () async {
                       final result = await UpdateCheckerService.check(force: true, includePreReleases: _includePreReleases);

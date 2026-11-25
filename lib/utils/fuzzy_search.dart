@@ -69,18 +69,39 @@ int boundedLevenshtein(String a, String b, int max) {
   return prev[lb];
 }
 
+/// True when [s] contains CJK ideographs, kana or hangul.
+///
+/// Those scripts don't put spaces between words, so a title like
+/// 「都重生了谁谈恋爱啊」 is a *single* token: a two-character query can only
+/// reach it through the substring branch, which used to require 3+ characters.
+/// Latin two-letter fragments ("an" inside "can") are noise and stay excluded.
+bool _hasCjk(String s) {
+  for (final r in s.runes) {
+    if ((r >= 0x3040 && r <= 0x30ff) || // kana
+        (r >= 0x3400 && r <= 0x4dbf) || // CJK ext A
+        (r >= 0x4e00 && r <= 0x9fff) || // CJK unified
+        (r >= 0xac00 && r <= 0xd7af)) {
+      // hangul
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Best match of query token [q] against any of [tokens]:
 /// 4 exact, 3 prefix, 2 substring, 1.5/1 fuzzy (edit distance 1/2), 0 none.
 double bestTokenScore(String q, List<String> tokens) {
   double best = 0;
   final maxD = q.length >= 7 ? 2 : (q.length >= 4 ? 1 : 0);
+  // 两个字的中文查询也要做子串匹配：中文标题没有词边界。
+  final substring = q.length >= 3 || (q.length >= 2 && _hasCjk(q));
   for (final t in tokens) {
     double s;
     if (t == q) {
       s = 4;
     } else if (t.startsWith(q)) {
       s = 3;
-    } else if (q.length >= 3 && t.contains(q)) {
+    } else if (substring && t.contains(q)) {
       s = 2;
     } else if (maxD > 0) {
       final d = boundedLevenshtein(q, t, maxD);

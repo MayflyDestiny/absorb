@@ -1795,6 +1795,14 @@ class ApiService {
     return serverVersionAtLeast(_serverVersions[origin], 2, 22);
   }
 
+  /// The server version as reported by `/status`, or null while it's unknown.
+  /// Callers that cache per-server behaviour key on this so a server upgrade
+  /// makes them re-check instead of trusting a stale verdict forever.
+  String? get serverVersion {
+    final origin = _originOf(_cleanBaseUrl);
+    return origin == null ? null : _serverVersions[origin];
+  }
+
   /// Get all libraries.
   Future<List<dynamic>> getLibraries() async {
     try {
@@ -3979,6 +3987,22 @@ class ApiService {
     return future;
   }
 
+  /// Whether the server definitively says this item no longer exists (HTTP
+  /// 404). Used by "open a stale search hit → heal": a network failure or an
+  /// auth hiccup must NOT count as missing, so anything other than a 404
+  /// (200, 5xx, timeouts) returns false and callers keep the entry.
+  Future<bool> isItemMissing(String itemId) async {
+    try {
+      final response = await _authGet(
+        Uri.parse('$_cleanBaseUrl/api/items/$itemId'),
+        timeout: const Duration(seconds: 12),
+      );
+      return response.statusCode == 404;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _clearLibraryItemInFlight(
     String itemId,
     Future<Map<String, dynamic>?> future,
@@ -4101,6 +4125,13 @@ class ApiService {
           ));
         }
         return data;
+      }
+      // 404 = the item is gone from the server. Don't fall back to the disk
+      // cache here: a stale copy would mask the deletion, and "open a stale
+      // search hit → heal" depends on this signal reaching the caller as null.
+      if (response.statusCode == 404) {
+        debugPrint('[API] getLibraryItem $itemId: 404 - item is gone');
+        return null;
       }
       debugPrint('[API] getLibraryItem $itemId: HTTP ${response.statusCode}');
     } catch (e) {
@@ -4641,11 +4672,16 @@ class ApiService {
   }) async {
     try {
       final encoded = Uri.encodeQueryComponent(query);
+      // This endpoint returns every matched book's *full* libraryItem, audio
+      // files included: 1.8 MB for one 673-track book, 12.4 MB / 30 s for a
+      // two-book match. Only oversized and podcast libraries still get here,
+      // and a faster failure keeps the previous results on screen instead of
+      // blocking the field for half a minute.
       final response = await _authGet(
         Uri.parse(
           '$_cleanBaseUrl/api/libraries/$libraryId/search?q=$encoded&limit=$limit',
         ),
-        timeout: const Duration(seconds: 60),
+        timeout: const Duration(seconds: 12),
       );
 
       if (response.statusCode == 200) {

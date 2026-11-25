@@ -4009,6 +4009,9 @@ class AudioPlayerService extends ChangeNotifier {
     }
     _activeStreamUrls = urls;
     _activeStreamHeaders = Map<String, String>.from(api.playbackSessionHeaders);
+    // Every URL here was just minted on the current token, so a re-sign armed
+    // by an earlier rotation is moot.
+    _currentFileNeedsRemint = false;
   }
 
   /// Subscribe to track index changes for multi-file playback.
@@ -4018,6 +4021,21 @@ class AudioPlayerService extends ChangeNotifier {
     _indexSub = _player!.currentIndexStream.listen(
       (index) {
         if (index == null) return;
+        // ExoPlayer steps to the next file when one fails to load, and the
+        // retry is about to seek back to the file that actually failed. Taking
+        // that step as a real advance is what flashed the next chapter on the
+        // card for the second the retry took ("played the next episode, then
+        // came back"); on a book's last file the same step crosses
+        // [_currentBookTrackCount] and starts the next book for real. The
+        // retry flag spans the whole rebuild, so nothing is lost here: the
+        // player re-reports the landed file once it starts.
+        if (index != _currentTrackIndex && _retryInProgress) {
+          debugPrint(
+            '[Player] Ignoring auto-advance to $index '
+            '($_currentTrackIndex stays) - stream retry in flight',
+          );
+          return;
+        }
         // A paused player only changes file through a seek, and a seek sets
         // the index first. Anything else is the player skipping past a file
         // it failed on, which is not where the listener stopped.
@@ -4045,6 +4063,9 @@ class AudioPlayerService extends ChangeNotifier {
             _lastIndexAdvanceTime = DateTime.now();
             if (!_isLoadingNewItem) _api?.cancelBackgroundItemTransfers();
             _pendingTrackAdvanceRefresh = true;
+            // The re-sign pending was about the file that just ended; the one
+            // now playing came from the rotation's own re-mint.
+            _currentFileNeedsRemint = false;
             debugPrint(
               '[Player] Track index advance: $_currentTrackIndex -> $clamped',
             );
@@ -4278,6 +4299,18 @@ class AudioPlayerService extends ChangeNotifier {
       final resume = _player!.playing;
       if (await _applyPendingSessionUpgrade(
         seekToSeconds: absoluteSeconds,
+        resumeAfter: resume,
+      )) {
+        return;
+      }
+    }
+    // This seek asks the playing file for different bytes, and its URL still
+    // carries the token the last rotation killed: re-sign before seeking or
+    // the request 401s and the engine reports it as "this file ended".
+    if (_currentFileNeedsRemint) {
+      final resume = _player!.playing;
+      if (await _remintCurrentFile(
+        at: absoluteSeconds,
         resumeAfter: resume,
       )) {
         return;
@@ -9930,6 +9963,7 @@ class AudioPlayerService extends ChangeNotifier {
     _chapterSkipWatchTimer?.cancel();
     _chapterSkipWatchTimer = null;
     _playbackSessionId = null;
+    _currentFileNeedsRemint = false;
     _isOfflineMode = false;
     _localSessionMode = false;
     _localSessionAccounting = false;
@@ -10061,6 +10095,21 @@ class AudioPlayerService extends ChangeNotifier {
   // cached fast-starts, sync-tick recreations, resume recreations. One-shot.
   Map<String, dynamic>? _pendingSessionUpgrade;
   int _pendingUpgradeGeneration = -1;
+
+  /// A token rotation re-mints the children AHEAD of the playing one in place,
+  /// but the playing one cannot be replaced without rebuilding the source, so
+  /// it keeps the token that just died. Its remaining byte ranges would then
+  /// 401 mid-chapter (measured: three minutes after the rotation, the moment
+  /// the buffer ran out), which the engine reports as "the file ended" and
+  /// advances. One rebuild per rotation is the only way to re-sign it.
+  bool _currentFileNeedsRemint = false;
+  int _remintGeneration = -1;
+  bool _remintInFlight = false;
+
+  /// How much buffered audio must be left before that rebuild is forced. Long
+  /// enough for the fresh source to deliver its first chunk, short enough that
+  /// a pause or a chapter boundary usually gets there first (both free).
+  static const _remintLeadIn = Duration(seconds: 15);
 
   void _stashSessionUpgrade(Map<String, dynamic> sessionData) {
     final tracks = sessionData['audioTracks'] as List<dynamic>?;
@@ -10221,11 +10270,24 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
     if (ChromecastService().isCasting) return;
+    _armCurrentFileRemint();
     if (_isLoadingNewItem || _retryInProgress || _cacheBypassReloadInFlight) {
       Future<void>.delayed(const Duration(seconds: 3), _maybeUpgradeTokenless);
       return;
     }
     unawaited(_upgradeSourceToTokenlessSession());
+  }
+
+  void _armCurrentFileRemint() {
+    final idx = _currentTrackIndex;
+    if (idx < 0 || idx >= _activeStreamUrls.length) return;
+    if (!_activeStreamUrls[idx].contains('token=')) return;
+    _currentFileNeedsRemint = true;
+    _remintGeneration = _playbackGeneration;
+    debugPrint(
+      '[StreamUpgrade] Playing file still carries the old token - '
+      'will re-sign it before its buffer runs out',
+    );
   }
 
   void _maybeUpgradeTokenless() {
@@ -10234,6 +10296,128 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
     unawaited(_upgradeSourceToTokenlessSession());
+  }
+
+  /// Rebuild the playing source with every child re-signed on the current
+  /// token, landing on the same position.
+  ///
+  /// This exists for exactly one child: the one playing. A rotation re-mints
+  /// the ones ahead through the dynamic playlist API, which cannot touch the
+  /// current index without resetting the engine. Left alone, that child's next
+  /// range request 401s, and ExoPlayer answers a failed file by moving on to
+  /// the next one - the "it played the next episode for a second" report.
+  Future<bool> _remintCurrentFile({double? at, bool resumeAfter = true}) async {
+    if (!_currentFileNeedsRemint || _remintInFlight) return false;
+    if (_remintGeneration != _playbackGeneration) {
+      _currentFileNeedsRemint = false;
+      return false;
+    }
+    if (_retryInProgress || _isLoadingNewItem) return false;
+    if (_isOfflineMode || _localSessionMode || _knownOffline || _manualOffline) {
+      _currentFileNeedsRemint = false;
+      return false;
+    }
+    if (ChromecastService().isCasting) return false;
+    final player = _player;
+    final api = _api;
+    final itemId = _currentItemId;
+    if (player == null || api == null || itemId == null) return false;
+    if (_activeStreamUrls.isEmpty || _trackStartOffsets.length < 2) return false;
+
+    final target = at ?? position.inMilliseconds / 1000.0;
+    final idx = _trackIndexForAbsolute(target);
+    final localPos = Duration(
+      milliseconds: ((target - _trackStartOffsets[idx]) * 1000).round(),
+    );
+    final wasPlaying = player.playing;
+
+    _remintInFlight = true;
+    var replaced = false;
+    try {
+      final headers = api.playbackSessionHeaders;
+      final urls = <String>[];
+      final children = <AudioSource>[];
+      for (final url in _activeStreamUrls) {
+        final signed = url.contains('token=')
+            ? api.buildTrackUrl(url, preferPublicSession: false)
+            : url;
+        urls.add(signed);
+        children.add(
+          AudioSource.uri(
+            Uri.parse(signed),
+            headers: _withCacheKey(headers, itemId, signed),
+            options: mp3ExtractorOptions(),
+          ),
+        );
+      }
+      final source = ConcatenatingAudioSource(children: children);
+      // Hold the readers on the position the rebuild is landing at, so the
+      // card and the saved progress never read the new source's zero frame.
+      _lastSeekTargetSeconds = target;
+      _lastSeekTime = DateTime.now();
+      _resetPreBufferState();
+      _currentTrackIndex = idx;
+      replaced = true;
+      await player
+          .setAudioSource(
+            source,
+            initialIndex: idx,
+            initialPosition: localPos,
+            itemId: itemId,
+          )
+          .timeout(_swapLoadTimeout);
+      _activeConcatSource = source;
+      _currentBookTrackCount = children.length;
+      _activeStreamUrls = urls;
+      _currentFileNeedsRemint = false;
+      _subscribeTrackIndex();
+      if (resumeAfter && wasPlaying) unawaited(player.play());
+      debugPrint(
+        '[StreamUpgrade] Re-signed the playing file at '
+        '${target.toStringAsFixed(1)}s (track $idx)',
+      );
+      return true;
+    } catch (e) {
+      if (!replaced) {
+        debugPrint(
+          '[StreamUpgrade] Inline re-sign failed - keeping the current source: $e',
+        );
+        // One attempt per rotation: retrying on every position tick would
+        // rebuild (and interrupt) over and over. A 401 that slips through is
+        // handled by the stream-retry path.
+        _currentFileNeedsRemint = false;
+        return false;
+      }
+      // The old source is gone already; the next play() starts the item over
+      // instead of pressing play on a half-loaded engine.
+      debugPrint(
+        '[StreamUpgrade] Inline re-sign failed after replacing the source: $e',
+      );
+      _currentFileNeedsRemint = false;
+      return false;
+    } finally {
+      _remintInFlight = false;
+    }
+  }
+
+  /// Forced only when the buffered audio is about to run out: until then a
+  /// pause or a chapter boundary can do the same rebuild for free.
+  void _maybeRemintBeforeBufferEnds() {
+    final player = _player;
+    if (player == null || !player.playing) return;
+    final total = player.duration;
+    if (total == null) return;
+    final buffered = player.bufferedPosition;
+    // Fully buffered: this file finishes without asking for another byte, so
+    // the dead token is never used and no rebuild is worth its gap.
+    if (buffered >= total - const Duration(seconds: 1)) {
+      _currentFileNeedsRemint = false;
+      return;
+    }
+    final left = buffered - player.position;
+    final speed = player.speed > 0 ? player.speed : 1.0;
+    if (left.inMilliseconds / speed > _remintLeadIn.inMilliseconds) return;
+    unawaited(_remintCurrentFile());
   }
 
   /// While playing, re-mint the auth token on the not-yet-played children of
@@ -10360,6 +10544,31 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// Absolute position a failed stream should resume from, worked out from the
+  /// file that actually failed. [_lastKnownPositionSec] alone is not enough:
+  /// by the time a retry runs ExoPlayer has usually moved it onto the next
+  /// file, which is exactly the "episode skipped" symptom.
+  double? _failedStreamAnchor(int? failedIndex, double? failedTrackPos) {
+    if (failedIndex != null &&
+        failedIndex >= 0 &&
+        failedIndex < _trackStartOffsets.length - 1) {
+      final start = _trackStartOffsets[failedIndex];
+      final end = _trackStartOffsets[failedIndex + 1];
+      var local = failedTrackPos ?? 0;
+      if (local <= 0) {
+        final target = _lastSeekTargetSec;
+        if (target != null && target >= start && target < end) {
+          local = target - start;
+        }
+      }
+      return (start + local)
+          .clamp(start, end > start ? end - 0.25 : end)
+          .toDouble();
+    }
+    if (_lastKnownPositionSec > 0) return _lastKnownPositionSec;
+    return _lastSeekTargetSec;
+  }
+
   /// Attempt to recover from a stream error by restarting playback from the
   /// last known position.  Tries up to [_maxStreamRetries] times with
   /// exponential back-off (1s, 2s, 4s).  If the item has been downloaded in
@@ -10401,6 +10610,17 @@ class AudioPlayerService extends ChangeNotifier {
       } catch (_) {}
     }
 
+    // Pin the failed position for the whole retry, this wait included: the
+    // engine has already stepped onto the next file, so until the rebuild
+    // lands both the file-local position and the track index would read the
+    // wrong place (a bar dipping to the chapter start, or the next chapter's
+    // title on the card). A zero anchor means "unknown", not "the top", so it
+    // only counts when the failed file itself is known.
+    final pendingAnchor = _failedStreamAnchor(failedIndex, failedTrackPos);
+    if (pendingAnchor != null && (pendingAnchor > 0 || failedIndex != null)) {
+      _retryAnchorSec = pendingAnchor;
+    }
+
     await Future<void>.delayed(delay);
 
     if (_cacheBypassReloadInFlight) {
@@ -10409,6 +10629,7 @@ class AudioPlayerService extends ChangeNotifier {
       );
       _streamRetryCount--;
       _retryInProgress = false;
+      _retryAnchorSec = null;
       return;
     }
 
@@ -10423,34 +10644,11 @@ class AudioPlayerService extends ChangeNotifier {
     final episodeTitle = _currentEpisodeTitle;
     final libraryId = _currentLibraryId;
     final api = _api!;
-    // The failed file is the only position worth resuming: by the time this
-    // runs ExoPlayer has usually moved _lastKnownPositionSec onto the next
-    // file, which is exactly the "episode skipped" symptom.
-    double? failedAbsolute;
-    if (failedIndex != null &&
-        failedIndex >= 0 &&
-        failedIndex < _trackStartOffsets.length - 1) {
-      final start = _trackStartOffsets[failedIndex];
-      final end = _trackStartOffsets[failedIndex + 1];
-      var local = failedTrackPos ?? 0;
-      if (local <= 0) {
-        final target = _lastSeekTargetSec;
-        if (target != null && target >= start && target < end) {
-          local = target - start;
-        }
-      }
-      failedAbsolute = (start + local).clamp(
-        start,
-        end > start ? end - 0.25 : end,
-      );
-    }
-    final retryPos = failedAbsolute ??
-        (_lastKnownPositionSec > 0
-            ? _lastKnownPositionSec
-            : (_lastSeekTargetSec ?? 0));
+    final retryPos = _failedStreamAnchor(failedIndex, failedTrackPos) ?? 0;
 
     if (itemId == null) {
       _retryInProgress = false;
+      _retryAnchorSec = null;
       return;
     }
 
@@ -10671,6 +10869,10 @@ class AudioPlayerService extends ChangeNotifier {
             _lastTrackPositions.remove(_lastTrackPositions.keys.first);
           }
         }
+        // A rotation left the playing file on the token that just died. A
+        // pause or a chapter boundary re-signs it for free; if neither comes
+        // first, this is the last moment before its next range request 401s.
+        if (_currentFileNeedsRemint) _maybeRemintBeforeBufferEnds();
         // Convert track-relative position to absolute book position
         final absolutePos = position; // uses the getter which adds track offset
         final sec = absolutePos.inSeconds;
@@ -13974,6 +14176,9 @@ class AudioPlayerService extends ChangeNotifier {
       unawaited(swap);
     } else if (_pendingSessionUpgrade != null) {
       final swap = _pauseSwap = _applyPendingSessionUpgrade(resumeAfter: false);
+      unawaited(swap);
+    } else if (_currentFileNeedsRemint) {
+      final swap = _pauseSwap = _remintCurrentFile(resumeAfter: false);
       unawaited(swap);
     }
 

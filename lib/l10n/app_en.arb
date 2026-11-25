@@ -284,6 +284,7 @@
   "libraryNoNarratorsFound": "No narrators found",
   "libraryNoResults": "No results found",
   "librarySearchBooks": "Books",
+  "librarySearchItemRemoved": "This title is no longer on the server. It has been removed from your search results - pull to refresh the library to re-sync.",
   "librarySearchShows": "Shows",
   "librarySearchEpisodes": "Episodes",
   "librarySearchSeries": "Series",

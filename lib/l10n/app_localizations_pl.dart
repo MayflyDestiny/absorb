@@ -566,6 +566,10 @@ class AppLocalizationsPl extends AppLocalizations {
   String get librarySearchBooks => 'Książki';
 
   @override
+  String get librarySearchItemRemoved =>
+      'This title is no longer on the server. It has been removed from your search results - pull to refresh the library to re-sync.';
+
+  @override
   String get librarySearchShows => 'Podcasty';
 
   @override

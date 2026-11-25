@@ -2695,6 +2695,28 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
     }
   }
 
+  /// 搜索索引的"新增探针"。
+  ///
+  /// 书库首页本来就会拉 personalized，其中的 `recently-added` 就是最近加进来的
+  /// 书（服务端按 addedAt 倒序）。顺手 upsert 进索引，**不额外发任何请求**。
+  ///
+  /// 它只负责新增：改名/改标签不会改 addedAt，靠 socket 事件和用户下拉刷新
+  /// （整库重建）兜。
+  /// 索引没建好时 [BookSearchIndex.patchItem] 是空操作，不会凭空造缓存。
+  void _patchSearchIndexWithRecentlyAdded(List<dynamic> sections) {
+    final index = BookSearchIndex();
+    for (final section in sections) {
+      if (section is! Map) continue;
+      if (section['id'] != 'recently-added') continue;
+      final entities = section['entities'];
+      if (entities is! List) return;
+      for (final e in entities) {
+        if (e is Map<String, dynamic>) index.patchItem(e);
+      }
+      return;
+    }
+  }
+
   /// Merge [fetched] sections into [existing] preserving entity map identity.
   /// This prevents UI flicker by keeping the same Map objects for unchanged items.
   List<dynamic> _mergeSections(List<dynamic> existing, List<dynamic> fetched) {
@@ -2842,6 +2864,8 @@ mixin _CoreMixin on ChangeNotifier, _StateMixin {
           _mergeSections(_personalizedSections, fetched),
         );
         _registerSectionsEpochs(_personalizedSections);
+        // 顺手把"最近添加"里的书补进搜索索引：零请求，覆盖新增。
+        _patchSearchIndexWithRecentlyAdded(_personalizedSections);
         await (this as _AbsorbingMixin)._updateAbsorbingCache();
 
         _injectDownloadedSection();
